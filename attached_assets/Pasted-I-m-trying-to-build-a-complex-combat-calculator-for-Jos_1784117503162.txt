@@ -1,0 +1,77 @@
+I'm trying to build a complex combat calculator for Joshua Sawyer's Fallout PnP 2.0. It must take account of all the rules from the manual and include every piece of armor and weaponry available, and include a premade bestiary. Here's a list of features to include:
+
+1. Core Mechanical Combat Engine
+Base Check System: Implements Joshua Sawyer's "Simple" ruleset baseline check using a 
+2
+d
+10
+2d10
+ roll-over skill resolution method.
+Progressive Burst Fire: Automates calculations for rapid-fire weapons using a tiered penalty structure. The first shot incurs no penalty (
+0
+0
+), the second shot receives a 
+−
+5
+−5
+ penalty, and any subsequent shots (up to the weapon's burst limit) receive a 
+−
+10
+−10
+ penalty. Each shot is evaluated independently against the target difficulty.
+Dynamic Critical Points (CP): Calculates margin of success (
+R
+o
+l
+l
+−
+D
+i
+f
+f
+i
+c
+u
+l
+t
+y
+Roll−Difficulty
+). For every 
+5
+5
+ points the attack total exceeds the target difficulty, the system awards 
+1
+1
+ Critical Point.
+Critical Damage Spending: Supports a slider-based interface to assign earned Critical Points toward damage amplification. The engine dynamically computes the half-damage bonus die (e.g., 
+1
+d
+8
+1d8
+ weapon base damage generates a 
+1
+d
+4
+1d4
+ critical bonus die) and adds these rolls to the base weapon damage.
+Dual-Slot Damage Threshold (DT) Mitigation: Features combined mitigation from both Body Armor and Helmet slots. The incoming damage type (Normal, Bio, or Energy) dynamically determines which DT values from the equipped pieces are added together and subtracted on a per-hit basis.
+2. Character Profile & Icon Manager
+Active Character Registry: Tracks both active Player Characters (PCs) and Non-Player Characters (NPCs/Enemies) in the runtime session state.
+Profile Editor: Provides form inputs to update name, max HP, current HP, base Evasion, skills (Firearms, Melee, Unarmed), and currently equipped gear.
+Profile Duplication (Cloning): Includes a profile cloning mechanism that duplicates stats, equipment, and icons of an existing character to a new profile with an auto-incremented name tag.
+Dynamic Icon Integration: Processes custom uploaded image files (PNG, JPG, JPEG) by converting them into base64-encoded strings. These strings are stored inside the character profile, rendering the user's custom photo as an avatar icon next to their selected combat stats.
+3. Fast Bestiary Spawner
+Pre-loaded Manual Templates: Pre-populates the database with weak and strong variants of canonical Fallout manual entities, including:
+Raiders: Scavenger and Veteran Psycho
+Ghouls: Rotting and Reaver
+Super Mutants: Initiate and Overlord
+Deathclaws: Young and Alpha Male
+On-the-Fly Spawner: Allows the Game Master to select any template, optionally customize the name tag, and instantly inject the fully equipped NPC into the active combat simulator.
+4. Campaign Databases & Custom Equipment Builders
+Weapon Registry: Built-in table containing standard manual-accurate firearms, energy weapons, melee instruments, and unarmed augmentations.
+Armor Registry: Built-in table containing low to high-tier body suits and headgear (helmets).
+Equipment Programmers: Custom forms designed to expand the runtime database. User-defined weapons and armor (including specific slot designations, damage types, burst sizes, and individual DT matrices) can be programmed and saved instantly.
+5. Data Persistence Engine
+State Compilation: Gathers all active characters (including their base64-encoded portrait icons), custom programmed weapons, and custom programmed armor into a single nested payload.
+Campaign File Saving: Generates a downloadable JSON payload representing the exact state of the campaign, making all character data and custom-programmed equipment portable.
+Campaign File Loading: Includes a file uploader that reads exported JSON files to restore all characters, weapons, and custom equipment from a previous gaming session.

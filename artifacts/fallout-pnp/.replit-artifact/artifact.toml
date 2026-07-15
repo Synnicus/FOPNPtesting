@@ -1,0 +1,23 @@
+kind = "mobile"
+previewPath = "/"
+title = "Fallout PnP Combat Calculator"
+version = "1.0.0"
+id = "artifacts/fallout-pnp"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 21144
+
+[services.development]
+run = "pnpm --filter @workspace/fallout-pnp run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fallout-pnp", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/fallout-pnp", "run", "serve" ]
+
+[services.env]
+PORT = "21144"
+BASE_PATH = "/"
