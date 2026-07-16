@@ -1,0 +1,3 @@
+- [Fallout PnP v4 Schema](fallout-pnp-schema.md) — storage key `@fallout_pnp_v4`; tagged skills NOT baked into char.skills; tagged +20 added at combat/display time
+- [Fallout PnP Damage Formula](fallout-pnp-damage.md) — `finalDmg = max(0, (base−DT) × (1−DR/100))`; 5 damage types N/L/F/P/E; applyProtection() in armor.ts
+- [Fallout PnP Skill Points](fallout-pnp-skill-points.md) — `10+INT/2` per level (from calcSkillPointsPerLevel); tagged skill +20 is free (NOT from pool); pool tracked as unspentSkillPoints

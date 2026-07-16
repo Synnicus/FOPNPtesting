@@ -1,0 +1,246 @@
+Combat
+Fallout PnP Wiki
+
+
+
+Home
+Saved
+Progress
+History
+Utilities
+Browse Wikis
+Community Central
+Switch to Dark Theme
+Fallout PnP Wiki
+
+
+Featured
+Interactive Maps
+Comment
+
+Wiki Menu
+
+Explore
+
+Wiki Content
+
+Community
+
+Contents
+1.
+Combat Begins
+1.1.
+Determine Combat Sequence
+2.
+Action
+2.1.
+Movement
+2.1.1.
+Changing Positions - Crouching & Prone
+2.1.2.
+Getting Up
+2.2.
+Using an Item
+2.3.
+Equipping Items
+2.4.
+Taking an Item Off the Ground
+2.5.
+Reloading
+2.6.
+Using Skills
+2.6.1.
+Healing a Fallen Comrade
+2.6.2.
+Laying a Mine
+2.6.3.
+Setting up a Tripod
+2.7.
+Defending
+3.
+Attacking
+3.1.
+Burst Fire
+3.2.
+Determining an Attack
+3.2.1.
+Base Chance
+3.2.2.
+Range Modifier
+3.2.3.
+Light Modifier
+3.2.4.
+Armor Class Modifier
+3.2.5.
+Cover Modifier
+3.2.6.
+Weapon Status Modifier
+3.2.7.
+Targeted Shots
+3.2.8.
+Formula
+3.3.
+Streamlined Burst Fire
+3.4.
+Double-Shot Weapons
+3.5.
+After the Roll
+3.5.1.
+Critical Failures
+3.5.2.
+Knockdowns with Melee Weapons and Burst Weapons
+4.
+Damage
+4.1.
+Damage in Burst Mode
+4.2.
+Damage from Non-Convention Weapons
+4.2.1.
+Grenades
+4.2.2.
+Mortars
+4.2.3.
+Rockets
+4.2.4.
+Mines
+4.2.5.
+Gas
+4.2.6.
+Electricity
+4.2.7.
+Flamethrowers
+4.3.
+Chance for Criticals
+5.
+Vehicular Combat
+5.1.
+Vehicle Damage
+5.1.1.
+Targeting Vehicle Systems
+5.1.2.
+EMP Attacks
+5.1.3.
+Damaging and Destroying Systems
+
+Fallout PnP Wiki
+
+Explore
+Main Page
+All Pages
+Community
+Interactive Maps
+Recent Blog Posts
+
+Fallout PnP Wiki
+
+Wiki Content
+
+Recently Changed Pages
+
+Weapons
+
+Organization
+
+Wiki Content
+
+Recently Changed Pages
+Vault 15
+Ammunition
+GoodspringsFixed
+Trudy
+Character Creation
+Sunny Smiles
+Easy Pete
+
+Wiki Content
+
+Weapons
+Weapons
+N99 10mm Pistol
+Dynamite
+Trench Knife
+Brass Knuckles
+Red Ryder BB Gun
+Unarmed
+
+Wiki Content
+
+Organization
+Help
+Forums
+Policy
+Copyright
+Community
+Site administration
+Site maintenance
+
+Fallout PnP Wiki
+
+Community
+Help
+
+Fallout PnP Wiki
+
+
+Combat
+Sign In to Save
+Combat
+Like it or not, in the Fallout universe, sometimes all the sneaking and dialogue break down. In these cases, conflicts are resolved by combat: who has the stronger fists, the bigger gun, and who can use them better. Combat is a series of 10-second Rounds where every participant gets a Turn (an opportunity to act) that resolves when all parties hostile to each other are either incapacitated, dead, or have run away.
+
+Combat Begins
+Combat officially begins when one critter or Character decides that enough is enough and s/he/it attacks someone or something else (sometimes, attacks can be made on inanimate objects such as doors, and in this case the entire combat procedure is not necessary, unless combat is going on around the character attempting to break the door down). The critter or character that initiated combat gets the opportunity to use all of their Action Points (AP) before Sequence is determined.
+
+Determine Combat Sequence
+Because the Sequence statistic does not change, this step needs to be preformed only once in combat, at the beginning. Who (or what)ever has the highest sequence gets to move first, with the next highest sequence moving second, and so on until the round is over. Ties in sequence should be determined by the tie-ers rolling 1d10 against each other; the highest roll goes first. This roll only needs to be done at the beginning of each combat, not each round. Once sequence is determined, a character has several choices about what to do with their Turn.
+
+Action
+Any action in combat requires the use of Action Points. The higher a character's agility, the more action points they get (see Character Creation: Secondary Statistics). A character's Turn is over when all AP are used, or they declare that they are going to defend, and they forfeit the rest of their AP (although not entirely, see Defending, below). The possibilities for action are:
+
+Movement
+This includes moving closer to a target, moving behind a tree or other cover, or bravely running away. It costs 1 movement point to move 1 square. A square is 5 ft by 5 ft(this becomes much more important later, when determining range). Characters cannot occupy the same hex as another living character or critter, or large inanimate objects. Any object larger than a medium-sized shrub gets a hex all to itself. Dead bodies (no matter how massive!) do not get their own personal space; they are dead, it won't matter if you walk all over them.
+
+Terrain can have an effect on movement. This table can serve as a guide. The modifier is a number by which the character multiplies his normal movement rate; 2X would require that the character spend 2 times the normal AP amount to move. Characters who are prone or have broken limbs can take a long time to crawl over certain kinds of terrain. For more information on Swimming, see Swimming in Life in the Wastes, below.
+
+Effects of Terrain on Movement Rate
+Terrain Type 	Modifier
+Open, Flat Ground	1x
+Rough, Wet Ground	2x
+Torn, Muddy Ground; Water (Swimming)	3x
+Changing Positions - Crouching & Prone
+Crouching and Going Prone are great ways to improve your accuracy in combat, and to help you hide behind available cover, making less of your body visible and available to an attacking enemy. They are also great ways to make yourself a sitting duck, allowing people to hit you easier. Changing positions takes 2 AP, unless the character is going FROM Prone to Standing – that takes 4 AP, just like Getting Up (above). Note, however, that going from standing to crouching, standing to prone, crouching to prone, prone to crouching, or crouching to standing takes only 2 AP, and is NOT the same as getting up. When Crouching, the character gains +10% to Small Guns, Big Guns, and Energy Weapons skills for purposes of To Hit; it takes the character 2 AP to move 1 hex; and the character’s Armor Class from Agility (Base AC) is reduced to 3 (characters whose Agility are below 3 are not effected.) Prone characters gain +25% to Small Guns, Big Guns, and Energy Weapons skills for purposes of To Hit; it takes the character 4 AP to crawl one hex; and the character’s Armor Class from Agility (Base AC) is reduced to 1. Prone characters cannot make unarmed or melee attacks.
+
+Note: Crouching and Going Prone have no effect on To-Hit rolls for mounted Big Guns. These include Howitzers, large artillery pieces, and guns attached to vehicles, like tank-mounted cannons and machineguns on Jeeps. The GM can ultimately use common sense to determine if it makes sense to give a crouching or prone bonus for a specific weapon.
+
+Getting Up
+If you have been knocked down the previous combat round, or for some reason are starting combat on the ground, it takes 4 Movement Action Points to clamber to your feet. Characters who are on the ground receive no Armor Class bonus either from unused AP or their Agility, making their AC without armor equal to zero. Note that Getting Up is not the same as Changing Positions, below.
+
+Using an Item
+If your Character is holding an item in her hand, she can use it in combat, provided it is an item that's use takes under 10 seconds (GM' discretion). Healing chems, Geiger counters, and a police whistle are all examples of items a player can use in combat. Note that an item MUST be in hand to use it. Using an item takes 3 AP.
+
+Equipping Items
+If you run out of ammo for a gun and need to draw another, or if you want to grab that stimpak out of your pocket, you are Equipping an Item. Equipping Items takes 3 AP for each item equipped. Therefore, if you trade your hunting rifle in for a SMG and want to grab that healing chem in the same round, it will take 6 AP total. You can equip any item that is on your person (your pockets, backpack, and fanny pack count as "on your person").
+
+Taking an Item Off the Ground
+You can take an item on the ground, in a container, or off the bodies of your enemies. As with Equipping Items, this costs 3 AP per item, and your character must be standing in the same hex as the item (or on an adjacent hex if the item is in an immobile container). If you want to grab that Bozar and the ammo for it, it will take 6 AP.
+
+Reloading
+Guns use up ammunition. When your gun is empty, partially empty, or jammed, you can reload it by spending 2 Action Points. If you have enough ammo, this will completely fill the clip. If not, you can place as many bullets as you have in the clip. It's generally a good idea to head into combat with fully loaded guns, so you aren't prancing around trying to get those rounds in while the baddies are shooting. Note that a gun can only be loaded with the kind of ammunition it is supposed to use, and that two different ammunition types - AP and JHP - cannot be combined in one clip. Note that mortars, artillery pieces, and vehicle weapons other than machine guns take one full round to reload, using all of a character’s Action Points for that turn.
+
+Using Skills
+Sometimes, it becomes necessary to use certain skills in combat. Although the battlefield isn’t always the best place to try to pick locks or repair a broken computer, there are times when using your talents are necessary, especially if it means you can escape those crazed cyborg commandos. Some skills, like performing a surgery, just take too long to use in combat. The GM should determine if the task that the character wants to perform can be done in combat (cracking a safe, for example, would be just a little too time consuming). Then the GM should calculate how many Action Points, and how many rounds (if necessary), the action will take. Characters using skills gain no Armor Class bonuses from Agility or unused AP, so their armor class is limited to what they are wearing when they are using their skills.
+
+Healing a Fallen Comrade
+A character can use his or her Medicine Skill in combat to heal a fallen comrade (or foe, if they are so inclined), but only if the target has been knocked unconscious. This action requires that the character be in an adjacent square to the target, and takes 10 AP. If the action cannot be performed in one round, they can give up all of their Armor Class benefits except for the armor they are wearing and complete it in the next round.
+
+When the action is complete, the healer makes a Medicine skill roll. If the roll succeeds, then they have healed the target to 1 HP – enough for the target to regain consciousness. The target does not get any AP until the round after he/she/it was healed. Using the Medicine skill in this way counts towards the character’s total uses of that skill for the day (remember that Medicine can only be used 3 times in a 24-hour period).
+
+If the fallen comrade is a robot, a player can use either the Mechanic skill to achieve the same results.
+
+Laying a Mine
+Devious parties can use mines to their advantage, having one or more members circle behind the enemy while the rest of the party engages them in combat. The minelayers then set up their cowardly weapons and clear out while the others drive the enemy into the explosives. It takes 6 AP and a successful Craftsmanship roll to lay a mine in Combat.
+
+Setting up a Tripod
+Some weapons gain bonuses if they are used with a tripod; some weapons can only be used with a tripod (and some come with a tripod built in). In order to use these weapons in combat, the character must spend time setting them up. When setting a weapon on a tripod, perform a Heavy Weapons skill. If the roll succeeds, the character set up the weapon on the tripod and can use it normally next round. If not, the character did not get the tripod set up. In order to set up the tripod, they must keep rolling until they succeed, or give up. Even if the roll fails, attempting to set up a tripod takes ALL action points for that round. Artillery pieces work the same way, except that they are much larger than small mortars.
+
+Defending
+Sometimes, discretion is the better part of valor. If a character has some (or all) AP left and doesn’t want to do anything else, they can defend. The leftover AP are then added to that character’s Armor Class.

@@ -1,113 +1,79 @@
 import React, { useState } from 'react';
 import {
-  Alert,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  Alert, FlatList, Modal, Platform, ScrollView, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { Armor, ArmorSlot, DamageType, SkillType, Weapon, WeaponCategory } from '@/context/types';
-import { BUILT_IN_WEAPONS, formatWeaponDamage } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, DAMAGE_TYPES, WEAPON_MODS, computeModBonuses, formatWeaponDamage } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
+import { Weapon, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES } from '@/context/types';
 
-function genId() {
-  return Date.now().toString() + Math.random().toString(36).substr(2, 9);
-}
+const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
-const CATEGORIES: { label: string; value: WeaponCategory }[] = [
-  { label: 'Firearm', value: 'firearm' },
-  { label: 'Energy', value: 'energy' },
-  { label: 'Melee', value: 'melee' },
-  { label: 'Unarmed', value: 'unarmed' },
-];
+const SKILL_LABELS: Record<string, string> = {
+  smallGuns: 'Small Guns', bigGuns: 'Big Guns', energyWeapons: 'Energy Weapons',
+  meleeWeapons: 'Melee Weapons', unarmed: 'Unarmed', throwing: 'Throwing', natural: 'Natural',
+};
 
-const DAMAGE_TYPES: { label: string; value: DamageType }[] = [
-  { label: 'Normal', value: 'normal' },
-  { label: 'Bio', value: 'bio' },
-  { label: 'Energy', value: 'energy' },
-];
-
-// ─── Custom Weapon Form ───────────────────────────────────────────────────────
-
-function WeaponFormModal({ visible, onClose, onSave }: { visible: boolean; onClose: () => void; onSave: (w: Weapon) => void }) {
+// ─── Weapon Form Modal ────────────────────────────────────────────────────────
+function WeaponFormModal({ visible, onClose, onSave }: {
+  visible: boolean; onClose: () => void; onSave: (w: Weapon) => void;
+}) {
   const colors = useColors();
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<WeaponCategory>('firearm');
+  const [category, setCategory] = useState<string>('smallGuns');
   const [damageType, setDamageType] = useState<DamageType>('normal');
-  const [dieCount, setDieCount] = useState('1');
-  const [die, setDie] = useState('8');
-  const [bonus, setBonus] = useState('0');
-  const [burst, setBurst] = useState('0');
-  const [skill, setSkill] = useState<SkillType>('firearms');
+  const [dieCount, setDieCount] = useState(1);
+  const [dieSides, setDieSides] = useState(6);
+  const [damageBonus, setDamageBonus] = useState(0);
+  const [burstLimit, setBurstLimit] = useState(1);
+  const [isDoubleShot, setIsDoubleShot] = useState(false);
+  const [magazineSize, setMagazineSize] = useState(0);
+  const [minStr, setMinStr] = useState(3);
+  const [rangeNormal, setRangeNormal] = useState(15);
+  const [selectedMods, setSelectedMods] = useState<string[]>([]);
+  const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
 
-  const reset = () => { setName(''); setCategory('firearm'); setDamageType('normal'); setDieCount('1'); setDie('8'); setBonus('0'); setBurst('0'); setSkill('firearms'); };
+  const isValid = name.trim().length > 0 && dieCount > 0 && dieSides > 0;
 
-  React.useEffect(() => {
-    if (visible) reset();
-  }, [visible]);
+  const modBonuses = computeModBonuses(selectedMods);
 
-  const isValid = name.trim().length > 0 && parseInt(dieCount) > 0 && parseInt(die) > 0;
+  const toggleMod = (id: string) => {
+    setSelectedMods(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+  };
 
-  const save = () => {
-    const w: Weapon = {
-      id: genId(),
-      name: name.trim(),
-      category,
-      damageType,
-      damageDieCount: Math.max(1, parseInt(dieCount) || 1),
-      damageDie: Math.max(2, parseInt(die) || 6),
-      damageBonus: parseInt(bonus) || 0,
-      burstLimit: Math.max(0, parseInt(burst) || 0),
-      skill,
-      isCustom: true,
-    };
-    onSave(w);
+  const handleSave = () => {
+    if (!isValid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSave({
+      id: genId(), name: name.trim(),
+      category: category as Weapon['category'],
+      damageType, damageDieCount: dieCount, damageDie: dieSides,
+      damageBonus, skill: (category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
+      burstLimit, isDoubleShot, magazineSize,
+      weight: 0, minStr, rangeNormal, knockdownChance: 0,
+      mods: selectedMods, isCustom: true,
+    });
+    // Reset
+    setName(''); setCategory('smallGuns'); setDamageType('normal');
+    setDieCount(1); setDieSides(6); setDamageBonus(0); setBurstLimit(1);
+    setIsDoubleShot(false); setMagazineSize(0); setMinStr(3); setRangeNormal(15);
+    setSelectedMods([]); setTab('basic');
     onClose();
   };
 
-  const RadioGroup = <T extends string>({ label, options, value, onChange }: { label: string; options: { label: string; value: T }[]; value: T; onChange: (v: T) => void }) => (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>{label}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {options.map(o => (
-          <TouchableOpacity
-            key={o.value}
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 7,
-              borderRadius: colors.radius,
-              backgroundColor: value === o.value ? colors.primary : colors.secondary,
-              borderWidth: 1,
-              borderColor: value === o.value ? colors.primary : colors.border,
-            }}
-            onPress={() => onChange(o.value)}
-          >
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: value === o.value ? colors.primaryForeground : colors.mutedForeground }}>{o.label}</Text>
-          </TouchableOpacity>
-        ))}
+  const NumStepper = ({ label, val, min, max, set }: { label: string; val: number; min: number; max: number; set: (v: number) => void }) => (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, flex: 1 }}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => set(Math.max(min, val - 1))}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
+        <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 36, textAlign: 'center' }}>{val}</Text>
+        <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => set(Math.min(max, val + 1))}><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
       </View>
-    </View>
-  );
-
-  const Inp = ({ label, value, onChange, numeric }: { label: string; value: string; onChange: (t: string) => void; numeric?: boolean }) => (
-    <View style={{ flex: 1 }}>
-      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 }}>{label}</Text>
-      <TextInput
-        style={{ backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 15 }}
-        value={value}
-        onChangeText={onChange}
-        keyboardType={numeric ? 'number-pad' : 'default'}
-        placeholderTextColor={colors.mutedForeground}
-      />
     </View>
   );
 
@@ -116,140 +82,277 @@ function WeaponFormModal({ visible, onClose, onSave }: { visible: boolean; onClo
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
         <View style={{ maxHeight: '90%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>NEW CUSTOM WEAPON</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CREATE CUSTOM WEAPON</Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
-          <ScrollView style={{ padding: 16 }} keyboardShouldPersistTaps="handled">
-            <Inp label="WEAPON NAME" value={name} onChange={setName} />
-            <View style={{ height: 12 }} />
-            <RadioGroup label="CATEGORY" options={CATEGORIES} value={category} onChange={v => { setCategory(v); setSkill(v === 'melee' ? 'melee' : v === 'unarmed' ? 'unarmed' : 'firearms'); }} />
-            <RadioGroup label="DAMAGE TYPE" options={DAMAGE_TYPES} value={damageType} onChange={setDamageType} />
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>DAMAGE DICE</Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-              <Inp label="COUNT" value={dieCount} onChange={setDieCount} numeric />
-              <Inp label="SIDES" value={die} onChange={setDie} numeric />
-              <Inp label="BONUS" value={bonus} onChange={setBonus} numeric />
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Inp label="BURST LIMIT (0 = single shot)" value={burst} onChange={setBurst} numeric />
-            </View>
-            <TouchableOpacity
-              style={{ backgroundColor: isValid ? colors.primary : colors.secondary, borderRadius: colors.radius, paddingVertical: 14, alignItems: 'center', marginBottom: 30 }}
-              disabled={!isValid}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); save(); }}
-            >
-              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: isValid ? colors.primaryForeground : colors.mutedForeground, letterSpacing: 1 }}>ADD WEAPON</Text>
-            </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            {(['basic', 'advanced', 'mods'] as const).map(t => (
+              <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: tab === t ? colors.primary : 'transparent' }} onPress={() => setTab(t)}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: tab === t ? colors.primary : colors.mutedForeground, letterSpacing: 0.5 }}>{t.toUpperCase()}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 100 }}>
+            {tab === 'basic' && (
+              <>
+                <TextInput
+                  style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: isValid ? colors.border : colors.destructive + '88', borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}
+                  placeholder="Weapon name*" placeholderTextColor={colors.mutedForeground}
+                  value={name} onChangeText={setName}
+                />
+                {/* Category */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CATEGORY</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {Object.entries(WEAPON_CATEGORIES).map(([label, val]) => (
+                    <TouchableOpacity key={val} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: category === val ? colors.primary : colors.secondary, borderWidth: 1, borderColor: category === val ? colors.primary : colors.border }} onPress={() => setCategory(val)}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: category === val ? colors.primaryForeground : colors.foreground }}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {/* Damage type */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>DAMAGE TYPE</Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(Object.keys(DAMAGE_TYPES) as string[]).map(label => {
+                    const val = DAMAGE_TYPES[label];
+                    return (
+                      <TouchableOpacity key={val} style={{ flex: 1, paddingVertical: 8, borderRadius: colors.radius, alignItems: 'center', backgroundColor: damageType === val ? colors.primary : colors.secondary, borderWidth: 1, borderColor: damageType === val ? colors.primary : colors.border }} onPress={() => setDamageType(val)}>
+                        <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: damageType === val ? colors.primaryForeground : colors.primary }}>{DAMAGE_TYPE_LABELS[val]}</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: damageType === val ? colors.primaryForeground + 'cc' : colors.mutedForeground }}>{DAMAGE_TYPE_NAMES[val]}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {/* Damage dice */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>
+                  DAMAGE: {dieCount}d{dieSides}{damageBonus !== 0 ? (damageBonus > 0 ? `+${damageBonus}` : `${damageBonus}`) : ''} ({DAMAGE_TYPE_LABELS[damageType]})
+                </Text>
+                <NumStepper label="Number of dice" val={dieCount} min={1} max={10} set={setDieCount} />
+                <NumStepper label="Die sides" val={dieSides} min={2} max={12} set={setDieSides} />
+                <NumStepper label="Flat bonus" val={damageBonus} min={-20} max={50} set={setDamageBonus} />
+              </>
+            )}
+
+            {tab === 'advanced' && (
+              <>
+                <NumStepper label="Magazine size (0 = melee/unlimited)" val={magazineSize} min={0} max={999} set={setMagazineSize} />
+                <NumStepper label="Burst limit (1 = single shot)" val={burstLimit} min={1} max={20} set={setBurstLimit} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Double-shot weapon</Text>
+                  <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: isDoubleShot ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setIsDoubleShot(v => !v)}>
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: isDoubleShot ? colors.primaryForeground : colors.mutedForeground }}>{isDoubleShot ? 'YES' : 'NO'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <NumStepper label="Min STR required" val={minStr} min={1} max={10} set={setMinStr} />
+                <NumStepper label="Range (squares)" val={rangeNormal} min={1} max={100} set={setRangeNormal} />
+              </>
+            )}
+
+            {tab === 'mods' && (
+              <>
+                {modBonuses.toHit !== 0 || modBonuses.damage !== 0 || modBonuses.range !== 0 ? (
+                  <View style={{ backgroundColor: '#4a8c3f22', borderRadius: colors.radius, padding: 10, gap: 4, borderWidth: 1, borderColor: '#4a8c3f66' }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f', letterSpacing: 1 }}>ACTIVE MOD BONUSES</Text>
+                    {modBonuses.toHit !== 0 && <Text style={{ fontSize: 12, color: '#4a8c3f' }}>+{modBonuses.toHit}% to-hit</Text>}
+                    {modBonuses.damage !== 0 && <Text style={{ fontSize: 12, color: '#4a8c3f' }}>+{modBonuses.damage} damage</Text>}
+                    {modBonuses.range !== 0 && <Text style={{ fontSize: 12, color: '#4a8c3f' }}>+{modBonuses.range} range</Text>}
+                  </View>
+                ) : null}
+                {WEAPON_MODS.map(mod => {
+                  const active = selectedMods.includes(mod.id);
+                  return (
+                    <TouchableOpacity key={mod.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + '22' : colors.secondary, gap: 10 }} onPress={() => toggleMod(mod.id)}>
+                      <View style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: active ? colors.primary : colors.mutedForeground, alignItems: 'center', justifyContent: 'center', backgroundColor: active ? colors.primary : 'transparent' }}>
+                        {active && <Feather name="check" size={12} color={colors.primaryForeground} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: active ? colors.primary : colors.foreground }}>{mod.name}</Text>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{mod.description}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
           </ScrollView>
+
+          <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <TouchableOpacity style={{ paddingVertical: 14, borderRadius: colors.radius, alignItems: 'center', backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }} onPress={handleSave} disabled={!isValid}>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>CREATE WEAPON</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
   );
 }
 
-// ─── Custom Armor Form ────────────────────────────────────────────────────────
-
-function ArmorFormModal({ visible, onClose, onSave }: { visible: boolean; onClose: () => void; onSave: (a: Armor) => void }) {
+// ─── Armor Form Modal ─────────────────────────────────────────────────────────
+function ArmorFormModal({ visible, onClose, onSave }: {
+  visible: boolean; onClose: () => void; onSave: (a: Armor) => void;
+}) {
   const colors = useColors();
   const [name, setName] = useState('');
-  const [slot, setSlot] = useState<ArmorSlot>('body');
-  const [dtNorm, setDtNorm] = useState('0');
-  const [dtBio, setDtBio] = useState('0');
-  const [dtEnergy, setDtEnergy] = useState('0');
-
-  const reset = () => { setName(''); setSlot('body'); setDtNorm('0'); setDtBio('0'); setDtEnergy('0'); };
-  React.useEffect(() => { if (visible) reset(); }, [visible]);
+  const [slot, setSlot] = useState<'body' | 'helmet'>('body');
+  const [tab, setTab] = useState<'dt' | 'dr'>('dt');
+  // DT fields
+  const [dtNormal, setDtNormal] = useState(0);
+  const [dtLaser, setDtLaser] = useState(0);
+  const [dtFire, setDtFire] = useState(0);
+  const [dtPlasma, setDtPlasma] = useState(0);
+  const [dtExplosion, setDtExplosion] = useState(0);
+  // DR fields
+  const [drNormal, setDrNormal] = useState(0);
+  const [drLaser, setDrLaser] = useState(0);
+  const [drFire, setDrFire] = useState(0);
+  const [drPlasma, setDrPlasma] = useState(0);
+  const [drExplosion, setDrExplosion] = useState(0);
+  const [acBonus, setAcBonus] = useState(0);
 
   const isValid = name.trim().length > 0;
-  const save = () => {
-    const a: Armor = {
-      id: genId(),
-      name: name.trim(),
-      slot,
-      dtNormal: parseInt(dtNorm) || 0,
-      dtBio: parseInt(dtBio) || 0,
-      dtEnergy: parseInt(dtEnergy) || 0,
-      isCustom: true,
-    };
-    onSave(a);
+
+  const handleSave = () => {
+    if (!isValid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSave({
+      id: genId(), name: name.trim(), slot,
+      dtNormal, dtLaser, dtFire, dtPlasma, dtExplosion,
+      drNormal, drLaser, drFire, drPlasma, drExplosion,
+      acBonus, weight: 0, isCustom: true,
+    });
+    setName(''); setSlot('body'); setTab('dt');
+    setDtNormal(0); setDtLaser(0); setDtFire(0); setDtPlasma(0); setDtExplosion(0);
+    setDrNormal(0); setDrLaser(0); setDrFire(0); setDrPlasma(0); setDrExplosion(0);
+    setAcBonus(0);
     onClose();
   };
 
-  const Inp = ({ label, value, onChange }: { label: string; value: string; onChange: (t: string) => void }) => (
-    <View style={{ flex: 1 }}>
-      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 }}>{label}</Text>
-      <TextInput
-        style={{ backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 15 }}
-        value={value} onChangeText={onChange} keyboardType="number-pad" placeholderTextColor={colors.mutedForeground}
-      />
+  const NumStepper = ({ label, val, min, max, set }: { label: string; val: number; min: number; max: number; set: (v: number) => void }) => (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, flex: 1 }}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => set(Math.max(min, val - 1))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
+        <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 36, textAlign: 'center' }}>{val}{tab === 'dr' ? '%' : ''}</Text>
+        <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => set(Math.min(max, val + 1))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+      </View>
     </View>
   );
+
+  const dtData = [
+    { label: 'DT Normal (N)', val: dtNormal, set: setDtNormal },
+    { label: 'DT Laser (L)', val: dtLaser, set: setDtLaser },
+    { label: 'DT Fire (F)', val: dtFire, set: setDtFire },
+    { label: 'DT Plasma (P)', val: dtPlasma, set: setDtPlasma },
+    { label: 'DT Explosion (E)', val: dtExplosion, set: setDtExplosion },
+  ];
+  const drData = [
+    { label: 'DR Normal (N) %', val: drNormal, set: setDrNormal },
+    { label: 'DR Laser (L) %', val: drLaser, set: setDrLaser },
+    { label: 'DR Fire (F) %', val: drFire, set: setDrFire },
+    { label: 'DR Plasma (P) %', val: drPlasma, set: setDrPlasma },
+    { label: 'DR Explosion (E) %', val: drExplosion, set: setDrExplosion },
+  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
+        <View style={{ maxHeight: '85%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>NEW CUSTOM ARMOR</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CREATE CUSTOM ARMOR</Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
-          <ScrollView style={{ padding: 16 }} keyboardShouldPersistTaps="handled">
-            <View style={{ marginBottom: 12 }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 }}>NAME</Text>
-              <TextInput style={{ backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 15 }} value={name} onChangeText={setName} placeholderTextColor={colors.mutedForeground} />
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>SLOT</Text>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                {[{ label: 'Body Armor', value: 'body' as ArmorSlot }, { label: 'Helmet', value: 'helmet' as ArmorSlot }].map(o => (
-                  <TouchableOpacity key={o.value} style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: slot === o.value ? colors.primary : colors.secondary, borderWidth: 1, borderColor: slot === o.value ? colors.primary : colors.border }}
-                    onPress={() => setSlot(o.value)}>
-                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: slot === o.value ? colors.primaryForeground : colors.mutedForeground }}>{o.label}</Text>
-                  </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            {(['dt', 'dr'] as const).map(t => (
+              <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: tab === t ? colors.primary : 'transparent' }} onPress={() => setTab(t)}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: tab === t ? colors.primary : colors.mutedForeground, letterSpacing: 1 }}>{t === 'dt' ? 'DT (FLAT)' : 'DR (% RESIST)'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 100 }}>
+            {tab === 'dt' && (
+              <>
+                <TextInput
+                  style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}
+                  placeholder="Armor name*" placeholderTextColor={colors.mutedForeground}
+                  value={name} onChangeText={setName}
+                />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(['body', 'helmet'] as const).map(s => (
+                    <TouchableOpacity key={s} style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: slot === s ? colors.primary : colors.secondary, borderWidth: 1, borderColor: slot === s ? colors.primary : colors.border }} onPress={() => setSlot(s)}>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: slot === s ? colors.primaryForeground : colors.mutedForeground, letterSpacing: 1 }}>{s.toUpperCase()}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, flex: 1 }}>AC Bonus</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setAcBonus(v => Math.max(0, v - 1))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
+                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 36, textAlign: 'center' }}>{acBonus}</Text>
+                    <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setAcBonus(v => Math.min(50, v + 1))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+                  </View>
+                </View>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>DT = flat damage reduction applied before DR percentage.</Text>
+                {dtData.map(({ label, val, set }) => (
+                  <NumStepper key={label} label={label} val={val} min={0} max={50} set={set} />
                 ))}
-              </View>
-            </View>
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 6 }}>DAMAGE THRESHOLD</Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-              <Inp label="NORMAL" value={dtNorm} onChange={setDtNorm} />
-              <Inp label="BIO" value={dtBio} onChange={setDtBio} />
-              <Inp label="ENERGY" value={dtEnergy} onChange={setDtEnergy} />
-            </View>
-            <TouchableOpacity style={{ backgroundColor: isValid ? colors.primary : colors.secondary, borderRadius: colors.radius, paddingVertical: 14, alignItems: 'center', marginBottom: 30 }}
-              disabled={!isValid} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); save(); }}>
-              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: isValid ? colors.primaryForeground : colors.mutedForeground, letterSpacing: 1 }}>ADD ARMOR</Text>
-            </TouchableOpacity>
+              </>
+            )}
+            {tab === 'dr' && (
+              <>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  DR = percentage reduction applied after DT. Final damage = max(0, (base−DT) × (1−DR%))
+                </Text>
+                {drData.map(({ label, val, set }) => (
+                  <NumStepper key={label} label={label} val={val} min={0} max={90} set={set} />
+                ))}
+              </>
+            )}
           </ScrollView>
+
+          <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <TouchableOpacity style={{ paddingVertical: 14, borderRadius: colors.radius, alignItems: 'center', backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }} onPress={handleSave} disabled={!isValid}>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>CREATE ARMOR</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
   );
 }
 
-// ─── Item Row ─────────────────────────────────────────────────────────────────
-
+// ─── Weapon Row ───────────────────────────────────────────────────────────────
 function WeaponRow({ weapon, onDelete }: { weapon: Weapon; onDelete?: () => void }) {
   const colors = useColors();
-  const catColors: Record<string, string> = { firearm: colors.primary, energy: '#4a9acc', melee: '#cc7a3a', unarmed: '#8a5acc' };
+  const modBonuses = computeModBonuses(weapon.mods);
+  const hasModBonuses = modBonuses.toHit !== 0 || modBonuses.damage !== 0;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 10 }}>
       <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{weapon.name}</Text>
-          {weapon.isCustom && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 3 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>CUSTOM</Text></View>}
+          {weapon.isCustom && <View style={{ paddingHorizontal: 5, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 3 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
+          <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.secondary, borderRadius: 3, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>{DAMAGE_TYPE_LABELS[weapon.damageType]}</Text>
+          </View>
         </View>
         <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-          <Text style={{ color: catColors[weapon.category] ?? colors.primary }}>{weapon.category.toUpperCase()}</Text>
-          {'  '}
-          {formatWeaponDamage(weapon)}
-          {'  '}
-          {weapon.damageType.toUpperCase()}
-          {weapon.burstLimit > 0 ? `  Burst ×${weapon.burstLimit}` : '  Single'}
-          {'  Skill: '}{weapon.skill}
+          {formatWeaponDamage(weapon)} · {SKILL_LABELS[weapon.category] ?? weapon.category}
+          {weapon.magazineSize > 0 ? ` · Mag ${weapon.magazineSize}` : ' · Melee'}
+          {weapon.burstLimit > 1 ? ` · Burst ${weapon.burstLimit}` : ''}
+          {weapon.isDoubleShot ? ' · Double' : ''}
+          {` · Range ${weapon.rangeNormal}sq`}
         </Text>
+        {hasModBonuses && (
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f', marginTop: 2 }}>
+            Mods: {modBonuses.toHit > 0 ? `+${modBonuses.toHit}% hit` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} dmg` : ''}
+          </Text>
+        )}
       </View>
       {onDelete && (
-        <TouchableOpacity onPress={onDelete} style={{ padding: 8 }}>
+        <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}>
           <Feather name="trash-2" size={16} color={colors.destructive} />
         </TouchableOpacity>
       )}
@@ -257,33 +360,43 @@ function WeaponRow({ weapon, onDelete }: { weapon: Weapon; onDelete?: () => void
   );
 }
 
+// ─── Armor Row ────────────────────────────────────────────────────────────────
 function ArmorRow({ armor, onDelete }: { armor: Armor; onDelete?: () => void }) {
   const colors = useColors();
+  const dtTypes: (keyof Armor)[] = ['dtNormal', 'dtLaser', 'dtFire', 'dtPlasma', 'dtExplosion'];
+  const drTypes: (keyof Armor)[] = ['drNormal', 'drLaser', 'drFire', 'drPlasma', 'drExplosion'];
+  const typeLabels = ['N', 'L', 'F', 'P', 'E'];
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+    <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{armor.name}</Text>
-          <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.secondary, borderRadius: 3 }}>
-            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{armor.slot.toUpperCase()}</Text>
-          </View>
-          {armor.isCustom && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 3 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>CUSTOM</Text></View>}
+          {armor.isCustom && <View style={{ paddingHorizontal: 5, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 3 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{armor.slot === 'body' ? 'Body' : 'Helmet'} · AC+{armor.acBonus}</Text>
         </View>
-        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-          DT Normal: {armor.dtNormal}  ·  Bio: {armor.dtBio}  ·  Energy: {armor.dtEnergy}
-        </Text>
+        {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>}
       </View>
-      {onDelete && (
-        <TouchableOpacity onPress={onDelete} style={{ padding: 8 }}>
-          <Feather name="trash-2" size={16} color={colors.destructive} />
-        </TouchableOpacity>
-      )}
+      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+        {typeLabels.map((l, i) => {
+          const dt = (armor[dtTypes[i]] as number);
+          const dr = (armor[drTypes[i]] as number);
+          return (dt > 0 || dr > 0) ? (
+            <View key={l} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
+              <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{l}</Text>
+              {dt > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.foreground }}>DT {dt}</Text>}
+              {dr > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>DR {dr}%</Text>}
+            </View>
+          ) : null;
+        })}
+        {typeLabels.every((_, i) => (armor[dtTypes[i]] as number) === 0 && (armor[drTypes[i]] as number) === 0) && (
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No protection values</Text>
+        )}
+      </View>
     </View>
   );
 }
 
 // ─── Equipment Screen ─────────────────────────────────────────────────────────
-
 export default function EquipmentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -291,113 +404,89 @@ export default function EquipmentScreen() {
   const [tab, setTab] = useState<'weapons' | 'armor'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [showArmorForm, setShowArmorForm] = useState(false);
+  const [search, setSearch] = useState('');
 
-  const confirmDeleteWeapon = (w: Weapon) => {
-    if (Platform.OS === 'web') {
-      if (confirm(`Delete ${w.name}?`)) deleteCustomWeapon(w.id);
-    } else {
-      Alert.alert('Delete Weapon', `Remove ${w.name}?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteCustomWeapon(w.id) },
-      ]);
-    }
-  };
+  const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
+  const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
 
-  const confirmDeleteArmor = (a: Armor) => {
-    if (Platform.OS === 'web') {
-      if (confirm(`Delete ${a.name}?`)) deleteCustomArmor(a.id);
-    } else {
-      Alert.alert('Delete Armor', `Remove ${a.name}?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteCustomArmor(a.id) },
-      ]);
-    }
-  };
+  const filteredWeapons = allWeapons.filter(w => !search || w.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredArmor = allArmor.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2, marginBottom: 4 }}>EQUIPMENT</Text>
-        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 14 }}>
-          {BUILT_IN_WEAPONS.length + customWeapons.length} weapons · {BUILT_IN_ARMOR.length + customArmor.length} armor pieces
-        </Text>
+      {/* Header */}
+      <View style={{ padding: 16, gap: 10 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
+            onPress={() => tab === 'weapons' ? setShowWeaponForm(true) : setShowArmorForm(true)}
+          >
+            <Feather name="plus" size={14} color={colors.primaryForeground} />
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
+              {tab === 'weapons' ? 'WEAPON' : 'ARMOR'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Tab toggle */}
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-          {[{ label: 'WEAPONS', value: 'weapons' as const }, { label: 'ARMOR', value: 'armor' as const }].map(t => (
-            <TouchableOpacity
-              key={t.value}
-              style={{ flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === t.value ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === t.value ? colors.primary : colors.border }}
-              onPress={() => setTab(t.value)}
-            >
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === t.value ? colors.primaryForeground : colors.mutedForeground }}>{t.label}</Text>
+        {/* Search */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, gap: 8 }}>
+          <Feather name="search" size={16} color={colors.mutedForeground} />
+          <TextInput
+            style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }}
+            placeholder="Search…" placeholderTextColor={colors.mutedForeground}
+            value={search} onChangeText={setSearch}
+          />
+          {search ? <TouchableOpacity onPress={() => setSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
+        </View>
+
+        {/* Tab bar */}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {(['weapons', 'armor'] as const).map(t => (
+            <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === t ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === t ? colors.primary : colors.border }} onPress={() => setTab(t)}>
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === t ? colors.primaryForeground : colors.mutedForeground }}>
+                {t === 'weapons' ? `WEAPONS (${filteredWeapons.length})` : `ARMOR (${filteredArmor.length})`}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
+      </View>
 
-        {tab === 'weapons' ? (
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14 }}>
-            {/* Custom weapons first */}
-            {customWeapons.length > 0 && (
-              <>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2, paddingTop: 12 }}>CUSTOM</Text>
-                {customWeapons.map(w => <WeaponRow key={w.id} weapon={w} onDelete={() => confirmDeleteWeapon(w)} />)}
-              </>
-            )}
-            {/* Built-in by category */}
-            {(['firearm', 'energy', 'melee', 'unarmed'] as WeaponCategory[]).map(cat => {
-              const weapons = BUILT_IN_WEAPONS.filter(w => w.category === cat);
-              return (
-                <View key={cat}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, paddingTop: 12 }}>{cat.toUpperCase()}S</Text>
-                  {weapons.map(w => <WeaponRow key={w.id} weapon={w} />)}
-                </View>
-              );
-            })}
-            {/* Add button */}
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, gap: 8, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4 }}
-              onPress={() => setShowWeaponForm(true)}
-            >
-              <Feather name="plus" size={16} color={colors.primary} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>Add Custom Weapon</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14 }}>
-            {customArmor.length > 0 && (
-              <>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2, paddingTop: 12 }}>CUSTOM</Text>
-                {customArmor.map(a => <ArmorRow key={a.id} armor={a} onDelete={() => confirmDeleteArmor(a)} />)}
-              </>
-            )}
-            {['body', 'helmet'].map(slot => {
-              const armors = BUILT_IN_ARMOR.filter(a => a.slot === slot);
-              return (
-                <View key={slot}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, paddingTop: 12 }}>{slot.toUpperCase()} ARMOR</Text>
-                  {armors.map(a => <ArmorRow key={a.id} armor={a} />)}
-                </View>
-              );
-            })}
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, gap: 8, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4 }}
-              onPress={() => setShowArmorForm(true)}
-            >
-              <Feather name="plus" size={16} color={colors.primary} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>Add Custom Armor</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
+      {/* List */}
+      {tab === 'weapons' ? (
+        <FlatList
+          data={filteredWeapons}
+          keyExtractor={w => w.id}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+          renderItem={({ item }) => (
+            <WeaponRow
+              weapon={item}
+              onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => deleteCustomWeapon(item.id) },
+              ]) : undefined}
+            />
+          )}
+        />
+      ) : (
+        <FlatList
+          data={filteredArmor}
+          keyExtractor={a => a.id}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+          renderItem={({ item }) => (
+            <ArmorRow
+              armor={item}
+              onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => deleteCustomArmor(item.id) },
+              ]) : undefined}
+            />
+          )}
+        />
+      )}
 
       <WeaponFormModal visible={showWeaponForm} onClose={() => setShowWeaponForm(false)} onSave={w => { addCustomWeapon(w); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }} />
       <ArmorFormModal visible={showArmorForm} onClose={() => setShowArmorForm(false)} onSave={a => { addCustomArmor(a); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }} />
     </View>
   );
 }
-
-const styles = StyleSheet.create({});
