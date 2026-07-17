@@ -85,10 +85,11 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
   items: T[]; keyFn: (i: T) => string; renderItem: (i: T) => React.ReactNode; title: string;
 }) {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.8)' }}>
-        <View style={{ maxHeight: '75%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+        <View style={{ height: '100%', paddingTop: insets.top, backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{title}</Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
@@ -96,6 +97,7 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
           <FlatList
             data={[null, ...items]}
             keyExtractor={item => item ? keyFn(item) : '__none__'}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
             renderItem={({ item }) => (
               <TouchableOpacity style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { onSelect(item); onClose(); }}>
                 {item ? renderItem(item) : <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>None</Text>}
@@ -141,6 +143,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   character: Character | null; onSave: (c: Character) => void; onClose: () => void; visible: boolean;
 }) {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const { allWeapons, allArmor } = useApp();
   const [char, setChar] = useState<Character>(character ?? makeDefaultCharacter());
   const [activeTab, setActiveTab] = useState(0);
@@ -387,7 +390,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         {/* Header */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: Platform.OS === 'ios' ? 52 : 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: Math.max(insets.top, 16), borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
           <TouchableOpacity onPress={onClose}><Feather name="x" size={24} color={colors.mutedForeground} /></TouchableOpacity>
           <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
             {character ? 'EDIT CHARACTER' : 'NEW CHARACTER'}
@@ -406,7 +409,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           ))}
         </ScrollView>
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 100 }} keyboardShouldPersistTaps="handled">
 
           {/* ── BASICS ── */}
           {activeTab === 0 && (

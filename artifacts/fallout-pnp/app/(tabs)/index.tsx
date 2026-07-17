@@ -13,6 +13,7 @@ import HPBar from '@/components/HPBar';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import {
   TARGETED_CRIT_BONUS, TARGETED_CRIT_EFFECTS, CRITICAL_HIT_TABLE, CritTableEntry,
+  CRITICAL_FAILURE_TABLE, CritFailTableEntry,
   baseCritChance as calcBaseCritChance, hasPerk, BodyPart,
 } from '@/data/criticals';
 import { computeInjuryEffects } from '@/data/injuries';
@@ -408,6 +409,56 @@ function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, betterCritica
   );
 }
 
+// ─── Critical Failure Modal ──────────────────────────────────────────────────
+function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onRoll }: {
+  visible: boolean; onClose: () => void; rolledEntry: CritFailTableEntry | null;
+  appliedNotes: string[]; onRoll: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.85)', padding: 16 }}>
+        <View style={{ maxHeight: '86%', backgroundColor: colors.card, borderRadius: 16, borderWidth: 2, borderColor: colors.destructive, overflow: 'hidden' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 18 }}>💀</Text>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 2 }}>CRITICAL FAILURE!</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 14, gap: 6 }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 4 }}>CRITICAL FAILURES</Text>
+            {CRITICAL_FAILURE_TABLE.map(entry => {
+              const active = rolledEntry?.roll === entry.roll;
+              return (
+                <View key={entry.roll} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 6, backgroundColor: active ? colors.destructive + '33' : colors.secondary, borderWidth: 1, borderColor: active ? colors.destructive : colors.border }}>
+                  <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.mutedForeground, minWidth: 22, textAlign: 'center' }}>{entry.roll}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.foreground }}>{entry.title}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{entry.description}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+          <View style={{ padding: 14, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 }}>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={onRoll}>
+              <Feather name="refresh-cw" size={16} color="#fff" />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>ROLL 1d10</Text>
+            </TouchableOpacity>
+            {rolledEntry && (
+              <View style={{ padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '22', borderWidth: 1, borderColor: colors.destructive, gap: 2 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Rolled {rolledEntry.roll}: {rolledEntry.title}</Text>
+                {appliedNotes.map((n, i) => <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>• {n}</Text>)}
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Main Combat Screen ───────────────────────────────────────────────────────
 export default function CombatScreen() {
   const colors = useColors();
@@ -466,6 +517,12 @@ export default function CombatScreen() {
   const [showCritModal, setShowCritModal] = useState(false);
   const [critTableEntry, setCritTableEntry] = useState<CritTableEntry | null>(null);
   const [critEffectNotes, setCritEffectNotes] = useState<string[]>([]);
+
+  // Critical failure (miss with roll 97-100): table + modal + applied notes.
+  const [isCritFail, setIsCritFail] = useState(false);
+  const [showCritFailModal, setShowCritFailModal] = useState(false);
+  const [critFailEntry, setCritFailEntry] = useState<CritFailTableEntry | null>(null);
+  const [critFailNotes, setCritFailNotes] = useState<string[]>([]);
 
   // AP spent flag
   const [apSpent, setApSpent] = useState(false);
@@ -658,8 +715,12 @@ export default function CombatScreen() {
   })();
   const streamlinedHitThreshold = Math.floor(roundedCtH / 10);
 
-  // Reset on combatant/weapon change
-  useEffect(() => {
+  // Reset the full per-attack state (dice + crit + damage + AP flags). Used by
+  // ATTACK AGAIN and the change-of-config effect below. Keeps attacker/defender/
+  // weapon/modifier selections intact.
+  const resetAttackState = useCallback(() => {
+    setTensFace(null);
+    setUnitsFace(null);
     setShotDamages(null);
     setDamageApplied(false);
     setPrimaryIsCrit(false);
@@ -669,11 +730,22 @@ export default function CombatScreen() {
     setShowCritModal(false);
     setCritTableEntry(null);
     setCritEffectNotes([]);
+    setIsCritFail(false);
+    setShowCritFailModal(false);
+    setCritFailEntry(null);
+    setCritFailNotes([]);
     setApSpent(false);
     setStreamlinedDice([]);
     setStreamlinedRolled(false);
+  }, []);
+
+  // Reset on combatant/weapon/config change. NOTE: tensFace/unitsFace are NOT
+  // deps here — rollDice() sets the crit state right after setting the dice, so
+  // including them would wipe primaryIsCrit/aimedCritPart before damage is rolled.
+  useEffect(() => {
+    resetAttackState();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tensFace, unitsFace, attackerId, defenderId, isBurst, burstShots, burstMode, doubleShotActive,
+  }, [attackerId, defenderId, weapon?.id, isBurst, burstShots, burstMode, doubleShotActive,
       rangeMod, lightPenalty, coverPenalty, weaponBonus, targetedIdx]);
 
   useEffect(() => {
@@ -725,6 +797,7 @@ export default function CombatScreen() {
     setShotDamages(null); setDamageApplied(false);
     setPrimaryIsCrit(false); setAimedCritPart(null); setAimedCritApplied(false); setAimedCritNotes([]);
     setShowCritModal(false); setCritTableEntry(null); setCritEffectNotes([]);
+    setIsCritFail(false); setShowCritFailModal(false); setCritFailEntry(null); setCritFailNotes([]);
     setApSpent(false);
     const roll = percentileRoll(t, u);
 
@@ -754,13 +827,16 @@ export default function CombatScreen() {
         }
       }
     } else if (roll >= 97) {
-      // Fumble: a miss fills a weapon condition box (new semantics).
-      if (attacker && weapon) jamWeapon(attacker.id, weapon.id);
+      // Critical Failure (manual p.31): a miss with roll 97-100 opens the
+      // Critical Failure Table. The old auto-jam is replaced by the table flow
+      // (result 2 = Weapon Jammed applies the jam via rollCritFailTable).
+      setIsCritFail(true);
+      setShowCritFailModal(true);
     }
 
     setTimeout(() => setRolling(false), 350);
   }, [weaponBroken, hasAmmo, attacker, weapon, shotChances, totalCritChance, isAimed, targetedBodyPart,
-      luckPerkApplies, attackerLuck, spendAmmo, jamWeapon, spendAP, reloadWeapon]);
+      luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon]);
 
   const rollStreamlined = useCallback(() => {
     if (weaponBroken) {
@@ -805,6 +881,7 @@ export default function CombatScreen() {
           // Aimed crit — manual targeted effect.
           const fx = TARGETED_CRIT_EFFECTS[aimedCritPart];
           critMult = fx.damageMultiplier;
+          notes.push(`Critical ×${fx.damageMultiplier} (${aimedCritPart})`);
           notes.push(`Aimed crit (${aimedCritPart}): ${fx.label}`);
         } else if (i === 0 && critTableEntry) {
           // Non-aimed crit — rolled table entry.
@@ -840,13 +917,6 @@ export default function CombatScreen() {
   }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
-
-  const handleApplyDamage = useCallback(() => {
-    if (!defender || totalDamage === 0) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    applyDamage(defender.id, totalDamage);
-    setDamageApplied(true);
-  }, [defender, totalDamage, applyDamage]);
 
   const handleSpendAP = useCallback(() => {
     if (!attacker) return;
@@ -941,6 +1011,17 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury]);
 
+  const handleApplyDamage = useCallback(() => {
+    if (!defender || totalDamage === 0) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    applyDamage(defender.id, totalDamage);
+    // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
+    if (primaryIsCrit && isAimed && aimedCritPart && !aimedCritApplied) {
+      applyAimedCritEffect();
+    }
+    setDamageApplied(true);
+  }, [defender, totalDamage, applyDamage, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
+
   // Roll on the non-aimed critical-hit table (1d10) and apply the result.
   const rollCritTable = useCallback(() => {
     if (!defender) return;
@@ -958,6 +1039,86 @@ export default function CombatScreen() {
     setCritEffectNotes(notes);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, [defender, pickLimbSide, addInjury, makeInjury, setPosition, applyDamage]);
+
+  // A completed/attempted attack this cycle (used to show ATTACK AGAIN).
+  const attackRolled = (rollTotal !== null) || streamlinedRolled || isCritFail;
+  // A critical failure must be resolved (rolled on the Critical Failure table)
+  // before the attacker may continue — the failure effect can't be skipped.
+  const critFailPending = isCritFail && !critFailEntry;
+
+  // Reset the per-attack state so the user can spend AP and roll again, keeping
+  // attacker/defender/weapon/modifier selections intact.
+  const attackAgain = useCallback(() => {
+    resetAttackState();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [resetAttackState]);
+
+  // Roll on the Critical Failure table (1d10) and auto-apply to the ATTACKER.
+  const rollCritFailTable = useCallback(() => {
+    if (!attacker) return;
+    const failRoll = rollD10();
+    const entry = CRITICAL_FAILURE_TABLE.find(e => e.roll === failRoll) ?? CRITICAL_FAILURE_TABLE[0];
+    setCritFailEntry(entry);
+    const notes: string[] = [];
+    const isExplosiveOrEnergy = !!weapon && (weapon.damageType === 'explosion' || weapon.damageType === 'plasma' || weapon.damageType === 'laser' || weapon.damageType === 'fire' || weapon.skill === 'energyWeapons');
+
+    if (entry.emptyAmmo) {
+      if (weapon && weapon.magazineSize > 0) {
+        spendAmmo(attacker.id, weapon.id, currentAmmo); // discard the whole magazine
+        notes.push('Magazine discarded — ammo set to 0');
+      } else notes.push('Gun does not fire (no magazine to discard)');
+    }
+    if (entry.jam) {
+      if (weapon) { jamWeapon(attacker.id, weapon.id); notes.push('Weapon jammed — 1 turn to unjam; ammo discarded'); if (weapon.magazineSize > 0) spendAmmo(attacker.id, weapon.id, currentAmmo); }
+    }
+    if (entry.loseAllAP) {
+      if (attacker.currentAP > 0) spendAP(attacker.id, attacker.currentAP);
+      notes.push('Lost all remaining AP');
+    }
+    if (entry.explode) {
+      if (isExplosiveOrEnergy) {
+        const dmg = rollDie(10) + rollDie(10) + rollDie(10) + 7;
+        applyDamage(attacker.id, dmg);
+        notes.push(`Weapon exploded — ${dmg} damage (3d10+7) to attacker; hits everyone within 2 hexes`);
+      } else {
+        notes.push('Weapon Explodes only applies to explosive/energy weapons — no effect');
+      }
+    }
+    if (entry.damageSelfHalf) {
+      if (weapon) {
+        const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
+        const rawBase = rolls.reduce((a, b) => a + b, 0) + weapon.damageBonus;
+        const half = Math.max(1, Math.floor(rawBase / 2));
+        // Attacker's own armor applies per normal damage rules.
+        const selfBodyArmor = attacker.equippedBodyArmorId ? allArmor.find(a => a.id === attacker.equippedBodyArmorId) ?? null : null;
+        const selfHelmet = attacker.equippedHelmetId ? allArmor.find(a => a.id === attacker.equippedHelmetId) ?? null : null;
+        const selfNatural = attacker.naturalProtection ?? getRaceById(attacker.race)?.naturalProtection ?? null;
+        const sp = combinedProtectionFor(weapon.damageType, selfBodyArmor as any, selfHelmet as any, selfNatural);
+        const finalSelf = applyProtection(half, sp.dt, sp.dr);
+        applyDamage(attacker.id, finalSelf);
+        notes.push(`Damaged self — ${finalSelf} damage (half of ${rawBase}, armor applied)`);
+      }
+    }
+    if (entry.slipAndFall) {
+      if (attacker.currentAP > 0) spendAP(attacker.id, attacker.currentAP);
+      setPosition(attacker.id, 'prone');
+      notes.push('Slipped and fell — lost all AP, now prone (must get up next round; no AGI AC while down)');
+    }
+    if (entry.breaks) {
+      if (weapon) { setWeaponCondition(attacker.id, weapon.id, CONDITION_BOXES_MAX); notes.push('Weapon broken beyond repair'); }
+    }
+    if (entry.anvil) {
+      const dmg = rollDie(10);
+      applyDamage(attacker.id, dmg); // raw — DT/DR disregarded
+      notes.push(`Anvil! ${dmg} raw damage to attacker (DT/DR ignored)`);
+    }
+    if (entry.displayOnly) {
+      if (entry.roll === 4) notes.push('Dropped weapon — it fell to the ground (GM adjudicates)');
+      if (entry.roll === 6) notes.push('Hit the next closest target instead (GM adjudicates)');
+    }
+    setCritFailNotes(notes);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  }, [attacker, weapon, currentAmmo, allArmor, spendAmmo, jamWeapon, spendAP, applyDamage, setPosition, setWeaponCondition]);
 
   // Display-level DT/DR (before calculateDamage is called) — armor + natural protection
   const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural) : { dt: 0, dr: 0 };
@@ -1667,6 +1828,18 @@ export default function CombatScreen() {
           </View>
         )}
 
+        {/* ─── Prominent Critical Hit banner ─── */}
+        {primaryIsCrit && (
+          <View style={{ backgroundColor: colors.primary, borderRadius: colors.radius, paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center', gap: 2 }}>
+            <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 3 }}>★ CRITICAL HIT</Text>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primaryForeground + 'dd' }}>
+              {isAimed && aimedCritPart
+                ? `Aimed at ${aimedCritPart.toUpperCase()} — ${TARGETED_CRIT_EFFECTS[aimedCritPart].label}`
+                : critTableEntry ? `${critTableEntry.title}` : 'Roll the Critical Hits table below'}
+            </Text>
+          </View>
+        )}
+
         {/* ─── Aimed Critical (targeted body-part effect) ─── */}
         {primaryIsCrit && isAimed && aimedCritPart && (
           <View style={{ backgroundColor: colors.primary + '22', borderRadius: colors.radius, padding: 12, borderWidth: 2, borderColor: colors.primary, gap: 6 }}>
@@ -1676,13 +1849,20 @@ export default function CombatScreen() {
             </View>
             <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{TARGETED_CRIT_EFFECTS[aimedCritPart].label} (×{TARGETED_CRIT_EFFECTS[aimedCritPart].damageMultiplier} damage)</Text>
             {!aimedCritApplied ? (
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
+                The ×{TARGETED_CRIT_EFFECTS[aimedCritPart].damageMultiplier} multiplier is included in the damage roll; the injury is applied automatically when you Apply Damage. (Or apply the effect now.)
+              </Text>
+            ) : null}
+            {!aimedCritApplied ? (
               <TouchableOpacity style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.destructive, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={applyAimedCritEffect} disabled={!defender}>
                 <Feather name="alert-triangle" size={14} color="#fff" />
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#fff', letterSpacing: 1 }}>APPLY CRITICAL EFFECT</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#fff', letterSpacing: 1 }}>APPLY CRITICAL EFFECT NOW</Text>
               </TouchableOpacity>
             ) : (
               <View style={{ gap: 2 }}>
-                {aimedCritNotes.map((n, i) => <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>• {n}</Text>)}
+                {aimedCritNotes.length === 0
+                  ? <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>• Critical effect applied</Text>
+                  : aimedCritNotes.map((n, i) => <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>• {n}</Text>)}
               </View>
             )}
           </View>
@@ -1702,7 +1882,38 @@ export default function CombatScreen() {
               </TouchableOpacity>
             ) : (
               <View style={{ gap: 2 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>[{critTableEntry.roll}] {critTableEntry.title}</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{critTableEntry.description}</Text>
+                {critTableEntry.damageMultiplier ? <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>Damage ×{critTableEntry.damageMultiplier} (flows into damage roll)</Text> : null}
                 {critEffectNotes.map((n, i) => <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>• {n}</Text>)}
+                <TouchableOpacity style={{ marginTop: 4, paddingVertical: 6, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary }} onPress={() => setShowCritModal(true)}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>VIEW CRITICAL HITS TABLE</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── Critical Failure callout ─── */}
+        {isCritFail && (
+          <View style={{ backgroundColor: colors.destructive + '22', borderRadius: colors.radius, padding: 12, borderWidth: 2, borderColor: colors.destructive, gap: 6 }}>
+            <View style={{ backgroundColor: colors.destructive, borderRadius: colors.radius, paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: '#fff', letterSpacing: 2 }}>💀 CRITICAL FAILURE</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: '#fff' }}>Missed with 97-100% — roll on the Critical Failure Table</Text>
+            </View>
+            {!critFailEntry ? (
+              <TouchableOpacity style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.destructive, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => setShowCritFailModal(true)}>
+                <Feather name="list" size={14} color="#fff" />
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#fff', letterSpacing: 1 }}>OPEN CRITICAL FAILURE TABLE</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ gap: 2 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive }}>[{critFailEntry.roll}] {critFailEntry.title}</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{critFailEntry.description}</Text>
+                {critFailNotes.map((n, i) => <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>• {n}</Text>)}
+                <TouchableOpacity style={{ marginTop: 4, paddingVertical: 6, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive }} onPress={() => setShowCritFailModal(true)}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>VIEW CRITICAL FAILURE TABLE</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -1782,6 +1993,34 @@ export default function CombatScreen() {
             )}
           </View>
         )}
+
+        {/* ─── Attack Again (repeat attacks until AP runs out) ─── */}
+        {canRoll && attackRolled && (
+          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.primary, gap: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>NEXT ATTACK</Text>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              {attacker?.name} · AP {attacker?.currentAP ?? 0}/{attacker?.maxAP ?? 0} · this attack costs {effectiveAPCost} AP
+            </Text>
+            <TouchableOpacity
+              disabled={!attackerHasAP || critFailPending}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: colors.radius, backgroundColor: (attackerHasAP && !critFailPending) ? colors.primary : colors.secondary, opacity: (attackerHasAP && !critFailPending) ? 1 : 0.5 }}
+              onPress={attackAgain}
+            >
+              <Feather name="rotate-cw" size={16} color={(attackerHasAP && !critFailPending) ? colors.primaryForeground : colors.mutedForeground} />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: (attackerHasAP && !critFailPending) ? colors.primaryForeground : colors.mutedForeground }}>ATTACK AGAIN</Text>
+            </TouchableOpacity>
+            {critFailPending && (
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, textAlign: 'center' }}>
+                Resolve the Critical Failure first — roll on the Critical Failures table.
+              </Text>
+            )}
+            {!attackerHasAP && (
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, textAlign: 'center' }}>
+                Not enough AP for another attack (need {effectiveAPCost}, have {attacker?.currentAP ?? 0}).
+              </Text>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} />
@@ -1814,6 +2053,13 @@ export default function CombatScreen() {
         rolledEntry={critTableEntry}
         onRoll={rollCritTable}
         betterCriticals={hasBetterCriticals}
+      />
+      <CriticalFailureModal
+        visible={showCritFailModal}
+        onClose={() => setShowCritFailModal(false)}
+        rolledEntry={critFailEntry}
+        appliedNotes={critFailNotes}
+        onRoll={rollCritFailTable}
       />
     </View>
   );

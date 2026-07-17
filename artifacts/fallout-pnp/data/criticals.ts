@@ -68,6 +68,47 @@ export const CRITICAL_HIT_TABLE: CritTableEntry[] = [
   { roll: 10, title: 'Instant Death (!)', description: 'The target dies instantly.', instantDeath: true },
 ];
 
+/** Critical Failure table (1d10). Manual p.31 — an attack that MISSES with a
+ *  roll of 97-100% is a Critical Failure; the GM rolls 1d10 on this table.
+ *  Effects apply to the ATTACKER (except 4/6 which are display-only notes).
+ *  `auto` flags what the app applies automatically. */
+export interface CritFailTableEntry {
+  roll: number;
+  title: string;
+  description: string;
+  /** Set current ammo to 0 (magazine discarded). */
+  emptyAmmo?: boolean;
+  /** Weapon jams — fills a condition box; takes 1 turn to unjam. */
+  jam?: boolean;
+  /** Attacker loses all remaining AP this round. */
+  loseAllAP?: boolean;
+  /** Explosive/energy weapons only: 3d10+7 damage to everyone within 2 hexes. */
+  explode?: boolean;
+  /** Half the weapon's normal damage roll to the attacker (armor applies). */
+  damageSelfHalf?: boolean;
+  /** Lose all AP + go prone; must get up next round; no AGI AC while down. */
+  slipAndFall?: boolean;
+  /** Weapon breaks beyond repair (condition set to max). */
+  breaks?: boolean;
+  /** 1d10 raw damage to attacker, ignoring DT and DR. */
+  anvil?: boolean;
+  /** Display-only note (Dropped Weapon / Hit Something Else). */
+  displayOnly?: boolean;
+}
+
+export const CRITICAL_FAILURE_TABLE: CritFailTableEntry[] = [
+  { roll: 1, title: 'Ammo Problems', description: 'The magazine was damaged or the ammo was bad. The gun does not fire, and the rest of the magazine must be discarded.', emptyAmmo: true },
+  { roll: 2, title: 'Weapon Jammed', description: 'Should have cleaned your gun out! The weapon will take 1 turn to unjam, and the ammo inside must be discarded.', jam: true },
+  { roll: 3, title: 'Loss of AP', description: 'D\u2019oh! The attacker loses all remaining AP for that round.', loseAllAP: true },
+  { roll: 4, title: 'Dropped Weapon', description: 'Something slipped, and the weapon flew out of your hands and hit the ground.', displayOnly: true },
+  { roll: 5, title: 'Weapon Explodes', description: 'Something nasty that happens only with explosive or energy weapons. Deals 3d10+7 damage to anyone within 2 hexes of the weapon. OUCH!', explode: true },
+  { roll: 6, title: 'Hit Something Else', description: 'You didn\u2019t hit what you were aiming for, but you nailed the next closest target. Hope it wasn\u2019t your buddy...', displayOnly: true },
+  { roll: 7, title: 'Damage Self', description: 'You cut yourself on your knife, or shot yourself in the foot. Half the weapon\u2019s normal damage is dealt to YOU instead.', damageSelfHalf: true },
+  { roll: 8, title: 'Slip and Fall', description: 'You slip and fall. All remaining AP are gone, and next round you must get up. While down, you lose all Armor Class from Agility.', slipAndFall: true },
+  { roll: 9, title: 'Weapon Breaks', description: 'The weapon breaks beyond repair. Time for a new one. Oops.', breaks: true },
+  { roll: 10, title: 'Anvil', description: 'A miniature anvil falls out of the sky and strikes you on the head for 1d10 points of damage. No chance to dodge, and DT and DR are disregarded for this strange, magical attack.', anvil: true },
+];
+
 /** Base critical chance for a character: Luck + More Criticals ranks ×5. */
 export function baseCritChance(char: Pick<Character, 'special' | 'perks'>): number {
   const luck = char.special?.luck ?? 5;
