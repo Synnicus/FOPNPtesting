@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Fallout PnP",
-    "slug": "fallout-pnp",
+    "name": "Fallout PnP Calculator",
+    "slug": "falloutpnpcalculator",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "fallout-pnp",
+    "scheme": "falloutpnpcalculator",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
@@ -14,9 +14,12 @@
       "backgroundColor": "#0a0908"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.falloutpnpcalculator.app"
     },
-    "android": {},
+    "android": {
+      "package": "com.falloutpnpcalculator.app"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
