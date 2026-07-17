@@ -1,4 +1,4 @@
-import { SPECIALStats } from '@/context/types';
+import { SPECIALStats, NaturalProtection } from '@/context/types';
 
 export interface RaceDefinition {
   id: string;
@@ -24,6 +24,12 @@ export interface RaceDefinition {
   perksPerLevels?: number;
   // Natural AC bonus (e.g. Deathclaw's hide)
   naturalACBonus: number;
+  // Extra HP gained per level (Deathclaws: +2)
+  bonusHPPerLevel?: number;
+  // Extra melee damage bonus (Deathclaws: +5)
+  bonusMeleeDamage?: number;
+  // Default built-in DT/DR per damage type (editable per character)
+  naturalProtection?: NaturalProtection;
 }
 
 export const RACES: RaceDefinition[] = [
@@ -82,30 +88,47 @@ export const RACES: RaceDefinition[] = [
   },
   // ─── CREATURE RACES (NPC / Bestiary) ────────────────────────────────────────
   {
+    id: 'halfMutant',
+    name: 'Half-Mutant',
+    description: 'Born of a mutant parent and a human. Tall and strong, they can often pass for tall, ugly humans.',
+    specialMin: { strength: 3, perception: 1, endurance: 2, charisma: 1, intelligence: 1, agility: 1, luck: 1 },
+    specialMax: { strength: 12, perception: 10, endurance: 11, charisma: 10, intelligence: 10, agility: 8, luck: 10 },
+    specialDefault: { strength: 6, perception: 5, endurance: 6, charisma: 4, intelligence: 5, agility: 5, luck: 5 },
+    naturalDR: 20, naturalGasDR: 0, naturalElecDR: 0,
+    naturalWeaponIds: [],
+    benefits: ['High STR/END potential', '20% Radiation Resistance', 'Can use human weapons and armor'],
+    penalties: ['Social stigma from both humans and mutants', 'AGI capped at 8'],
+    playable: true, naturalACBonus: 0,
+  },
+  {
     id: 'deathclaw',
     name: 'Deathclaw',
-    description: 'Terrifying FEV-mutated creatures. Fast, strong, and nearly indestructible.',
-    specialMin: { strength: 8, perception: 7, endurance: 8, charisma: 1, intelligence: 1, agility: 9, luck: 3 },
-    specialMax: { strength: 14, perception: 14, endurance: 14, charisma: 4, intelligence: 8, agility: 14, luck: 10 },
-    specialDefault: { strength: 12, perception: 10, endurance: 12, charisma: 1, intelligence: 4, agility: 12, luck: 5 },
-    naturalDR: 25, naturalGasDR: 10, naturalElecDR: 10,
+    description: 'Semi-intelligent, enormous mutated lizards standing 3 meters tall. Some are intelligent enough to be player characters (per the manual).',
+    specialMin: { strength: 6, perception: 4, endurance: 1, charisma: 1, intelligence: 1, agility: 6, luck: 1 },
+    specialMax: { strength: 14, perception: 12, endurance: 13, charisma: 3, intelligence: 4, agility: 16, luck: 10 },
+    specialDefault: { strength: 12, perception: 8, endurance: 10, charisma: 1, intelligence: 3, agility: 12, luck: 5 },
+    naturalDR: 60, naturalGasDR: 40, naturalElecDR: 0,
     naturalWeaponIds: ['deathclaw_claw', 'deathclaw_bite'],
-    benefits: ['Massive natural weapons', '25% DR normal', 'Extremely high SPECIAL', 'Natural AC from hide'],
-    penalties: ['Cannot use human weapons/armor', 'Low CHA/INT'],
-    playable: false, naturalACBonus: 8,
+    benefits: ['+5 Melee Damage bonus', '40% DR & DT 4 vs Normal/Fire/Explosion', '0/40 Gas Resist', '+2 HP per level', 'Foot-long claws'],
+    penalties: ['Cannot use armor', '1 perk per 4 levels', 'Attacked on sight by most humans', 'Low CHA/INT'],
+    playable: true, perksPerLevels: 4, naturalACBonus: 0, bonusHPPerLevel: 2, bonusMeleeDamage: 5,
+    naturalProtection: {
+      dtNormal: 4, dtLaser: 0, dtFire: 4, dtPlasma: 0, dtExplosion: 4,
+      drNormal: 40, drLaser: 0, drFire: 40, drPlasma: 0, drExplosion: 40,
+    },
   },
   {
     id: 'dog',
-    name: 'Wasteland Dog',
-    description: 'Mutated dogs roaming the wasteland. Loyal companions or vicious predators.',
-    specialMin: { strength: 2, perception: 6, endurance: 3, charisma: 3, intelligence: 2, agility: 7, luck: 3 },
-    specialMax: { strength: 6, perception: 12, endurance: 8, charisma: 8, intelligence: 5, agility: 12, luck: 8 },
-    specialDefault: { strength: 4, perception: 8, endurance: 5, charisma: 5, intelligence: 3, agility: 9, luck: 5 },
-    naturalDR: 0, naturalGasDR: 0, naturalElecDR: 0,
+    name: 'Dog',
+    description: 'Four-legged, furry, loyal companions. No opposable thumbs — cannot use weapons, tools, or armor (per the manual).',
+    specialMin: { strength: 1, perception: 4, endurance: 1, charisma: 1, intelligence: 1, agility: 1, luck: 1 },
+    specialMax: { strength: 7, perception: 14, endurance: 6, charisma: 5, intelligence: 3, agility: 15, luck: 10 },
+    specialDefault: { strength: 4, perception: 8, endurance: 4, charisma: 2, intelligence: 3, agility: 10, luck: 5 },
+    naturalDR: 0, naturalGasDR: 0, naturalElecDR: 50,
     naturalWeaponIds: ['dog_bite', 'dog_claw'],
-    benefits: ['Fast movement', 'High PER/AGI', 'Excellent tracker'],
-    penalties: ['Cannot use weapons/items', 'Low INT/STR'],
-    playable: false, naturalACBonus: 3,
+    benefits: ['1 perk per 2 levels', '+50% Electricity Resistance', 'Very high AGI/PER potential'],
+    penalties: ['Cannot use weapons, tools, or armor', 'Cannot speak', 'Low INT/STR/END'],
+    playable: true, perksPerLevels: 2, naturalACBonus: 0,
   },
   {
     id: 'molerat',

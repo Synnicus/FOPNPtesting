@@ -7,16 +7,17 @@ import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS } from '@/context/types';
+import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType } from '@/context/types';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { CRITICAL_HIT_RANGED, CRITICAL_HIT_MELEE, CRITICAL_FAILURE_TABLE, AIMED_SHOT_CRIT_BONUS } from '@/data/criticals';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
-import { isMeleeWeapon, CONDITION_MAX } from '@/data/weapons';
+import { isMeleeWeapon, CONDITION_MAX, computeModBonuses } from '@/data/weapons';
 import { calcCriticalChance, calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
+import { getRaceById } from '@/data/races';
 
 // ─── Dice helpers ─────────────────────────────────────────────────────────────
 function rollD10() { return Math.floor(Math.random() * 10) + 1; }
@@ -59,6 +60,27 @@ const POSITION_OPTIONS = [
 
 const RANGED_SKILLS = new Set(['smallGuns', 'bigGuns', 'energyWeapons']);
 
+const DAMAGE_TYPE_ORDER: DamageType[] = ['normal', 'laser', 'fire', 'plasma', 'explosion'];
+
+// Combined DT/DR from armor pieces + natural protection for a given damage type
+function combinedProtectionFor(
+  dmgType: DamageType,
+  bodyArmor: { [k: string]: any } | null,
+  helmet: { [k: string]: any } | null,
+  natural: NaturalProtection | null | undefined,
+): { dt: number; dr: number } {
+  const cap = dmgType.charAt(0).toUpperCase() + dmgType.slice(1);
+  const dtField = `dt${cap}`;
+  const drField = `dr${cap}`;
+  const dt = ((bodyArmor?.[dtField] as number) ?? 0)
+    + ((helmet?.[dtField] as number) ?? 0)
+    + ((natural?.[dtField as keyof NaturalProtection] as number) ?? 0);
+  const dr = Math.min(90, ((bodyArmor?.[drField] as number) ?? 0)
+    + ((helmet?.[drField] as number) ?? 0)
+    + ((natural?.[drField as keyof NaturalProtection] as number) ?? 0));
+  return { dt, dr };
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ShotResult {
   index: number; chanceToHit: number; penalty: number;
@@ -67,7 +89,8 @@ interface ShotResult {
 }
 interface ShotDamage {
   shotIndex: number; baseRolls: number[]; baseDmg: number; cpRolls: number[];
-  cpBonusDmg: number; combinedDT: number; finalDmg: number; critMultiplier: number;
+  cpBonusDmg: number; combinedDT: number; combinedDR: number; finalDmg: number; critMultiplier: number;
+  meleeDmgBonus: number; afterDT: number;
 }
 
 // ─── Perk Bonuses Computed ────────────────────────────────────────────────────
@@ -393,7 +416,7 @@ export default function CombatScreen() {
   const insets = useSafeAreaInsets();
   const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setPosition, addInjury, updateCharacter, spendAP,
     initiativeEntries, currentRound, combatActive, activeEntryId,
-    startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, nextTurn, nextRound,
+    startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
 
   // Round tracker
@@ -446,6 +469,11 @@ export default function CombatScreen() {
   // Pickers
   const [showAttackerPicker, setShowAttackerPicker] = useState(false);
   const [showDefenderPicker, setShowDefenderPicker] = useState(false);
+  const [showAddCombatantPicker, setShowAddCombatantPicker] = useState(false);
+  const [showApActions, setShowApActions] = useState(false);
+
+  // Non-storage characters — used for pickers and initiative setup
+  const activeCharacters = characters.filter(c => !c.inStorage);
 
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
@@ -465,6 +493,17 @@ export default function CombatScreen() {
   // Perk bonuses
   const perkBonuses = computePerkBonuses(attacker, weapon, isRanged);
 
+  // Auto-computed weapon-mod bonuses (to-hit, damage, range) from equipped weapon's mods
+  const modBonuses = weapon ? computeModBonuses(weapon.mods ?? []) : { toHit: 0, damage: 0, range: 0 };
+
+  // Effective weapon range: base rangeNormal + mod range bonuses
+  const effectiveRange = weapon ? weapon.rangeNormal + modBonuses.range : 0;
+
+  // Defender natural protection (creatures like Deathclaws)
+  const defenderNatural: NaturalProtection | null = defender
+    ? (defender.naturalProtection ?? getRaceById(defender.race)?.naturalProtection ?? null)
+    : null;
+
   // Effective defender AC (with tempAC)
   const defenderAC = defender ? (defender.armorClass + (defender.tempAC ?? 0)) : 0;
 
@@ -483,7 +522,17 @@ export default function CombatScreen() {
   const conditionBoxes = ammoState?.conditionBoxes ?? CONDITION_MAX;
   const hasAmmo = !weapon || weapon.magazineSize === 0 || currentAmmo > 0;
 
-  // CtH formula
+  // ─── Weapon condition modifier ───────────────────────────────────────────────
+  // conditionBoxes counts REMAINING good boxes (CONDITION_MAX = pristine).
+  // jamWeapon decrements it. Manual intervals (mapped onto CONDITION_MAX scale):
+  //   full → −1 damaged box  : 0% penalty
+  //   2 damaged boxes        : −10% to hit
+  //   fully damaged (0 boxes): weapon jammed / broken (cannot fire)
+  const damagedBoxes = Math.max(0, CONDITION_MAX - conditionBoxes);
+  const weaponBroken = !!weapon && conditionBoxes <= 0;
+  const conditionPenalty = weaponBroken ? 0 : (damagedBoxes >= CONDITION_MAX - 1 ? 10 : 0);
+
+  // CtH formula (weapon-mod to-hit auto-included; condition penalty auto-included)
   const computeCtH = (extraBurstPenalty: number) =>
     Math.max(1, Math.min(99,
       baseSkill
@@ -492,6 +541,8 @@ export default function CombatScreen() {
       - defenderAC
       - coverPenalty
       + weaponBonus
+      + modBonuses.toHit
+      - conditionPenalty
       + positionBonus
       - targetedPenalty
       + extraBurstPenalty
@@ -559,7 +610,35 @@ export default function CombatScreen() {
     setDoubleShotActive(false); setStreamlinedDice([]); setStreamlinedRolled(false);
   }, [attackerId]);
 
+  // Clear attacker/defender if the selected character was moved to storage
+  useEffect(() => {
+    if (attackerId && !characters.some(c => c.id === attackerId && !c.inStorage)) setAttackerId(null);
+    if (defenderId && !characters.some(c => c.id === defenderId && !c.inStorage)) setDefenderId(null);
+  }, [characters, attackerId, defenderId]);
+
+  // Auto-switch the attacker to the active initiative entry's character while combat is active.
+  // The user can still manually change the attacker afterwards.
+  useEffect(() => {
+    if (!combatActive || !activeEntryId) return;
+    const activeEntry = initiativeEntries.find(e => e.id === activeEntryId);
+    const cid = activeEntry?.characterId;
+    if (cid && cid !== attackerId && characters.some(c => c.id === cid && !c.inStorage)) {
+      setAttackerId(cid);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEntryId, combatActive]);
+
+  // Prevent the same character being both attacker and defender.
+  useEffect(() => {
+    if (attackerId && defenderId && attackerId === defenderId) setDefenderId(null);
+  }, [attackerId, defenderId]);
+
   const rollDice = useCallback(() => {
+    if (weaponBroken) {
+      if (Platform.OS === 'web') { alert('Weapon jammed/broken! Repair before firing.'); }
+      else Alert.alert('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
+      return;
+    }
     if (!hasAmmo) {
       if (Platform.OS === 'web') { alert('Empty Magazine! Reload before firing.'); }
       else Alert.alert('Empty Magazine', 'No ammo remaining. Reload first!', [
@@ -604,9 +683,13 @@ export default function CombatScreen() {
     }
 
     setTimeout(() => setRolling(false), 350);
-  }, [hasAmmo, attacker, weapon, shotChances, totalCritChance, isMelee, perkBonuses, spendAmmo, jamWeapon, spendAP, reloadWeapon]);
+  }, [weaponBroken, hasAmmo, attacker, weapon, shotChances, totalCritChance, isMelee, perkBonuses, spendAmmo, jamWeapon, spendAP, reloadWeapon]);
 
   const rollStreamlined = useCallback(() => {
+    if (weaponBroken) {
+      Alert.alert('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
+      return;
+    }
     if (!hasAmmo) {
       Alert.alert('Empty Magazine', 'No ammo remaining. Reload first!');
       return;
@@ -619,7 +702,7 @@ export default function CombatScreen() {
     if (attacker && weapon && weapon.magazineSize > 0) {
       spendAmmo(attacker.id, weapon.id, burstShots);
     }
-  }, [hasAmmo, attacker, weapon, burstShots, spendAmmo]);
+  }, [weaponBroken, hasAmmo, attacker, weapon, burstShots, spendAmmo]);
 
   const toggleCPSpent = useCallback((shotIdx: number, delta: number) => {
     setCpSpent(prev => {
@@ -635,34 +718,31 @@ export default function CombatScreen() {
     if (!weapon || shotResults.length === 0) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const halfDie = Math.ceil(weapon.damageDie / 2);
-    // Determine DT and DR keys based on damage type (N/L/F/P/E)
-    const dtFieldMap: Record<string, string> = { normal: 'dtNormal', laser: 'dtLaser', fire: 'dtFire', plasma: 'dtPlasma', explosion: 'dtExplosion' };
-    const drFieldMap: Record<string, string> = { normal: 'drNormal', laser: 'drLaser', fire: 'drFire', plasma: 'drPlasma', explosion: 'drExplosion' };
-    const dtField = dtFieldMap[weapon.damageType] ?? 'dtNormal';
-    const drField = drFieldMap[weapon.damageType] ?? 'drNormal';
-    const rawDT = (bodyArmor ? (bodyArmor as any)[dtField] ?? 0 : 0) + (helmet ? (helmet as any)[dtField] ?? 0 : 0);
-    const rawDR = Math.min(90, (bodyArmor ? (bodyArmor as any)[drField] ?? 0 : 0) + (helmet ? (helmet as any)[drField] ?? 0 : 0));
-    const combinedDT = Math.max(0, rawDT - perkBonuses.ignoreDT);
-    const combinedDR = rawDR; // DR from armor, perk Dermal Armor accounted elsewhere
+    // Combined DT/DR from armor + defender natural protection (DT adds, DR sums capped at 90%)
+    const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural);
+    const combinedDT = Math.max(0, prot.dt - perkBonuses.ignoreDT);
+    const combinedDR = prot.dr;
 
-    // Melee damage bonus from STR
-    const meleeDmgBonus = isMelee && attacker?.special ? calcMeleeDamageBonus(attacker.special) : 0;
+    // Melee/unarmed damage bonus from STR + race bonus (e.g. Deathclaw +5)
+    const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
+    const meleeDmgBonus = (isMelee && attacker?.special ? calcMeleeDamageBonus(attacker.special) : 0) + raceMeleeBonus;
 
     const damages = shotResults.map((shot, i) => {
       if (!shot.hit) return null;
       const critMult = shot.isCrit ? (critResult?.damageMultiplier ?? 1) * perkBonuses.critDamageMult : 1;
       const baseRolls = Array.from({ length: doubleShotActive ? weapon.damageDieCount * 2 : weapon.damageDieCount }, () => rollDie(weapon.damageDie));
-      const rawBaseDmg = Math.round((baseRolls.reduce((a, b) => a + b, 0) + weapon.damageBonus + meleeDmgBonus + perkBonuses.damage) * critMult);
+      const rawBaseDmg = Math.round((baseRolls.reduce((a, b) => a + b, 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage) * critMult);
       const cps = cpSpent[i] ?? 0;
       const cpRolls = Array.from({ length: cps }, () => rollDie(halfDie));
       const cpBonusDmg = cpRolls.reduce((a, b) => a + b, 0);
       const baseDmg = rawBaseDmg + cpBonusDmg;
       // Apply DT first, then DR: finalDmg = max(0, (baseDmg − DT) × (1 − DR/100))
+      const afterDT = Math.max(0, baseDmg - combinedDT);
       const finalDmg = applyProtection(baseDmg, combinedDT, combinedDR);
-      return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, cpRolls, cpBonusDmg, combinedDT, finalDmg, critMultiplier: critMult };
+      return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, cpRolls, cpBonusDmg, combinedDT, combinedDR, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT };
     });
     setShotDamages(damages); setDamageApplied(false);
-  }, [weapon, shotResults, cpSpent, bodyArmor, helmet, critResult, doubleShotActive, isMelee, attacker, perkBonuses]);
+  }, [weapon, shotResults, cpSpent, bodyArmor, helmet, defenderNatural, critResult, doubleShotActive, isMelee, attacker, perkBonuses, modBonuses]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
 
@@ -687,13 +767,29 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [attacker, weapon, reloadWeapon, spendAP]);
 
-  // Display-level DT/DR (before calculateDamage is called)
-  const _dtFieldMap: Record<string, string> = { normal: 'dtNormal', laser: 'dtLaser', fire: 'dtFire', plasma: 'dtPlasma', explosion: 'dtExplosion' };
-  const _drFieldMap: Record<string, string> = { normal: 'drNormal', laser: 'drLaser', fire: 'drFire', plasma: 'drPlasma', explosion: 'drExplosion' };
-  const _dtField = weapon ? (_dtFieldMap[weapon.damageType] ?? 'dtNormal') : 'dtNormal';
-  const _drField = weapon ? (_drFieldMap[weapon.damageType] ?? 'drNormal') : 'drNormal';
-  const combinedDT = (bodyArmor ? (bodyArmor as any)[_dtField] ?? 0 : 0) + (helmet ? (helmet as any)[_dtField] ?? 0 : 0);
-  const combinedDR = Math.min(90, (bodyArmor ? (bodyArmor as any)[_drField] ?? 0 : 0) + (helmet ? (helmet as any)[_drField] ?? 0 : 0));
+  // Spend AP on a movement/position action, auto-applying position when relevant.
+  const handleApAction = useCallback((cost: number, newPosition?: PositionType) => {
+    if (!attacker) return;
+    const ok = spendAP(attacker.id, cost);
+    if (!ok) {
+      if (Platform.OS === 'web') alert(`Not enough AP (need ${cost}).`);
+      else Alert.alert('Not Enough AP', `This action needs ${cost} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
+    if (newPosition) setPosition(attacker.id, newPosition);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [attacker, spendAP, setPosition]);
+
+  // Display-level DT/DR (before calculateDamage is called) — armor + natural protection
+  const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural) : { dt: 0, dr: 0 };
+  const combinedDT = displayProt.dt;
+  const combinedDR = displayProt.dr;
+
+  // Compact DT/DR summary across all damage types for the defender info panel
+  const defenderProtSummary = DAMAGE_TYPE_ORDER.map(dt => {
+    const p = combinedProtectionFor(dt, bodyArmor as any, helmet as any, defenderNatural);
+    return `${DAMAGE_TYPE_LABELS[dt]} ${p.dt}/${p.dr}%`;
+  }).join('  ');
 
   // Streamlined burst hit results
   const streamlinedHits = streamlinedDice.filter(d => d <= streamlinedHitThreshold && d > 0).length;
@@ -747,7 +843,19 @@ export default function CombatScreen() {
               <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 10 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SET INITIATIVE ROLLS</Text>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Sequence = PER×2. Roll 1d10 and add Sequence for initiative. Unspent AP → tempAC each turn.</Text>
-                {characters.filter(c => c.currentHp > 0).map(c => (
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
+                  const rolls: Record<string, number> = {};
+                  activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
+                    const seq = c.sequence ?? c.special.perception * 2;
+                    rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
+                  });
+                  setInitRolls(rolls);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }}>
+                  <Feather name="refresh-cw" size={14} color={colors.primaryForeground} />
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL ALL (1d10 + SEQ)</Text>
+                </TouchableOpacity>
+                {activeCharacters.filter(c => c.currentHp > 0).map(c => (
                   <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <CharacterAvatar portrait={c.portrait} name={c.name} size={32} />
                     <View style={{ flex: 1 }}>
@@ -774,7 +882,7 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: '#4a8c3f', flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
-                    const entries: InitiativeEntry[] = characters.filter(c => c.currentHp > 0).map(c => ({
+                    const entries: InitiativeEntry[] = activeCharacters.filter(c => c.currentHp > 0).map(c => ({
                       id: `init-${c.id}`,
                       characterId: c.id,
                       name: c.name,
@@ -784,6 +892,7 @@ export default function CombatScreen() {
                       currentHp: c.currentHp,
                       maxAP: c.maxAP,
                       currentAP: c.maxAP,
+                      armorClass: c.armorClass,
                       tempAC: 0,
                       position: c.position,
                       isActive: false,
@@ -803,7 +912,7 @@ export default function CombatScreen() {
               const isActive = entry.id === activeEntryId;
               const entryChar = characters.find(c => c.id === entry.characterId);
               return (
-                <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: isActive ? '#4a8c3f' : colors.border, backgroundColor: isActive ? '#4a8c3f11' : colors.secondary, gap: 10 }}>
+                <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: isActive ? '#4a8c3f' : colors.border, backgroundColor: isActive ? '#4a8c3f11' : colors.secondary, gap: 8 }}>
                   {isActive && <Feather name="chevron-right" size={14} color="#4a8c3f" />}
                   <CharacterAvatar portrait={entryChar?.portrait} name={entry.name} size={32} />
                   <View style={{ flex: 1 }}>
@@ -812,18 +921,29 @@ export default function CombatScreen() {
                       Init {entry.initiative} · HP {entry.currentHp}/{entry.maxHp} · AP {entry.currentAP}/{entry.maxAP}{entry.tempAC > 0 ? ` · +${entry.tempAC}AC` : ''}
                     </Text>
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 3 }}>
-                    {Array.from({ length: entry.maxAP }).map((_, i) => (
-                      <View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: i < entry.currentAP ? colors.primary : colors.border }} />
-                    ))}
+                  {entry.hasActed && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DONE</Text>}
+                  <View style={{ flexDirection: 'column', gap: 2 }}>
+                    <TouchableOpacity onPress={() => moveInitiativeEntry(entry.id, 'up')} disabled={idx === 0} style={{ padding: 2, opacity: idx === 0 ? 0.3 : 1 }}>
+                      <Feather name="chevron-up" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => moveInitiativeEntry(entry.id, 'down')} disabled={idx === initiativeEntries.length - 1} style={{ padding: 2, opacity: idx === initiativeEntries.length - 1 ? 0.3 : 1 }}>
+                      <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
                   </View>
-                  {entry.hasActed && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DONE</Text>}
                   <TouchableOpacity onPress={() => removeInitiativeEntry(entry.id)} style={{ padding: 4 }}>
                     <Feather name="x" size={14} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </View>
               );
             })}
+
+            {/* Add combatant during active combat */}
+            {combatActive && (
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, borderStyle: 'dashed' }} onPress={() => setShowAddCombatantPicker(true)}>
+                <Feather name="user-plus" size={14} color={colors.primary} />
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>ADD COMBATANT</Text>
+              </TouchableOpacity>
+            )}
 
             {combatActive && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
@@ -846,6 +966,10 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{attacker.name}</Text>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 1 }}>{weapon ? weapon.name : 'No weapon'}</Text>
                     {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Skill: {baseSkill}%{perkBonuses.toHit !== 0 ? ` (${perkBonuses.toHit >= 0 ? '+' : ''}${perkBonuses.toHit}% perks)` : ''}</Text>}
+                    {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                      Range: {effectiveRange} sq{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
+                    </Text>}
+                    {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {attacker.currentAP}/{attacker.maxAP}</Text>}
                     {/* Ammo display */}
                     {weapon && weapon.magazineSize > 0 && (
@@ -882,9 +1006,10 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, marginTop: 1 }}>
                       AC: {defenderAC}{defender.tempAC > 0 ? ` (${defender.armorClass}+${defender.tempAC} temp)` : ''}
                     </Text>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      DT {weapon?.damageType?.toUpperCase() ?? 'NRM'}: {combinedDT}
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={2}>
+                      {defenderProtSummary}
                     </Text>
+                    {defenderNatural && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>incl. natural protection</Text>}
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Pos: {defender.position ?? 'standing'}</Text>
                   </View>
                 </>
@@ -919,6 +1044,59 @@ export default function CombatScreen() {
                   <Feather name="refresh-cw" size={13} color={colors.mutedForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>RELOAD</Text>
                 </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Spend AP — movement & position actions */}
+          {attacker && (
+            <View style={{ gap: 8 }}>
+              <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} onPress={() => setShowApActions(v => !v)}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SPEND AP — MOVE / POSITION</Text>
+                <Feather name={showApActions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+              {showApActions && (
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                    {attacker.name} · Position: {(attacker.position ?? 'standing').toUpperCase()} · AP {attacker.currentAP}/{attacker.maxAP}
+                  </Text>
+                  {/* Movement */}
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    {(() => {
+                      const pos = attacker.position ?? 'standing';
+                      const moveCost = pos === 'standing' ? AP_COSTS.WALK_1 : pos === 'crouching' ? AP_COSTS.CROUCH_1 : AP_COSTS.PRONE_1;
+                      return (
+                        <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => handleApAction(moveCost)}>
+                          <Feather name="move" size={14} color={colors.primary} />
+                          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>MOVE 1 HEX ({moveCost} AP)</Text>
+                        </TouchableOpacity>
+                      );
+                    })()}
+                  </View>
+                  {/* Position transitions — context-appropriate */}
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    {(attacker.position ?? 'standing') === 'standing' && (
+                      <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'crouching')}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CROUCH ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+                      </TouchableOpacity>
+                    )}
+                    {(attacker.position ?? 'standing') === 'crouching' && (
+                      <>
+                        <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'standing')}>
+                          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>STAND ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'prone')}>
+                          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>PRONE ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    {(attacker.position ?? 'standing') === 'prone' && (
+                      <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'crouching')}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CROUCH ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
               )}
             </View>
           )}
@@ -1014,7 +1192,9 @@ export default function CombatScreen() {
               <FormulaLine label="Armor Class" value={`−${defenderAC}%`} color={colors.destructive} />
               {defender?.tempAC && defender.tempAC > 0 ? <FormulaLine label="  (temp AC)" value={`+${defender.tempAC} from unspent AP`} color={colors.mutedForeground} /> : null}
               {coverPenalty !== 0 && <FormulaLine label="Cover penalty" value={`−${coverPenalty}%`} color={colors.destructive} />}
-              {weaponBonus !== 0 && <FormulaLine label="Weapon bonus" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? '#4a8c3f' : colors.destructive} />}
+              {weaponBonus !== 0 && <FormulaLine label="Manual to-hit adjust" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? '#4a8c3f' : colors.destructive} />}
+              {modBonuses.toHit !== 0 && <FormulaLine label="Weapon mods (auto)" value={`${modBonuses.toHit >= 0 ? '+' : ''}${modBonuses.toHit}%`} color={modBonuses.toHit > 0 ? '#4a8c3f' : colors.destructive} />}
+              {conditionPenalty > 0 && <FormulaLine label="Weapon condition" value={`−${conditionPenalty}%`} color={colors.destructive} />}
               {positionBonus !== 0 && <FormulaLine label={`Position (${POSITION_OPTIONS[positionIdx].label})`} value={`+${positionBonus}%`} color="#4a8c3f" />}
               {targetedPenalty !== 0 && <FormulaLine label={`Targeted (${TARGETED_OPTIONS[targetedIdx].label})`} value={`−${targetedPenalty}%`} color={colors.destructive} />}
               {perkBonuses.toHit !== 0 && <FormulaLine label="Perk to-hit bonus" value={`+${perkBonuses.toHit}%`} color="#4a8c3f" />}
@@ -1054,7 +1234,7 @@ export default function CombatScreen() {
                   <Stepper value={rangeMod} step={3} min={-99} max={99} onChange={setRangeMod} />
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>LIGHT</Text><Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, numberOfLines: 1 }}>{LIGHT_OPTIONS.find(o => o.value === lightPenalty)?.label ?? '—'}</Text></View>
+                  <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>LIGHT</Text><Text numberOfLines={1} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{LIGHT_OPTIONS.find(o => o.value === lightPenalty)?.label ?? '—'}</Text></View>
                   <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 10, paddingVertical: 6 }} onPress={() => setShowLightPicker(true)}>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: lightPenalty === 0 ? '#4a8c3f' : colors.destructive }}>{lightPenalty === 0 ? '0%' : `−${lightPenalty}%`}</Text>
                     <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
@@ -1065,15 +1245,45 @@ export default function CombatScreen() {
                   <Stepper value={coverPenalty} step={5} min={0} max={100} onChange={setCoverPenalty} formatValue={v => v === 0 ? '0%' : `−${v}%`} />
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>WEAPON BONUS</Text><Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Scope, condition, mods…</Text></View>
+                  <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>MANUAL TO-HIT ADJUST</Text><Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>GM ad-hoc modifier</Text></View>
                   <Stepper value={weaponBonus} step={5} min={-50} max={50} onChange={setWeaponBonus} />
                 </View>
+
+                {/* Auto-computed weapon-mod to-hit (from equipped weapon's mods) */}
+                {weapon && modBonuses.toHit !== 0 && (
+                  <View style={{ backgroundColor: colors.secondary, borderRadius: 6, padding: 8 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>Weapon mods: {modBonuses.toHit >= 0 ? '+' : ''}{modBonuses.toHit}% to-hit (auto)</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Computed from equipped weapon's mods — no manual entry needed.</Text>
+                  </View>
+                )}
+
+                {/* Weapon condition modifier (manual intervals via condition boxes) */}
+                {weapon && (
+                  <View style={{ backgroundColor: colors.secondary, borderRadius: 6, padding: 8, gap: 4 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>WEAPON CONDITION</Text>
+                      <View style={{ flexDirection: 'row', gap: 3 }}>
+                        {[...Array(CONDITION_MAX)].map((_, i) => (
+                          <View key={i} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: i < conditionBoxes ? '#4a8c3f' : colors.destructive }} />
+                        ))}
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: weaponBroken ? colors.destructive : conditionPenalty > 0 ? colors.destructive : '#4a8c3f' }}>
+                      {weaponBroken ? '⚠ Jammed / broken — cannot fire until repaired' : conditionPenalty > 0 ? `Degraded: −${conditionPenalty}% to hit` : 'Good condition: 0% penalty'}
+                    </Text>
+                  </View>
+                )}
+
                 {isRanged && (
                   <View>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1, marginBottom: 6 }}>ATTACKER POSITION</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1, marginBottom: 6 }}>ATTACKER POSITION (no AP cost)</Text>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {POSITION_OPTIONS.map((opt, i) => (
-                        <TouchableOpacity key={i} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: positionIdx === i ? colors.primary : colors.secondary, borderWidth: 1, borderColor: positionIdx === i ? colors.primary : colors.border }} onPress={() => setPositionIdx(i)}>
+                        <TouchableOpacity key={i} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: positionIdx === i ? colors.primary : colors.secondary, borderWidth: 1, borderColor: positionIdx === i ? colors.primary : colors.border }} onPress={() => {
+                          setPositionIdx(i);
+                          const posMap: PositionType[] = ['standing', 'crouching', 'prone'];
+                          if (attacker) setPosition(attacker.id, posMap[i]);
+                        }}>
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: positionIdx === i ? colors.primaryForeground : colors.mutedForeground }}>{opt.label.toUpperCase()}</Text>
                           {opt.bonus !== 0 && <Text style={{ fontSize: 10, color: positionIdx === i ? colors.primaryForeground + 'cc' : '#4a8c3f' }}>+{opt.bonus}%</Text>}
                         </TouchableOpacity>
@@ -1158,14 +1368,14 @@ export default function CombatScreen() {
             </TouchableOpacity>
             {streamlinedRolled && streamlinedHits > 0 && weapon && (
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary }} onPress={() => {
-                const burstDtField = { normal: 'dtNormal', laser: 'dtLaser', fire: 'dtFire', plasma: 'dtPlasma', explosion: 'dtExplosion' }[weapon.damageType] ?? 'dtNormal';
-                const burstDrField = { normal: 'drNormal', laser: 'drLaser', fire: 'drFire', plasma: 'drPlasma', explosion: 'drExplosion' }[weapon.damageType] ?? 'drNormal';
-                const burstDT = (bodyArmor ? (bodyArmor as any)[burstDtField] ?? 0 : 0) + (helmet ? (helmet as any)[burstDtField] ?? 0 : 0);
-                const burstDR = Math.min(90, (bodyArmor ? (bodyArmor as any)[burstDrField] ?? 0 : 0) + (helmet ? (helmet as any)[burstDrField] ?? 0 : 0));
-                const meleeDmgBonus = isMelee && attacker?.special ? calcMeleeDamageBonus(attacker.special) : 0;
+                const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural);
+                const burstDT = Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
+                const burstDR = burstProt.dr;
+                const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
+                const meleeDmgBonus = (isMelee && attacker?.special ? calcMeleeDamageBonus(attacker.special) : 0) + raceMeleeBonus;
                 const totalBurstDmg = Array.from({ length: streamlinedHits }, () => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
-                  const raw = rolls.reduce((a, b) => a + b, 0) + weapon.damageBonus + meleeDmgBonus + perkBonuses.damage;
+                  const raw = rolls.reduce((a, b) => a + b, 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
                   return applyProtection(raw, burstDT, burstDR);
                 }).reduce((a, b) => a + b, 0);
                 if (defender) { applyDamage(defender.id, totalBurstDmg); Alert.alert('Burst Damage', `${streamlinedHits} hits dealt ${totalBurstDmg} total damage to ${defender.name}`); }
@@ -1270,9 +1480,13 @@ export default function CombatScreen() {
                 ) : (
                   <View key={i} style={{ borderWidth: 1, borderRadius: colors.radius, padding: 10, borderColor: colors.border, gap: 4 }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>Shot {i + 1}{dmg.critMultiplier > 1 ? ` ⚡ ×${dmg.critMultiplier} CRIT` : ''}</Text>
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Base: [{dmg.baseRolls.join(', ')}]{weapon.damageBonus > 0 ? ` +${weapon.damageBonus}` : ''}{perkBonuses.damage > 0 ? ` +${perkBonuses.damage}` : ''} = {dmg.baseDmg}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+                      Weapon dice: [{dmg.baseRolls.join(', ')}]{weapon.damageBonus > 0 ? ` +${weapon.damageBonus} wpn` : ''}
+                      {dmg.meleeDmgBonus > 0 ? ` +${dmg.meleeDmgBonus} melee` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} mods` : ''}{perkBonuses.damage > 0 ? ` +${perkBonuses.damage} perks` : ''}{dmg.critMultiplier > 1 ? ` ×${dmg.critMultiplier}` : ''} = {dmg.baseDmg}
+                    </Text>
                     {dmg.cpRolls.length > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>CP bonus: [{dmg.cpRolls.join(', ')}] = +{dmg.cpBonusDmg}</Text>}
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>DT: −{dmg.combinedDT}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>− DT {dmg.combinedDT} → {dmg.afterDT}</Text>
+                    {dmg.combinedDR > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>× (1 − DR {dmg.combinedDR}%) → {dmg.finalDmg}</Text>}
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: dmg.finalDmg > 0 ? colors.destructive : colors.mutedForeground }}>= {dmg.finalDmg} damage</Text>
                   </View>
                 ))}
@@ -1314,8 +1528,29 @@ export default function CombatScreen() {
         )}
       </ScrollView>
 
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={characters} allWeapons={allWeapons} />
-      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={characters} allWeapons={allWeapons} />
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} />
+      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} />
+      <CharacterPickerModal visible={showAddCombatantPicker} onClose={() => setShowAddCombatantPicker(false)} onSelect={(id) => {
+        const c = characters.find(ch => ch.id === id);
+        if (!c) return;
+        addInitiativeEntry({
+          id: `init-${c.id}-${genId()}`,
+          characterId: c.id,
+          name: c.name,
+          initiative: (c.sequence ?? c.special.perception * 2) + Math.floor(Math.random() * 10) + 1,
+          sequence: c.sequence ?? c.special.perception * 2,
+          maxHp: c.maxHp,
+          currentHp: c.currentHp,
+          maxAP: c.maxAP,
+          currentAP: c.maxAP,
+          armorClass: c.armorClass,
+          tempAC: 0,
+          position: c.position,
+          isActive: false,
+          hasActed: false,
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
     </View>
   );

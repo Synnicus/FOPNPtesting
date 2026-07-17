@@ -13,11 +13,24 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+
+function defaultExportName() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `fallout-campaign-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function sanitizeFilename(name: string) {
+  const trimmed = name.trim().replace(/\.json$/i, '');
+  const cleaned = trimmed.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '-');
+  const base = cleaned.length > 0 ? cleaned : defaultExportName();
+  return `${base}.json`;
+}
 
 function webDownload(content: string, filename: string) {
   const blob = new Blob([content], { type: 'application/json' });
@@ -39,6 +52,7 @@ export default function CampaignScreen() {
   const [importJson, setImportJson] = useState('');
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [exportName, setExportName] = useState(defaultExportName());
 
   const pcs = characters.filter(c => c.type === 'pc');
   const npcs = characters.filter(c => c.type === 'npc');
@@ -51,23 +65,28 @@ export default function CampaignScreen() {
   const handleExport = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const json = exportCampaign();
-    const filename = `fallout-pnp-campaign-${Date.now()}.json`;
+    const filename = sanitizeFilename(exportName);
 
     if (Platform.OS === 'web') {
       webDownload(json, filename);
-      showStatus('success', 'Campaign downloaded as JSON.');
+      showStatus('success', `Saved to your browser's Downloads folder as ${filename}.`);
       return;
     }
 
     try {
-      const path = FileSystem.cacheDirectory + filename;
-      await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+      const file = new File(Paths.document, filename);
+      if (file.exists) {
+        file.delete();
+      }
+      file.create();
+      file.write(json);
+
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
-        await Sharing.shareAsync(path, { mimeType: 'application/json', UTI: 'public.json' });
-        showStatus('success', 'Campaign exported.');
+        await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
+        showStatus('success', `Saved to ${file.uri}`);
       } else {
-        showStatus('error', 'Sharing not available on this device.');
+        showStatus('success', `Saved to ${file.uri}`);
       }
     } catch (e) {
       showStatus('error', 'Export failed. Try again.');
@@ -161,6 +180,34 @@ export default function CampaignScreen() {
 
         {/* Actions */}
         <View style={{ gap: 12 }}>
+          {/* Export filename */}
+          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 14 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 8 }}>EXPORT FILE NAME</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TextInput
+                style={{
+                  flex: 1,
+                  backgroundColor: colors.input,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  color: colors.foreground,
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 14,
+                }}
+                value={exportName}
+                onChangeText={setExportName}
+                placeholder={defaultExportName()}
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_500Medium', color: colors.mutedForeground, marginLeft: 8 }}>.json</Text>
+            </View>
+          </View>
+
           {/* Export */}
           <TouchableOpacity
             style={{

@@ -49,13 +49,16 @@ interface AppContextValue extends AppState {
   addInitiativeEntry: (entry: InitiativeEntry) => void;
   removeInitiativeEntry: (id: string) => void;
   updateInitiativeEntry: (entry: InitiativeEntry) => void;
+  moveInitiativeEntry: (id: string, direction: 'up' | 'down') => void;
   nextTurn: () => void;
   nextRound: () => void;
   setActiveEntry: (id: string) => void;
 
   addCustomWeapon: (w: Weapon) => void;
+  updateCustomWeapon: (w: Weapon) => void;
   deleteCustomWeapon: (id: string) => void;
   addCustomArmor: (a: Armor) => void;
+  updateCustomArmor: (a: Armor) => void;
   deleteCustomArmor: (id: string) => void;
 
   addCustomBestiaryTemplate: (t: BestiaryTemplate) => void;
@@ -348,12 +351,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         return c;
       });
-      // If all entries have acted, advance to next round
+      // If all entries have acted, advance to next round.
+      // NOTE: AP/tempAC are NOT reset for everyone — each combatant keeps their
+      // tempAC (from unspent AP) until their own turn comes around again.
       if (entries.every(e => e.hasActed)) {
         const round = s.currentRound + 1;
-        entries = entries.map(e => ({ ...e, hasActed: false, currentAP: e.maxAP, tempAC: 0, isActive: false }));
-        chars = chars.map(c => ({ ...c, currentAP: c.maxAP, tempAC: 0 }));
-        entries[0] = { ...entries[0], isActive: true };
+        entries = entries.map((e, i) => ({
+          ...e, hasActed: false, isActive: i === 0,
+          // Only the new active combatant replenishes AP and loses tempAC
+          ...(i === 0 ? { currentAP: e.maxAP, tempAC: 0 } : {}),
+        }));
+        const firstChar = entries[0]?.characterId;
+        if (firstChar) {
+          chars = chars.map(c => c.id === firstChar ? { ...c, currentAP: c.maxAP, tempAC: 0 } : c);
+        }
         return { ...s, initiativeEntries: entries, characters: chars, currentRound: round, activeEntryId: entries[0].id };
       }
       // Find next unacted entry
@@ -379,11 +390,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const nextRound = useCallback(() => {
     setState(s => {
       if (s.initiativeEntries.length === 0) return s;
+      // Only the new active (first) combatant replenishes AP / clears tempAC —
+      // everyone else keeps their tempAC until their own turn starts.
       const entries = s.initiativeEntries.map((e, i) => ({
-        ...e, hasActed: false, currentAP: e.maxAP, tempAC: 0, isActive: i === 0,
+        ...e, hasActed: false, isActive: i === 0,
+        ...(i === 0 ? { currentAP: e.maxAP, tempAC: 0 } : {}),
       }));
-      const chars = s.characters.map(c => ({ ...c, currentAP: c.maxAP, tempAC: 0 }));
+      const firstChar = entries[0]?.characterId;
+      const chars = firstChar
+        ? s.characters.map(c => c.id === firstChar ? { ...c, currentAP: c.maxAP, tempAC: 0 } : c)
+        : s.characters;
       return { ...s, initiativeEntries: entries, characters: chars, currentRound: s.currentRound + 1, activeEntryId: entries[0]?.id ?? null };
+    });
+  }, []);
+
+  // Move an initiative entry up/down in the turn order
+  const moveInitiativeEntry = useCallback((id: string, direction: 'up' | 'down') => {
+    setState(s => {
+      const idx = s.initiativeEntries.findIndex(e => e.id === id);
+      if (idx < 0) return s;
+      const swap = direction === 'up' ? idx - 1 : idx + 1;
+      if (swap < 0 || swap >= s.initiativeEntries.length) return s;
+      const entries = [...s.initiativeEntries];
+      [entries[idx], entries[swap]] = [entries[swap], entries[idx]];
+      return { ...s, initiativeEntries: entries };
     });
   }, []);
 
@@ -392,11 +422,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addCustomWeapon = useCallback((w: Weapon) => {
     setState(s => ({ ...s, customWeapons: [...s.customWeapons, w] }));
   }, []);
+  const updateCustomWeapon = useCallback((w: Weapon) => {
+    setState(s => ({ ...s, customWeapons: s.customWeapons.map(x => x.id === w.id ? w : x) }));
+  }, []);
   const deleteCustomWeapon = useCallback((id: string) => {
     setState(s => ({ ...s, customWeapons: s.customWeapons.filter(w => w.id !== id) }));
   }, []);
   const addCustomArmor = useCallback((a: Armor) => {
     setState(s => ({ ...s, customArmor: [...s.customArmor, a] }));
+  }, []);
+  const updateCustomArmor = useCallback((a: Armor) => {
+    setState(s => ({ ...s, customArmor: s.customArmor.map(x => x.id === a.id ? a : x) }));
   }, []);
   const deleteCustomArmor = useCallback((id: string) => {
     setState(s => ({ ...s, customArmor: s.customArmor.filter(a => a.id !== id) }));
@@ -435,8 +471,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       spendAmmo, reloadWeapon, jamWeapon,
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,
-      updateInitiativeEntry, nextTurn, nextRound, setActiveEntry,
-      addCustomWeapon, deleteCustomWeapon, addCustomArmor, deleteCustomArmor,
+      updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,
+      addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
       exportCampaign, importCampaign,
     }}>

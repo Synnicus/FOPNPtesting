@@ -28,8 +28,23 @@ export function calcCriticalChance(special: SPECIALStats): number {
   return Math.floor(special.luck / 2);
 }
 
+// Manual: "5 + (2 X IN) skill points to distribute among their skills" per level
 export function calcSkillPointsPerLevel(special: SPECIALStats): number {
-  return 5 + Math.floor(special.intelligence / 2);
+  return 5 + 2 * special.intelligence;
+}
+
+// ─── XP Table (from the manual) ───────────────────────────────────────────────
+// Level 1: 0, 2: 1,000, 3: 3,000 ... triangular progression; 22+: +40,000/level
+export function xpForLevel(level: number): number {
+  if (level <= 1) return 0;
+  if (level <= 21) return 500 * level * (level - 1); // 1k, 3k, 6k, 10k ... 210k at 21
+  return 210000 + (level - 21) * 40000;
+}
+
+export function levelForXP(xp: number): number {
+  let level = 1;
+  while (xpForLevel(level + 1) <= xp && level < 99) level++;
+  return level;
 }
 
 export function calcCarryWeight(special: SPECIALStats): number {

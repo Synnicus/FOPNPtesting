@@ -2,15 +2,20 @@ import { Tabs } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
+  // Respect the device's bottom safe area (home indicator / nav bar) so the
+  // labels never get cut off, with a sensible minimum padding.
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'web' ? 14 : 20) + 6;
   const tabBarStyle = {
     backgroundColor: colors.card,
     borderTopColor: colors.border,
     borderTopWidth: 1,
-    height: Platform.OS === 'web' ? 60 : 80,
-    paddingBottom: Platform.OS === 'web' ? 8 : 24,
+    height: 58 + bottomPad,
+    paddingBottom: bottomPad,
     paddingTop: 8,
   };
   const activeTint = colors.primary;

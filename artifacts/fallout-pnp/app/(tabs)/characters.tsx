@@ -6,22 +6,34 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import {
   Character, CharacterSkills, CharacterPerk, CharacterType, RaceType,
-  SkillType, SPECIALStats, Injury, DEFAULT_SKILLS, COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
+  SkillType, SPECIALStats, Injury, NaturalProtection, DamageType,
+  DEFAULT_SKILLS, COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
+  DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
 } from '@/context/types';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
   calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
   calcCriticalChance, calcHealingRate, calcCarryWeight, calcMeleeDamageBonus,
-  calcSkillPointsPerLevel,
+  calcSkillPointsPerLevel, xpForLevel, levelForXP,
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints } from '@/data/perks';
+import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
+
+// Perk points available given a race's perksPerLevels cadence (default 3)
+function perkPointsForRaceLevel(level: number, race: RaceType): number {
+  const raceRef = getRaceById(race);
+  const per = raceRef?.perksPerLevels ?? 3;
+  return Math.floor(level / per);
+}
+
+const DAMAGE_TYPES: DamageType[] = ['normal', 'laser', 'fire', 'plasma', 'explosion'];
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -104,6 +116,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const [activeTab, setActiveTab] = useState(0);
   const [specialPoolTotal, setSpecialPoolTotal] = useState(40);
   const [perkSearch, setPerkSearch] = useState('');
+  const [showNaturalProt, setShowNaturalProt] = useState(false);
+  const [showBioEditor, setShowBioEditor] = useState(false);
 
   // Weapon/armor pickers
   const [showWeaponPick, setShowWeaponPick] = useState(false);
@@ -136,7 +150,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     const bodyArmor = allArmor.find(a => a.id === updatedChar.equippedBodyArmorId);
     const helmet = allArmor.find(a => a.id === updatedChar.equippedHelmetId);
     const armorACBonus = (bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0);
-    const maxHp = calcMaxHP(updatedChar.special, updatedChar.level);
+    const maxHp = calcMaxHP(updatedChar.special, updatedChar.level, raceRef.bonusHPPerLevel ?? 0);
     const maxAP = calcMaxAP(updatedChar.special);
     const armorClass = calcBaseAC(updatedChar.special) + armorACBonus + raceRef.naturalACBonus;
     const sequence = calcSequence(updatedChar.special);
@@ -177,16 +191,64 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       for (const k of SPECIAL_KEYS) {
         special[k] = Math.max(raceRef.specialMin[k], Math.min(raceRef.specialMax[k], special[k]));
       }
-      return recomputeDerived({ ...prev, race: newRace, special });
+      // Reset elemental resistances to the new race's natural defaults
+      const radiationResistance = raceRef.naturalDR;
+      const gasResistance = raceRef.naturalGasDR;
+      const electricityResistance = raceRef.naturalElecDR;
+      // Reset natural protection to the new race's defaults (or undefined)
+      const naturalProtection = raceRef.naturalProtection ? { ...raceRef.naturalProtection } : undefined;
+      return recomputeDerived({
+        ...prev, race: newRace, special,
+        radiationResistance, gasResistance, electricityResistance, naturalProtection,
+      });
     });
   }, [recomputeDerived]);
+
+  // Apply a level change: sync XP, adjust unspent skill points, recompute derived
+  const applyLevel = useCallback((newLevel: number) => {
+    setChar(prev => {
+      const clamped = Math.max(1, Math.min(99, newLevel));
+      if (clamped === prev.level) return prev;
+      const levelDelta = clamped - prev.level;
+      const spPerLevel = calcSkillPointsPerLevel(prev.special);
+      const unspentSkillPoints = Math.max(0, prev.unspentSkillPoints + levelDelta * spPerLevel);
+      return recomputeDerived({
+        ...prev, level: clamped, xp: xpForLevel(clamped), unspentSkillPoints,
+      });
+    });
+  }, [recomputeDerived]);
+
+  // Apply an XP change: sync level (and cascade via applyLevel semantics)
+  const applyXP = useCallback((newXP: number) => {
+    setChar(prev => {
+      const xp = Math.max(0, Math.min(999999999, Math.floor(newXP) || 0));
+      const newLevel = levelForXP(xp);
+      const levelDelta = newLevel - prev.level;
+      const spPerLevel = calcSkillPointsPerLevel(prev.special);
+      const unspentSkillPoints = levelDelta !== 0
+        ? Math.max(0, prev.unspentSkillPoints + levelDelta * spPerLevel)
+        : prev.unspentSkillPoints;
+      return recomputeDerived({ ...prev, xp, level: newLevel, unspentSkillPoints });
+    });
+  }, [recomputeDerived]);
+
+  // Natural protection editor helper
+  const setNaturalProtectionField = useCallback((field: keyof NaturalProtection, value: number) => {
+    setChar(prev => {
+      const base = prev.naturalProtection ?? { ...EMPTY_NATURAL_PROTECTION };
+      const isDR = field.startsWith('dr');
+      const clamped = Math.max(0, isDR ? Math.min(100, value) : Math.min(999, value));
+      const next: NaturalProtection = { ...base, [field]: clamped };
+      return { ...prev, naturalProtection: next };
+    });
+  }, []);
 
   // SPECIAL point tracking
   const specialSum = Object.values(char.special).reduce((a, b) => a + b, 0);
   const specialRemaining = specialPoolTotal - specialSum;
 
-  // Perk point tracking
-  const perkPointsAvailable = calcAvailablePerkPoints(char.level);
+  // Perk point tracking (race-specific cadence)
+  const perkPointsAvailable = perkPointsForRaceLevel(char.level, char.race);
   const perkPointsUsed = calcUsedPerkPoints(char.perks);
   const perkPointsRemaining = perkPointsAvailable - perkPointsUsed;
 
@@ -353,18 +415,29 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 </View>
               </View>
 
-              {/* Level/XP */}
+              {/* Level/XP — kept in sync both ways */}
               <View style={{ flexDirection: 'row', gap: 12 }}>
-                {[{ label: 'Level', val: char.level, key: 'level' as const, min: 1, max: 99 }, { label: 'XP', val: char.xp, key: 'xp' as const, min: 0, max: 999999 }].map(({ label, val, key, min, max }) => (
-                  <View key={key} style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>{label.toUpperCase()}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.max(min, val - 1) }))}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
-                      <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary, flex: 1, textAlign: 'center' }}>{val}</Text>
-                      <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(max, val + 1) }))}><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
-                    </View>
+                {/* Level stepper */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>LEVEL</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => applyLevel(char.level - 1)}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
+                    <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary, flex: 1, textAlign: 'center' }}>{char.level}</Text>
+                    <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => applyLevel(char.level + 1)}><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
                   </View>
-                ))}
+                </View>
+                {/* XP typeable field */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>XP</Text>
+                  <TextInput
+                    style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 12, paddingVertical: 8, color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 18, textAlign: 'center' }}
+                    keyboardType="number-pad"
+                    value={String(char.xp)}
+                    onChangeText={t => applyXP(parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)}
+                    placeholder="0" placeholderTextColor={colors.mutedForeground}
+                  />
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2, textAlign: 'center' }}>Next Lv {char.level + 1}: {xpForLevel(char.level + 1)}</Text>
+                </View>
               </View>
 
               {/* HP override */}
@@ -398,6 +471,58 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   </View>
                 ))}
               </View>
+
+              {/* Natural Protection (DT/DR) — collapsible */}
+              <View style={{ gap: 8 }}>
+                <TouchableOpacity onPress={() => setShowNaturalProt(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>NATURAL PROTECTION (DT/DR)</Text>
+                  <Feather name={showNaturalProt ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                {showNaturalProt && (
+                  <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 10 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Built-in armor from hide/plating. finalDmg = max(0,(base−DT)×(1−DR/100)). Applies in addition to worn armor.</Text>
+                    {DAMAGE_TYPES.map(dt => {
+                      const dtKey = ('dt' + dt.charAt(0).toUpperCase() + dt.slice(1)) as keyof NaturalProtection;
+                      const drKey = ('dr' + dt.charAt(0).toUpperCase() + dt.slice(1)) as keyof NaturalProtection;
+                      const np = char.naturalProtection ?? EMPTY_NATURAL_PROTECTION;
+                      return (
+                        <View key={dt} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground, width: 78 }}>{DAMAGE_TYPE_NAMES[dt]}</Text>
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DT</Text>
+                            <TextInput
+                              style={{ flex: 1, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center' }}
+                              keyboardType="number-pad"
+                              value={String(np[dtKey] ?? 0)}
+                              onChangeText={t => setNaturalProtectionField(dtKey, parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)}
+                            />
+                          </View>
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DR%</Text>
+                            <TextInput
+                              style={{ flex: 1, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center' }}
+                              keyboardType="number-pad"
+                              value={String(np[drKey] ?? 0)}
+                              onChangeText={t => setNaturalProtectionField(drKey, parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+
+              {/* Biography */}
+              <TouchableOpacity onPress={() => setShowBioEditor(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>BIOGRAPHY</Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: char.biography ? colors.foreground : colors.mutedForeground, marginTop: 2 }} numberOfLines={2}>
+                    {char.biography ? char.biography.replace(/\n+/g, ' ') : 'Tap to write a backstory…'}
+                  </Text>
+                </View>
+                <Feather name="book-open" size={18} color={colors.primary} />
+              </TouchableOpacity>
             </>
           )}
 
@@ -706,14 +831,90 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           onSelect={a => setChar(c => recomputeDerived({ ...c, equippedHelmetId: a?.id ?? undefined }))}
           renderItem={a => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{a.name}</Text>}
         />
+
+        {/* Biography editor */}
+        <BioEditorModal
+          visible={showBioEditor}
+          name={char.name}
+          value={char.biography ?? ''}
+          onClose={next => { setChar(c => ({ ...c, biography: next })); setShowBioEditor(false); }}
+        />
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Biography Editor Modal (full-screen notepad) ─────────────────────────────
+function BioEditorModal({ visible, name, value, onClose }: {
+  visible: boolean; name: string; value: string; onClose: (next: string) => void;
+}) {
+  const colors = useColors();
+  const [text, setText] = useState(value);
+  useEffect(() => { if (visible) setText(value); }, [visible]);
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => onClose(text)}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: Platform.OS === 'ios' ? 52 : 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
+          <TouchableOpacity onPress={() => onClose(text)}><Feather name="chevron-left" size={24} color={colors.mutedForeground} /></TouchableOpacity>
+          <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }} numberOfLines={1}>{name ? name.toUpperCase() : 'BIOGRAPHY'}</Text>
+          <TouchableOpacity onPress={() => onClose(text)}>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>DONE</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+          <TextInput
+            style={{ minHeight: 400, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 15, lineHeight: 22, textAlignVertical: 'top' }}
+            multiline
+            placeholder="Write this character's backstory, notes, and history…"
+            placeholderTextColor={colors.mutedForeground}
+            value={text}
+            onChangeText={setText}
+          />
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Premade Picker Modal ─────────────────────────────────────────────────────
+function PremadePickerModal({ visible, onClose, onPick }: {
+  visible: boolean; onClose: () => void; onPick: (p: PremadeCharacter) => void;
+}) {
+  const colors = useColors();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.8)' }}>
+        <View style={{ maxHeight: '80%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>PRE-MADE CHARACTERS</Text>
+            <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+          <FlatList
+            data={PREMADE_CHARACTERS}
+            keyExtractor={p => p.premadeId}
+            renderItem={({ item }) => {
+              const raceRef = getRaceById(item.race);
+              return (
+                <TouchableOpacity style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 }} onPress={() => onPick(item)}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{item.name}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>· Lv 1 {raceRef?.name ?? item.race}</Text>
+                  </View>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: colors.primary }}>{item.title}</Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
       </View>
     </Modal>
   );
 }
 
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, onEdit, onDelete, onClone, allWeapons }: {
+function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, allWeapons }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
+  onBio: () => void; onToggleStorage: () => void;
   allWeapons: { id: string; name: string }[];
 }) {
   const colors = useColors();
@@ -737,6 +938,10 @@ function CharacterCard({ character, onEdit, onDelete, onClone, allWeapons }: {
           </Text>
         </View>
         <View style={{ gap: 6 }}>
+          <TouchableOpacity onPress={onBio} style={{ padding: 4 }}><Feather name="book-open" size={16} color={colors.primary} /></TouchableOpacity>
+          <TouchableOpacity onPress={onToggleStorage} style={{ padding: 4 }}>
+            <Ionicons name={character.inStorage ? 'file-tray-full' : 'archive-outline'} size={16} color={character.inStorage ? colors.primary : colors.mutedForeground} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={onClone} style={{ padding: 4 }}><Feather name="copy" size={16} color={colors.mutedForeground} /></TouchableOpacity>
           <TouchableOpacity onPress={onDelete} style={{ padding: 4 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>
         </View>
@@ -754,8 +959,25 @@ export default function CharactersScreen() {
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
+  const [showPremades, setShowPremades] = useState(false);
+  const [bioChar, setBioChar] = useState<Character | null>(null);
+  const [showStorage, setShowStorage] = useState(false);
 
-  const filtered = characters.filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()));
+  const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
+  const active = characters.filter(c => !c.inStorage && matchesSearch(c));
+  const stored = characters.filter(c => c.inStorage && matchesSearch(c));
+  const filtered = active;
+
+  const toggleStorage = (c: Character) => {
+    updateCharacter({ ...c, inStorage: !c.inStorage });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handlePickPremade = (p: PremadeCharacter) => {
+    addCharacter(createCharacterFromPremade(p, genId()));
+    setShowPremades(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
 
   const handleSave = (c: Character) => {
     if (characters.find(existing => existing.id === c.id)) updateCharacter(c);
@@ -771,10 +993,16 @@ export default function CharactersScreen() {
       <View style={{ padding: 16, gap: 10 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CHARACTERS</Text>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }} onPress={() => { setEditingChar(null); setShowForm(true); }}>
-            <Feather name="plus" size={14} color={colors.primaryForeground} />
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>NEW</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66' }} onPress={() => setShowPremades(true)}>
+              <Feather name="users" size={14} color={colors.primary} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>PREMADE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }} onPress={() => { setEditingChar(null); setShowForm(true); }}>
+              <Feather name="plus" size={14} color={colors.primaryForeground} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>NEW</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, gap: 8 }}>
           <Feather name="search" size={16} color={colors.mutedForeground} />
@@ -783,7 +1011,7 @@ export default function CharactersScreen() {
         </View>
       </View>
 
-      {filtered.length === 0 ? (
+      {active.length === 0 && stored.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 40 }}>
           <Feather name="users" size={52} color={colors.mutedForeground} />
           <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, textAlign: 'center' }}>{search ? 'No results' : 'No characters yet'}</Text>
@@ -803,6 +1031,8 @@ export default function CharactersScreen() {
               character={item}
               allWeapons={allWeapons}
               onEdit={() => { setEditingChar(item); setShowForm(true); }}
+              onBio={() => setBioChar(item)}
+              onToggleStorage={() => toggleStorage(item)}
               onDelete={() => Alert.alert('Delete Character', `Delete ${item.name}?`, [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete', style: 'destructive', onPress: () => deleteCharacter(item.id) },
@@ -810,6 +1040,32 @@ export default function CharactersScreen() {
               onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
             />
           )}
+          ListFooterComponent={stored.length > 0 ? (
+            <View style={{ marginTop: 18, gap: 10 }}>
+              <TouchableOpacity onPress={() => setShowStorage(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="file-tray-full" size={18} color={colors.primary} />
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>STORAGE ({stored.length})</Text>
+                </View>
+                <Feather name={showStorage ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+              {showStorage && stored.map(item => (
+                <CharacterCard
+                  key={item.id}
+                  character={item}
+                  allWeapons={allWeapons}
+                  onEdit={() => { setEditingChar(item); setShowForm(true); }}
+                  onBio={() => setBioChar(item)}
+                  onToggleStorage={() => toggleStorage(item)}
+                  onDelete={() => Alert.alert('Delete Character', `Delete ${item.name}?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => deleteCharacter(item.id) },
+                  ])}
+                  onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                />
+              ))}
+            </View>
+          ) : null}
         />
       )}
 
@@ -818,6 +1074,23 @@ export default function CharactersScreen() {
         character={editingChar}
         onSave={handleSave}
         onClose={() => { setShowForm(false); setEditingChar(null); }}
+      />
+
+      <PremadePickerModal
+        visible={showPremades}
+        onClose={() => setShowPremades(false)}
+        onPick={handlePickPremade}
+      />
+
+      {/* Card-level biography editor */}
+      <BioEditorModal
+        visible={bioChar !== null}
+        name={bioChar?.name ?? ''}
+        value={bioChar?.biography ?? ''}
+        onClose={next => {
+          if (bioChar) updateCharacter({ ...bioChar, biography: next });
+          setBioChar(null);
+        }}
       />
     </View>
   );

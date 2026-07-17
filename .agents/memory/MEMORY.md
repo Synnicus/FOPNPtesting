@@ -1,3 +1,4 @@
 - [Fallout PnP v4 Schema](fallout-pnp-schema.md) — storage key `@fallout_pnp_v4`; tagged skills NOT baked into char.skills; tagged +20 added at combat/display time
-- [Fallout PnP Damage Formula](fallout-pnp-damage.md) — `finalDmg = max(0, (base−DT) × (1−DR/100))`; 5 damage types N/L/F/P/E; applyProtection() in armor.ts
-- [Fallout PnP Skill Points](fallout-pnp-skill-points.md) — `10+INT/2` per level (from calcSkillPointsPerLevel); tagged skill +20 is free (NOT from pool); pool tracked as unspentSkillPoints
+- [Fallout PnP Damage Formula](fallout-pnp-damage.md) — `finalDmg = max(0, (base−DT) × (1−DR/100))`; 5 damage types N/L/F/P/E; armor DT/DR stacks with Character.naturalProtection
+- [Fallout PnP Skill Points & XP](fallout-pnp-skill-points.md) — per manual: `5+2×INT`/level; XP(n)=500·n·(n−1) to L21, +40k/level after; tagged +20 free
+- [Fallout PnP Combat Rounds](fallout-pnp-rounds.md) — AP replenish + tempAC clear ONLY when a combatant's own turn begins, never globally at round start

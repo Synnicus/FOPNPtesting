@@ -11,7 +11,7 @@ export type WeaponCategory = 'smallGuns' | 'bigGuns' | 'energyWeapons' | 'meleeW
 export type ArmorSlot = 'body' | 'helmet';
 export type CharacterType = 'pc' | 'npc';
 export type RaceType =
-  | 'human' | 'ghoul' | 'superMutant' | 'robot'
+  | 'human' | 'ghoul' | 'superMutant' | 'halfMutant' | 'robot'
   | 'deathclaw' | 'dog' | 'molerat' | 'yaoguai'
   | 'radscorpion' | 'centaur' | 'floater' | 'brahmin' | 'customRace';
 export type PositionType = 'standing' | 'crouching' | 'prone';
@@ -153,6 +153,17 @@ export interface WeaponAmmoState {
   conditionBoxes: number;
 }
 
+// ─── Natural Protection (built-in DT/DR for creatures like Deathclaws) ────────
+export interface NaturalProtection {
+  dtNormal: number; dtLaser: number; dtFire: number; dtPlasma: number; dtExplosion: number;
+  drNormal: number; drLaser: number; drFire: number; drPlasma: number; drExplosion: number;
+}
+
+export const EMPTY_NATURAL_PROTECTION: NaturalProtection = {
+  dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0,
+  drNormal: 0, drLaser: 0, drFire: 0, drPlasma: 0, drExplosion: 0,
+};
+
 // ─── Character ────────────────────────────────────────────────────────────────
 export interface Character {
   id: string;
@@ -200,6 +211,13 @@ export interface Character {
   isKnockedOut: boolean;
   knockOutRoundsLeft: number;
   conditions: string[];
+
+  // Biography / notes
+  biography?: string;
+  // Built-in natural DT/DR (for characters that don't rely on armor)
+  naturalProtection?: NaturalProtection;
+  // Character storage — stored characters are hidden from combat operations
+  inStorage?: boolean;
 }
 
 // ─── Bestiary Template ────────────────────────────────────────────────────────
@@ -224,6 +242,9 @@ export interface BestiaryTemplate {
   radiationResistance: number;
   gasResistance: number;
   electricityResistance: number;
+
+  // Built-in natural DT/DR for creatures that don't rely on armor
+  naturalProtection?: NaturalProtection;
 
   portrait?: string;
 }

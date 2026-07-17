@@ -20,8 +20,9 @@ const SKILL_LABELS: Record<string, string> = {
 };
 
 // ─── Weapon Form Modal ────────────────────────────────────────────────────────
-function WeaponFormModal({ visible, onClose, onSave }: {
+function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   visible: boolean; onClose: () => void; onSave: (w: Weapon) => void;
+  editWeapon?: Weapon | null;
 }) {
   const colors = useColors();
   const [name, setName] = useState('');
@@ -37,6 +38,38 @@ function WeaponFormModal({ visible, onClose, onSave }: {
   const [rangeNormal, setRangeNormal] = useState(15);
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
+  const [showPresets, setShowPresets] = useState(false);
+
+  const isEditing = !!editWeapon;
+
+  const applyWeaponFields = (w: Weapon, nameOverride?: string) => {
+    setName(nameOverride ?? w.name);
+    setCategory(w.category);
+    setDamageType(w.damageType);
+    setDieCount(w.damageDieCount);
+    setDieSides(w.damageDie);
+    setDamageBonus(w.damageBonus);
+    setBurstLimit(w.burstLimit);
+    setIsDoubleShot(w.isDoubleShot);
+    setMagazineSize(w.magazineSize);
+    setMinStr(w.minStr);
+    setRangeNormal(w.rangeNormal);
+    setSelectedMods([...w.mods]);
+  };
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setTab('basic');
+    setShowPresets(false);
+    if (editWeapon) {
+      applyWeaponFields(editWeapon);
+    } else {
+      setName(''); setCategory('smallGuns'); setDamageType('normal');
+      setDieCount(1); setDieSides(6); setDamageBonus(0); setBurstLimit(1);
+      setIsDoubleShot(false); setMagazineSize(0); setMinStr(3); setRangeNormal(15);
+      setSelectedMods([]);
+    }
+  }, [visible, editWeapon]);
 
   const isValid = name.trim().length > 0 && dieCount > 0 && dieSides > 0;
 
@@ -46,11 +79,16 @@ function WeaponFormModal({ visible, onClose, onSave }: {
     setSelectedMods(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
   };
 
+  const copyFromPreset = (w: Weapon) => {
+    applyWeaponFields(w, `${w.name} (Copy)`);
+    setShowPresets(false);
+  };
+
   const handleSave = () => {
     if (!isValid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSave({
-      id: genId(), name: name.trim(),
+      id: isEditing ? editWeapon!.id : genId(), name: name.trim(),
       category: category as Weapon['category'],
       damageType, damageDieCount: dieCount, damageDie: dieSides,
       damageBonus, skill: (category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
@@ -58,11 +96,6 @@ function WeaponFormModal({ visible, onClose, onSave }: {
       weight: 0, minStr, rangeNormal, knockdownChance: 0,
       mods: selectedMods, isCustom: true,
     });
-    // Reset
-    setName(''); setCategory('smallGuns'); setDamageType('normal');
-    setDieCount(1); setDieSides(6); setDamageBonus(0); setBurstLimit(1);
-    setIsDoubleShot(false); setMagazineSize(0); setMinStr(3); setRangeNormal(15);
-    setSelectedMods([]); setTab('basic');
     onClose();
   };
 
@@ -82,8 +115,31 @@ function WeaponFormModal({ visible, onClose, onSave }: {
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
         <View style={{ maxHeight: '90%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CREATE CUSTOM WEAPON</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{isEditing ? 'EDIT CUSTOM WEAPON' : 'CREATE CUSTOM WEAPON'}</Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+
+          {/* Copy from preset */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}
+              onPress={() => setShowPresets(v => !v)}
+            >
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>COPY FROM PRESET</Text>
+              <Feather name={showPresets ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+            {showPresets && (
+              <View style={{ maxHeight: 180, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                <ScrollView>
+                  {BUILT_IN_WEAPONS.map(w => (
+                    <TouchableOpacity key={w.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => copyFromPreset(w)}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{w.name}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{formatWeaponDamage(w)} · {SKILL_LABELS[w.category] ?? w.category}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
@@ -179,7 +235,7 @@ function WeaponFormModal({ visible, onClose, onSave }: {
 
           <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
             <TouchableOpacity style={{ paddingVertical: 14, borderRadius: colors.radius, alignItems: 'center', backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }} onPress={handleSave} disabled={!isValid}>
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>CREATE WEAPON</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>{isEditing ? 'SAVE CHANGES' : 'CREATE WEAPON'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -189,8 +245,9 @@ function WeaponFormModal({ visible, onClose, onSave }: {
 }
 
 // ─── Armor Form Modal ─────────────────────────────────────────────────────────
-function ArmorFormModal({ visible, onClose, onSave }: {
+function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   visible: boolean; onClose: () => void; onSave: (a: Armor) => void;
+  editArmor?: Armor | null;
 }) {
   const colors = useColors();
   const [name, setName] = useState('');
@@ -209,22 +266,48 @@ function ArmorFormModal({ visible, onClose, onSave }: {
   const [drPlasma, setDrPlasma] = useState(0);
   const [drExplosion, setDrExplosion] = useState(0);
   const [acBonus, setAcBonus] = useState(0);
+  const [showPresets, setShowPresets] = useState(false);
+
+  const isEditing = !!editArmor;
+
+  const applyArmorFields = (a: Armor, nameOverride?: string) => {
+    setName(nameOverride ?? a.name);
+    setSlot(a.slot);
+    setDtNormal(a.dtNormal); setDtLaser(a.dtLaser); setDtFire(a.dtFire); setDtPlasma(a.dtPlasma); setDtExplosion(a.dtExplosion);
+    setDrNormal(a.drNormal); setDrLaser(a.drLaser); setDrFire(a.drFire); setDrPlasma(a.drPlasma); setDrExplosion(a.drExplosion);
+    setAcBonus(a.acBonus);
+  };
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setTab('dt');
+    setShowPresets(false);
+    if (editArmor) {
+      applyArmorFields(editArmor);
+    } else {
+      setName(''); setSlot('body');
+      setDtNormal(0); setDtLaser(0); setDtFire(0); setDtPlasma(0); setDtExplosion(0);
+      setDrNormal(0); setDrLaser(0); setDrFire(0); setDrPlasma(0); setDrExplosion(0);
+      setAcBonus(0);
+    }
+  }, [visible, editArmor]);
 
   const isValid = name.trim().length > 0;
+
+  const copyFromPreset = (a: Armor) => {
+    applyArmorFields(a, `${a.name} (Copy)`);
+    setShowPresets(false);
+  };
 
   const handleSave = () => {
     if (!isValid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSave({
-      id: genId(), name: name.trim(), slot,
+      id: isEditing ? editArmor!.id : genId(), name: name.trim(), slot,
       dtNormal, dtLaser, dtFire, dtPlasma, dtExplosion,
       drNormal, drLaser, drFire, drPlasma, drExplosion,
       acBonus, weight: 0, isCustom: true,
     });
-    setName(''); setSlot('body'); setTab('dt');
-    setDtNormal(0); setDtLaser(0); setDtFire(0); setDtPlasma(0); setDtExplosion(0);
-    setDrNormal(0); setDrLaser(0); setDrFire(0); setDrPlasma(0); setDrExplosion(0);
-    setAcBonus(0);
     onClose();
   };
 
@@ -259,8 +342,31 @@ function ArmorFormModal({ visible, onClose, onSave }: {
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
         <View style={{ maxHeight: '85%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CREATE CUSTOM ARMOR</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{isEditing ? 'EDIT CUSTOM ARMOR' : 'CREATE CUSTOM ARMOR'}</Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+
+          {/* Copy from preset */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}
+              onPress={() => setShowPresets(v => !v)}
+            >
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>COPY FROM PRESET</Text>
+              <Feather name={showPresets ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+            {showPresets && (
+              <View style={{ maxHeight: 180, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                <ScrollView>
+                  {BUILT_IN_ARMOR.map(a => (
+                    <TouchableOpacity key={a.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => copyFromPreset(a)}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{a.name}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{a.slot === 'body' ? 'Body' : 'Helmet'} · AC+{a.acBonus}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
@@ -314,7 +420,7 @@ function ArmorFormModal({ visible, onClose, onSave }: {
 
           <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
             <TouchableOpacity style={{ paddingVertical: 14, borderRadius: colors.radius, alignItems: 'center', backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }} onPress={handleSave} disabled={!isValid}>
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>CREATE ARMOR</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>{isEditing ? 'SAVE CHANGES' : 'CREATE ARMOR'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -324,7 +430,7 @@ function ArmorFormModal({ visible, onClose, onSave }: {
 }
 
 // ─── Weapon Row ───────────────────────────────────────────────────────────────
-function WeaponRow({ weapon, onDelete }: { weapon: Weapon; onDelete?: () => void }) {
+function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void }) {
   const colors = useColors();
   const modBonuses = computeModBonuses(weapon.mods);
   const hasModBonuses = modBonuses.toHit !== 0 || modBonuses.damage !== 0;
@@ -351,17 +457,29 @@ function WeaponRow({ weapon, onDelete }: { weapon: Weapon; onDelete?: () => void
           </Text>
         )}
       </View>
-      {onDelete && (
-        <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}>
-          <Feather name="trash-2" size={16} color={colors.destructive} />
-        </TouchableOpacity>
-      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {onCopy && (
+          <TouchableOpacity onPress={onCopy} style={{ padding: 6 }}>
+            <Feather name="copy" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        )}
+        {onEdit && (
+          <TouchableOpacity onPress={onEdit} style={{ padding: 6 }}>
+            <Feather name="edit-2" size={16} color={colors.primary} />
+          </TouchableOpacity>
+        )}
+        {onDelete && (
+          <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}>
+            <Feather name="trash-2" size={16} color={colors.destructive} />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
 
 // ─── Armor Row ────────────────────────────────────────────────────────────────
-function ArmorRow({ armor, onDelete }: { armor: Armor; onDelete?: () => void }) {
+function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void }) {
   const colors = useColors();
   const dtTypes: (keyof Armor)[] = ['dtNormal', 'dtLaser', 'dtFire', 'dtPlasma', 'dtExplosion'];
   const drTypes: (keyof Armor)[] = ['drNormal', 'drLaser', 'drFire', 'drPlasma', 'drExplosion'];
@@ -374,7 +492,11 @@ function ArmorRow({ armor, onDelete }: { armor: Armor; onDelete?: () => void }) 
           {armor.isCustom && <View style={{ paddingHorizontal: 5, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 3 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{armor.slot === 'body' ? 'Body' : 'Helmet'} · AC+{armor.acBonus}</Text>
         </View>
-        {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {onCopy && <TouchableOpacity onPress={onCopy} style={{ padding: 6 }}><Feather name="copy" size={16} color={colors.mutedForeground} /></TouchableOpacity>}
+          {onEdit && <TouchableOpacity onPress={onEdit} style={{ padding: 6 }}><Feather name="edit-2" size={16} color={colors.primary} /></TouchableOpacity>}
+          {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>}
+        </View>
       </View>
       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
         {typeLabels.map((l, i) => {
@@ -400,11 +522,21 @@ function ArmorRow({ armor, onDelete }: { armor: Armor; onDelete?: () => void }) 
 export default function EquipmentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { customWeapons, customArmor, addCustomWeapon, deleteCustomWeapon, addCustomArmor, deleteCustomArmor } = useApp();
+  const { customWeapons, customArmor, addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor } = useApp();
   const [tab, setTab] = useState<'weapons' | 'armor'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [showArmorForm, setShowArmorForm] = useState(false);
+  const [editingWeapon, setEditingWeapon] = useState<Weapon | null>(null);
+  const [editingArmor, setEditingArmor] = useState<Armor | null>(null);
   const [search, setSearch] = useState('');
+
+  const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
+  const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
+  const openEditWeapon = (w: Weapon) => { setEditingWeapon(w); setShowWeaponForm(true); };
+  const openEditArmor = (a: Armor) => { setEditingArmor(a); setShowArmorForm(true); };
+  // Duplicate: open the creator pre-filled from an existing weapon/armor as a NEW custom.
+  const openCopyWeapon = (w: Weapon) => { setEditingWeapon({ ...w, id: genId(), name: `${w.name} (Copy)`, isCustom: true }); setShowWeaponForm(true); };
+  const openCopyArmor = (a: Armor) => { setEditingArmor({ ...a, id: genId(), name: `${a.name} (Copy)`, isCustom: true }); setShowArmorForm(true); };
 
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
@@ -420,7 +552,7 @@ export default function EquipmentScreen() {
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
           <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
-            onPress={() => tab === 'weapons' ? setShowWeaponForm(true) : setShowArmorForm(true)}
+            onPress={() => tab === 'weapons' ? openNewWeapon() : openNewArmor()}
           >
             <Feather name="plus" size={14} color={colors.primaryForeground} />
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
@@ -461,6 +593,8 @@ export default function EquipmentScreen() {
           renderItem={({ item }) => (
             <WeaponRow
               weapon={item}
+              onCopy={() => openCopyWeapon(item)}
+              onEdit={item.isCustom ? () => openEditWeapon(item) : undefined}
               onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete', style: 'destructive', onPress: () => deleteCustomWeapon(item.id) },
@@ -476,6 +610,8 @@ export default function EquipmentScreen() {
           renderItem={({ item }) => (
             <ArmorRow
               armor={item}
+              onCopy={() => openCopyArmor(item)}
+              onEdit={item.isCustom ? () => openEditArmor(item) : undefined}
               onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete', style: 'destructive', onPress: () => deleteCustomArmor(item.id) },
@@ -485,8 +621,26 @@ export default function EquipmentScreen() {
         />
       )}
 
-      <WeaponFormModal visible={showWeaponForm} onClose={() => setShowWeaponForm(false)} onSave={w => { addCustomWeapon(w); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }} />
-      <ArmorFormModal visible={showArmorForm} onClose={() => setShowArmorForm(false)} onSave={a => { addCustomArmor(a); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }} />
+      <WeaponFormModal
+        visible={showWeaponForm}
+        editWeapon={editingWeapon}
+        onClose={() => { setShowWeaponForm(false); setEditingWeapon(null); }}
+        onSave={w => {
+          if (customWeapons.some(x => x.id === w.id)) updateCustomWeapon(w);
+          else addCustomWeapon(w);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
+      <ArmorFormModal
+        visible={showArmorForm}
+        editArmor={editingArmor}
+        onClose={() => { setShowArmorForm(false); setEditingArmor(null); }}
+        onSave={a => {
+          if (customArmor.some(x => x.id === a.id)) updateCustomArmor(a);
+          else addCustomArmor(a);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
     </View>
   );
 }

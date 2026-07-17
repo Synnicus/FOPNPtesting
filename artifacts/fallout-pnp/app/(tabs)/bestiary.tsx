@@ -8,11 +8,11 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { BestiaryTemplate, BestiaryCategory, Character, CharacterSkills, SPECIALStats, DEFAULT_SKILLS } from '@/context/types';
+import { BestiaryTemplate, BestiaryCategory, Character, CharacterSkills, SPECIALStats, DEFAULT_SKILLS, NaturalProtection, EMPTY_NATURAL_PROTECTION, Armor, DamageType, DAMAGE_TYPE_NAMES } from '@/context/types';
 import { BUILT_IN_BESTIARY, BESTIARY_CATEGORIES } from '@/data/bestiary';
 import { calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills } from '@/data/derived';
 import { RACES, getRaceById } from '@/data/races';
-import { BUILT_IN_WEAPONS } from '@/data/weapons';
+import { computeCombinedProtection } from '@/data/armor';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -24,16 +24,42 @@ const SKILL_SHORT_LABELS: Partial<Record<keyof CharacterSkills, string>> = {
 
 const DEFAULT_SPECIAL: SPECIALStats = { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 };
 
+// 5 damage types keyed to NaturalProtection / Armor fields
+const NP_TYPES: { type: DamageType; dtKey: keyof NaturalProtection; drKey: keyof NaturalProtection }[] = [
+  { type: 'normal', dtKey: 'dtNormal', drKey: 'drNormal' },
+  { type: 'laser', dtKey: 'dtLaser', drKey: 'drLaser' },
+  { type: 'fire', dtKey: 'dtFire', drKey: 'drFire' },
+  { type: 'plasma', dtKey: 'dtPlasma', drKey: 'drPlasma' },
+  { type: 'explosion', dtKey: 'dtExplosion', drKey: 'drExplosion' },
+];
+
+// Combined DT/DR for a damage type from natural protection + body + helmet
+function combinedProtectionFor(
+  np: NaturalProtection | undefined,
+  body: Armor | undefined,
+  helmet: Armor | undefined,
+  t: { type: DamageType; dtKey: keyof NaturalProtection; drKey: keyof NaturalProtection },
+): { dt: number; dr: number } {
+  const armor = computeCombinedProtection(body, helmet, t.type);
+  const npDt = np ? (np[t.dtKey] as number) : 0;
+  const npDr = np ? (np[t.drKey] as number) : 0;
+  return { dt: armor.dt + npDt, dr: Math.min(90, armor.dr + npDr) };
+}
+
 // ─── Spawn Modal ─────────────────────────────────────────────────────────────
-function SpawnModal({ template, visible, onClose, onSpawn }: {
+function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor }: {
   template: BestiaryTemplate | null; visible: boolean;
   onClose: () => void; onSpawn: (name: string) => void;
+  allWeapons: import('@/context/types').Weapon[];
+  allArmor: Armor[];
 }) {
   const colors = useColors();
   const [customName, setCustomName] = useState('');
   if (!template) return null;
   const spawnName = customName.trim() || template.name;
-  const weapon = BUILT_IN_WEAPONS.find(w => w.id === template.equippedWeaponId);
+  const weapon = allWeapons.find(w => w.id === template.equippedWeaponId);
+  const spawnBody = allArmor.find(a => a.id === template.equippedBodyArmorId);
+  const spawnHelmet = allArmor.find(a => a.id === template.equippedHelmetId);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -85,6 +111,21 @@ function SpawnModal({ template, visible, onClose, onSpawn }: {
             ))}
           </View>
 
+          {/* Derived DT/DR (armor + natural protection) */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {NP_TYPES.map(t => {
+              const c = combinedProtectionFor(template.naturalProtection, spawnBody, spawnHelmet, t);
+              if (c.dt === 0 && c.dr === 0) return null;
+              return (
+                <View key={t.type} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{DAMAGE_TYPE_NAMES[t.type].charAt(0)}</Text>
+                  {c.dt > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.foreground }}>DT {c.dt}</Text>}
+                  {c.dr > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>DR {c.dr}%</Text>}
+                </View>
+              );
+            })}
+          </View>
+
           {template.description && (
             <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>{template.description}</Text>
           )}
@@ -111,10 +152,12 @@ function SpawnModal({ template, visible, onClose, onSpawn }: {
 }
 
 // ─── Custom NPC Form Modal ─────────────────────────────────────────────────────
-function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
+function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, allArmor }: {
   visible: boolean; onClose: () => void;
   onSave: (t: BestiaryTemplate) => void;
   editTemplate?: BestiaryTemplate | null;
+  allWeapons: import('@/context/types').Weapon[];
+  allArmor: Armor[];
 }) {
   const colors = useColors();
   const [name, setName] = useState(editTemplate?.name ?? '');
@@ -123,27 +166,58 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
   const [special, setSpecial] = useState<SPECIALStats>(editTemplate?.special ?? { ...DEFAULT_SPECIAL });
   const [skills, setSkills] = useState<CharacterSkills>(editTemplate?.skills ?? { ...DEFAULT_SKILLS });
   const [maxHp, setMaxHp] = useState(editTemplate?.maxHp ?? 30);
-  const [armorClass, setArmorClass] = useState(editTemplate?.armorClass ?? 10);
   const [maxAP, setMaxAP] = useState(editTemplate?.maxAP ?? 8);
   const [radRes, setRadRes] = useState(editTemplate?.radiationResistance ?? 0);
   const [weaponId, setWeaponId] = useState(editTemplate?.equippedWeaponId ?? '');
+  const [bodyArmorId, setBodyArmorId] = useState(editTemplate?.equippedBodyArmorId ?? '');
+  const [helmetId, setHelmetId] = useState(editTemplate?.equippedHelmetId ?? '');
+  const [naturalProtection, setNaturalProtection] = useState<NaturalProtection>(editTemplate?.naturalProtection ?? { ...EMPTY_NATURAL_PROTECTION });
   const [useComputed, setUseComputed] = useState(false);
-  const [tab, setTab] = useState<'basics' | 'special' | 'skills'>('basics');
+  const [tab, setTab] = useState<'basics' | 'special' | 'skills' | 'protect'>('basics');
+  const [showPreset, setShowPreset] = useState(false);
+  const [showWeaponPicker, setShowWeaponPicker] = useState(false);
+  const [showBodyPicker, setShowBodyPicker] = useState(false);
+  const [showHelmetPicker, setShowHelmetPicker] = useState(false);
+
+  const applyTemplateFields = (t: BestiaryTemplate, nameOverride?: string) => {
+    setName(nameOverride ?? t.name);
+    setCategory(t.category);
+    setDescription(t.description ?? '');
+    setSpecial({ ...t.special });
+    setSkills({ ...t.skills });
+    setMaxHp(t.maxHp);
+    setMaxAP(t.maxAP);
+    setRadRes(t.radiationResistance);
+    setWeaponId(t.equippedWeaponId ?? '');
+    setBodyArmorId(t.equippedBodyArmorId ?? '');
+    setHelmetId(t.equippedHelmetId ?? '');
+    setNaturalProtection(t.naturalProtection ? { ...t.naturalProtection } : { ...EMPTY_NATURAL_PROTECTION });
+  };
 
   React.useEffect(() => {
     if (!visible) return;
-    setName(editTemplate?.name ?? '');
-    setCategory(editTemplate?.category ?? 'custom');
-    setDescription(editTemplate?.description ?? '');
-    setSpecial(editTemplate?.special ?? { ...DEFAULT_SPECIAL });
-    setSkills(editTemplate?.skills ?? { ...DEFAULT_SKILLS });
-    setMaxHp(editTemplate?.maxHp ?? 30);
-    setArmorClass(editTemplate?.armorClass ?? 10);
-    setMaxAP(editTemplate?.maxAP ?? 8);
-    setRadRes(editTemplate?.radiationResistance ?? 0);
-    setWeaponId(editTemplate?.equippedWeaponId ?? '');
     setUseComputed(false);
     setTab('basics');
+    setShowPreset(false);
+    setShowWeaponPicker(false);
+    setShowBodyPicker(false);
+    setShowHelmetPicker(false);
+    if (editTemplate) {
+      applyTemplateFields(editTemplate);
+    } else {
+      setName('');
+      setCategory('custom');
+      setDescription('');
+      setSpecial({ ...DEFAULT_SPECIAL });
+      setSkills({ ...DEFAULT_SKILLS });
+      setMaxHp(30);
+      setMaxAP(8);
+      setRadRes(0);
+      setWeaponId('');
+      setBodyArmorId('');
+      setHelmetId('');
+      setNaturalProtection({ ...EMPTY_NATURAL_PROTECTION });
+    }
   }, [visible]);
 
   // Auto-compute derived stats when useComputed is on
@@ -151,10 +225,25 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
     if (useComputed) {
       setMaxHp(calcMaxHP(special, 1));
       setMaxAP(calcMaxAP(special));
-      setArmorClass(calcBaseAC(special));
       setSkills(calcBaseSkills(special));
     }
   }, [special, useComputed]);
+
+  const bodyArmor = allArmor.find(a => a.id === bodyArmorId);
+  const helmet = allArmor.find(a => a.id === helmetId);
+  const bodyArmorList = allArmor.filter(a => a.slot === 'body');
+  const helmetList = allArmor.filter(a => a.slot === 'helmet');
+
+  // Derived AC = agility + armor acBonus (body + helmet)
+  const derivedAC = special.agility + (bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0);
+
+  const setNP = (dtKey: keyof NaturalProtection, drKey: keyof NaturalProtection, field: 'dt' | 'dr', delta: number) => {
+    setNaturalProtection(np => {
+      const key = field === 'dt' ? dtKey : drKey;
+      const max = field === 'dt' ? 50 : 90;
+      return { ...np, [key]: Math.max(0, Math.min(max, (np[key] as number) + delta)) };
+    });
+  };
 
   const SPECIAL_KEYS = Object.keys(special) as (keyof SPECIALStats)[];
   const COMBAT_SKILLS: (keyof CharacterSkills)[] = ['smallGuns', 'bigGuns', 'energyWeapons', 'meleeWeapons', 'unarmed', 'throwing'];
@@ -168,15 +257,18 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
     pilot: 'Pilot',
   };
 
-  const naturalWeapons = BUILT_IN_WEAPONS.filter(w => w.category === 'natural' || w.category === 'unarmed' || w.category === 'meleeWeapons');
+  const hasNaturalProtection = NP_TYPES.some(t => (naturalProtection[t.dtKey] as number) > 0 || (naturalProtection[t.drKey] as number) > 0);
 
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Name required'); return; }
     const t: BestiaryTemplate = {
       id: editTemplate?.id ?? genId(),
       name: name.trim(), category, description,
-      special, maxHp, armorClass, maxAP, skills,
+      special, maxHp, armorClass: derivedAC, maxAP, skills,
       equippedWeaponId: weaponId || undefined,
+      equippedBodyArmorId: bodyArmorId || undefined,
+      equippedHelmetId: helmetId || undefined,
+      naturalProtection: hasNaturalProtection ? naturalProtection : undefined,
       radiationResistance: radRes, gasResistance: 0, electricityResistance: 0,
       isCustom: true,
     };
@@ -192,11 +284,34 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
 
+          {/* Copy from template */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}
+              onPress={() => setShowPreset(v => !v)}
+            >
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>COPY FROM TEMPLATE</Text>
+              <Feather name={showPreset ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+            {showPreset && (
+              <View style={{ maxHeight: 180, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                <ScrollView>
+                  {BUILT_IN_BESTIARY.map(t => (
+                    <TouchableOpacity key={t.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { applyTemplateFields(t); setShowPreset(false); }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{t.name}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{BESTIARY_CATEGORIES.find(c => c.id === t.category)?.label} · HP {t.maxHp} · AP {t.maxAP}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
           {/* Tab bar */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            {(['basics', 'special', 'skills'] as const).map(t => (
+            {(['basics', 'special', 'skills', 'protect'] as const).map(t => (
               <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: tab === t ? colors.primary : 'transparent' }} onPress={() => setTab(t)}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: tab === t ? colors.primary : colors.mutedForeground, letterSpacing: 1 }}>{t.toUpperCase()}</Text>
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: tab === t ? colors.primary : colors.mutedForeground, letterSpacing: 1 }}>{t === 'protect' ? 'DT/DR' : t.toUpperCase()}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -237,7 +352,6 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
 
                 {[
                   { label: 'Max HP', val: maxHp, set: setMaxHp, min: 1, max: 999 },
-                  { label: 'Armor Class', val: armorClass, set: setArmorClass, min: 0, max: 100 },
                   { label: 'Max AP', val: maxAP, set: setMaxAP, min: 1, max: 20 },
                   { label: 'Radiation Resistance %', val: radRes, set: setRadRes, min: 0, max: 100 },
                 ].map(({ label, val, set, min, max }) => (
@@ -251,20 +365,79 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
                   </View>
                 ))}
 
-                {/* Weapon selector */}
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 4 }}>EQUIPPED WEAPON (optional)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 4, backgroundColor: !weaponId ? colors.primary : colors.secondary, borderWidth: 1, borderColor: !weaponId ? colors.primary : colors.border }} onPress={() => setWeaponId('')}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: !weaponId ? colors.primaryForeground : colors.mutedForeground }}>None</Text>
-                    </TouchableOpacity>
-                    {naturalWeapons.map(w => (
-                      <TouchableOpacity key={w.id} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 4, backgroundColor: weaponId === w.id ? colors.primary : colors.secondary, borderWidth: 1, borderColor: weaponId === w.id ? colors.primary : colors.border }} onPress={() => setWeaponId(w.id)}>
-                        <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: weaponId === w.id ? colors.primaryForeground : colors.foreground }}>{w.name}</Text>
-                      </TouchableOpacity>
-                    ))}
+                {/* Derived AC (agility + armor acBonus) */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                  <View>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Armor Class (derived)</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AGI {special.agility} + armor {(bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0)}</Text>
                   </View>
-                </ScrollView>
+                  <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary }}>{derivedAC}</Text>
+                </View>
+
+                {/* Weapon dropdown */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 4 }}>EQUIPPED WEAPON</Text>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowWeaponPicker(v => !v)}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: weaponId ? colors.foreground : colors.mutedForeground }}>{allWeapons.find(w => w.id === weaponId)?.name ?? 'None'}</Text>
+                  <Feather name={showWeaponPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                {showWeaponPicker && (
+                  <View style={{ maxHeight: 200, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                    <ScrollView>
+                      <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { setWeaponId(''); setShowWeaponPicker(false); }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>None</Text>
+                      </TouchableOpacity>
+                      {allWeapons.map(w => (
+                        <TouchableOpacity key={w.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: weaponId === w.id ? colors.primary + '22' : 'transparent' }} onPress={() => { setWeaponId(w.id); setShowWeaponPicker(false); }}>
+                          <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: weaponId === w.id ? colors.primary : colors.foreground }}>{w.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Body armor dropdown */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 4 }}>BODY ARMOR</Text>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowBodyPicker(v => !v)}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: bodyArmorId ? colors.foreground : colors.mutedForeground }}>{bodyArmor?.name ?? 'None'}</Text>
+                  <Feather name={showBodyPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                {showBodyPicker && (
+                  <View style={{ maxHeight: 200, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                    <ScrollView>
+                      <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { setBodyArmorId(''); setShowBodyPicker(false); }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>None</Text>
+                      </TouchableOpacity>
+                      {bodyArmorList.map(a => (
+                        <TouchableOpacity key={a.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: bodyArmorId === a.id ? colors.primary + '22' : 'transparent' }} onPress={() => { setBodyArmorId(a.id); setShowBodyPicker(false); }}>
+                          <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: bodyArmorId === a.id ? colors.primary : colors.foreground }}>{a.name}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AC+{a.acBonus}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Helmet dropdown */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 4 }}>HELMET</Text>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowHelmetPicker(v => !v)}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: helmetId ? colors.foreground : colors.mutedForeground }}>{helmet?.name ?? 'None'}</Text>
+                  <Feather name={showHelmetPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                {showHelmetPicker && (
+                  <View style={{ maxHeight: 200, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                    <ScrollView>
+                      <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { setHelmetId(''); setShowHelmetPicker(false); }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>None</Text>
+                      </TouchableOpacity>
+                      {helmetList.map(a => (
+                        <TouchableOpacity key={a.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: helmetId === a.id ? colors.primary + '22' : 'transparent' }} onPress={() => { setHelmetId(a.id); setShowHelmetPicker(false); }}>
+                          <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: helmetId === a.id ? colors.primary : colors.foreground }}>{a.name}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AC+{a.acBonus}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
               </>
             )}
 
@@ -302,6 +475,44 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
                 ))}
               </>
             )}
+
+            {tab === 'protect' && (
+              <>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>NATURAL PROTECTION (DT/DR)</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  Built-in armor for creatures like Deathclaws/Radscorpions. DT = flat reduction, DR = % resist. Stacks with equipped armor.
+                </Text>
+                {NP_TYPES.map(t => {
+                  const dtVal = naturalProtection[t.dtKey] as number;
+                  const drVal = naturalProtection[t.drKey] as number;
+                  const combined = combinedProtectionFor(naturalProtection, bodyArmor, helmet, t);
+                  return (
+                    <View key={t.type} style={{ padding: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>{DAMAGE_TYPE_NAMES[t.type]}</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>DT (flat)</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setNP(t.dtKey, t.drKey, 'dt', -1)}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
+                          <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground, minWidth: 32, textAlign: 'center' }}>{dtVal}</Text>
+                          <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setNP(t.dtKey, t.drKey, 'dt', 1)}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>DR (%)</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setNP(t.dtKey, t.drKey, 'dr', -5)}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
+                          <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground, minWidth: 40, textAlign: 'center' }}>{drVal}%</Text>
+                          <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setNP(t.dtKey, t.drKey, 'dr', 5)}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                        Total (with armor): DT {combined.dt} · DR {combined.dr}%
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
+            )}
           </ScrollView>
 
           <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
@@ -319,15 +530,16 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate }: {
 }
 
 // ─── Bestiary Card ───────────────────────────────────────────────────────────
-function BestiaryCard({ template, onSpawn, onEdit, onDelete }: {
+function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
   template: BestiaryTemplate;
   onSpawn: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  allWeapons: import('@/context/types').Weapon[];
 }) {
   const colors = useColors();
   const cat = BESTIARY_CATEGORIES.find(c => c.id === template.category);
-  const weapon = BUILT_IN_WEAPONS.find(w => w.id === template.equippedWeaponId);
+  const weapon = allWeapons.find(w => w.id === template.equippedWeaponId);
   const topSkills = SKILL_SHORTHAND.filter(sk => template.skills[sk] > 0);
 
   return (
@@ -402,7 +614,7 @@ function BestiaryCard({ template, onSpawn, onEdit, onDelete }: {
 export default function BestiaryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addCharacter, customBestiaryTemplates, addCustomBestiaryTemplate, removeCustomBestiaryTemplate, allWeapons } = useApp();
+  const { addCharacter, customBestiaryTemplates, addCustomBestiaryTemplate, removeCustomBestiaryTemplate, allWeapons, allArmor } = useApp();
 
   const [activeCategory, setActiveCategory] = useState<BestiaryCategory>('human');
   const [spawnTarget, setSpawnTarget] = useState<BestiaryTemplate | null>(null);
@@ -445,6 +657,7 @@ export default function BestiaryScreen() {
       radiationResistance: template.radiationResistance,
       gasResistance: template.gasResistance,
       electricityResistance: template.electricityResistance,
+      naturalProtection: template.naturalProtection ? { ...template.naturalProtection } : undefined,
       equippedWeaponId: template.equippedWeaponId,
       equippedBodyArmorId: template.equippedBodyArmorId,
       equippedHelmetId: template.equippedHelmetId,
@@ -551,6 +764,7 @@ export default function BestiaryScreen() {
             <View style={{ flex: 1 }}>
               <BestiaryCard
                 template={item}
+                allWeapons={allWeapons}
                 onSpawn={() => setSpawnTarget(item)}
                 onEdit={item.isCustom ? () => { setEditingTemplate(item); setShowCustomForm(true); } : undefined}
                 onDelete={item.isCustom ? () => handleDelete(item) : undefined}
@@ -565,6 +779,8 @@ export default function BestiaryScreen() {
         visible={!!spawnTarget}
         onClose={() => setSpawnTarget(null)}
         onSpawn={name => spawnTarget && handleSpawn(spawnTarget, name)}
+        allWeapons={allWeapons}
+        allArmor={allArmor}
       />
 
       <CustomNPCModal
@@ -572,6 +788,8 @@ export default function BestiaryScreen() {
         onClose={() => { setShowCustomForm(false); setEditingTemplate(null); }}
         onSave={handleSaveCustom}
         editTemplate={editingTemplate}
+        allWeapons={allWeapons}
+        allArmor={allArmor}
       />
     </View>
   );

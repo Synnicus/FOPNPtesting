@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 
 interface Props {
-  portrait: string | null;
+  portrait: string | null | undefined;
   name: string;
   size?: number;
 }
