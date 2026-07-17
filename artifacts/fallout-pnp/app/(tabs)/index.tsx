@@ -412,7 +412,7 @@ function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, betterCritica
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setPosition, addInjury, updateCharacter, spendAP,
+  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setPosition, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -714,7 +714,7 @@ export default function CombatScreen() {
       if (Platform.OS === 'web') { alert('Empty Magazine! Reload before firing.'); }
       else Alert.alert('Empty Magazine', 'No ammo remaining. Reload first!', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Reload (2 AP)', onPress: () => { if (attacker && weapon) { reloadWeapon(attacker.id, weapon.id); spendAP(attacker.id, AP_COSTS.RELOAD); } } },
+        { text: 'Reload (2 AP)', onPress: () => { if (attacker && weapon && spendAP(attacker.id, AP_COSTS.RELOAD)) reloadWeapon(attacker.id, weapon.id); else Alert.alert('Not Enough AP', `Reload needs ${AP_COSTS.RELOAD} AP.`); } },
       ]);
       return;
     }
@@ -857,8 +857,13 @@ export default function CombatScreen() {
 
   const handleReload = useCallback(() => {
     if (!attacker || !weapon) return;
+    // Spend AP first — reload only happens if the character can afford it.
+    if (!spendAP(attacker.id, AP_COSTS.RELOAD)) {
+      if (Platform.OS === 'web') alert(`Not enough AP (need ${AP_COSTS.RELOAD}) to reload.`);
+      else Alert.alert('Not Enough AP', `Reload needs ${AP_COSTS.RELOAD} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
     reloadWeapon(attacker.id, weapon.id);
-    spendAP(attacker.id, AP_COSTS.RELOAD);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [attacker, weapon, reloadWeapon, spendAP]);
 
@@ -874,6 +879,36 @@ export default function CombatScreen() {
     if (newPosition) setPosition(attacker.id, newPosition);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, spendAP, setPosition]);
+
+  // Generic labelled AP action (reload/equip/item/skills/mine). Optionally runs
+  // the reload logic on the equipped weapon.
+  const handleGenericApAction = useCallback((cost: number, label: string, alsoReload?: boolean) => {
+    if (!attacker) return;
+    const ok = spendAP(attacker.id, cost);
+    if (!ok) {
+      if (Platform.OS === 'web') alert(`Not enough AP (need ${cost}) for ${label}.`);
+      else Alert.alert('Not Enough AP', `${label} needs ${cost} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
+    if (alsoReload && weapon) reloadWeapon(attacker.id, weapon.id);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [attacker, weapon, spendAP, reloadWeapon]);
+
+  // Setting up a tripod costs ALL remaining AP for the round (success or fail).
+  const handleSetupTripod = useCallback(() => {
+    if (!attacker || attacker.currentAP < 1) return;
+    spendAP(attacker.id, attacker.currentAP);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [attacker, spendAP]);
+
+  // Defend: forfeit remaining AP, converting it to temporary AC.
+  const handleDefend = useCallback(() => {
+    if (!attacker || attacker.currentAP < 1) return;
+    const remaining = attacker.currentAP;
+    spendAP(attacker.id, remaining);
+    addTempAC(attacker.id, remaining);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [attacker, spendAP, addTempAC]);
 
   // ─── Injury helpers for crit effects ─────────────────────────────────────────
   const makeInjury = useCallback((location: Injury['location'], description: string): Injury => ({
@@ -1202,7 +1237,7 @@ export default function CombatScreen() {
           {attacker && (
             <View style={{ gap: 8 }}>
               <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} onPress={() => setShowApActions(v => !v)}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SPEND AP — MOVE / POSITION</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SPEND AP — ACTIONS</Text>
                 <Feather name={showApActions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
               </TouchableOpacity>
               {showApActions && (
@@ -1246,6 +1281,55 @@ export default function CombatScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
+
+                  {/* Other AP-costed actions — compact grid */}
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 2 }}>ACTIONS</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    {([
+                      { key: 'reload', label: 'RELOAD', cost: AP_COSTS.RELOAD, onPress: () => handleGenericApAction(AP_COSTS.RELOAD, 'Reload', true) },
+                      { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => handleGenericApAction(AP_COSTS.EQUIP_WEAPON, 'Equip/Switch Weapon') },
+                      { key: 'pickup', label: 'PICK UP', cost: AP_COSTS.PICK_UP_ITEM, onPress: () => handleGenericApAction(AP_COSTS.PICK_UP_ITEM, 'Pick Up Item') },
+                      { key: 'use_item', label: 'USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => handleGenericApAction(AP_COSTS.USE_ITEM, 'Use Item') },
+                      { key: 'first_aid', label: 'FIRST AID', cost: AP_COSTS.FIRST_AID, onPress: () => handleGenericApAction(AP_COSTS.FIRST_AID, 'First Aid') },
+                      { key: 'doctor', label: 'DOCTOR', cost: AP_COSTS.DOCTOR, onPress: () => handleGenericApAction(AP_COSTS.DOCTOR, 'Doctor') },
+                      { key: 'use_skill', label: 'USE SKILL', cost: AP_COSTS.USE_SKILL, onPress: () => handleGenericApAction(AP_COSTS.USE_SKILL, 'Use Skill') },
+                      { key: 'lay_mine', label: 'LAY MINE', cost: AP_COSTS.LAYING_MINE, onPress: () => handleGenericApAction(AP_COSTS.LAYING_MINE, 'Lay Mine') },
+                    ] as { key: string; label: string; cost: number; onPress: () => void }[]).map(action => {
+                      const disabled = attacker.currentAP < action.cost;
+                      return (
+                        <TouchableOpacity
+                          key={action.key}
+                          disabled={disabled}
+                          style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, opacity: disabled ? 0.4 : 1 }}
+                          onPress={action.onPress}
+                        >
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{action.label}</Text>
+                          <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{action.cost} AP</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {/* Set Up Tripod — costs ALL remaining AP (success or fail) */}
+                    <TouchableOpacity
+                      disabled={attacker.currentAP < 1}
+                      style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, opacity: attacker.currentAP < 1 ? 0.4 : 1 }}
+                      onPress={handleSetupTripod}
+                    >
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>SET UP TRIPOD</Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>ALL AP</Text>
+                    </TouchableOpacity>
+                    {/* Defend — forfeit remaining AP → temp AC */}
+                    <TouchableOpacity
+                      disabled={attacker.currentAP < 1}
+                      style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: '#4a8c3f', opacity: attacker.currentAP < 1 ? 0.4 : 1 }}
+                      onPress={handleDefend}
+                    >
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>DEFEND</Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>→ +AC</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
+                    Set Up Tripod spends ALL remaining AP this round (success or fail). Defend forfeits remaining AP, converting it to temporary AC.
+                  </Text>
                 </View>
               )}
             </View>

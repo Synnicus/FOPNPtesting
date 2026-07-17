@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  FlatList, Modal, Platform, ScrollView, Text,
+  FlatList, Image, Modal, Platform, ScrollView, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,7 +23,8 @@ import {
   calcSkillPointsPerLevel, xpForLevel, levelForXP,
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
-import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints } from '@/data/perks';
+import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
+import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 
@@ -321,35 +322,54 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       const existing = prev.perks.find(p => p.perkId === perkId);
       const perk = getPerkById(perkId);
       if (!perk) return prev;
-      if (!existing) {
-        // Add at rank 1 — check perk points
-        if (perkPointsRemaining <= 0) { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); return prev; }
-        return { ...prev, perks: [...prev.perks, { perkId, rank: 1 }] };
-      } else if (existing.rank < perk.maxRanks) {
-        // Increase rank — check perk points
-        if (perkPointsRemaining <= 0) { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); return prev; }
+      if (!existing || existing.rank < perk.maxRanks) {
+        // Adding a new perk or increasing rank — verify eligibility + points.
+        const currentRanks = existing?.rank ?? 0;
+        const { allowed } = canTakePerk(prev, perk, currentRanks);
+        if (!allowed || perkPointsRemaining <= 0) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return prev;
+        }
+        if (!existing) return { ...prev, perks: [...prev.perks, { perkId, rank: 1 }] };
         return { ...prev, perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p) };
       } else {
-        // Remove entirely
+        // At max rank — tapping removes entirely.
         return { ...prev, perks: prev.perks.filter(p => p.perkId !== perkId) };
       }
     });
   }, [perkPointsRemaining]);
 
-  // Available perks for this race/level
-  const availablePerks = useMemo(() =>
-    getPerksForRace(char.race).filter(p => {
-      if (p.minLevel > char.level) return false;
-      if (p.minSTR && char.special.strength < p.minSTR) return false;
-      if (p.minPER && char.special.perception < p.minPER) return false;
-      if (p.minEND && char.special.endurance < p.minEND) return false;
-      if (p.minCHA && char.special.charisma < p.minCHA) return false;
-      if (p.minINT && char.special.intelligence < p.minINT) return false;
-      if (p.minAGI && char.special.agility < p.minAGI) return false;
-      if (p.minLCK && char.special.luck < p.minLCK) return false;
+  const pickPortrait = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+    if (!result.canceled) setChar(c => ({ ...c, portrait: result.assets[0].uri }));
+  }, []);
+
+  const toggleTrait = useCallback((traitId: string) => {
+    setChar(prev => {
+      const current = prev.traits ?? [];
+      if (current.includes(traitId)) {
+        return { ...prev, traits: current.filter(t => t !== traitId) };
+      }
+      const trait = getTraitById(traitId);
+      if (!trait) return prev;
+      const { allowed } = canTakeTrait(prev, trait);
+      if (!allowed) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return prev;
+      }
+      return { ...prev, traits: [...current, traitId] };
+    });
+  }, []);
+
+  // All perks (search-filtered). Gating is done per-row via canTakePerk so
+  // unavailable perks stay visible but disabled with their reasons.
+  const perkList = useMemo(() =>
+    PERKS.filter(p => {
       if (perkSearch && !p.name.toLowerCase().includes(perkSearch.toLowerCase()) && !p.description.toLowerCase().includes(perkSearch.toLowerCase())) return false;
       return true;
-    }), [char.race, char.level, char.special, perkSearch]);
+    }), [perkSearch]);
 
   const isValid = char.name.trim().length > 0;
 
@@ -391,17 +411,40 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           {/* ── BASICS ── */}
           {activeTab === 0 && (
             <>
-              {/* Portrait */}
-              <View style={{ alignItems: 'center' }}>
-                <TouchableOpacity onPress={async () => {
-                  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                  if (status !== 'granted') return;
-                  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-                  if (!result.canceled) setChar(c => ({ ...c, portrait: result.assets[0].uri }));
-                }}>
-                  <CharacterAvatar portrait={char.portrait} name={char.name} size={80} />
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 6 }}>Tap to change</Text>
+              {/* Portrait banner — large preview using the full uploaded photo */}
+              <View style={{ gap: 8 }}>
+                <TouchableOpacity activeOpacity={0.85} onPress={pickPortrait}>
+                  {char.portrait ? (
+                    <Image
+                      source={{ uri: char.portrait }}
+                      resizeMode={char.portraitFit ?? 'cover'}
+                      style={{ width: '100%', height: 260, borderRadius: 14, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.secondary }}
+                    />
+                  ) : (
+                    <View style={{ width: '100%', height: 260, borderRadius: 14, borderWidth: 2, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <Feather name="image" size={40} color={colors.mutedForeground} />
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>TAP TO UPLOAD PHOTO</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
+
+                {/* Avatar preview + fit toggle */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <CharacterAvatar portrait={char.portrait} name={char.name} size={52} fit={char.portraitFit ?? 'cover'} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 }}>FIT</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {(['cover', 'contain'] as const).map(f => {
+                        const active = (char.portraitFit ?? 'cover') === f;
+                        return (
+                          <TouchableOpacity key={f} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }} onPress={() => setChar(c => ({ ...c, portraitFit: f }))}>
+                            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: active ? colors.primaryForeground : colors.mutedForeground }}>{f === 'cover' ? 'CROP' : 'FULL'}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </View>
               </View>
 
               {/* Name */}
@@ -702,32 +745,78 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   <TextInput style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }} placeholder="Search perks…" placeholderTextColor={colors.mutedForeground} value={perkSearch} onChangeText={setPerkSearch} />
                   {perkSearch ? <TouchableOpacity onPress={() => setPerkSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
                 </View>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Showing {availablePerks.length} perks available for {race.name} at level {char.level}.</Text>
-                {availablePerks.map(perk => {
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Showing all {perkList.length} perks. Unavailable perks are greyed with the reasons they can't be taken.</Text>
+                {perkList.map(perk => {
                   const existing = char.perks.find(p => p.perkId === perk.id);
-                  const locked = !existing && perkPointsRemaining <= 0;
+                  const currentRanks = existing?.rank ?? 0;
+                  const { allowed, reasons } = canTakePerk(char, perk, currentRanks);
+                  const atMax = existing && currentRanks >= perk.maxRanks;
+                  const noPoints = !existing && perkPointsRemaining <= 0;
+                  // A perk is interactive if you can add/upgrade it (allowed + points)
+                  // or if it's owned at max rank (tap to remove).
+                  const canAddOrUpgrade = allowed && !noPoints;
+                  const disabled = !canAddOrUpgrade && !atMax;
+                  const reasonText = reasons.filter(r => !r.startsWith('Already at max')).join(' · ');
                   return (
-                    <TouchableOpacity key={perk.id} style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: existing ? colors.primary + '88' : colors.border, backgroundColor: existing ? colors.primary + '11' : colors.secondary, opacity: locked ? 0.5 : 1, gap: 4 }} onPress={() => !locked && togglePerk(perk.id)}>
+                    <TouchableOpacity
+                      key={perk.id}
+                      disabled={disabled}
+                      style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: existing ? colors.primary + '88' : colors.border, backgroundColor: existing ? colors.primary + '11' : colors.secondary, opacity: disabled ? 0.45 : 1, gap: 4 }}
+                      onPress={() => togglePerk(perk.id)}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: existing ? colors.primary : colors.foreground, flex: 1 }}>{perk.name}</Text>
                         <View style={{ gap: 2, alignItems: 'flex-end' }}>
                           {existing && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary, borderRadius: 4 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>R{existing.rank}/{perk.maxRanks}</Text></View>}
-                          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Lv {perk.minLevel}</Text>
-                          {perk.requiresRace && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{perk.requiresRace.join(' / ')}</Text>}
+                          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Lv {perk.requirements?.level ?? perk.minLevel}{perk.maxRanks > 1 ? ` · ${perk.maxRanks} ranks` : ''}</Text>
+                          {perk.requiresRace && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{perk.requiresRace.join(' / ')} only</Text>}
                         </View>
                       </View>
                       <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{perk.description}</Text>
                       {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>⚔ {perk.combatEffect.combatNote}</Text>}
-                      {(perk.minSTR || perk.minPER || perk.minEND || perk.minAGI || perk.minINT || perk.minLCK || perk.minCHA || perk.minSkill) && (
-                        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
-                          Requires: {[
-                            perk.minSTR && `STR ${perk.minSTR}`, perk.minPER && `PER ${perk.minPER}`,
-                            perk.minEND && `END ${perk.minEND}`, perk.minCHA && `CHA ${perk.minCHA}`,
-                            perk.minAGI && `AGI ${perk.minAGI}`, perk.minINT && `INT ${perk.minINT}`,
-                            perk.minLCK && `LCK ${perk.minLCK}`,
-                            perk.minSkill && `${perk.minSkill.skill} ${perk.minSkill.value}%`,
-                          ].filter(Boolean).join(', ')}
+                      {!allowed && reasonText.length > 0 && (
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.destructive }}>🔒 {reasonText}</Text>
+                      )}
+                      {allowed && noPoints && !existing && (
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: '#f59e0b' }}>No perk points remaining</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* ── TRAITS ── */}
+              <View style={{ gap: 8, marginTop: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>TRAITS</Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (char.traits?.length ?? 0) >= MAX_TRAITS ? '#f59e0b' : colors.mutedForeground }}>{char.traits?.length ?? 0}/{MAX_TRAITS} chosen</Text>
+                </View>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Optional. Choose up to {MAX_TRAITS} traits — each has a benefit and a penalty. Normally picked at creation, but editable here (GM tool).</Text>
+                {TRAITS.map(trait => {
+                  const selected = (char.traits ?? []).includes(trait.id);
+                  const { allowed, reasons } = canTakeTrait(char, trait);
+                  // Selected traits are always tappable (to deselect). Others need to pass.
+                  const disabled = !selected && !allowed;
+                  const reasonText = reasons.filter(r => r !== 'Already selected').join(' · ');
+                  return (
+                    <TouchableOpacity
+                      key={trait.id}
+                      disabled={disabled}
+                      style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary + '88' : colors.border, backgroundColor: selected ? colors.primary + '11' : colors.secondary, opacity: disabled ? 0.45 : 1, gap: 4 }}
+                      onPress={() => toggleTrait(trait.id)}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground, flex: 1 }}>{trait.name}</Text>
+                        {selected
+                          ? <Feather name="check-circle" size={18} color={colors.primary} />
+                          : <Feather name={disabled ? 'lock' : 'circle'} size={18} color={colors.mutedForeground} />}
+                      </View>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{trait.description}</Text>
+                      {(trait.allowedRaces || trait.excludedRaces) && (
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                          {trait.allowedRaces ? `${trait.allowedRaces.join(' / ')} only` : `Not for: ${trait.excludedRaces!.join(' / ')}`}
                         </Text>
+                      )}
+                      {disabled && reasonText.length > 0 && (
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.destructive }}>🔒 {reasonText}</Text>
                       )}
                     </TouchableOpacity>
                   );
@@ -983,7 +1072,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
   return (
     <TouchableOpacity style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <CharacterAvatar portrait={character.portrait} name={character.name} size={48} />
+        <CharacterAvatar portrait={character.portrait} name={character.name} size={48} fit={character.portraitFit ?? 'cover'} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{character.name}</Text>
@@ -1013,6 +1102,20 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
           <TouchableOpacity onPress={onDelete} style={{ padding: 4 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>
         </View>
       </View>
+      {/* Chosen traits */}
+      {(character.traits?.length ?? 0) > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {character.traits!.map(tid => {
+            const trait = getTraitById(tid);
+            if (!trait) return null;
+            return (
+              <View key={tid} style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.primary + '1a', borderRadius: 4, borderWidth: 1, borderColor: colors.primary + '55' }}>
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>{trait.name}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
       {/* Injury effect notes on the sheet */}
       {injuryEffects.notes.length > 0 && (
         <View style={{ backgroundColor: colors.destructive + '14', borderRadius: 8, borderWidth: 1, borderColor: colors.destructive + '44', padding: 8, gap: 2 }}>

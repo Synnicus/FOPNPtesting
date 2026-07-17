@@ -6,9 +6,11 @@ interface Props {
   portrait: string | null | undefined;
   name: string;
   size?: number;
+  /** How the portrait image fits its frame. Default 'cover' (crops to fill). */
+  fit?: 'cover' | 'contain';
 }
 
-export default function CharacterAvatar({ portrait, name, size = 48 }: Props) {
+export default function CharacterAvatar({ portrait, name, size = 48, fit = 'cover' }: Props) {
   const colors = useColors();
   const initials = name
     .split(' ')
@@ -21,7 +23,17 @@ export default function CharacterAvatar({ portrait, name, size = 48 }: Props) {
     return (
       <Image
         source={{ uri: portrait }}
-        style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, borderColor: colors.primary }]}
+        resizeMode={fit}
+        style={[
+          styles.avatar,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderColor: colors.primary,
+            backgroundColor: fit === 'contain' ? colors.secondary : undefined,
+          },
+        ]}
       />
     );
   }

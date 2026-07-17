@@ -179,6 +179,10 @@ export interface Character {
   level: number;
   xp: number;
   portrait?: string;
+  /** How the portrait image fits its frame ('cover' crops, 'contain' letterboxes). */
+  portraitFit?: 'cover' | 'contain';
+  /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
+  traits?: string[];
 
   // SPECIAL
   special: SPECIALStats;
