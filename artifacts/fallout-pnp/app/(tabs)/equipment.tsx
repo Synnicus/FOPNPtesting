@@ -8,9 +8,11 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, DAMAGE_TYPES, WEAPON_MODS, computeModBonuses, formatWeaponDamage } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, WEAPON_MODS, computeModBonuses, formatWeaponDamage, formatWeaponAP } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
-import { Weapon, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES } from '@/context/types';
+import { AP_COSTS } from '@/data/apCosts';
+import { CONDITION_BOXES_MAX, clampConditionBoxes, conditionLabel, conditionToHitPenalty, isWeaponJammed } from '@/data/condition';
+import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES } from '@/context/types';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -36,6 +38,11 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [magazineSize, setMagazineSize] = useState(0);
   const [minStr, setMinStr] = useState(3);
   const [rangeNormal, setRangeNormal] = useState(15);
+  const [apSingle, setApSingle] = useState<number>(AP_COSTS.ATTACK_SINGLE);
+  const [apTargeted, setApTargeted] = useState<number>(AP_COSTS.ATTACK_AIMED);
+  const [canTarget, setCanTarget] = useState(true);
+  const [apBurst, setApBurst] = useState<number>(AP_COSTS.ATTACK_BURST);
+  const [canBurst, setCanBurst] = useState(false);
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
   const [showPresets, setShowPresets] = useState(false);
@@ -54,6 +61,11 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     setMagazineSize(w.magazineSize);
     setMinStr(w.minStr);
     setRangeNormal(w.rangeNormal);
+    setApSingle(w.apSingle ?? AP_COSTS.ATTACK_SINGLE);
+    setCanTarget(w.apTargeted !== null);
+    setApTargeted(w.apTargeted ?? AP_COSTS.ATTACK_AIMED);
+    setCanBurst(w.apBurst != null);
+    setApBurst(w.apBurst ?? AP_COSTS.ATTACK_BURST);
     setSelectedMods([...w.mods]);
   };
 
@@ -67,6 +79,8 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       setName(''); setCategory('smallGuns'); setDamageType('normal');
       setDieCount(1); setDieSides(6); setDamageBonus(0); setBurstLimit(1);
       setIsDoubleShot(false); setMagazineSize(0); setMinStr(3); setRangeNormal(15);
+      setApSingle(AP_COSTS.ATTACK_SINGLE); setCanTarget(true); setApTargeted(AP_COSTS.ATTACK_AIMED);
+      setCanBurst(false); setApBurst(AP_COSTS.ATTACK_BURST);
       setSelectedMods([]);
     }
   }, [visible, editWeapon]);
@@ -94,6 +108,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       damageBonus, skill: (category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
       burstLimit, isDoubleShot, magazineSize,
       weight: 0, minStr, rangeNormal, knockdownChance: 0,
+      apSingle, apTargeted: canTarget ? apTargeted : null, apBurst: canBurst ? apBurst : null,
       mods: selectedMods, isCustom: true,
     });
     onClose();
@@ -201,7 +216,25 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   </TouchableOpacity>
                 </View>
                 <NumStepper label="Min STR required" val={minStr} min={1} max={10} set={setMinStr} />
-                <NumStepper label="Range (squares)" val={rangeNormal} min={1} max={100} set={setRangeNormal} />
+                <NumStepper label="Range (squares)" val={rangeNormal} min={1} max={200} set={setRangeNormal} />
+
+                {/* AP costs (manual per-weapon) */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 6 }}>ACTION POINT COSTS</Text>
+                <NumStepper label="AP — Single attack (S)" val={apSingle} min={1} max={20} set={setApSingle} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Can be targeted (aimed)</Text>
+                  <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canTarget ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setCanTarget(v => !v)}>
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: canTarget ? colors.primaryForeground : colors.mutedForeground }}>{canTarget ? 'YES' : 'NO'}</Text>
+                  </TouchableOpacity>
+                </View>
+                {canTarget && <NumStepper label="AP — Targeted attack (T)" val={apTargeted} min={1} max={20} set={setApTargeted} />}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Has burst mode (B)</Text>
+                  <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canBurst ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setCanBurst(v => !v)}>
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: canBurst ? colors.primaryForeground : colors.mutedForeground }}>{canBurst ? 'YES' : 'NO'}</Text>
+                  </TouchableOpacity>
+                </View>
+                {canBurst && <NumStepper label="AP — Burst attack (B)" val={apBurst} min={1} max={20} set={setApBurst} />}
               </>
             )}
 
@@ -430,7 +463,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
 }
 
 // ─── Weapon Row ───────────────────────────────────────────────────────────────
-function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void }) {
+function WeaponRow({ weapon, onDelete, onEdit, onCopy, onCondition }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void; onCondition?: () => void }) {
   const colors = useColors();
   const modBonuses = computeModBonuses(weapon.mods);
   const hasModBonuses = modBonuses.toHit !== 0 || modBonuses.damage !== 0;
@@ -451,6 +484,9 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDel
           {weapon.isDoubleShot ? ' · Double' : ''}
           {` · Range ${weapon.rangeNormal}sq`}
         </Text>
+        <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 2 }}>
+          AP {formatWeaponAP(weapon)}
+        </Text>
         {hasModBonuses && (
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f', marginTop: 2 }}>
             Mods: {modBonuses.toHit > 0 ? `+${modBonuses.toHit}% hit` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} dmg` : ''}
@@ -458,6 +494,11 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDel
         )}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {onCondition && (
+          <TouchableOpacity onPress={onCondition} style={{ padding: 6 }}>
+            <Feather name="tool" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        )}
         {onCopy && (
           <TouchableOpacity onPress={onCopy} style={{ padding: 6 }}>
             <Feather name="copy" size={16} color={colors.mutedForeground} />
@@ -518,6 +559,141 @@ function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?
   );
 }
 
+// ─── Weapon Condition Modal ─────────────────────────────────────────────────
+function WeaponConditionModal({ visible, weapon, onClose }: {
+  visible: boolean; weapon: Weapon | null; onClose: () => void;
+}) {
+  const colors = useColors();
+  const { characters, setWeaponCondition } = useApp();
+
+  // Characters who have this weapon equipped or in their ammo/condition states.
+  const owners = React.useMemo(() => {
+    if (!weapon) return [];
+    return characters.filter(c =>
+      c.equippedWeaponId === weapon.id ||
+      (c.weaponAmmoStates ?? []).some(a => a.weaponId === weapon.id)
+    );
+  }, [characters, weapon]);
+
+  const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setSelectedCharId(owners[0]?.id ?? null);
+  }, [visible, weapon]);
+
+  const selectedChar = characters.find(c => c.id === selectedCharId) ?? null;
+  const currentFilled = weapon && selectedChar
+    ? clampConditionBoxes(selectedChar.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.conditionBoxes ?? 0)
+    : 0;
+
+  const setFilled = (n: number) => {
+    if (!weapon || !selectedChar) return;
+    Haptics.selectionAsync();
+    setWeaponCondition(selectedChar.id, weapon.id, clampConditionBoxes(n));
+  };
+
+  const penalty = conditionToHitPenalty(currentFilled);
+  const jammed = isWeaponJammed(currentFilled);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
+        <View style={{ maxHeight: '85%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>WEAPON CONDITION</Text>
+              {weapon && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>{weapon.name}</Text>}
+            </View>
+            <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
+            {owners.length === 0 ? (
+              <View style={{ alignItems: 'center', gap: 8, paddingVertical: 24 }}>
+                <Feather name="alert-circle" size={28} color={colors.mutedForeground} />
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
+                  No character has this weapon equipped. Equip it on a character to track its condition.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* Character picker */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CHARACTER</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {owners.map(c => {
+                    const active = c.id === selectedCharId;
+                    return (
+                      <TouchableOpacity key={c.id} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }} onPress={() => setSelectedCharId(c.id)}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: active ? colors.primaryForeground : colors.foreground }}>{c.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {selectedChar && (
+                  <>
+                    {/* Status */}
+                    <View style={{ backgroundColor: jammed ? colors.destructive + '22' : (penalty !== 0 ? '#c8941a22' : colors.secondary), borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: jammed ? colors.destructive : (penalty !== 0 ? colors.primary : colors.border), gap: 4 }}>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: jammed ? colors.destructive : colors.primary, letterSpacing: 1 }}>
+                        {conditionLabel(currentFilled).toUpperCase()}
+                      </Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                        {currentFilled} / {CONDITION_BOXES_MAX} boxes filled
+                        {penalty !== 0 ? ` · ${penalty}% to hit` : ''}
+                        {jammed ? ' · Cannot fire' : ''}
+                      </Text>
+                    </View>
+
+                    {/* Visual boxes */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                      {Array.from({ length: CONDITION_BOXES_MAX }).map((_, i) => {
+                        const filled = i < currentFilled;
+                        return (
+                          <TouchableOpacity
+                            key={i}
+                            onPress={() => setFilled(i + 1 === currentFilled ? i : i + 1)}
+                            style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 2, borderColor: filled ? (i >= 8 ? colors.destructive : colors.primary) : colors.border, backgroundColor: filled ? (i >= 8 ? colors.destructive : colors.primary) : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: filled ? colors.primaryForeground : colors.mutedForeground }}>{i + 1}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    {/* Steppers */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, flex: 1 }}>Filled condition boxes</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setFilled(currentFilled - 1)}><Feather name="minus" size={16} color={colors.foreground} /></TouchableOpacity>
+                        <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 40, textAlign: 'center' }}>{currentFilled}</Text>
+                        <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setFilled(currentFilled + 1)}><Feather name="plus" size={16} color={colors.foreground} /></TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity style={{ flex: 1, paddingVertical: 10, borderRadius: colors.radius, alignItems: 'center', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setFilled(0)}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>REPAIR (PRISTINE)</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flex: 1, paddingVertical: 10, borderRadius: colors.radius, alignItems: 'center', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setFilled(CONDITION_BOXES_MAX)}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>JAM (BROKEN)</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                      0 = pristine, {CONDITION_BOXES_MAX} = jammed. 8–9 boxes → −10% to hit; {CONDITION_BOXES_MAX} → the weapon cannot fire.
+                    </Text>
+                  </>
+                )}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Equipment Screen ─────────────────────────────────────────────────────────
 export default function EquipmentScreen() {
   const colors = useColors();
@@ -529,6 +705,8 @@ export default function EquipmentScreen() {
   const [editingWeapon, setEditingWeapon] = useState<Weapon | null>(null);
   const [editingArmor, setEditingArmor] = useState<Armor | null>(null);
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all'>('all');
+  const [conditionWeapon, setConditionWeapon] = useState<Weapon | null>(null);
 
   const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
@@ -541,7 +719,10 @@ export default function EquipmentScreen() {
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
 
-  const filteredWeapons = allWeapons.filter(w => !search || w.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredWeapons = allWeapons.filter(w =>
+    (!search || w.name.toLowerCase().includes(search.toLowerCase())) &&
+    (categoryFilter === 'all' || w.category === categoryFilter)
+  );
   const filteredArmor = allArmor.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -582,6 +763,21 @@ export default function EquipmentScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Category filter chips (weapons only) */}
+        {tab === 'weapons' && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+            {(['all', ...WEAPON_CATEGORY_ORDER] as const).map(cat => {
+              const active = categoryFilter === cat;
+              const label = cat === 'all' ? 'All' : WEAPON_CATEGORY_LABELS[cat];
+              return (
+                <TouchableOpacity key={cat} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }} onPress={() => setCategoryFilter(cat)}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: active ? colors.primaryForeground : colors.mutedForeground }}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
       {/* List */}
@@ -593,6 +789,7 @@ export default function EquipmentScreen() {
           renderItem={({ item }) => (
             <WeaponRow
               weapon={item}
+              onCondition={() => setConditionWeapon(item)}
               onCopy={() => openCopyWeapon(item)}
               onEdit={item.isCustom ? () => openEditWeapon(item) : undefined}
               onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
@@ -640,6 +837,11 @@ export default function EquipmentScreen() {
           else addCustomArmor(a);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
+      />
+      <WeaponConditionModal
+        visible={conditionWeapon !== null}
+        weapon={conditionWeapon}
+        onClose={() => setConditionWeapon(null)}
       />
     </View>
   );

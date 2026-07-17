@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, BestiaryTemplate } from '@/context/types';
-import { BUILT_IN_WEAPONS, CONDITION_MAX } from '@/data/weapons';
+import { BUILT_IN_WEAPONS } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseAC, calcBaseSkills, calcMaxAP, calcMaxHP, calcSequence } from '@/data/derived';
+import { clampConditionBoxes, CONDITION_BOXES_MAX } from '@/data/condition';
 
 // v4 — new damage types (N/L/F/P/E), DR added to armor, pilot skill, custom bestiary
 const STORAGE_KEY = '@fallout_pnp_v4';
@@ -17,6 +18,24 @@ interface AppState {
   currentRound: number;
   combatActive: boolean;
   activeEntryId: string | null;
+  /** true once weapon conditionBoxes use the manual's FILLED 0–10 semantics
+   *  (legacy saves stored 0–5 "remaining boxes"). */
+  conditionSemanticsV2?: boolean;
+}
+
+/** One-time migration: legacy conditionBoxes counted REMAINING boxes (0–5,
+ *  5 = pristine). New semantics count FILLED boxes (0–10, 0 = pristine).
+ *  Map remaining r → filled (5 − r) × 2. */
+function migrateConditionSemantics(parsed: AppState): AppState {
+  if (parsed.conditionSemanticsV2) return parsed;
+  const migrate = (c: Character): Character => ({
+    ...c,
+    weaponAmmoStates: (c.weaponAmmoStates ?? []).map(s => ({
+      ...s,
+      conditionBoxes: Math.max(0, Math.min(10, (5 - Math.max(0, Math.min(5, s.conditionBoxes ?? 5))) * 2)),
+    })),
+  });
+  return { ...parsed, characters: (parsed.characters ?? []).map(migrate), conditionSemanticsV2: true };
 }
 
 interface AppContextValue extends AppState {
@@ -39,6 +58,7 @@ interface AppContextValue extends AppState {
   spendAmmo: (characterId: string, weaponId: string, shots: number) => boolean;
   reloadWeapon: (characterId: string, weaponId: string) => void;
   jamWeapon: (characterId: string, weaponId: string) => void;
+  setWeaponCondition: (characterId: string, weaponId: string, filledBoxes: number) => void;
 
   addInjury: (characterId: string, injury: Injury) => void;
   removeInjury: (characterId: string, injuryId: string) => void;
@@ -91,7 +111,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.getItem(STORAGE_KEY).then(raw => {
       if (raw) {
         try {
-          const parsed = JSON.parse(raw) as AppState;
+          const parsed = migrateConditionSemantics(JSON.parse(raw) as AppState);
           setState({ ...defaultState, ...parsed });
         } catch (_) {}
       }
@@ -225,7 +245,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (current < shots) { success = false; return s; }
       success = true;
       const newStates: WeaponAmmoState[] = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: existing?.conditionBoxes ?? CONDITION_MAX });
+      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
     return success;
@@ -239,18 +259,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!weapon) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: weapon.magazineSize, conditionBoxes: existing?.conditionBoxes ?? CONDITION_MAX });
+      newStates.push({ weaponId, currentAmmo: weapon.magazineSize, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
 
+  // A jam/miss FILLS one condition box (0 pristine … 10 jammed).
   const jamWeapon = useCallback((characterId: string, weaponId: string) => {
     setState(s => {
       const char = s.characters.find(c => c.id === characterId);
       if (!char) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: Math.max(0, (existing?.conditionBoxes ?? CONDITION_MAX) - 1) });
+      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1) });
+      return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
+    });
+  }, []);
+
+  // Directly set FILLED condition boxes (0 pristine … CONDITION_BOXES_MAX jammed).
+  const setWeaponCondition = useCallback((characterId: string, weaponId: string, filledBoxes: number) => {
+    setState(s => {
+      const char = s.characters.find(c => c.id === characterId);
+      if (!char) return s;
+      const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === weaponId);
+      const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
+      const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
+      newStates.push({
+        weaponId,
+        currentAmmo: existing?.currentAmmo ?? weapon?.magazineSize ?? 0,
+        conditionBoxes: clampConditionBoxes(filledBoxes),
+      });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -300,7 +338,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const endCombat = useCallback(() => {
-    setState(s => ({ ...s, initiativeEntries: [], currentRound: 1, combatActive: false, activeEntryId: null }));
+    setState(s => ({
+      ...s,
+      // Reset every character to full AP (derived max) and clear temp AC.
+      characters: s.characters.map(c => {
+        const maxAP = c.maxAP ?? calcMaxAP(c.special);
+        return { ...c, currentAP: maxAP, tempAC: 0 };
+      }),
+      initiativeEntries: [],
+      currentRound: 1,
+      combatActive: false,
+      activeEntryId: null,
+    }));
   }, []);
 
   const addInitiativeEntry = useCallback((entry: InitiativeEntry) => {
@@ -454,7 +503,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const parsed = JSON.parse(json) as AppState;
       if (!Array.isArray(parsed.characters)) return false;
-      setState({ ...defaultState, ...parsed });
+      setState({ ...defaultState, ...migrateConditionSemantics(parsed) });
       return true;
     } catch (_) { return false; }
   }, []);
@@ -468,7 +517,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       allWeapons, allArmor,
       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
       applyDamage, healCharacter, spendAP, restoreAP, setPosition, addTempAC, clearTempAC,
-      spendAmmo, reloadWeapon, jamWeapon,
+      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,

@@ -103,6 +103,12 @@ export interface Weapon {
   knockdownChance: number;
   mods: string[];
   isCustom: boolean;
+  /** AP cost for a single attack (manual "AP S"). Fallback: AP_COSTS.ATTACK_SINGLE. */
+  apSingle?: number;
+  /** AP cost for a targeted/aimed attack (manual "T"). null = cannot be targeted. */
+  apTargeted?: number | null;
+  /** AP cost for a burst attack (manual "B"). null = no burst mode. */
+  apBurst?: number | null;
 }
 
 // ─── Armor ────────────────────────────────────────────────────────────────────

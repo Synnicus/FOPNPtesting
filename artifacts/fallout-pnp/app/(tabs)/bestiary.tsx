@@ -662,7 +662,7 @@ export default function BestiaryScreen() {
       equippedBodyArmorId: template.equippedBodyArmorId,
       equippedHelmetId: template.equippedHelmetId,
       weaponAmmoStates: weapon && weapon.magazineSize > 0
-        ? [{ weaponId: weapon.id, currentAmmo: weapon.magazineSize, conditionBoxes: 5 }]
+        ? [{ weaponId: weapon.id, currentAmmo: weapon.magazineSize, conditionBoxes: 0 }]
         : [],
       injuries: [],
       isKnockedOut: false,

@@ -1,142 +1,80 @@
-// ─── Critical Failure Table (3% chance: roll 97-100) ────────────────────────
-export interface CriticalFailureResult {
-  roll: number;
-  name: string;
-  description: string;
-  effect: 'jam' | 'drop' | 'selfHarm' | 'hitAlly' | 'prone' | 'ammoGone' | 'catastrophic';
-  selfDamage?: string; // dice expression
-  stunRounds?: number;
-}
+// ─── Critical Hit System — Fallout PnP 2.0 manual ────────────────────────────
+// Base Critical Chance = Luck. Perks: More Criticals +5%/rank.
+// A successful attack becomes critical if the to-hit roll is <= crit chance.
+// Targeted shots add a crit-chance bonus by body part and have fixed effects.
+// Non-targeted crits roll 1d10 on the critical hits table.
+// Sniper perk: ranged attacks crit on a successful Luck roll (1d10 <= LK).
+// Slayer perk: melee/unarmed attacks crit on a successful Luck roll.
+// Better Criticals: non-fatal crits deal 150% damage (in addition to other
+// bonuses) and limb-damage chance +50%.
 
-export const CRITICAL_FAILURE_TABLE: CriticalFailureResult[] = [
-  {
-    roll: 1,
-    name: 'Ammo Problem',
-    description: 'The magazine was damaged or the ammo was bad. The weapon does not fire and the rest of the magazine must be discarded.',
-    effect: 'ammoGone',
-  },
-  {
-    roll: 2,
-    name: 'Weapon Jam',
-    description: 'The weapon jams. It cannot be fired again until reloaded (costs 2 AP).',
-    effect: 'jam',
-  },
-  {
-    roll: 3,
-    name: 'Weapon Drop',
-    description: 'You fumble and drop the weapon. It lands 1d3 squares away in a random direction.',
-    effect: 'drop',
-  },
-  {
-    roll: 4,
-    name: 'Weapon Drop',
-    description: 'You fumble and drop the weapon at your feet.',
-    effect: 'drop',
-  },
-  {
-    roll: 5,
-    name: 'Minor Self Injury',
-    description: 'Something goes terribly wrong. You deal 1d6 damage to yourself.',
-    effect: 'selfHarm',
-    selfDamage: '1d6',
-  },
-  {
-    roll: 6,
-    name: 'Minor Self Injury',
-    description: 'The weapon recoils violently. You deal 1d6 damage to yourself and are briefly stunned.',
-    effect: 'selfHarm',
-    selfDamage: '1d6',
-    stunRounds: 1,
-  },
-  {
-    roll: 7,
-    name: 'Major Self Injury',
-    description: 'A catastrophic misfire — you deal 2d6 damage to yourself.',
-    effect: 'selfHarm',
-    selfDamage: '2d6',
-  },
-  {
-    roll: 8,
-    name: 'Hit Ally',
-    description: 'You lose control and the shot/strike hits the nearest ally for full damage.',
-    effect: 'hitAlly',
-  },
-  {
-    roll: 9,
-    name: 'Stumble and Fall',
-    description: 'You lose your footing and fall prone (must spend 4 AP to stand next turn).',
-    effect: 'prone',
-  },
-  {
-    roll: 10,
-    name: 'Catastrophic Failure',
-    description: 'The weapon explodes or catastrophically fails. You deal 3d6 damage to yourself and all adjacent targets. Weapon is destroyed.',
-    effect: 'catastrophic',
-    selfDamage: '3d6',
-  },
-];
+import type { Character } from '@/context/types';
 
-// ─── Critical Hit Tables ─────────────────────────────────────────────────────
-export interface CriticalHitResult {
-  roll: number;
-  name: string;
-  description: string;
-  damageMultiplier: number;
-  // Status effects
-  knockOut?: boolean;
-  knockOutRounds?: number;
-  knockDown?: boolean;
-  crippleLocation?: string;
-  blindTarget?: boolean;
-  instantKill?: boolean;
-  injuryLocation?: string;
-  injurySeverity?: 'crippled' | 'broken';
-}
+export type BodyPart = 'torso' | 'head' | 'eyes' | 'groin' | 'arms' | 'legs';
 
-export const CRITICAL_HIT_RANGED: CriticalHitResult[] = [
-  { roll: 1,  name: 'Good Hit',         description: 'Clean hit — extra damage.',      damageMultiplier: 1.5 },
-  { roll: 2,  name: 'Solid Hit',        description: 'Solid shot — extra damage.',     damageMultiplier: 2.0 },
-  { roll: 3,  name: 'Stunning Hit',     description: 'Target is stunned for 1 round.', damageMultiplier: 1.5, knockOut: true, knockOutRounds: 1 },
-  { roll: 4,  name: 'Arm Hit',          description: 'Shot hits the arm — crippled!',  damageMultiplier: 1.5, crippleLocation: 'rightArm', injuryLocation: 'rightArm', injurySeverity: 'crippled' },
-  { roll: 5,  name: 'Leg Hit',          description: 'Shot hits the leg — crippled!',  damageMultiplier: 1.5, crippleLocation: 'rightLeg', injuryLocation: 'rightLeg', injurySeverity: 'crippled' },
-  { roll: 6,  name: 'Knockdown',        description: 'Target is knocked prone.',        damageMultiplier: 1.5, knockDown: true },
-  { roll: 7,  name: 'Head Shot',        description: 'Shot to the head — double damage!', damageMultiplier: 2.0, injuryLocation: 'head', injurySeverity: 'crippled' },
-  { roll: 8,  name: 'Eye Shot',         description: 'Blinded! Target loses −40% to all rolls until treated.', damageMultiplier: 2.0, blindTarget: true, injuryLocation: 'eyes', injurySeverity: 'broken' },
-  { roll: 9,  name: 'Lethal Wound',     description: 'Triple damage — near-fatal blow.', damageMultiplier: 3.0 },
-  { roll: 10, name: 'Instant Kill',     description: 'Direct kill shot to a vital area.', damageMultiplier: 3.0, instantKill: true },
-];
-
-export const CRITICAL_HIT_MELEE: CriticalHitResult[] = [
-  { roll: 1,  name: 'Good Strike',      description: 'Solid strike — extra damage.',   damageMultiplier: 1.5 },
-  { roll: 2,  name: 'Power Strike',     description: 'Crushing blow — extra damage.',  damageMultiplier: 2.0 },
-  { roll: 3,  name: 'Stagger',          description: 'Target staggers — stunned 1 round.', damageMultiplier: 1.5, knockOut: true, knockOutRounds: 1 },
-  { roll: 4,  name: 'Arm Break',        description: 'Strike shatters the arm!',        damageMultiplier: 1.5, injuryLocation: 'rightArm', injurySeverity: 'broken' },
-  { roll: 5,  name: 'Leg Sweep',        description: 'Target knocked prone.',            damageMultiplier: 1.5, knockDown: true },
-  { roll: 6,  name: 'Gut Strike',       description: 'Gut hit — target loses 1 AP until healed.', damageMultiplier: 2.0, injuryLocation: 'torso', injurySeverity: 'crippled' },
-  { roll: 7,  name: 'Head Strike',      description: 'Head blow — double damage!',      damageMultiplier: 2.0, injuryLocation: 'head', injurySeverity: 'crippled' },
-  { roll: 8,  name: 'Eye Strike',       description: 'Eye hit — target blinded!',       damageMultiplier: 2.0, blindTarget: true, injuryLocation: 'eyes', injurySeverity: 'broken' },
-  { roll: 9,  name: 'Brutal Strike',    description: 'Triple damage — devastating blow.', damageMultiplier: 3.0 },
-  { roll: 10, name: 'Killing Blow',     description: 'Instant kill — lethal strike.',  damageMultiplier: 3.0, instantKill: true },
-];
-
-// ─── Aimed shot crit bonuses ─────────────────────────────────────────────────
-export const AIMED_SHOT_CRIT_BONUS: Record<string, number> = {
-  none:   0,
-  torso:  0,
-  legs:   15,
-  arms:   15,
-  groin:  20,
-  head:   30,
-  eyes:   50,
+/** Crit-chance bonus for targeted shots, by body part (manual table). */
+export const TARGETED_CRIT_BONUS: Record<BodyPart, number> = {
+  torso: 0,
+  arms: 10,
+  legs: 20,
+  groin: 20,
+  head: 25,
+  eyes: 30,
 };
 
-// ─── Knockdown ───────────────────────────────────────────────────────────────
-// Melee: if damage dealt >= target STR × 2, target makes END roll (END × 5%) or falls prone
-// Burst: each hit on a target has a knockdown chance based on weapon's knockdownChance%
-export function calcMeleeKnockdownChance(damage: number, targetStr: number): number {
-  return damage >= targetStr * 2 ? 100 : 0; // trigger an endurance save
+/** Effects of a critical on a TARGETED shot (manual, "Chance for Criticals"). */
+export interface TargetedCritEffect {
+  damageMultiplier: number;
+  cripples?: 'arm' | 'leg';
+  blinds?: boolean;
+  knocksUnconscious?: boolean;
+  label: string;
 }
-// Returns probability of resisting knockdown (endurance save)
-export function calcEnduranceKnockdownResist(targetEnd: number): number {
-  return Math.min(95, targetEnd * 5);
+
+export const TARGETED_CRIT_EFFECTS: Record<BodyPart, TargetedCritEffect> = {
+  torso: { damageMultiplier: 2, label: '2× damage' },
+  head: { damageMultiplier: 3, label: '3× damage' },
+  eyes: { damageMultiplier: 1, blinds: true, label: 'Blindness (PE drops to 1)' },
+  groin: { damageMultiplier: 2, knocksUnconscious: true, label: '2× damage + unconscious' },
+  arms: { damageMultiplier: 1, cripples: 'arm', label: 'Crippled arm' },
+  legs: { damageMultiplier: 1, cripples: 'leg', label: 'Crippled leg' },
+};
+
+/** Non-targeted critical hits table (1d10). Manual calls it "Sample Critical
+ *  Hits" — display WITHOUT the word "Sample". */
+export interface CritTableEntry {
+  roll: number;
+  title: string;
+  description: string;
+  damageMultiplier?: number; // applied to the attack's damage
+  bypassesArmor?: boolean; // ignore DT and DR
+  cripples?: 'arm' | 'leg';
+  blinds?: boolean;
+  knockdown?: boolean;
+  unconsciousTurns?: string; // dice expression, e.g. '1d4'
+  instantDeath?: boolean;
+}
+
+export const CRITICAL_HIT_TABLE: CritTableEntry[] = [
+  { roll: 1, title: 'Crippled Arm', description: 'The blow cripples one of the target\u2019s arms.', cripples: 'arm' },
+  { roll: 2, title: 'Crippled Leg', description: 'The blow cripples one of the target\u2019s legs.', cripples: 'leg' },
+  { roll: 3, title: '300% Damage', description: 'The attack deals 3 times normal damage.', damageMultiplier: 3 },
+  { roll: 4, title: '200% Damage', description: 'The attack deals 2 times normal damage.', damageMultiplier: 2 },
+  { roll: 5, title: '150% Damage', description: 'The attack deals 1.5 times normal damage.', damageMultiplier: 1.5 },
+  { roll: 6, title: 'Unconsciousness', description: 'The target is knocked unconscious for 1d4 turns.', unconsciousTurns: '1d4' },
+  { roll: 7, title: 'Bypasses Armor', description: 'The attack ignores the target\u2019s DT and DR entirely.', bypassesArmor: true },
+  { roll: 8, title: 'Blindness', description: 'The target is blinded — Perception lowered to 1.', blinds: true },
+  { roll: 9, title: 'Knockdown', description: 'The target is knocked down and must Get Up (4 AP).', knockdown: true },
+  { roll: 10, title: 'Instant Death (!)', description: 'The target dies instantly.', instantDeath: true },
+];
+
+/** Base critical chance for a character: Luck + More Criticals ranks ×5. */
+export function baseCritChance(char: Pick<Character, 'special' | 'perks'>): number {
+  const luck = char.special?.luck ?? 5;
+  const moreCrits = (char.perks ?? []).find((p) => p.perkId === 'more_criticals');
+  return luck + (moreCrits ? moreCrits.rank * 5 : 0);
+}
+
+export function hasPerk(char: Pick<Character, 'perks'>, perkId: string): boolean {
+  return (char.perks ?? []).some((p) => p.perkId === perkId);
 }

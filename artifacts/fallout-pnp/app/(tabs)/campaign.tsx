@@ -18,6 +18,7 @@ import * as Sharing from 'expo-sharing';
 
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import { CRITICAL_HIT_TABLE } from '@/data/criticals';
 
 function defaultExportName() {
   const d = new Date();
@@ -282,15 +283,35 @@ export default function CampaignScreen() {
         <View style={{ marginTop: 24, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 16 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 12 }}>QUICK RULES REFERENCE</Text>
           {[
-            { title: 'Attack Check', body: 'Roll 2d10 + Skill. Hit if total >= Evasion.' },
-            { title: 'Critical Points', body: 'Each 5 points over Evasion = 1 CP earned per hit.' },
-            { title: 'CP Spending', body: 'Each CP spent adds 1 roll of the half-die as bonus damage (e.g. 1d8 → 1d4).' },
-            { title: 'Burst Fire', body: 'Shot 1: +0 penalty. Shot 2: –5 penalty. Shot 3+: –10 penalty.' },
-            { title: 'DT Mitigation', body: 'Body armor + helmet DTs are combined and subtracted from raw damage per hit.' },
+            { title: 'Attack Roll', body: 'Percentile (1d100), roll under. Chance to Hit = Weapon Skill − Range − Light − target AC − Cover ± weapon bonuses − Targeted Shot penalty. Roll d100 ≤ CtH to hit.' },
+            { title: 'Range Penalty', body: '−3% per hex beyond your effective range (PE range + weapon range). Thrown weapons also use STR.' },
+            { title: 'Damage', body: 'finalDmg = (roll − DT) × (1 − DR%), minimum 0. Combine body + helmet DT/DR.' },
+            { title: 'Criticals', body: 'A hit crits when the to-hit roll ≤ Critical Chance (base = Luck; More Criticals +5%/rank). Targeted shots add: arms +10%, legs & groin +20%, head +25%, eyes +30%.' },
+            { title: 'Critical Failure', body: 'Any attack roll of 97–100 (always 3%) is a critical failure — GM rolls 1d10 on the failure table.' },
+            { title: 'Targeted Shot — Ranged', body: 'To-hit penalty: legs −20, arms/groin −30, head −40, eyes −60. (Torso 0.)' },
+            { title: 'Targeted Shot — Melee', body: 'To-hit penalty: legs −10, arms/groin −15, head −20, eyes −30. (Torso 0.)' },
+            { title: 'Positions', body: 'Change position 2 AP (Prone→Standing 4 AP). Crouch: +10% gun skills, AC-from-AGI max 3, 2 AP/hex. Prone: +25% gun skills, AC-from-AGI 1, 4 AP/hex, no melee/unarmed attacks.' },
+            { title: 'Weapon Condition', body: '10 boxes. 8–9 filled → −10% to hit. 10 filled → jammed/broken, cannot fire.' },
+            { title: 'Action Points', body: "Attacks cost the weapon's own AP (Single / Targeted / Burst). Leftover AP converts to +AC while defending until your next turn." },
+            { title: 'Injuries', body: 'Crippled leg: 2 AP/hex, ½ AGI (both legs: 1 hex/round, AGI 1). Crippled arm: −1 AGI, no two-handed (both arms: no weapons). Blindness: PE 1 + darkness penalties.' },
           ].map((rule, i) => (
             <View key={i} style={{ marginBottom: 10 }}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{rule.title}</Text>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, marginTop: 2, lineHeight: 18 }}>{rule.body}</Text>
+            </View>
+          ))}
+
+          {/* Critical Hits table (1d10) — from data/criticals.ts */}
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginTop: 8, marginBottom: 10 }}>CRITICAL HITS (1d10)</Text>
+          {CRITICAL_HIT_TABLE.map((entry) => (
+            <View key={entry.roll} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, gap: 10 }}>
+              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>{entry.roll}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{entry.title}</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground, marginTop: 1, lineHeight: 16 }}>{entry.description}</Text>
+              </View>
             </View>
           ))}
         </View>

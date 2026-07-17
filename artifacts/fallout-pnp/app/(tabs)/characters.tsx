@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, FlatList, Modal, Platform, ScrollView, Text,
+  FlatList, Modal, Platform, ScrollView, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +25,7 @@ import {
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints } from '@/data/perks';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
+import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 
 // Perk points available given a race's perksPerLevels cadence (default 3)
 function perkPointsForRaceLevel(level: number, race: RaceType): number {
@@ -100,6 +101,34 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
               </TouchableOpacity>
             )}
           />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Confirm Modal (cross-platform; Alert.alert buttons don't work on web) ────
+function ConfirmModal({ visible, title, message, confirmLabel, onCancel, onConfirm }: {
+  visible: boolean; title: string; message: string; confirmLabel?: string;
+  onCancel: () => void; onConfirm: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', padding: 24 }}>
+        <View style={{ width: '100%', maxWidth: 380, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+          <View style={{ padding: 20, gap: 8 }}>
+            <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>{title}</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 20 }}>{message}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border }}>
+            <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={onCancel}>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CANCEL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -793,21 +822,51 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No injuries</Text>
                 </View>
               ) : (
-                char.injuries.map(inj => (
-                  <View key={inj.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: inj.isActive ? colors.destructive + '66' : colors.border, backgroundColor: colors.secondary, gap: 10 }}>
-                    <TouchableOpacity onPress={() => setChar(c => ({ ...c, injuries: c.injuries.map(i => i.id === inj.id ? { ...i, isActive: !i.isActive } : i) }))} style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: inj.isActive ? colors.destructive : colors.border, backgroundColor: inj.isActive ? colors.destructive + '33' : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                      {inj.isActive && <Feather name="check" size={12} color={colors.destructive} />}
-                    </TouchableOpacity>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: inj.isActive ? colors.destructive : colors.mutedForeground }}>{inj.location} — {inj.severity}</Text>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{inj.description}</Text>
+                char.injuries.map(inj => {
+                  const info = INJURY_LOCATION_INFO.find(l => l.location === inj.location);
+                  return (
+                    <View key={inj.id} style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: inj.isActive ? colors.destructive + '66' : colors.border, backgroundColor: colors.secondary, gap: 10 }}>
+                      <TouchableOpacity onPress={() => setChar(c => ({ ...c, injuries: c.injuries.map(i => i.id === inj.id ? { ...i, isActive: !i.isActive } : i) }))} style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: inj.isActive ? colors.destructive : colors.border, backgroundColor: inj.isActive ? colors.destructive + '33' : 'transparent', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                        {inj.isActive && <Feather name="check" size={12} color={colors.destructive} />}
+                      </TouchableOpacity>
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: inj.isActive ? colors.destructive : colors.mutedForeground }}>{info?.label ?? inj.location} — {inj.severity}</Text>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{inj.description}</Text>
+                        {info && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 15 }}>{info.effectText}</Text>}
+                      </View>
+                      <TouchableOpacity onPress={() => setChar(c => ({ ...c, injuries: c.injuries.filter(i => i.id !== inj.id) }))} style={{ padding: 4 }}>
+                        <Feather name="x" size={16} color={colors.mutedForeground} />
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity onPress={() => setChar(c => ({ ...c, injuries: c.injuries.filter(i => i.id !== inj.id) }))} style={{ padding: 4 }}>
-                      <Feather name="x" size={16} color={colors.mutedForeground} />
-                    </TouchableOpacity>
-                  </View>
-                ))
+                  );
+                })
               )}
+
+              {/* Computed mechanical effects (auto-applied in combat) */}
+              {(() => {
+                const eff = computeInjuryEffects(char);
+                if (eff.notes.length === 0) return null;
+                const agiChanged = eff.effectiveAgility !== char.special.agility;
+                const peChanged = eff.effectivePerception !== char.special.perception;
+                return (
+                  <View style={{ backgroundColor: colors.destructive + '18', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66', padding: 12, gap: 6, marginTop: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="medkit" size={16} color={colors.destructive} />
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>ACTIVE COMBAT EFFECTS</Text>
+                    </View>
+                    {(agiChanged || peChanged) && (
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        {agiChanged && <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>AGI {char.special.agility} → <Text style={{ color: colors.destructive }}>{eff.effectiveAgility}</Text></Text>}
+                        {peChanged && <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>PE {char.special.perception} → <Text style={{ color: colors.destructive }}>{eff.effectivePerception}</Text></Text>}
+                      </View>
+                    )}
+                    {eff.notes.map((n, i) => (
+                      <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>• {n}</Text>
+                    ))}
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>These effects apply automatically in combat.</Text>
+                  </View>
+                );
+              })()}
             </>
           )}
         </ScrollView>
@@ -919,6 +978,8 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
 }) {
   const colors = useColors();
   const weapon = allWeapons.find(w => w.id === character.equippedWeaponId);
+  const activeInjuries = (character.injuries ?? []).filter(i => i.isActive);
+  const injuryEffects = computeInjuryEffects(character);
   return (
     <TouchableOpacity style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -929,6 +990,12 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
             <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: character.type === 'pc' ? colors.primary + '33' : colors.destructive + '33', borderRadius: 4 }}>
               <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: character.type === 'pc' ? colors.primary : colors.destructive }}>{character.type.toUpperCase()}</Text>
             </View>
+            {activeInjuries.length > 0 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.destructive + '22', borderRadius: 4, borderWidth: 1, borderColor: colors.destructive + '66' }}>
+                <Ionicons name="medkit" size={11} color={colors.destructive} />
+                <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{activeInjuries.length}</Text>
+              </View>
+            )}
           </View>
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
             Lv {character.level} {character.race} · {weapon?.name ?? 'No weapon'}
@@ -946,6 +1013,14 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
           <TouchableOpacity onPress={onDelete} style={{ padding: 4 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>
         </View>
       </View>
+      {/* Injury effect notes on the sheet */}
+      {injuryEffects.notes.length > 0 && (
+        <View style={{ backgroundColor: colors.destructive + '14', borderRadius: 8, borderWidth: 1, borderColor: colors.destructive + '44', padding: 8, gap: 2 }}>
+          {injuryEffects.notes.map((n, i) => (
+            <Text key={i} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>✚ {n}</Text>
+          ))}
+        </View>
+      )}
       <HPBar current={character.currentHp} max={character.maxHp} height={4} showText={false} />
     </TouchableOpacity>
   );
@@ -962,6 +1037,7 @@ export default function CharactersScreen() {
   const [showPremades, setShowPremades] = useState(false);
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
   const active = characters.filter(c => !c.inStorage && matchesSearch(c));
@@ -1033,10 +1109,7 @@ export default function CharactersScreen() {
               onEdit={() => { setEditingChar(item); setShowForm(true); }}
               onBio={() => setBioChar(item)}
               onToggleStorage={() => toggleStorage(item)}
-              onDelete={() => Alert.alert('Delete Character', `Delete ${item.name}?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => deleteCharacter(item.id) },
-              ])}
+              onDelete={() => setDeleteTarget(item)}
               onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
             />
           )}
@@ -1057,10 +1130,7 @@ export default function CharactersScreen() {
                   onEdit={() => { setEditingChar(item); setShowForm(true); }}
                   onBio={() => setBioChar(item)}
                   onToggleStorage={() => toggleStorage(item)}
-                  onDelete={() => Alert.alert('Delete Character', `Delete ${item.name}?`, [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: () => deleteCharacter(item.id) },
-                  ])}
+                  onDelete={() => setDeleteTarget(item)}
                   onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 />
               ))}
@@ -1090,6 +1160,22 @@ export default function CharactersScreen() {
         onClose={next => {
           if (bioChar) updateCharacter({ ...bioChar, biography: next });
           setBioChar(null);
+        }}
+      />
+
+      {/* Delete confirmation (cross-platform) */}
+      <ConfirmModal
+        visible={deleteTarget !== null}
+        title="DELETE CHARACTER"
+        message={`Delete ${deleteTarget?.name ?? 'this character'}? This cannot be undone.`}
+        confirmLabel="DELETE"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteCharacter(deleteTarget.id);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          setDeleteTarget(null);
         }}
       />
     </View>
