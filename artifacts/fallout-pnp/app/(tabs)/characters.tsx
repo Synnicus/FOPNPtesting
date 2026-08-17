@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FlatList, Image, Modal, Platform, ScrollView, Text,
+  FlatList, Image, Modal, PanResponder, Platform, ScrollView, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import {
   Character, CharacterSkills, CharacterPerk, CharacterType, RaceType,
-  SkillType, SPECIALStats, Injury, NaturalProtection, DamageType,
+  SkillType, SPECIALStats, Injury, NaturalProtection, DamageType, ActiveEffect, Weapon,
   DEFAULT_SKILLS, COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
   DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
 } from '@/context/types';
@@ -27,6 +27,9 @@ import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedP
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
+import { CHEMS, getChem } from '@/data/chems';
+import { makeChemEffect, progressChemEffect, chemHasNextStage } from '@/data/effects';
+import { getWeaponHands } from '@/data/weapons';
 
 // Perk points available given a race's perksPerLevels cadence (default 3)
 function perkPointsForRaceLevel(level: number, race: RaceType): number {
@@ -153,9 +156,17 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const [showBioEditor, setShowBioEditor] = useState(false);
 
   // Weapon/armor pickers
-  const [showWeaponPick, setShowWeaponPick] = useState(false);
   const [showBodyPick, setShowBodyPick] = useState(false);
   const [showHelmetPick, setShowHelmetPick] = useState(false);
+  const [handPick, setHandPick] = useState<null | 'left' | 'right'>(null);
+  const [showInventoryPick, setShowInventoryPick] = useState(false);
+  const [showChemPick, setShowChemPick] = useState(false);
+
+  // Perks tab: only-show-available toggle
+  const [onlyAvailablePerks, setOnlyAvailablePerks] = useState(false);
+
+  // Skill points GM adjustment input
+  const [skillPointsInput, setSkillPointsInput] = useState('');
 
   // Injury form
   const [addingInjury, setAddingInjury] = useState(false);
@@ -366,6 +377,148 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     });
   }, []);
 
+  // ─── Effects (chems) helpers ──────────────────────────────────────────────
+  const addChemEffect = useCallback((chemId: string) => {
+    const chem = getChem(chemId);
+    if (!chem) return;
+    setChar(prev => ({ ...prev, effects: [...(prev.effects ?? []), makeChemEffect(chem, 0)] }));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  const removeEffect = useCallback((id: string) => {
+    setChar(prev => ({ ...prev, effects: (prev.effects ?? []).filter(e => e.id !== id) }));
+  }, []);
+
+  const toggleEffectActive = useCallback((id: string) => {
+    setChar(prev => ({ ...prev, effects: (prev.effects ?? []).map(e => e.id === id ? { ...e, isActive: !e.isActive } : e) }));
+  }, []);
+
+  const advanceEffect = useCallback((id: string) => {
+    setChar(prev => {
+      const effects = prev.effects ?? [];
+      const effect = effects.find(e => e.id === id);
+      if (!effect || !effect.chemId) return prev;
+      const chem = getChem(effect.chemId);
+      if (!chem) return prev;
+      const next = progressChemEffect(effect, chem);
+      if (next === null) {
+        return { ...prev, effects: effects.filter(e => e.id !== id) };
+      }
+      return { ...prev, effects: effects.map(e => e.id === id ? next : e) };
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  // ─── Hand slots + inventory helpers ────────────────────────────────────────
+  // Which arms are crippled (from injuries list — crippled/broken arm).
+  const armStatus = useMemo(() => {
+    const crippling = (char.injuries ?? []).filter(i => i.isActive && (i.severity === 'crippled' || i.severity === 'broken'));
+    return {
+      left: crippling.some(i => i.location === 'leftArm'),
+      right: crippling.some(i => i.location === 'rightArm'),
+    };
+  }, [char.injuries]);
+
+  // Is a weapon legal for a given hand given crippled arms?
+  const weaponLegalForHand = useCallback((w: Weapon, hand: 'left' | 'right'): boolean => {
+    const bothCrippled = armStatus.left && armStatus.right;
+    if (bothCrippled) return false; // both arms crippled → None only
+    const thisArmCrippled = hand === 'left' ? armStatus.left : armStatus.right;
+    const hands = getWeaponHands(w);
+    if (!thisArmCrippled) return true;
+    // This arm crippled → only a 2-handed weapon with a sling, and only when
+    // exactly one arm is crippled.
+    const oneCrippled = armStatus.left !== armStatus.right;
+    if (oneCrippled && hands === 2 && (w.mods ?? []).includes('sling')) return true;
+    return false;
+  }, [armStatus]);
+
+  // Sync equippedWeaponId to primary (right hand, else left).
+  const syncPrimaryWeapon = useCallback((c: Character): Character => {
+    const primary = c.rightHandWeaponId ?? c.leftHandWeaponId;
+    // Ensure equipped weapons are always in inventory (max 5).
+    const inv = new Set(c.inventoryWeaponIds ?? []);
+    if (c.leftHandWeaponId) inv.add(c.leftHandWeaponId);
+    if (c.rightHandWeaponId) inv.add(c.rightHandWeaponId);
+    const inventoryWeaponIds = Array.from(inv).slice(0, 5);
+    return { ...c, equippedWeaponId: primary, inventoryWeaponIds };
+  }, []);
+
+  const equipHand = useCallback((hand: 'left' | 'right', weapon: Weapon | null) => {
+    setChar(prev => {
+      if (!weapon) {
+        const next = { ...prev, [hand === 'left' ? 'leftHandWeaponId' : 'rightHandWeaponId']: undefined };
+        return recomputeDerived(syncPrimaryWeapon(next));
+      }
+      const hands = getWeaponHands(weapon);
+      let next: Character;
+      if (hands === 2) {
+        // 2-handed fills both slots.
+        next = { ...prev, leftHandWeaponId: weapon.id, rightHandWeaponId: weapon.id };
+      } else {
+        // 1-handed: if the other hand holds a 2-handed weapon (same id in both),
+        // clear it first.
+        const otherKey = hand === 'left' ? 'rightHandWeaponId' : 'leftHandWeaponId';
+        const thisKey = hand === 'left' ? 'leftHandWeaponId' : 'rightHandWeaponId';
+        const otherId = prev[otherKey];
+        const otherIsTwoHanded = otherId && prev.leftHandWeaponId === prev.rightHandWeaponId;
+        next = {
+          ...prev,
+          [thisKey]: weapon.id,
+          ...(otherIsTwoHanded ? { [otherKey]: undefined } : {}),
+        } as Character;
+      }
+      return recomputeDerived(syncPrimaryWeapon(next));
+    });
+  }, [recomputeDerived, syncPrimaryWeapon]);
+
+  const addToInventory = useCallback((weapon: Weapon | null) => {
+    if (!weapon) return;
+    setChar(prev => {
+      const inv = prev.inventoryWeaponIds ?? [];
+      if (inv.includes(weapon.id) || inv.length >= 5) {
+        if (inv.length >= 5) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return prev;
+      }
+      return { ...prev, inventoryWeaponIds: [...inv, weapon.id] };
+    });
+  }, []);
+
+  const removeFromInventory = useCallback((id: string) => {
+    setChar(prev => {
+      // Don't allow removing an equipped weapon from inventory silently — unequip it too.
+      const next: Character = {
+        ...prev,
+        inventoryWeaponIds: (prev.inventoryWeaponIds ?? []).filter(w => w !== id),
+        leftHandWeaponId: prev.leftHandWeaponId === id ? undefined : prev.leftHandWeaponId,
+        rightHandWeaponId: prev.rightHandWeaponId === id ? undefined : prev.rightHandWeaponId,
+      };
+      return syncPrimaryWeapon(next);
+    });
+  }, [syncPrimaryWeapon]);
+
+  // ─── Portrait drag-crop (PanResponder, works with mouse on web) ─────────────
+  const bannerLayout = useRef({ width: 1, height: 260 });
+  const dragMoved = useRef(false);
+  const panResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => (char.portraitFit ?? 'cover') === 'cover' && !!char.portrait,
+    onMoveShouldSetPanResponder: () => (char.portraitFit ?? 'cover') === 'cover' && !!char.portrait,
+    onPanResponderGrant: () => { dragMoved.current = false; },
+    onPanResponderMove: (_e, g) => {
+      if (Math.abs(g.dx) > 3 || Math.abs(g.dy) > 3) dragMoved.current = true;
+      const { width, height } = bannerLayout.current;
+      setChar(c => {
+        const cur = c.portraitOffset ?? { x: 0.5, y: 0.5 };
+        const nx = Math.max(0, Math.min(1, cur.x - g.dx / Math.max(1, width)));
+        const ny = Math.max(0, Math.min(1, cur.y - g.dy / Math.max(1, height)));
+        return { ...c, portraitOffset: { x: nx, y: ny } };
+      });
+    },
+    onPanResponderRelease: () => {
+      if (!dragMoved.current) pickPortrait();
+    },
+  }), [char.portraitFit, char.portrait, pickPortrait]);
+
   // All perks (search-filtered). Gating is done per-row via canTakePerk so
   // unavailable perks stay visible but disabled with their reasons.
   const perkList = useMemo(() =>
@@ -382,7 +535,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     onSave(recomputeDerived(char));
   };
 
-  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Equipment', 'Injuries'];
+  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects'];
   const INJURY_LOCATIONS: Injury['location'][] = ['head', 'eyes', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
   const INJURY_SEVERITIES: Injury['severity'][] = ['minor', 'crippled', 'broken'];
 
@@ -414,26 +567,61 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           {/* ── BASICS ── */}
           {activeTab === 0 && (
             <>
-              {/* Portrait banner — large preview using the full uploaded photo */}
+              {/* Portrait banner — large preview using the full uploaded photo.
+                  When cropping (cover), drag to reposition the crop focus; a tap
+                  (without drag) opens the picker. */}
               <View style={{ gap: 8 }}>
-                <TouchableOpacity activeOpacity={0.85} onPress={pickPortrait}>
-                  {char.portrait ? (
-                    <Image
-                      source={{ uri: char.portrait }}
-                      resizeMode={char.portraitFit ?? 'cover'}
-                      style={{ width: '100%', height: 260, borderRadius: 14, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.secondary }}
-                    />
+                {char.portrait ? (
+                  (char.portraitFit ?? 'cover') === 'cover' ? (
+                    <View
+                      {...panResponder.panHandlers}
+                      onLayout={e => { bannerLayout.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height }; }}
+                      style={{ width: '100%', height: 260, borderRadius: 14, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.secondary, overflow: 'hidden' }}
+                    >
+                      {Platform.OS === 'web' ? (
+                        <img
+                          src={char.portrait}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${Math.round((char.portraitOffset?.x ?? 0.5) * 100)}% ${Math.round((char.portraitOffset?.y ?? 0.5) * 100)}%` } as any}
+                          draggable={false}
+                        />
+                      ) : (
+                        <Image
+                          source={{ uri: char.portrait }}
+                          resizeMode="cover"
+                          style={{
+                            width: bannerLayout.current.width * 1.6,
+                            height: 260 * 1.6,
+                            marginLeft: -(char.portraitOffset?.x ?? 0.5) * (bannerLayout.current.width * 0.6),
+                            marginTop: -(char.portraitOffset?.y ?? 0.5) * (260 * 0.6),
+                          }}
+                        />
+                      )}
+                      <View style={{ position: 'absolute', bottom: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6 }} pointerEvents="none">
+                        <Feather name="move" size={11} color="#fff" />
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: '#fff' }}>Drag to reposition · tap to change</Text>
+                      </View>
+                    </View>
                   ) : (
+                    <TouchableOpacity activeOpacity={0.85} onPress={pickPortrait}>
+                      <Image
+                        source={{ uri: char.portrait }}
+                        resizeMode="contain"
+                        style={{ width: '100%', height: 260, borderRadius: 14, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.secondary }}
+                      />
+                    </TouchableOpacity>
+                  )
+                ) : (
+                  <TouchableOpacity activeOpacity={0.85} onPress={pickPortrait}>
                     <View style={{ width: '100%', height: 260, borderRadius: 14, borderWidth: 2, borderStyle: 'dashed', borderColor: colors.border, backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                       <Feather name="image" size={40} color={colors.mutedForeground} />
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>TAP TO UPLOAD PHOTO</Text>
                     </View>
-                  )}
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                )}
 
                 {/* Avatar preview + fit toggle */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <CharacterAvatar portrait={char.portrait} name={char.name} size={52} fit={char.portraitFit ?? 'cover'} />
+                  <CharacterAvatar portrait={char.portrait} name={char.name} size={52} fit={char.portraitFit ?? 'cover'} offset={char.portraitOffset} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 }}>FIT</Text>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -663,17 +851,35 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             <>
               <View style={{ gap: 6 }}>
                 <PointCounter label="SKILL POINTS REMAINING" remaining={char.unspentSkillPoints} total={skillPointsTotal} warn />
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <View style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'stretch' }}>
+                  <View style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border, justifyContent: 'center' }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>SP/LVL</Text>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{calcSkillPointsPerLevel(char.special)}</Text>
                   </View>
-                  <TouchableOpacity
-                    style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
-                    onPress={() => setChar(c => ({ ...c, unspentSkillPoints: Math.min(999, c.unspentSkillPoints + calcSkillPointsPerLevel(c.special)) }))}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>+ Level Up Points</Text>
-                  </TouchableOpacity>
+                  {/* GM: add/remove skill points manually */}
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.5 }}>ADD SKILL{'\n'}POINTS</Text>
+                    <TextInput
+                      style={{ flex: 1, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 14, textAlign: 'center' }}
+                      keyboardType={Platform.OS === 'web' ? 'default' : 'numbers-and-punctuation'}
+                      placeholder="±0" placeholderTextColor={colors.mutedForeground}
+                      value={skillPointsInput}
+                      onChangeText={t => setSkillPointsInput(t.replace(/[^0-9-]/g, ''))}
+                    />
+                    <TouchableOpacity
+                      style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: 6 }}
+                      onPress={() => {
+                        const delta = parseInt(skillPointsInput, 10);
+                        if (!Number.isFinite(delta) || delta === 0) return;
+                        setChar(c => ({ ...c, unspentSkillPoints: Math.max(0, Math.min(9999, c.unspentSkillPoints + delta)) }));
+                        setSkillPointsInput('');
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>APPLY</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>GM customization only — manually grant or remove skill points. Accepts negatives.</Text>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Tagged skills ({char.taggedSkills.length}/3) get a free +20% bonus, shown in orange. Each +1 spends 1 skill point above base.</Text>
               </View>
 
@@ -716,6 +922,16 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               <PointCounter label="PERK POINTS REMAINING" remaining={perkPointsRemaining} total={perkPointsAvailable} warn />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>1 perk point per 3 levels. Each rank costs 1 point. Tap a perk to add/increase rank; tap at max rank to remove.</Text>
 
+              {/* Only-show-available toggle */}
+              <TouchableOpacity
+                onPress={() => setOnlyAvailablePerks(v => !v)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: onlyAvailablePerks ? colors.primary : colors.border }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: onlyAvailablePerks ? colors.primary : colors.foreground, letterSpacing: 0.5 }}>ONLY SHOW AVAILABLE</Text>
+                <View style={{ width: 44, height: 24, borderRadius: 12, backgroundColor: onlyAvailablePerks ? colors.primary : colors.border, padding: 2, justifyContent: 'center' }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: onlyAvailablePerks ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
+
               {/* Active perks */}
               {char.perks.length > 0 && (
                 <View style={{ gap: 6 }}>
@@ -748,8 +964,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   <TextInput style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }} placeholder="Search perks…" placeholderTextColor={colors.mutedForeground} value={perkSearch} onChangeText={setPerkSearch} />
                   {perkSearch ? <TouchableOpacity onPress={() => setPerkSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
                 </View>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Showing all {perkList.length} perks. Unavailable perks are greyed with the reasons they can't be taken.</Text>
-                {perkList.map(perk => {
+                {(() => {
+                  const visiblePerks = perkList.filter(perk => {
+                    if (!onlyAvailablePerks) return true;
+                    const existing = char.perks.find(p => p.perkId === perk.id);
+                    if (existing) return true; // always show owned perks
+                    const { allowed } = canTakePerk(char, perk, 0);
+                    return allowed && perkPointsRemaining > 0;
+                  });
+                  return (
+                    <>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{onlyAvailablePerks ? `Showing ${visiblePerks.length} available perks.` : `Showing all ${visiblePerks.length} perks. Unavailable perks are greyed with the reasons they can't be taken.`}</Text>
+                {visiblePerks.map(perk => {
                   const existing = char.perks.find(p => p.perkId === perk.id);
                   const currentRanks = existing?.rank ?? 0;
                   const { allowed, reasons } = canTakePerk(char, perk, currentRanks);
@@ -785,54 +1011,118 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     </TouchableOpacity>
                   );
                 })}
-              </View>
-
-              {/* ── TRAITS ── */}
-              <View style={{ gap: 8, marginTop: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>TRAITS</Text>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (char.traits?.length ?? 0) >= MAX_TRAITS ? '#f59e0b' : colors.mutedForeground }}>{char.traits?.length ?? 0}/{MAX_TRAITS} chosen</Text>
-                </View>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Optional. Choose up to {MAX_TRAITS} traits — each has a benefit and a penalty. Normally picked at creation, but editable here (GM tool).</Text>
-                {TRAITS.map(trait => {
-                  const selected = (char.traits ?? []).includes(trait.id);
-                  const { allowed, reasons } = canTakeTrait(char, trait);
-                  // Selected traits are always tappable (to deselect). Others need to pass.
-                  const disabled = !selected && !allowed;
-                  const reasonText = reasons.filter(r => r !== 'Already selected').join(' · ');
-                  return (
-                    <TouchableOpacity
-                      key={trait.id}
-                      disabled={disabled}
-                      style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary + '88' : colors.border, backgroundColor: selected ? colors.primary + '11' : colors.secondary, opacity: disabled ? 0.45 : 1, gap: 4 }}
-                      onPress={() => toggleTrait(trait.id)}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground, flex: 1 }}>{trait.name}</Text>
-                        {selected
-                          ? <Feather name="check-circle" size={18} color={colors.primary} />
-                          : <Feather name={disabled ? 'lock' : 'circle'} size={18} color={colors.mutedForeground} />}
-                      </View>
-                      <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{trait.description}</Text>
-                      {(trait.allowedRaces || trait.excludedRaces) && (
-                        <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
-                          {trait.allowedRaces ? `${trait.allowedRaces.join(' / ')} only` : `Not for: ${trait.excludedRaces!.join(' / ')}`}
-                        </Text>
-                      )}
-                      {disabled && reasonText.length > 0 && (
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.destructive }}>🔒 {reasonText}</Text>
-                      )}
-                    </TouchableOpacity>
+                    </>
                   );
-                })}
+                })()}
               </View>
             </>
           )}
 
-          {/* ── EQUIPMENT ── */}
+          {/* ── TRAITS ── */}
           {activeTab === 4 && (
             <>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>TRAITS</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (char.traits?.length ?? 0) >= MAX_TRAITS ? '#f59e0b' : colors.mutedForeground }}>{char.traits?.length ?? 0}/{MAX_TRAITS} chosen</Text>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Optional. Choose up to {MAX_TRAITS} traits — each has a benefit and a penalty. Normally picked at creation, but editable here (GM tool).</Text>
+              {TRAITS.map(trait => {
+                const selected = (char.traits ?? []).includes(trait.id);
+                const { allowed, reasons } = canTakeTrait(char, trait);
+                // Selected traits are always tappable (to deselect). Others need to pass.
+                const disabled = !selected && !allowed;
+                const reasonText = reasons.filter(r => r !== 'Already selected').join(' · ');
+                return (
+                  <TouchableOpacity
+                    key={trait.id}
+                    disabled={disabled}
+                    style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary + '88' : colors.border, backgroundColor: selected ? colors.primary + '11' : colors.secondary, opacity: disabled ? 0.45 : 1, gap: 4 }}
+                    onPress={() => toggleTrait(trait.id)}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground, flex: 1 }}>{trait.name}</Text>
+                      {selected
+                        ? <Feather name="check-circle" size={18} color={colors.primary} />
+                        : <Feather name={disabled ? 'lock' : 'circle'} size={18} color={colors.mutedForeground} />}
+                    </View>
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{trait.description}</Text>
+                    {(trait.allowedRaces || trait.excludedRaces) && (
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                        {trait.allowedRaces ? `${trait.allowedRaces.join(' / ')} only` : `Not for: ${trait.excludedRaces!.join(' / ')}`}
+                      </Text>
+                    )}
+                    {disabled && reasonText.length > 0 && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.destructive }}>🔒 {reasonText}</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+
+          {/* ── EQUIPMENT ── */}
+          {activeTab === 5 && (
+            <>
+              {/* Hand slots (dual wield) */}
+              {(() => {
+                const bothCrippled = armStatus.left && armStatus.right;
+                const leftW = allWeapons.find(w => w.id === char.leftHandWeaponId);
+                const rightW = allWeapons.find(w => w.id === char.rightHandWeaponId);
+                return (
+                  <>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>WEAPONS — HAND SLOTS</Text>
+                    {(bothCrippled || armStatus.left || armStatus.right) && (
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+                        {bothCrippled ? 'Both arms crippled — no weapons can be held.' : `${armStatus.left ? 'Left' : 'Right'} arm crippled — that hand can only hold a two-handed weapon with a sling.`}
+                      </Text>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {(['left', 'right'] as const).map(hand => {
+                        const w = hand === 'left' ? leftW : rightW;
+                        const armCrippled = hand === 'left' ? armStatus.left : armStatus.right;
+                        return (
+                          <TouchableOpacity
+                            key={hand}
+                            style={{ flex: 1, padding: 12, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: armCrippled ? colors.destructive + '66' : colors.border }}
+                            onPress={() => setHandPick(hand)}>
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND'}</Text>
+                            <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: w ? colors.foreground : colors.mutedForeground, marginTop: 4 }} numberOfLines={2}>{w?.name ?? 'None'}</Text>
+                            {w && getWeaponHands(w) === 2 && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, marginTop: 2 }}>2-HANDED</Text>}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    {/* Carried weapons inventory */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CARRIED WEAPONS ({(char.inventoryWeaponIds ?? []).length}/5)</Text>
+                      {(char.inventoryWeaponIds ?? []).length < 5 && (
+                        <TouchableOpacity onPress={() => setShowInventoryPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
+                          <Feather name="plus" size={12} color={colors.primary} />
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>ADD</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {(char.inventoryWeaponIds ?? []).length > 0 && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {(char.inventoryWeaponIds ?? []).map(wid => {
+                          const iw = allWeapons.find(w => w.id === wid);
+                          const equipped = char.leftHandWeaponId === wid || char.rightHandWeaponId === wid;
+                          return (
+                            <View key={wid} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 10, paddingRight: 6, paddingVertical: 5, backgroundColor: equipped ? colors.primary + '1a' : colors.secondary, borderRadius: 14, borderWidth: 1, borderColor: equipped ? colors.primary + '66' : colors.border }}>
+                              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: equipped ? colors.primary : colors.foreground }}>{iw?.name ?? wid}</Text>
+                              <TouchableOpacity onPress={() => removeFromInventory(wid)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                                <Feather name="x" size={13} color={colors.mutedForeground} />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
+
               {[
-                { label: 'WEAPON', value: allWeapons.find(w => w.id === char.equippedWeaponId)?.name ?? 'None', onPress: () => setShowWeaponPick(true) },
                 { label: 'BODY ARMOR', value: allArmor.find(a => a.id === char.equippedBodyArmorId)?.name ?? 'None', onPress: () => setShowBodyPick(true) },
                 { label: 'HELMET', value: allArmor.find(a => a.id === char.equippedHelmetId)?.name ?? 'None', onPress: () => setShowHelmetPick(true) },
               ].map(({ label, value, onPress }) => (
@@ -845,20 +1135,69 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 </TouchableOpacity>
               ))}
 
-              {/* Equipment summary */}
-              {(char.equippedBodyArmorId || char.equippedHelmetId) && (
-                <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 4 }}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>COMPUTED AC</Text>
-                  <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary }}>{char.armorClass}</Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground }}>AGI {char.special.agility} base + armor AC bonus{race.naturalACBonus > 0 ? ` + ${race.naturalACBonus} natural` : ''}</Text>
-                </View>
-              )}
+              {/* Cumulative protection summary: AC + per-type DT/DR from armor,
+                  helmet, natural/racial protection and defensive perks. */}
+              {(() => {
+                const body = allArmor.find(a => a.id === char.equippedBodyArmorId) ?? null;
+                const helm = allArmor.find(a => a.id === char.equippedHelmetId) ?? null;
+                const natural = char.naturalProtection ?? race.naturalProtection ?? null;
+                // Defensive perk bonuses (Dodger AC / Toughness DR etc.)
+                let perkAC = 0; let perkDR = 0;
+                for (const cp of char.perks ?? []) {
+                  const p = getPerkById(cp.perkId);
+                  const fx = p?.combatEffect;
+                  if (!fx) continue;
+                  if (/HP\s*<\s*50%/i.test(fx.combatNote ?? '')) continue; // situational
+                  if (fx.armorClassBonus) perkAC += fx.armorClassBonus * cp.rank;
+                  if (fx.damageResistBonus) perkDR += fx.damageResistBonus * cp.rank;
+                  if (p?.id === 'tough_hide') perkDR += 10 * cp.rank; // +10% all resistances/rank
+                }
+                // Hide of Scars: +15%/rank to all resistances EXCEPT fire (handled per-type below)
+                const hideOfScars = (char.perks ?? []).find(cp => cp.perkId === 'hide_of_scars');
+                const hideOfScarsDR = hideOfScars ? 15 * hideOfScars.rank : 0;
+                const types: { key: string; label: string }[] = [
+                  { key: 'Normal', label: 'NORM' }, { key: 'Laser', label: 'LASER' },
+                  { key: 'Fire', label: 'FIRE' }, { key: 'Plasma', label: 'PLASMA' },
+                  { key: 'Explosion', label: 'EXPL' },
+                ];
+                const acParts = [`AGI-based ${char.special.agility <= 0 ? 0 : Math.min(char.special.agility, 99)}`];
+                if (body?.acBonus) acParts.push(`+${body.acBonus} armor`);
+                if (helm?.acBonus) acParts.push(`+${helm.acBonus} helmet`);
+                if (race.naturalACBonus > 0) acParts.push(`+${race.naturalACBonus} racial`);
+                if (perkAC > 0) acParts.push(`+${perkAC} perks`);
+                return (
+                  <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CUMULATIVE PROTECTION</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                      <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary }}>AC {char.armorClass + perkAC}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, flexShrink: 1 }}>{acParts.join(' ')}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                      {types.map(t => {
+                        const dt = ((body as any)?.[`dt${t.key}`] ?? 0) + ((helm as any)?.[`dt${t.key}`] ?? 0) + ((natural as any)?.[`dt${t.key}`] ?? 0);
+                        const dr = Math.min(90, ((body as any)?.[`dr${t.key}`] ?? 0) + ((helm as any)?.[`dr${t.key}`] ?? 0) + ((natural as any)?.[`dr${t.key}`] ?? 0) + perkDR + (t.key !== 'Fire' ? hideOfScarsDR : 0));
+                        return (
+                          <View key={t.key} style={{ flexGrow: 1, minWidth: 58, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
+                            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{t.label}</Text>
+                            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>DT {dt}</Text>
+                            <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>DR {dr}%</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
+                      Sources: equipment + natural/racial protection{perkAC > 0 || perkDR > 0 ? ' + perks' : ''}. Situational perk bonuses (e.g. HP &lt; 50%) apply in combat only.
+                    </Text>
+                  </View>
+                );
+              })()}
             </>
           )}
 
-          {/* ── INJURIES ── */}
-          {activeTab === 5 && (
+          {/* ── EFFECTS (injuries + chem effects) ── */}
+          {activeTab === 6 && (
             <>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>INJURIES</Text>
               {!addingInjury ? (
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.destructive + '88' }} onPress={() => setAddingInjury(true)}>
                   <Feather name="plus" size={16} color={colors.destructive} />
@@ -959,16 +1298,97 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   </View>
                 );
               })()}
+
+              {/* ── ACTIVE CHEM EFFECTS ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>CHEM EFFECTS</Text>
+                <TouchableOpacity onPress={() => setShowChemPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
+                  <Feather name="plus" size={13} color={colors.primary} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>ADD CHEM</Text>
+                </TouchableOpacity>
+              </View>
+
+              {(char.effects ?? []).length === 0 ? (
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No active chem effects. Add a chem for out-of-combat use.</Text>
+              ) : (
+                (char.effects ?? []).map(effect => {
+                  const chem = effect.chemId ? getChem(effect.chemId) : undefined;
+                  const hasNext = chem ? chemHasNextStage(effect, chem) : false;
+                  const statParts: string[] = [];
+                  if (effect.statMods) {
+                    (Object.keys(effect.statMods) as (keyof SPECIALStats)[]).forEach(k => {
+                      const v = effect.statMods![k];
+                      if (typeof v === 'number' && v !== 0) statParts.push(`${SPECIAL_SHORT[k]} ${v > 0 ? '+' : ''}${v}`);
+                    });
+                  }
+                  if (effect.apMod) statParts.push(`AP ${effect.apMod > 0 ? '+' : ''}${effect.apMod}`);
+                  if (effect.acMod) statParts.push(`AC ${effect.acMod > 0 ? '+' : ''}${effect.acMod}`);
+                  if (effect.drMod) statParts.push(`DR ${effect.drMod > 0 ? '+' : ''}${effect.drMod}%`);
+                  if (effect.sequenceMod) statParts.push(`SEQ ${effect.sequenceMod > 0 ? '+' : ''}${effect.sequenceMod}`);
+                  if (effect.radResistMod) statParts.push(`Rad Res ${effect.radResistMod > 0 ? '+' : ''}${effect.radResistMod}%`);
+                  if (effect.hpMod) statParts.push(`HP ${effect.hpMod > 0 ? '+' : ''}${effect.hpMod}`);
+                  return (
+                    <View key={effect.id} style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: effect.isActive ? colors.primary + '66' : colors.border, backgroundColor: colors.secondary, gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                        <TouchableOpacity onPress={() => toggleEffectActive(effect.id)} style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: effect.isActive ? colors.primary : colors.border, backgroundColor: effect.isActive ? colors.primary + '33' : 'transparent', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                          {effect.isActive && <Feather name="check" size={12} color={colors.primary} />}
+                        </TouchableOpacity>
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: effect.isActive ? colors.primary : colors.mutedForeground }}>{effect.name}</Text>
+                          {chem && chem.stages.length > 1 && effect.stage !== undefined && (
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.5 }}>STAGE {(effect.stage ?? 0) + 1}/{chem.stages.length} · {chem.stages[effect.stage ?? 0].label}</Text>
+                          )}
+                          {statParts.length > 0 && <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{statParts.join(' · ')}</Text>}
+                          {(effect.notes ?? []).map((n, i) => (
+                            <Text key={i} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>• {n}</Text>
+                          ))}
+                        </View>
+                        <TouchableOpacity onPress={() => removeEffect(effect.id)} style={{ padding: 4 }}>
+                          <Feather name="x" size={16} color={colors.mutedForeground} />
+                        </TouchableOpacity>
+                      </View>
+                      {hasNext && (
+                        <TouchableOpacity onPress={() => advanceEffect(effect.id)} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.background, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '55' }}>
+                          <Feather name="skip-forward" size={12} color={colors.primary} />
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>NEXT STAGE</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })
+              )}
             </>
           )}
         </ScrollView>
 
         {/* Equipment selection modals */}
         <SelectionModal
-          visible={showWeaponPick} onClose={() => setShowWeaponPick(false)} title="SELECT WEAPON"
-          items={allWeapons} keyFn={w => w.id}
-          onSelect={w => setChar(c => recomputeDerived({ ...c, equippedWeaponId: w?.id ?? undefined }))}
+          visible={handPick !== null} onClose={() => setHandPick(null)}
+          title={handPick === 'left' ? 'LEFT HAND WEAPON' : 'RIGHT HAND WEAPON'}
+          items={handPick ? allWeapons.filter(w => weaponLegalForHand(w, handPick)) : []} keyFn={w => w.id}
+          onSelect={w => { if (handPick) equipHand(handPick, w); }}
+          renderItem={w => (
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              {w.name}{getWeaponHands(w) === 2 ? ' (2H)' : ''}
+            </Text>
+          )}
+        />
+        <SelectionModal
+          visible={showInventoryPick} onClose={() => setShowInventoryPick(false)} title="ADD CARRIED WEAPON"
+          items={allWeapons.filter(w => !(char.inventoryWeaponIds ?? []).includes(w.id))} keyFn={w => w.id}
+          onSelect={w => addToInventory(w)}
           renderItem={w => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{w.name}</Text>}
+        />
+        <SelectionModal
+          visible={showChemPick} onClose={() => setShowChemPick(false)} title="ADD CHEM EFFECT"
+          items={CHEMS} keyFn={c => c.id}
+          onSelect={c => { if (c) addChemEffect(c.id); }}
+          renderItem={c => (
+            <View>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={2}>{c.description}</Text>
+            </View>
+          )}
         />
         <SelectionModal
           visible={showBodyPick} onClose={() => setShowBodyPick(false)} title="SELECT BODY ARMOR"
@@ -1063,9 +1483,9 @@ function PremadePickerModal({ visible, onClose, onPick }: {
 }
 
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, allWeapons }: {
+function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, allWeapons }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
-  onBio: () => void; onToggleStorage: () => void;
+  onBio: () => void; onToggleStorage: () => void; onResetHp: () => void;
   allWeapons: { id: string; name: string }[];
 }) {
   const colors = useColors();
@@ -1075,7 +1495,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
   return (
     <TouchableOpacity style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <CharacterAvatar portrait={character.portrait} name={character.name} size={48} fit={character.portraitFit ?? 'cover'} />
+        <CharacterAvatar portrait={character.portrait} name={character.name} size={48} fit={character.portraitFit ?? 'cover'} offset={character.portraitOffset} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{character.name}</Text>
@@ -1097,6 +1517,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
           </Text>
         </View>
         <View style={{ gap: 6 }}>
+          <TouchableOpacity onPress={onResetHp} style={{ padding: 4 }}><Ionicons name="heart-circle" size={16} color={character.currentHp < character.maxHp ? colors.destructive : colors.mutedForeground} /></TouchableOpacity>
           <TouchableOpacity onPress={onBio} style={{ padding: 4 }}><Feather name="book-open" size={16} color={colors.primary} /></TouchableOpacity>
           <TouchableOpacity onPress={onToggleStorage} style={{ padding: 4 }}>
             <Ionicons name={character.inStorage ? 'file-tray-full' : 'archive-outline'} size={16} color={character.inStorage ? colors.primary : colors.mutedForeground} />
@@ -1155,6 +1576,20 @@ export default function CharactersScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const resetHp = (c: Character) => {
+    updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const resetAllHp = () => {
+    characters.forEach(c => {
+      if (c.currentHp !== c.maxHp || c.isKnockedOut) {
+        updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
+      }
+    });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
   const handlePickPremade = (p: PremadeCharacter) => {
     addCharacter(createCharacterFromPremade(p, genId()));
     setShowPremades(false);
@@ -1176,6 +1611,10 @@ export default function CharactersScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CHARACTERS</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }} onPress={resetAllHp}>
+              <Ionicons name="heart-circle" size={14} color={colors.destructive} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>RESET HP</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66' }} onPress={() => setShowPremades(true)}>
               <Feather name="users" size={14} color={colors.primary} />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>PREMADE</Text>
@@ -1215,6 +1654,7 @@ export default function CharactersScreen() {
               onEdit={() => { setEditingChar(item); setShowForm(true); }}
               onBio={() => setBioChar(item)}
               onToggleStorage={() => toggleStorage(item)}
+              onResetHp={() => resetHp(item)}
               onDelete={() => setDeleteTarget(item)}
               onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
             />
@@ -1236,6 +1676,7 @@ export default function CharactersScreen() {
                   onEdit={() => { setEditingChar(item); setShowForm(true); }}
                   onBio={() => setBioChar(item)}
                   onToggleStorage={() => toggleStorage(item)}
+                  onResetHp={() => resetHp(item)}
                   onDelete={() => setDeleteTarget(item)}
                   onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 />

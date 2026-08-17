@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 
 interface Props {
@@ -8,9 +8,11 @@ interface Props {
   size?: number;
   /** How the portrait image fits its frame. Default 'cover' (crops to fill). */
   fit?: 'cover' | 'contain';
+  /** Crop focus when fit is 'cover': 0–1 in each axis (0.5 = centered). */
+  offset?: { x: number; y: number };
 }
 
-export default function CharacterAvatar({ portrait, name, size = 48, fit = 'cover' }: Props) {
+export default function CharacterAvatar({ portrait, name, size = 48, fit = 'cover', offset }: Props) {
   const colors = useColors();
   const initials = name
     .split(' ')
@@ -20,6 +22,58 @@ export default function CharacterAvatar({ portrait, name, size = 48, fit = 'cove
     .slice(0, 2);
 
   if (portrait) {
+    // When cropping (cover) and a focus offset is provided, position the crop.
+    if (fit === 'cover' && offset) {
+      const px = Math.round((offset.x ?? 0.5) * 100);
+      const py = Math.round((offset.y ?? 0.5) * 100);
+      if (Platform.OS === 'web') {
+        return (
+          <View
+            style={[
+              styles.avatar,
+              { width: size, height: size, borderRadius: size / 2, borderColor: colors.primary },
+            ]}
+          >
+            <Image
+              source={{ uri: portrait }}
+              style={{ width: '100%', height: '100%' }}
+              // @ts-ignore web-only style prop for crop focus
+              resizeMode="cover"
+            />
+            {/* Overlay web objectPosition via absolute image on web */}
+            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              <img
+                src={portrait}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${px}% ${py}%` } as any}
+              />
+            </View>
+          </View>
+        );
+      }
+      // Native: oversized image positioned by percentage inside the clipped frame.
+      const scale = 2;
+      const big = size * scale;
+      const maxShift = big - size;
+      return (
+        <View
+          style={[
+            styles.avatar,
+            { width: size, height: size, borderRadius: size / 2, borderColor: colors.primary },
+          ]}
+        >
+          <Image
+            source={{ uri: portrait }}
+            resizeMode="cover"
+            style={{
+              width: big,
+              height: big,
+              marginLeft: -(offset.x ?? 0.5) * maxShift,
+              marginTop: -(offset.y ?? 0.5) * maxShift,
+            }}
+          />
+        </View>
+      );
+    }
     return (
       <Image
         source={{ uri: portrait }}

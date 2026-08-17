@@ -22,7 +22,12 @@ import {
 } from '@/data/condition';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
-import { isMeleeWeapon, computeModBonuses } from '@/data/weapons';
+import { isMeleeWeapon, getWeaponHands } from '@/data/weapons';
+import { computeModEffects } from '@/data/mods';
+import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
+import { CHEMS, getChem } from '@/data/chems';
+import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers } from '@/data/effects';
+import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { getRaceById } from '@/data/races';
@@ -114,14 +119,23 @@ interface PerkBonus {
   allHitsAreCrits: boolean;
   ignoreDT: number;
   apDiscount: number;
-  lightReduction: number; // Night Vision: reduce light penalty %
+  lightReduction: number; // Night Vision/Night Person: % of the light penalty removed (50 = halved)
+  burstApDiscount: number; // Steady Arm: −1 AP on burst attacks
+  strReqReduction: number; // Weapon Handling: weapon STR requirement −2
   notes: string[];
+}
+
+// Web-safe alert: RN's Alert.alert is a silent no-op on react-native-web.
+function notify(title: string, message?: string) {
+  if (Platform.OS === 'web') window.alert(message ? `${title}\n\n${message}` : title);
+  else Alert.alert(title, message);
 }
 
 function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRanged: boolean): PerkBonus {
   const result: PerkBonus = {
     toHit: 0, damage: 0, critChance: 0, critDamageMult: 1.0,
-    allHitsAreCrits: false, ignoreDT: 0, apDiscount: 0, lightReduction: 0, notes: [],
+    allHitsAreCrits: false, ignoreDT: 0, apDiscount: 0, lightReduction: 0, burstApDiscount: 0,
+    strReqReduction: 0, notes: [],
   };
   if (!char || !char.perks) return result;
 
@@ -140,20 +154,101 @@ function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRan
       if (fx.meleeToHitBonus) { result.toHit += fx.meleeToHitBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeToHitBonus * rank}% melee to-hit`); }
       if (fx.meleeDamageBonus) { result.damage += fx.meleeDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeDamageBonus * rank} melee dmg`); }
       if (fx.allHitsAreCrits) { result.allHitsAreCrits = true; result.notes.push(`${perk.name}: all hits are crits`); }
-      if (fx.ignoreDT) { result.ignoreDT += fx.ignoreDT * rank; result.notes.push(`${perk.name}: ignore ${fx.ignoreDT * rank} DT`); }
+    }
+    // Penetrator etc.: DT ignore applies to the attack regardless of ranged/melee
+    // (Penetrator is a RANGED perk — previously this was melee-only and dead).
+    if (fx.ignoreDT) { result.ignoreDT += fx.ignoreDT * rank; result.notes.push(`${perk.name}: ignore ${fx.ignoreDT * rank} DT`); }
+    if (fx.weaponStrReqReduction) { result.strReqReduction += fx.weaponStrReqReduction * rank; result.notes.push(`${perk.name}: weapon STR req −${fx.weaponStrReqReduction * rank}`); }
+    // Pyromaniac / Demolition Expert: extra damage with fire / explosion weapons.
+    if (fx.fireWeaponDamageBonus && weapon?.damageType === 'fire') { result.damage += fx.fireWeaponDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.fireWeaponDamageBonus * rank} fire dmg`); }
+    if (fx.explosionDamageBonus && weapon?.damageType === 'explosion') { result.damage += fx.explosionDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.explosionDamageBonus * rank} explosion dmg`); }
+    // Adrenaline Rush: +STR while below half HP → +melee damage (STR-derived).
+    if (fx.adrenalineRushActive && char.currentHp < char.maxHp / 2 && !isRanged) {
+      result.damage += fx.adrenalineStrBonus ?? 1;
+      result.notes.push(`${perk.name}: +${fx.adrenalineStrBonus ?? 1} melee dmg (HP < 50%)`);
     }
     if (fx.damageBonus) { result.damage += fx.damageBonus * rank; result.notes.push(`${perk.name}: +${fx.damageBonus * rank} all dmg`); }
     if (fx.critChanceBonus) { result.critChance += fx.critChanceBonus * rank; }
     if (fx.critDamageMultiplier) { result.critDamageMult = Math.max(result.critDamageMult, fx.critDamageMultiplier); }
     if (fx.attackAPDiscount) { result.apDiscount += fx.attackAPDiscount * rank; }
-    if (perk.id === 'night_vision' && fx.combatNote) { result.lightReduction += 20 * rank; result.notes.push(`${perk.name}: −${20 * rank}% light penalty`); }
-
-    // Adrenaline Rush
-    if (fx.adrenalineRushActive && char.currentHp < char.maxHp / 2) {
-      result.notes.push(`${perk.name}: active (+${fx.adrenalineStrBonus ?? 1} STR)`);
-    }
+    if (perk.id === 'night_vision' && fx.combatNote) { result.lightReduction = 50; result.notes.push(`${perk.name}: dark-condition penalties halved`); }
+    if (perk.id === 'night_person' && fx.combatNote) { result.lightReduction = Math.max(result.lightReduction, 50); result.notes.push(`${perk.name}: light penalties halved`); }
+    if (perk.id === 'steady_arm' && fx.combatNote) { result.burstApDiscount += 1; result.notes.push(`${perk.name}: burst attacks −1 AP`); }
   }
   return result;
+}
+
+// Defender-side perk bonuses: AC (Dodger, Hit the Deck…) and DR (Toughness…).
+// Conditional "when HP < 50%" perks gate on the defender's current HP.
+function computeDefensivePerkBonuses(char: Character | null, dmgType?: DamageType): { ac: number; dr: number; notes: string[] } {
+  const out = { ac: 0, dr: 0, notes: [] as string[] };
+  if (!char || !char.perks) return out;
+  const lowHp50 = char.currentHp < char.maxHp / 2;
+  const lowHp20 = char.currentHp < char.maxHp * 0.2;
+  for (const cp of char.perks) {
+    const perk = getPerkById(cp.perkId);
+    const fx = perk?.combatEffect;
+    if (!perk || !fx) continue;
+    const rank = cp.rank;
+    // Generic HP<50% conditional defensive perks only apply when actually below half.
+    const conditional = /HP\s*<\s*50%/i.test(fx.combatNote ?? '');
+    if (conditional && !lowHp50) continue;
+    if (fx.armorClassBonus) { out.ac += fx.armorClassBonus * rank; out.notes.push(`${perk.name}: +${fx.armorClassBonus * rank} AC`); }
+    if (fx.damageResistBonus) { out.dr += fx.damageResistBonus * rank; out.notes.push(`${perk.name}: +${fx.damageResistBonus * rank}% DR`); }
+    // Manual-specific defensive perks without structured fields:
+    if (perk.id === 'die_hard' && lowHp20) { out.dr += 10; out.notes.push('Die Hard: +10% DR (HP < 20%)'); }
+    if (perk.id === 'hide_of_scars' && dmgType !== 'fire') { out.dr += 15 * rank; out.notes.push(`Hide of Scars: +${15 * rank}% DR (not fire)`); }
+    if (perk.id === 'tough_hide') { out.dr += 10 * rank; out.notes.push(`Tough Hide: +${10 * rank}% DR`); }
+    if (perk.id === 'hit_the_deck' && dmgType === 'explosion') { out.dr += 50; out.notes.push('Hit the Deck!: +50% Explosive DR'); }
+  }
+  return out;
+}
+
+// ─── Generic option picker modal (weapons / chems / ammo) ────────────────────
+function OptionPickerModal({ visible, title, subtitle, options, onSelect, onClose }: {
+  visible: boolean; title: string; subtitle?: string;
+  options: { key: string; label: string; sublabel?: string; disabled?: boolean; note?: string }[];
+  onSelect: (key: string) => void; onClose: () => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000a', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '80%', paddingBottom: Math.max(insets.bottom, 12) }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{title}</Text>
+              {!!subtitle && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>{subtitle}</Text>}
+            </View>
+            <TouchableOpacity onPress={onClose} style={{ padding: 6 }}>
+              <Feather name="x" size={20} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 12, gap: 8 }}>
+            {options.length === 0 && (
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center', paddingVertical: 20 }}>Nothing available.</Text>
+            )}
+            {options.map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                disabled={opt.disabled}
+                onPress={() => onSelect(opt.key)}
+                style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: opt.disabled ? colors.border : colors.primary + '66', backgroundColor: colors.card, opacity: opt.disabled ? 0.45 : 1, gap: 2 }}
+              >
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{opt.label}</Text>
+                {!!opt.sublabel && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{opt.sublabel}</Text>}
+                {!!opt.note && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.destructive }}>{opt.note}</Text>}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <TouchableOpacity onPress={onClose} style={{ marginHorizontal: 12, marginTop: 4, paddingVertical: 12, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CANCEL — NO AP SPENT</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 // ─── Animated Die Face ────────────────────────────────────────────────────────
@@ -463,7 +558,7 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setPosition, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, applyChem, setPosition, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -532,6 +627,20 @@ export default function CombatScreen() {
   const [showDefenderPicker, setShowDefenderPicker] = useState(false);
   const [showAddCombatantPicker, setShowAddCombatantPicker] = useState(false);
   const [showApActions, setShowApActions] = useState(false);
+  const [showChemPicker, setShowChemPicker] = useState(false);
+  const [showAmmoPicker, setShowAmmoPicker] = useState(false);
+  const [showWeaponPicker, setShowWeaponPicker] = useState(false);
+  // Whether the currently open ammo/weapon picker should charge AP on selection.
+  const [ammoPickerCosted, setAmmoPickerCosted] = useState(false);
+  const [weaponPickerFree, setWeaponPickerFree] = useState(false);
+  // Inline result of the last streamlined-burst damage application.
+  const [streamlinedDmgResult, setStreamlinedDmgResult] = useState<{ perHit: number[]; total: number; dt: number; dr: number } | null>(null);
+
+  // Manual base-damage override ('' = use rolled dice). Recomputes DT/DR/crit.
+  const [damageOverride, setDamageOverride] = useState('');
+
+  // Remember the last defender chosen per attacker; restore on re-select.
+  const lastDefenderByAttacker = React.useRef<Record<string, string>>({});
 
   // Non-storage characters — used for pickers and initiative setup
   const activeCharacters = characters.filter(c => !c.inStorage);
@@ -547,6 +656,12 @@ export default function CombatScreen() {
   const isUnarmed = weapon ? weapon.skill === 'unarmed' : false;
   const isMeleeOrUnarmed = isMelee || isUnarmed;
 
+  // Auto-computed weapon-mod effects (to-hit/damage/range + magazine/sight/scope
+  // behaviour, sling, poison/festering/barbed, reload override). Needed early
+  // for targeting/light derivations below.
+  const modEffects = computeModEffects(weapon ? (weapon.mods ?? []) : []);
+  const modBonuses = { toHit: modEffects.toHit, damage: modEffects.damage, range: modEffects.range };
+
   // Injury effects (manual): attacker & defender.
   const attackerInjury = attacker ? computeInjuryEffects(attacker) : null;
   const defenderInjury = defender ? computeInjuryEffects(defender) : null;
@@ -558,8 +673,12 @@ export default function CombatScreen() {
   // Gate targeting on the weapon: apTargeted === null means the weapon cannot
   // make targeted shots (e.g. thrown explosives, flamethrowers).
   const weaponCanTarget = !weapon || weapon.apTargeted !== null;
-  const effTargetedIdx = weaponCanTarget ? targetedIdx : 0;
-  const targetedPenalty = isRanged ? TARGETED_OPTIONS[effTargetedIdx].ranged : TARGETED_OPTIONS[effTargetedIdx].melee;
+  let effTargetedIdx = weaponCanTarget ? targetedIdx : 0;
+  // Sniper scope forces an aimed shot: if no body part is targeted, default to Torso.
+  if (modEffects.forcesAimed && weaponCanTarget && effTargetedIdx === 0) effTargetedIdx = 1;
+  const rawTargetedPenalty = isRanged ? TARGETED_OPTIONS[effTargetedIdx].ranged : TARGETED_OPTIONS[effTargetedIdx].melee;
+  // Laser sight negates the aimed-shot to-hit penalty.
+  const targetedPenalty = modEffects.negatesAimedPenalty ? 0 : rawTargetedPenalty;
   const targetedBodyPart = TARGETED_OPTIONS[effTargetedIdx].bodyPart;
   const isAimed = targetedBodyPart !== null;
   // Include tagged skill +20 bonus in base skill
@@ -570,11 +689,47 @@ export default function CombatScreen() {
   // Perk bonuses
   const perkBonuses = computePerkBonuses(attacker, weapon, isRanged);
 
-  // Auto-computed weapon-mod bonuses (to-hit, damage, range) from equipped weapon's mods
-  const modBonuses = weapon ? computeModBonuses(weapon.mods ?? []) : { toHit: 0, damage: 0, range: 0 };
+  // Trait effects (One Hander to-hit swing, etc.)
+  const traitEffects = attacker ? computeTraitEffects(attacker) : {};
+
+  // Effective magazine size after mods (extended/drum magazines).
+  const effectiveMagazine = weapon ? Math.round(weapon.magazineSize * (modEffects.magazineMult ?? 1)) : 0;
+
+  // Reload AP cost — Speed Loader mod (reloadApOverride) can reduce it.
+  const reloadApCost = modEffects.reloadApOverride ?? AP_COSTS.RELOAD;
+
+  // Attack verb by weapon type: THROW (thrown), FIRE (ranged guns/energy),
+  // ATTACK (melee/unarmed/default).
+  const attackVerb = weapon
+    ? (weapon.category === 'throwing' ? 'THROW' : isRanged ? 'FIRE' : 'ATTACK')
+    : 'ATTACK';
+
+  // Active-effect (chem) modifiers on attacker & defender (data/effects.ts).
+  const attackerEffectMods = attacker ? computeEffectModifiers(attacker) : null;
+  const defenderEffectMods = defender ? computeEffectModifiers(defender) : null;
+  // Attacker SPECIAL after chem statMods (drives melee dmg / crit luck below).
+  const attackerEffSpecial = (attacker && attacker.special)
+    ? ({
+        ...attacker.special,
+        ...Object.fromEntries(Object.entries(attackerEffectMods?.statMods ?? {}).map(([k, v]) =>
+          [k, Math.max(1, Math.min(10, (attacker.special as any)[k] + ((v as number) ?? 0)))])),
+      } as typeof attacker.special)
+    : null;
+  // Defender-side perk bonuses (Dodger AC, Toughness DR, …) + chem AC mods.
+  const defenderPerkDef = computeDefensivePerkBonuses(defender, weapon?.damageType);
 
   // Effective weapon range: base rangeNormal + mod range bonuses
   const effectiveRange = weapon ? weapon.rangeNormal + modBonuses.range : 0;
+
+  // ─── Loaded ammo type (data/ammo.ts) ───────────────────────────────────────
+  const ammoTypeId = (attacker && weapon)
+    ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.ammoTypeId
+    : undefined;
+  const loadedAmmo: AmmoType | null = ammoTypeId ? (getAmmoById(ammoTypeId) ?? null) : null;
+  // Only the weapon's compatible ammo may be loaded.
+  const compatibleAmmo: AmmoType[] = weapon?.compatibleAmmo
+    ? weapon.compatibleAmmo.map(id => getAmmoById(id)).filter((a): a is AmmoType => !!a)
+    : [];
 
   // Defender natural protection (creatures like Deathclaws)
   const defenderNatural: NaturalProtection | null = defender
@@ -593,23 +748,28 @@ export default function CombatScreen() {
   // How much AC is lost vs the stored armorClass (which included full base AGI AC).
   const defenderAgiAcDelta = defenderBaseAgi - defenderPositionalAgiAC;
   const defenderAC = defender
-    ? Math.max(0, defender.armorClass + (defender.tempAC ?? 0) - defenderAgiAcDelta)
+    ? Math.max(0, defender.armorClass + (defender.tempAC ?? 0) - defenderAgiAcDelta
+        + defenderPerkDef.ac + (defenderEffectMods?.acMod ?? 0))
     : 0;
 
   // Blind attacker suffers worst-case darkness penalty (manual light table).
   const blindDarknessPenalty = attackerInjury?.blind ? TOTAL_DARKNESS_PENALTY : 0;
   const rawLightPenalty = Math.max(lightPenalty, blindDarknessPenalty);
 
-  // Light penalty after Night Vision perk
-  const effectiveLightPenalty = Math.max(0, rawLightPenalty - perkBonuses.lightReduction);
+  // Light penalty after Night Vision perk; a night sight mod ignores light entirely.
+  const effectiveLightPenalty = modEffects.ignoresLightPenalty
+    ? 0
+    : Math.max(0, Math.round(rawLightPenalty * (1 - perkBonuses.lightReduction / 100)));
 
   // STR requirement penalty
-  const strReqPenalty = (attacker && weapon) ? (attacker.special && attacker.special.strength < weapon.minStr ? (weapon.minStr - attacker.special.strength) * 20 : 0) : 0;
+  const effectiveMinStr = weapon ? Math.max(1, weapon.minStr - perkBonuses.strReqReduction) : 0;
+  const strReqPenalty = (attacker && weapon) ? (attacker.special && attacker.special.strength < effectiveMinStr ? (effectiveMinStr - attacker.special.strength) * 20 : 0) : 0;
 
   // Ammo state
   const ammoState = (attacker && weapon) ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id) : null;
-  const currentAmmo = ammoState?.currentAmmo ?? (weapon?.magazineSize ?? 0);
+  const currentAmmo = ammoState?.currentAmmo ?? effectiveMagazine;
   const hasAmmo = !weapon || weapon.magazineSize === 0 || currentAmmo > 0;
+  const magazineFull = !weapon || weapon.magazineSize === 0 || currentAmmo >= effectiveMagazine;
 
   // ─── Weapon condition (data/condition.ts — FILLED boxes 0..10) ─────────────────
   // conditionBoxes counts FILLED boxes (0 pristine … 10 jammed). Legacy stored
@@ -617,6 +777,16 @@ export default function CombatScreen() {
   const conditionBoxes = clampConditionBoxes(ammoState?.conditionBoxes ?? 0);
   const weaponBroken = !!weapon && isWeaponJammed(conditionBoxes);
   const conditionPenalty = weapon ? -conditionToHitPenalty(conditionBoxes) : 0; // positive number to subtract
+
+  // Ammo AC modifier lowers the TARGET's AC (manual: AP/HP rounds). acMod is
+  // negative for armor-piercing → treat as a positive to-hit adjustment.
+  const ammoToHitAdjust = loadedAmmo ? -loadedAmmo.acMod : 0;
+
+  // One Hander trait: +20% with one-handed weapons, −40% with two-handed.
+  const weaponHands = weapon ? getWeaponHands(weapon) : 1;
+  const oneHanderToHit = weapon
+    ? (weaponHands === 1 ? (traitEffects.oneHandedToHit ?? 0) : (traitEffects.twoHandedToHit ?? 0))
+    : 0;
 
   // CtH formula (weapon-mod to-hit auto-included; condition penalty auto-included)
   const computeCtH = (extraBurstPenalty: number) =>
@@ -634,6 +804,8 @@ export default function CombatScreen() {
       + extraBurstPenalty
       + perkBonuses.toHit
       - strReqPenalty
+      + ammoToHitAdjust
+      + oneHanderToHit
     ));
 
   // Double shot: single shot, range −3
@@ -652,16 +824,20 @@ export default function CombatScreen() {
 
   // ─── Crit chance (manual: baseCritChance = Luck + 5×More Criticals rank) ──────
   // Aimed shots add TARGETED_CRIT_BONUS[bodyPart].
-  const attackerBaseCrit = attacker ? calcBaseCritChance(attacker) : 0;
+  const attackerBaseCrit = attacker
+    ? calcBaseCritChance(attackerEffSpecial ? { ...attacker, special: attackerEffSpecial } : attacker)
+    : 0;
   const aimCritBonus = isAimed && targetedBodyPart ? TARGETED_CRIT_BONUS[targetedBodyPart] : 0;
   const totalCritChance = attackerBaseCrit + aimCritBonus + perkBonuses.critChance;
 
   // Perks: Sniper (ranged) / Slayer (melee+unarmed) — on a successful hit, also
   // roll 1d10; if <= Luck the hit is critical. Whether that perk applies here:
-  const attackerLuck = attacker?.special?.luck ?? 5;
+  const attackerLuck = attackerEffSpecial?.luck ?? attacker?.special?.luck ?? 5;
   const sniperApplies = !!attacker && isRanged && hasPerk(attacker, 'sniper');
   const slayerApplies = !!attacker && isMeleeOrUnarmed && hasPerk(attacker, 'slayer');
-  const luckPerkApplies = sniperApplies || slayerApplies;
+  // Gunslinger: one-handed ranged weapons crit on a successful Luck roll.
+  const gunslingerApplies = !!attacker && isRanged && weaponHands === 1 && hasPerk(attacker, 'gunslinger');
+  const luckPerkApplies = sniperApplies || slayerApplies || gunslingerApplies;
   const hasBetterCriticals = !!attacker && hasPerk(attacker, 'better_criticals');
 
   // Shot results
@@ -696,12 +872,16 @@ export default function CombatScreen() {
       : (isAimed && canTarget)
         ? (wTargeted as number)
         : wSingle;
-  const effectiveAPCost = Math.max(1, baseAPCost - perkBonuses.apDiscount);
+  const effectiveAPCost = Math.max(1, baseAPCost - perkBonuses.apDiscount - (isBurst ? perkBonuses.burstApDiscount : 0));
   const attackerHasAP = (attacker?.currentAP ?? 0) >= effectiveAPCost;
 
-  // Weapon-usability warnings from injuries.
+  // Weapon-usability warnings from injuries (manual):
+  //  • Both arms crippled → cannot use any weapon.
+  //  • One arm crippled → one-handed weapons only. A two-handed weapon with a
+  //    sling mod can still be used one-handed.
   const cannotUseWeapons = !!attackerInjury?.cannotUseWeapons;
-  const twoHandedBlocked = !!attackerInjury?.cannotUseTwoHanded && !!weapon && weapon.minStr >= 5;
+  const twoHandedBlocked = !!attackerInjury?.cannotUseTwoHanded
+    && !!weapon && weaponHands === 2 && !modEffects.sling;
   // Prone attacker cannot make melee/unarmed attacks (manual).
   const proneMeleeBlocked = attackerPos === 'prone' && isMeleeOrUnarmed;
 
@@ -737,6 +917,7 @@ export default function CombatScreen() {
     setApSpent(false);
     setStreamlinedDice([]);
     setStreamlinedRolled(false);
+    setStreamlinedDmgResult(null);
   }, []);
 
   // Reset on combatant/weapon/config change. NOTE: tensFace/unitsFace are NOT
@@ -750,7 +931,20 @@ export default function CombatScreen() {
 
   useEffect(() => {
     setIsBurst(false); setBurstShots(1); setTargetedIdx(0);
-    setDoubleShotActive(false); setStreamlinedDice([]); setStreamlinedRolled(false);
+    setDoubleShotActive(false); setStreamlinedDice([]); setStreamlinedRolled(false); setStreamlinedDmgResult(null);
+  }, [attackerId]);
+
+  // Persist the last defender per attacker; restore it when the attacker changes.
+  useEffect(() => {
+    if (defenderId && attackerId) lastDefenderByAttacker.current[attackerId] = defenderId;
+  }, [defenderId, attackerId]);
+  useEffect(() => {
+    if (!attackerId) return;
+    const remembered = lastDefenderByAttacker.current[attackerId];
+    if (remembered && remembered !== attackerId && characters.some(c => c.id === remembered && !c.inStorage)) {
+      setDefenderId(remembered);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attackerId]);
 
   // Clear attacker/defender if the selected character was moved to storage
@@ -786,7 +980,7 @@ export default function CombatScreen() {
       if (Platform.OS === 'web') { alert('Empty Magazine! Reload before firing.'); }
       else Alert.alert('Empty Magazine', 'No ammo remaining. Reload first!', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Reload (2 AP)', onPress: () => { if (attacker && weapon && spendAP(attacker.id, AP_COSTS.RELOAD)) reloadWeapon(attacker.id, weapon.id); else Alert.alert('Not Enough AP', `Reload needs ${AP_COSTS.RELOAD} AP.`); } },
+        { text: `Reload (${reloadApCost} AP)`, onPress: () => { if (attacker && weapon && spendAP(attacker.id, reloadApCost)) reloadWeapon(attacker.id, weapon.id); else Alert.alert('Not Enough AP', `Reload needs ${reloadApCost} AP.`); } },
       ]);
       return;
     }
@@ -840,34 +1034,48 @@ export default function CombatScreen() {
 
   const rollStreamlined = useCallback(() => {
     if (weaponBroken) {
-      Alert.alert('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
+      notify('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
       return;
     }
     if (!hasAmmo) {
-      Alert.alert('Empty Magazine', 'No ammo remaining. Reload first!');
+      notify('Empty Magazine', 'No ammo remaining. Reload first!');
+      return;
+    }
+    if (weapon && weapon.magazineSize > 0 && currentAmmo < burstShots) {
+      notify('Not Enough Ammo', `Burst needs ${burstShots} rounds; only ${currentAmmo} loaded. Reload or reduce the burst.`);
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const dice = Array.from({ length: burstShots }, () => Math.floor(Math.random() * 10));
     setStreamlinedDice(dice);
     setStreamlinedRolled(true);
+    setStreamlinedDmgResult(null);
     setShotDamages(null); setDamageApplied(false); setApSpent(false);
     if (attacker && weapon && weapon.magazineSize > 0) {
       spendAmmo(attacker.id, weapon.id, burstShots);
     }
-  }, [weaponBroken, hasAmmo, attacker, weapon, burstShots, spendAmmo]);
+  }, [weaponBroken, hasAmmo, attacker, weapon, burstShots, spendAmmo, currentAmmo]);
 
   const calculateDamage = useCallback(() => {
     if (!weapon || shotResults.length === 0) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // Combined DT/DR from armor + defender natural protection (DT adds, DR sums capped at 90%)
     const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural);
-    const baseDT = Math.max(0, prot.dt - perkBonuses.ignoreDT);
-    const baseDR = prot.dr;
+    // Ammo: ignoresDT bypasses DT; drMod adjusts the target's DR (negative = AP).
+    const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
+    const ammoDrMod = loadedAmmo?.drMod ?? 0;
+    const baseDT = ammoIgnoresDT ? 0 : Math.max(0, prot.dt - perkBonuses.ignoreDT);
+    // Defender DR: armor/natural + ammo modifier + defender perks (Toughness…)
+    // + active chem effects (e.g. Voodoo +20% DR). Capped at 90%.
+    const baseDR = Math.max(0, Math.min(90,
+      prot.dr + ammoDrMod + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
+    // Optional manual base-damage override (replaces the rolled dice total).
+    const overrideVal = damageOverride.trim() === '' ? null : Math.max(0, parseInt(damageOverride, 10) || 0);
 
     // Melee/unarmed damage bonus from STR + race bonus (e.g. Deathclaw +5)
     const raceMeleeBonus = isMeleeOrUnarmed ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
-    const meleeDmgBonus = (isMeleeOrUnarmed && attacker?.special ? calcMeleeDamageBonus(attacker.special) : 0) + raceMeleeBonus;
+    // Uses chem-adjusted STR (e.g. Buffout) for the melee damage bonus.
+    const meleeDmgBonus = (isMeleeOrUnarmed && attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus;
 
     const damages = shotResults.map((shot, i) => {
       if (!shot.hit) return null;
@@ -902,8 +1110,20 @@ export default function CombatScreen() {
       }
 
       const dieCount = doubleShotActive ? weapon.damageDieCount * 2 : weapon.damageDieCount;
-      const baseRolls = Array.from({ length: dieCount }, () => rollDie(weapon.damageDie));
-      const rawBaseDmg = Math.round((baseRolls.reduce((a, b) => a + b, 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage) * critMult);
+      const weaponRolls = Array.from({ length: dieCount }, () => rollDie(weapon.damageDie));
+      // Ammo contributes its own dice (manual: gun damage = weapon dice + ammo).
+      const ammoRolls = loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
+        ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie))
+        : [];
+      if (loadedAmmo && (ammoRolls.length > 0 || loadedAmmo.dmgBonus)) {
+        notes.push(`Ammo (${loadedAmmo.name})${ammoRolls.length ? ` +[${ammoRolls.join(', ')}]` : ''}${loadedAmmo.dmgBonus ? ` +${loadedAmmo.dmgBonus}` : ''}`);
+      }
+      const baseRolls = [...weaponRolls, ...ammoRolls];
+      // Manual override replaces the summed dice total (mods/melee/perks still add).
+      const rolledSum = overrideVal !== null ? overrideVal : baseRolls.reduce((a, b) => a + b, 0);
+      if (overrideVal !== null) notes.push(`Manual base damage: ${overrideVal}`);
+      const ammoFlat = loadedAmmo?.dmgBonus ?? 0;
+      const rawBaseDmg = Math.round((rolledSum + weapon.damageBonus + ammoFlat + meleeDmgBonus + modBonuses.damage + perkBonuses.damage) * critMult);
 
       const dt = bypassArmor ? 0 : baseDT;
       const dr = bypassArmor ? 0 : baseDR;
@@ -914,7 +1134,7 @@ export default function CombatScreen() {
       return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes };
     });
     setShotDamages(damages); setDamageApplied(false);
-  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses]);
+  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, attackerEffSpecial]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
 
@@ -927,15 +1147,92 @@ export default function CombatScreen() {
 
   const handleReload = useCallback(() => {
     if (!attacker || !weapon) return;
+    // No-op when the magazine is already full.
+    if (magazineFull) {
+      if (Platform.OS === 'web') alert('Magazine already full.');
+      else Alert.alert('Magazine Full', `${weapon.name} is already fully loaded (${currentAmmo}/${effectiveMagazine}).`);
+      return;
+    }
     // Spend AP first — reload only happens if the character can afford it.
-    if (!spendAP(attacker.id, AP_COSTS.RELOAD)) {
-      if (Platform.OS === 'web') alert(`Not enough AP (need ${AP_COSTS.RELOAD}) to reload.`);
-      else Alert.alert('Not Enough AP', `Reload needs ${AP_COSTS.RELOAD} AP; ${attacker.name} has ${attacker.currentAP}.`);
+    if (!spendAP(attacker.id, reloadApCost)) {
+      if (Platform.OS === 'web') alert(`Not enough AP (need ${reloadApCost}) to reload.`);
+      else Alert.alert('Not Enough AP', `Reload needs ${reloadApCost} AP; ${attacker.name} has ${attacker.currentAP}.`);
       return;
     }
     reloadWeapon(attacker.id, weapon.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, weapon, reloadWeapon, spendAP]);
+  }, [attacker, weapon, reloadWeapon, spendAP, magazineFull, currentAmmo, effectiveMagazine, reloadApCost]);
+
+  // Take a chem (manual: using an item costs 3 AP). Applies the chem's immediate
+  // stage as an ActiveEffect and resolves any HP heal/damage.
+  const handleTakeChem = useCallback((chemId: string) => {
+    if (!attacker) return;
+    const chem = getChem(chemId);
+    if (!chem) return;
+    if (!spendAP(attacker.id, CHEM_AP_COST)) {
+      if (Platform.OS === 'web') alert(`Not enough AP (need ${CHEM_AP_COST}) to take a chem.`);
+      else Alert.alert('Not Enough AP', `Taking a chem needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
+    applyChem(attacker.id, makeChemEffect(chem, 0));
+    setShowChemPicker(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [attacker, spendAP, applyChem]);
+
+  // Set the loaded ammo type (free manual set — the AP-costed CHANGE AMMO flow
+  // spends AP separately before opening the picker).
+  // AP (when the picker was opened via the AP-costed CHANGE AMMO button) is only
+  // charged HERE, at selection time — cancelling the picker never spends AP.
+  const handleSetAmmo = useCallback((newAmmoId: string | undefined) => {
+    if (!attacker || !weapon) return;
+    if (ammoPickerCosted) {
+      if (!spendAP(attacker.id, reloadApCost)) {
+        notify('Not Enough AP', `Changing ammo needs ${reloadApCost} AP; ${attacker.name} has ${attacker.currentAP}.`);
+        setShowAmmoPicker(false);
+        return;
+      }
+    }
+    setAmmoType(attacker.id, weapon.id, newAmmoId);
+    setShowAmmoPicker(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [attacker, weapon, setAmmoType, ammoPickerCosted, spendAP, reloadApCost]);
+
+  // AP-costed CHANGE AMMO (manual "Ammo (loading)") — opens the picker; AP is
+  // spent on selection so cancelling costs nothing.
+  const handleChangeAmmo = useCallback(() => {
+    if (!attacker || !weapon) return;
+    if (attacker.currentAP < reloadApCost) {
+      notify('Not Enough AP', `Changing ammo needs ${reloadApCost} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
+    setAmmoPickerCosted(true);
+    setShowAmmoPicker(true);
+  }, [attacker, weapon, reloadApCost]);
+
+  // Equip/switch to a weapon from the inventory. Free manual SET WEAPON.
+  const handleEquipWeapon = useCallback((weaponId: string, free: boolean) => {
+    if (!attacker) return;
+    if (!free) {
+      if (!spendAP(attacker.id, AP_COSTS.EQUIP_WEAPON)) {
+        if (Platform.OS === 'web') alert(`Not enough AP (need ${AP_COSTS.EQUIP_WEAPON}) to switch weapons.`);
+        else Alert.alert('Not Enough AP', `Switching weapons needs ${AP_COSTS.EQUIP_WEAPON} AP; ${attacker.name} has ${attacker.currentAP}.`);
+        return;
+      }
+    }
+    equipWeapon(attacker.id, weaponId, 'both');
+    setShowWeaponPicker(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [attacker, spendAP, equipWeapon]);
+
+  // Weapons the attacker can switch to: their carried inventory (equipped
+  // weapon included as fallback for older characters).
+  const attackerInventory: Weapon[] = attacker
+    ? (attacker.inventoryWeaponIds && attacker.inventoryWeaponIds.length > 0
+        ? attacker.inventoryWeaponIds
+        : (attacker.equippedWeaponId ? [attacker.equippedWeaponId] : []))
+        .map(id => allWeapons.find(w => w.id === id))
+        .filter((w): w is Weapon => !!w)
+    : [];
 
   // Spend AP on a movement/position action, auto-applying position when relevant.
   const handleApAction = useCallback((cost: number, newPosition?: PositionType) => {
@@ -1040,18 +1337,13 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, [defender, pickLimbSide, addInjury, makeInjury, setPosition, applyDamage]);
 
-  // A completed/attempted attack this cycle (used to show ATTACK AGAIN).
-  const attackRolled = (rollTotal !== null) || streamlinedRolled || isCritFail;
   // A critical failure must be resolved (rolled on the Critical Failure table)
   // before the attacker may continue — the failure effect can't be skipped.
   const critFailPending = isCritFail && !critFailEntry;
-
-  // Reset the per-attack state so the user can spend AP and roll again, keeping
-  // attacker/defender/weapon/modifier selections intact.
-  const attackAgain = useCallback(() => {
-    resetAttackState();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [resetAttackState]);
+  // The attack button is blocked while a crit-fail is unresolved, or when the
+  // attacker physically cannot make this attack (crippled arms / two-handed
+  // block / prone melee).
+  const attackBlocked = critFailPending || cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked;
 
   // Roll on the Critical Failure table (1d10) and auto-apply to the ATTACKER.
   const rollCritFailTable = useCallback(() => {
@@ -1386,9 +1678,9 @@ export default function CombatScreen() {
               )}
               {apSpent && <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: '#4a8c3f22', borderWidth: 1, borderColor: '#4a8c3f' }}><Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>✓ AP SPENT</Text></View>}
               {weapon && weapon.magazineSize > 0 && (
-                <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={handleReload}>
+                <TouchableOpacity disabled={magazineFull} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 4, opacity: magazineFull ? 0.4 : 1 }} onPress={handleReload}>
                   <Feather name="refresh-cw" size={13} color={colors.mutedForeground} />
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>RELOAD</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>RELOAD {reloadApCost} AP</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1447,8 +1739,8 @@ export default function CombatScreen() {
                   <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 2 }}>ACTIONS</Text>
                   <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                     {([
-                      { key: 'reload', label: 'RELOAD', cost: AP_COSTS.RELOAD, onPress: () => handleGenericApAction(AP_COSTS.RELOAD, 'Reload', true) },
-                      { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => handleGenericApAction(AP_COSTS.EQUIP_WEAPON, 'Equip/Switch Weapon') },
+                      { key: 'take_chems', label: 'TAKE CHEMS', cost: CHEM_AP_COST, onPress: () => setShowChemPicker(true) },
+                      { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => { setWeaponPickerFree(false); setShowWeaponPicker(true); } },
                       { key: 'pickup', label: 'PICK UP', cost: AP_COSTS.PICK_UP_ITEM, onPress: () => handleGenericApAction(AP_COSTS.PICK_UP_ITEM, 'Pick Up Item') },
                       { key: 'use_item', label: 'USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => handleGenericApAction(AP_COSTS.USE_ITEM, 'Use Item') },
                       { key: 'first_aid', label: 'FIRST AID', cost: AP_COSTS.FIRST_AID, onPress: () => handleGenericApAction(AP_COSTS.FIRST_AID, 'First Aid') },
@@ -1491,6 +1783,34 @@ export default function CombatScreen() {
                   <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
                     Set Up Tripod spends ALL remaining AP this round (success or fail). Defend forfeits remaining AP, converting it to temporary AC.
                   </Text>
+                  {/* GM overrides — free, no AP */}
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    <TouchableOpacity
+                      style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.mutedForeground }}
+                      onPress={() => { setWeaponPickerFree(true); setShowWeaponPicker(true); }}
+                    >
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>SET WEAPON</Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>FREE</Text>
+                    </TouchableOpacity>
+                    {compatibleAmmo.length > 0 && (
+                      <TouchableOpacity
+                        style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.mutedForeground }}
+                        onPress={() => { setAmmoPickerCosted(false); setShowAmmoPicker(true); }}
+                      >
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>SET AMMO</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>FREE</Text>
+                      </TouchableOpacity>
+                    )}
+                    {compatibleAmmo.length > 0 && (
+                      <TouchableOpacity
+                        style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}
+                        onPress={handleChangeAmmo}
+                      >
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CHANGE AMMO</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{reloadApCost} AP</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               )}
             </View>
@@ -1583,7 +1903,7 @@ export default function CombatScreen() {
             <View style={{ paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border, gap: 2 }}>
               <FormulaLine label="Base skill" value={`${baseSkill}%`} color={colors.primary} />
               {rangeMod !== 0 && <FormulaLine label="Range modifier" value={`${rangeMod >= 0 ? '+' : ''}${rangeMod}%`} color={rangeMod > 0 ? '#4a8c3f' : colors.destructive} />}
-              {effectiveLightPenalty !== 0 && <FormulaLine label={`Light penalty${perkBonuses.lightReduction > 0 ? ` (−${perkBonuses.lightReduction}% from perks)` : ''}`} value={`−${effectiveLightPenalty}%`} color={colors.destructive} />}
+              {effectiveLightPenalty !== 0 && <FormulaLine label={`Light penalty${perkBonuses.lightReduction > 0 ? ' (halved by perk)' : ''}`} value={`−${effectiveLightPenalty}%`} color={colors.destructive} />}
               <FormulaLine label="Armor Class" value={`−${defenderAC}%`} color={colors.destructive} />
               {defender?.tempAC && defender.tempAC > 0 ? <FormulaLine label="  (temp AC)" value={`+${defender.tempAC} from unspent AP`} color={colors.mutedForeground} /> : null}
               {coverPenalty !== 0 && <FormulaLine label="Cover penalty" value={`−${coverPenalty}%`} color={colors.destructive} />}
@@ -1747,10 +2067,15 @@ export default function CombatScreen() {
                 </View>
               )}
             </View>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: canRoll ? colors.primary : colors.secondary, opacity: canRoll ? 1 : 0.5 }} onPress={rollDice} disabled={!canRoll}>
-              <Feather name="refresh-cw" size={16} color={canRoll ? colors.primaryForeground : colors.mutedForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>ROLL DICE</Text>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: (canRoll && !attackBlocked) ? colors.primary : colors.secondary, opacity: (canRoll && !attackBlocked) ? 1 : 0.5 }} onPress={rollDice} disabled={!canRoll || attackBlocked}>
+              <Feather name="crosshair" size={16} color={canRoll ? colors.primaryForeground : colors.mutedForeground} />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>{attackVerb}{rollTotal !== null ? ' AGAIN' : ''}</Text>
             </TouchableOpacity>
+            {rollTotal !== null && (
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
+                Press {attackVerb} again to make another attack (costs {effectiveAPCost} AP — spend it above).
+              </Text>
+            )}
             {!canRoll && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>Select an attacker with a weapon and a defender first.</Text>}
           </View>
         )}
@@ -1781,23 +2106,39 @@ export default function CombatScreen() {
               <Feather name="zap" size={16} color={colors.primaryForeground} />
               <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL {burstShots} BURST DICE</Text>
             </TouchableOpacity>
-            {streamlinedRolled && streamlinedHits > 0 && weapon && (
+            {streamlinedRolled && streamlinedHits > 0 && weapon && !streamlinedDmgResult && (
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary }} onPress={() => {
                 const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural);
-                const burstDT = Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
-                const burstDR = burstProt.dr;
+                const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
+                const burstDT = ammoIgnoresDT ? 0 : Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
+                const burstDR = Math.max(0, Math.min(90, burstProt.dr + (loadedAmmo?.drMod ?? 0) + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
                 const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
-                const meleeDmgBonus = (isMelee && attacker?.special ? calcMeleeDamageBonus(attacker.special) : 0) + raceMeleeBonus;
-                const totalBurstDmg = Array.from({ length: streamlinedHits }, () => {
+                const meleeDmgBonus = (isMelee && attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus;
+                const perHit = Array.from({ length: streamlinedHits }, () => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
-                  const raw = rolls.reduce((a, b) => a + b, 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
+                  const ammoRolls = loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
+                    ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie)) : [];
+                  const raw = rolls.reduce((a, b) => a + b, 0) + ammoRolls.reduce((a, b) => a + b, 0)
+                    + (loadedAmmo?.dmgBonus ?? 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
                   return applyProtection(raw, burstDT, burstDR);
-                }).reduce((a, b) => a + b, 0);
-                if (defender) { applyDamage(defender.id, totalBurstDmg); Alert.alert('Burst Damage', `${streamlinedHits} hits dealt ${totalBurstDmg} total damage to ${defender.name}`); }
+                });
+                const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
+                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, dt: burstDT, dr: burstDR });
+                if (defender) applyDamage(defender.id, totalBurstDmg);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               }}>
                 <Feather name="zap" size={16} color={colors.primary} />
                 <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>ROLL & APPLY {streamlinedHits} HIT DAMAGE</Text>
               </TouchableOpacity>
+            )}
+            {streamlinedDmgResult && (
+              <View style={{ borderWidth: 1, borderRadius: colors.radius, padding: 10, borderColor: colors.destructive, gap: 4 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>BURST DAMAGE APPLIED{defender ? ` → ${defender.name.toUpperCase()}` : ''}</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+                  Per hit (after DT {streamlinedDmgResult.dt}{streamlinedDmgResult.dr > 0 ? ` / DR ${streamlinedDmgResult.dr}%` : ''}): [{streamlinedDmgResult.perHit.join(', ')}]
+                </Text>
+                <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.destructive }}>= {streamlinedDmgResult.total} total damage</Text>
+              </View>
             )}
           </View>
         )}
@@ -1994,33 +2335,6 @@ export default function CombatScreen() {
           </View>
         )}
 
-        {/* ─── Attack Again (repeat attacks until AP runs out) ─── */}
-        {canRoll && attackRolled && (
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.primary, gap: 8 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>NEXT ATTACK</Text>
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-              {attacker?.name} · AP {attacker?.currentAP ?? 0}/{attacker?.maxAP ?? 0} · this attack costs {effectiveAPCost} AP
-            </Text>
-            <TouchableOpacity
-              disabled={!attackerHasAP || critFailPending}
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: colors.radius, backgroundColor: (attackerHasAP && !critFailPending) ? colors.primary : colors.secondary, opacity: (attackerHasAP && !critFailPending) ? 1 : 0.5 }}
-              onPress={attackAgain}
-            >
-              <Feather name="rotate-cw" size={16} color={(attackerHasAP && !critFailPending) ? colors.primaryForeground : colors.mutedForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: (attackerHasAP && !critFailPending) ? colors.primaryForeground : colors.mutedForeground }}>ATTACK AGAIN</Text>
-            </TouchableOpacity>
-            {critFailPending && (
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, textAlign: 'center' }}>
-                Resolve the Critical Failure first — roll on the Critical Failures table.
-              </Text>
-            )}
-            {!attackerHasAP && (
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, textAlign: 'center' }}>
-                Not enough AP for another attack (need {effectiveAPCost}, have {attacker?.currentAP ?? 0}).
-              </Text>
-            )}
-          </View>
-        )}
       </ScrollView>
 
       <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} />
@@ -2060,6 +2374,65 @@ export default function CombatScreen() {
         rolledEntry={critFailEntry}
         appliedNotes={critFailNotes}
         onRoll={rollCritFailTable}
+      />
+      {/* ─── Chem picker (TAKE CHEMS — AP charged on selection) ─── */}
+      <OptionPickerModal
+        visible={showChemPicker}
+        title="TAKE CHEMS"
+        subtitle={`${CHEM_AP_COST} AP — applied to ${attacker?.name ?? 'attacker'} on selection`}
+        options={CHEMS.map(chem => {
+          const s = chem.stages[0];
+          const bits: string[] = [];
+          if (s) {
+            for (const [k, v] of Object.entries(s.statMods ?? {})) if (v) bits.push(`${(v as number) > 0 ? '+' : ''}${v} ${k.slice(0, 3).toUpperCase()}`);
+            if (s.hpHeal) bits.push(`heal ${s.hpHeal} HP`);
+            if (s.hpDamage) bits.push(`${s.hpDamage} dmg`);
+            if (s.acMod) bits.push(`${s.acMod > 0 ? '+' : ''}${s.acMod} AC`);
+            if (s.apMod) bits.push(`${s.apMod > 0 ? '+' : ''}${s.apMod} AP`);
+            if (s.drMod) bits.push(`${s.drMod > 0 ? '+' : ''}${s.drMod}% DR`);
+            if (s.radResistMod) bits.push(`${s.radResistMod > 0 ? '+' : ''}${s.radResistMod}% rad resist`);
+          }
+          return {
+            key: chem.id,
+            label: chem.name,
+            sublabel: bits.length ? bits.join(' · ') : (s?.durationText ?? chem.description.slice(0, 80)),
+            note: chem.isMultiStage ? 'Multi-stage — progress later stages from the Effects tab' : undefined,
+          };
+        })}
+        onSelect={handleTakeChem}
+        onClose={() => setShowChemPicker(false)}
+      />
+      {/* ─── Weapon switch picker (inventory) ─── */}
+      <OptionPickerModal
+        visible={showWeaponPicker}
+        title={weaponPickerFree ? 'SET WEAPON (FREE)' : 'EQUIP / SWITCH WEAPON'}
+        subtitle={weaponPickerFree
+          ? 'GM override — no AP spent'
+          : `${AP_COSTS.EQUIP_WEAPON} AP — charged when a weapon is selected`}
+        options={attackerInventory.map(w => ({
+          key: w.id,
+          label: `${w.name}${w.id === attacker?.equippedWeaponId ? '  (equipped)' : ''}`,
+          sublabel: `${w.damageDieCount}d${w.damageDie}${w.damageBonus ? `+${w.damageBonus}` : ''} ${DAMAGE_TYPE_LABELS[w.damageType]} · ${getWeaponHands(w)}H${w.magazineSize > 0 ? ` · mag ${w.magazineSize}` : ''}`,
+          disabled: w.id === attacker?.equippedWeaponId,
+        }))}
+        onSelect={(id) => handleEquipWeapon(id, weaponPickerFree)}
+        onClose={() => setShowWeaponPicker(false)}
+      />
+      {/* ─── Ammo picker (compatible types only) ─── */}
+      <OptionPickerModal
+        visible={showAmmoPicker}
+        title={ammoPickerCosted ? 'CHANGE AMMO' : 'SET AMMO (FREE)'}
+        subtitle={ammoPickerCosted
+          ? `${reloadApCost} AP — charged when an ammo type is selected`
+          : 'GM override — no AP spent'}
+        options={compatibleAmmo.map(a => ({
+          key: a.id,
+          label: `${a.name}${a.id === loadedAmmo?.id ? '  (loaded)' : ''}`,
+          sublabel: describeAmmoMods(a),
+          disabled: a.id === loadedAmmo?.id,
+        }))}
+        onSelect={(id) => handleSetAmmo(id)}
+        onClose={() => setShowAmmoPicker(false)}
       />
     </View>
   );

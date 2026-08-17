@@ -103,6 +103,10 @@ export interface Weapon {
   knockdownChance: number;
   mods: string[];
   isCustom: boolean;
+  /** Hands required to wield (1 or 2). Undefined = infer (see data/weapons.ts helper). */
+  hands?: 1 | 2;
+  /** Compatible ammo type ids (data/ammo.ts). Undefined/empty = weapon doesn't use ammo types. */
+  compatibleAmmo?: string[];
   /** AP cost for a single attack (manual "AP S"). Fallback: AP_COSTS.ATTACK_SINGLE. */
   apSingle?: number;
   /** AP cost for a targeted/aimed attack (manual "T"). null = cannot be targeted. */
@@ -157,6 +161,32 @@ export interface WeaponAmmoState {
   weaponId: string;
   currentAmmo: number;
   conditionBoxes: number;
+  /** Loaded ammo type id (data/ammo.ts). undefined = weapon's default ammo. */
+  ammoTypeId?: string;
+}
+
+// ─── Active Effects (chems + other temporary effects; injuries stay in Injury[]) ─
+export interface ActiveEffect {
+  id: string;
+  kind: 'chem' | 'other';
+  /** Chem id from data/chems.ts when kind === 'chem'. */
+  chemId?: string;
+  name: string;
+  /** Current stage index for multi-stage chems (jet, voodoo, ...). */
+  stage?: number;
+  description?: string;
+  /** Structured stat modifiers currently applied by this effect. */
+  statMods?: Partial<SPECIALStats>;
+  hpMod?: number;
+  acMod?: number;
+  apMod?: number;
+  drMod?: number;
+  sequenceMod?: number;
+  healingRateMod?: number;
+  radResistMod?: number;
+  poisonResistMod?: number;
+  notes?: string[];
+  isActive: boolean;
 }
 
 // ─── Natural Protection (built-in DT/DR for creatures like Deathclaws) ────────
@@ -181,6 +211,8 @@ export interface Character {
   portrait?: string;
   /** How the portrait image fits its frame ('cover' crops, 'contain' letterboxes). */
   portraitFit?: 'cover' | 'contain';
+  /** Crop focus when portraitFit is 'cover': 0–1 in each axis (0.5 = centered). */
+  portraitOffset?: { x: number; y: number };
   /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
   traits?: string[];
 
@@ -212,12 +244,20 @@ export interface Character {
 
   // Equipment
   equippedWeaponId?: string;
+  /** Dual-wield hand slots (weapon ids). A two-handed weapon occupies both.
+   *  When absent, fall back to equippedWeaponId in the right hand. */
+  leftHandWeaponId?: string;
+  rightHandWeaponId?: string;
+  /** Carried weapons (max 5, ids incl. equipped). Absent = derive from equipped. */
+  inventoryWeaponIds?: string[];
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;
   weaponAmmoStates: WeaponAmmoState[];
 
   // Status
   injuries: Injury[];
+  /** Temporary effects (chems etc.) — merged with injuries in the Effects UI. */
+  effects?: ActiveEffect[];
   isKnockedOut: boolean;
   knockOutRoundsLeft: number;
   conditions: string[];

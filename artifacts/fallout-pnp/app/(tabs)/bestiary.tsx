@@ -684,6 +684,12 @@ export default function BestiaryScreen() {
   };
 
   const handleDelete = (t: BestiaryTemplate) => {
+    // Alert.alert with buttons is a silent no-op on react-native-web — use
+    // window.confirm there so the delete button actually works in the browser.
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove ${t.name} from the bestiary?`)) removeCustomBestiaryTemplate(t.id);
+      return;
+    }
     Alert.alert('Delete NPC', `Remove ${t.name} from the bestiary?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => removeCustomBestiaryTemplate(t.id) },

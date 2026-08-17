@@ -21,6 +21,12 @@ export interface PremadeCharacter {
   naturalProtection?: NaturalProtection;
   traits: string;
   biography: string;
+  /** Primary weapon id (data/weapons.ts). */
+  weaponId?: string;
+  /** Carried weapons incl. primary (max 5) — sidearms / melee / grenades. */
+  inventoryWeaponIds?: string[];
+  equippedBodyArmorId?: string;
+  equippedHelmetId?: string;
 }
 
 const NP = (dt: number, dr: number, types: ('normal' | 'laser' | 'fire' | 'plasma' | 'explosion')[]): NaturalProtection => ({
@@ -43,6 +49,8 @@ export const PREMADE_CHARACTERS: PremadeCharacter[] = [
     taggedSkills: ['bigGuns', 'unarmed', 'throwing'],
     radiationResistance: 60, gasResistance: 0, electricityResistance: 0,
     naturalProtection: NP(0, 25, ALL_TYPES),
+    weaponId: 'minigun',
+    inventoryWeaponIds: ['minigun', 'super_mutant_fist', 'frag_grenade'],
     traits: 'Heavy-Handed',
     biography: `Before the collapse of the Master's army, Harry was a basic grunt — a footsoldier. Dipped at a relatively young age, Harry was a recent addition to the Master's forces, joining only a year before He was killed.
 
@@ -63,6 +71,9 @@ Current Sketch: Harry's gruff, outer demeanor is simply a mask for the pain and 
     skills: { smallGuns: 25, bigGuns: 10, energyWeapons: 10, meleeWeapons: 38, unarmed: 48, throwing: 20, firstAid: 22, doctor: 16, sneak: 20, lockpick: 21, steal: 15, traps: 21, science: 28, repair: 21, speech: 55, barter: 28, gambling: 28, outdoorsman: 22, pilot: 22 },
     taggedSkills: ['barter', 'gambling'],
     radiationResistance: 8, gasResistance: 0, electricityResistance: 30,
+    weaponId: '10mm_pistol',
+    inventoryWeaponIds: ['10mm_pistol', 'combat_knife'],
+    equippedBodyArmorId: 'leather_armor',
     traits: 'None',
     biography: `There are those that say you can't get by on looks and luck, especially in the Wastes. Maverick is actively trying to overturn that stereotype, and so far has done a good job of it.
 
@@ -83,6 +94,9 @@ Current Sketch: Maverick travels around gambling and cheating his way into fame 
     skills: { smallGuns: 45, bigGuns: 20, energyWeapons: 20, meleeWeapons: 48, unarmed: 58, throwing: 40, firstAid: 40, doctor: 19, sneak: 35, lockpick: 30, steal: 30, traps: 30, science: 8, repair: 6, speech: 35, barter: 28, gambling: 12, outdoorsman: 12, pilot: 40 },
     taggedSkills: ['smallGuns', 'energyWeapons', 'sneak'],
     radiationResistance: 8, gasResistance: 0, electricityResistance: 30,
+    weaponId: 'sniper_rifle',
+    inventoryWeaponIds: ['sniper_rifle', '10mm_pistol', 'combat_knife'],
+    equippedBodyArmorId: 'combat_armor',
     traits: 'None',
     biography: `It would be an error to call Needlepoint stupid, but she certainly isn't the sharpest knife in the drawer. Born into relative privilege in Vault City, Needlepoint was always popular in school, even if her grades were the lowest in the class and she could hardly form complete sentences.
 
@@ -101,6 +115,9 @@ Current Sketch: Since leaving Vault City, Needlepoint has made her way slowly so
     skills: { smallGuns: 29, bigGuns: 12, energyWeapons: 12, meleeWeapons: 36, unarmed: 46, throwing: 24, firstAid: 38, doctor: 37, sneak: 20, lockpick: 29, steal: 18, traps: 29, science: 36, repair: 27, speech: 10, barter: 8, gambling: 20, outdoorsman: 24, pilot: 38 },
     taggedSkills: ['repair', 'pilot', 'gambling'],
     radiationResistance: 86, gasResistance: 0, electricityResistance: 0,
+    weaponId: '10mm_pistol',
+    inventoryWeaponIds: ['10mm_pistol', 'wrench', 'crowbar'],
+    equippedBodyArmorId: 'leather_armor',
     traits: 'Fear the Reaper',
     biography: `Before the war, Crystal was a mechanic at a Daytona race track. Ever since she was a little girl, she loved the fast cars and excitement of the race whenever her mother took her to the tracks, and when Crystal was in school, she learned all she could about the operation of these mighty machines.
 
@@ -124,6 +141,8 @@ Current Sketch: Crystal is very much out of her element in the real world, and a
     taggedSkills: ['throwing', 'traps', 'outdoorsman'],
     radiationResistance: 60, gasResistance: 0, electricityResistance: 0,
     naturalProtection: NP(0, 25, ALL_TYPES),
+    weaponId: 'spear',
+    inventoryWeaponIds: ['spear', 'frag_grenade', 'super_mutant_fist'],
     traits: 'One-Hander',
     biography: `Cookie was one of the first people the Master turned into a super-mutant. Already middle-aged when dipped, Cookie is now getting on in years and beginning to feel his age a little.
 
@@ -144,6 +163,9 @@ Current Sketch: Cookie still dislikes crowds and civilization, but sees them as 
     skills: { smallGuns: 37, bigGuns: 16, energyWeapons: 16, meleeWeapons: 46, unarmed: 56, throwing: 32, firstAid: 34, doctor: 18, sneak: 29, lockpick: 27, steal: 24, traps: 27, science: 16, repair: 12, speech: 10, barter: 8, gambling: 40, outdoorsman: 16, pilot: 34 },
     taggedSkills: ['sneak', 'lockpick', 'steal'],
     radiationResistance: 23, gasResistance: 0, electricityResistance: 0,
+    weaponId: '10mm_pistol',
+    inventoryWeaponIds: ['10mm_pistol', 'switchblade', 'throwing_knife'],
+    equippedBodyArmorId: 'leather_armor',
     traits: 'Night Person',
     biography: `Born to a prostitute mother in New Reno, Shadow learned to loathe himself early in life. His off-color skin, pug-shaped face, and large hands were a constant reminder of his bastard lineage, and his mother's profession and lack of love were a constant reminder of the evil in the world.
 
@@ -167,6 +189,8 @@ Note: Night Person trait — day stats are PE 7, IN 2 (listed stats are for nigh
     taggedSkills: ['unarmed', 'meleeWeapons', 'outdoorsman'],
     radiationResistance: 60, gasResistance: 40, electricityResistance: 0,
     naturalProtection: NP(4, 40, ['normal', 'fire', 'explosion']),
+    weaponId: 'deathclaw_claw',
+    inventoryWeaponIds: ['deathclaw_claw', 'deathclaw_bite', 'spear'],
     traits: 'Bruiser',
     biography: `GoAnna is a young member of a Deathclaw tribe that lives just east of the Great Wastes. Up to this point, her life has been fairly typical, although she is much more intelligent than most of her Deathclaw brethren.
 
@@ -185,6 +209,8 @@ Current Sketch: Although GoAnna feels strong loyalties to her tribe and her fami
     skills: { smallGuns: 59, bigGuns: 28, energyWeapons: 28, meleeWeapons: 82, unarmed: 72, throwing: 54, firstAid: 36, doctor: 13, sneak: 46, lockpick: 28, steal: 42, traps: 28, science: 16, repair: 12, speech: 10, barter: 8, gambling: 12, outdoorsman: 16, pilot: 36 },
     taggedSkills: ['unarmed', 'sneak', 'outdoorsman'],
     radiationResistance: 8, gasResistance: 0, electricityResistance: 50,
+    weaponId: 'dog_bite',
+    inventoryWeaponIds: ['dog_bite', 'dog_claw'],
     traits: 'Domesticated',
     biography: `Rufus began his days as a much-loved puppy in the household of a wealthy rancher in the New California Republic. Although he was a mutt rescued from the local humane society/sausage factory, Rufus was housetrained and loved like a member of the family.
 
@@ -208,6 +234,8 @@ Current Sketch: Rufus's encounter with the humane society left him very wary of 
     taggedSkills: ['firstAid', 'science', 'repair'],
     radiationResistance: 100, gasResistance: 100, electricityResistance: 0,
     naturalProtection: NP(0, 80, ALL_TYPES),
+    weaponId: 'wrench',
+    inventoryWeaponIds: ['wrench', 'ripper'],
     traits: 'Tight Nuts',
     biography: `Vax has no idea how old he is, and knows very little about his past. In fact, Vax isn't sure he's even a he — he doesn't know what he is.
 
@@ -248,6 +276,10 @@ export function createCharacterFromPremade(p: PremadeCharacter, id: string): Cha
     radiationResistance: p.radiationResistance,
     gasResistance: p.gasResistance,
     electricityResistance: p.electricityResistance,
+    equippedWeaponId: p.weaponId,
+    inventoryWeaponIds: p.inventoryWeaponIds ? [...p.inventoryWeaponIds] : undefined,
+    equippedBodyArmorId: p.equippedBodyArmorId,
+    equippedHelmetId: p.equippedHelmetId,
     weaponAmmoStates: [],
     injuries: [],
     isKnockedOut: false,

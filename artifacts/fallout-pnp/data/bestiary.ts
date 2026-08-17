@@ -1,9 +1,18 @@
-import { BestiaryTemplate, CharacterSkills, SPECIALStats, BestiaryCategory } from '@/context/types';
+import { BestiaryTemplate, CharacterSkills, NaturalProtection, SPECIALStats, BestiaryCategory } from '@/context/types';
 
 const defaultSkills = (): CharacterSkills => ({
   smallGuns: 0, bigGuns: 0, energyWeapons: 0, meleeWeapons: 0, unarmed: 0, throwing: 0,
   firstAid: 0, doctor: 0, sneak: 0, lockpick: 0, steal: 0, traps: 0,
   science: 0, repair: 0, speech: 0, barter: 0, gambling: 0, outdoorsman: 0, pilot: 0,
+});
+
+// Natural DT/DR helper: per-type DT and DR arrays [normal, laser, fire, plasma, explosion].
+const natural = (
+  dt: [number, number, number, number, number],
+  dr: [number, number, number, number, number],
+): NaturalProtection => ({
+  dtNormal: dt[0], dtLaser: dt[1], dtFire: dt[2], dtPlasma: dt[3], dtExplosion: dt[4],
+  drNormal: dr[0], drLaser: dr[1], drFire: dr[2], drPlasma: dr[3], drExplosion: dr[4],
 });
 
 export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
@@ -32,7 +41,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 8, perception: 6, endurance: 7, charisma: 5, intelligence: 5, agility: 6, luck: 5 },
     maxHp: 60, armorClass: 22, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 75, meleeWeapons: 65, unarmed: 60, bigGuns: 40, firstAid: 40, speech: 35 },
-    equippedWeaponId: 'combat_shotgun', equippedBodyArmorId: 'combat_armor',
+    equippedWeaponId: 'combat_shotgun', equippedBodyArmorId: 'reaver_banding',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -59,7 +68,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 7, perception: 6, endurance: 7, charisma: 4, intelligence: 6, agility: 5, luck: 5 },
     maxHp: 70, armorClass: 35, maxAP: 8,
     skills: { ...defaultSkills(), smallGuns: 80, energyWeapons: 70, meleeWeapons: 65, repair: 60, science: 50 },
-    equippedWeaponId: 'laser_rifle', equippedBodyArmorId: 'power_armor', equippedHelmetId: 'power_helmet',
+    equippedWeaponId: 'laser_rifle', equippedBodyArmorId: 'brotherhood_power_armor', equippedHelmetId: 'power_helmet',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -106,7 +115,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 5, perception: 8, endurance: 7, charisma: 3, intelligence: 6, agility: 6, luck: 5 },
     maxHp: 50, armorClass: 15, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 50, meleeWeapons: 45, unarmed: 40, firstAid: 30, science: 30 },
-    equippedWeaponId: 'hunting_rifle',
+    equippedWeaponId: 'hunting_rifle', equippedBodyArmorId: 'superior_ghoul_armor',
     radiationResistance: 60, gasResistance: 0, electricityResistance: 0,
   },
 
@@ -117,7 +126,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 9, perception: 5, endurance: 9, charisma: 2, intelligence: 3, agility: 5, luck: 4 },
     maxHp: 65, armorClass: 10, maxAP: 8,
     skills: { ...defaultSkills(), smallGuns: 50, bigGuns: 40, meleeWeapons: 55, unarmed: 60, firstAid: 20 },
-    equippedWeaponId: 'assault_rifle',
+    equippedWeaponId: 'assault_rifle', equippedBodyArmorId: 'mutant_plate_armor',
+    // Super mutants have thick FEV-toughened hide (matches premade mutant NP 0/25).
+    naturalProtection: natural([0, 0, 0, 0, 0], [25, 15, 15, 15, 15]),
     radiationResistance: 10, gasResistance: 10, electricityResistance: 0,
   },
   {
@@ -126,7 +137,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 11, perception: 5, endurance: 11, charisma: 2, intelligence: 3, agility: 4, luck: 4 },
     maxHp: 90, armorClass: 10, maxAP: 7,
     skills: { ...defaultSkills(), smallGuns: 55, bigGuns: 65, meleeWeapons: 70, unarmed: 70 },
-    equippedWeaponId: 'minigun',
+    equippedWeaponId: 'minigun', equippedBodyArmorId: 'mutant_plate_armor',
+    naturalProtection: natural([0, 0, 0, 0, 0], [30, 20, 20, 20, 20]),
     radiationResistance: 15, gasResistance: 15, electricityResistance: 0,
   },
   {
@@ -135,7 +147,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 12, perception: 7, endurance: 12, charisma: 4, intelligence: 6, agility: 6, luck: 6 },
     maxHp: 120, armorClass: 15, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 75, bigGuns: 80, energyWeapons: 65, meleeWeapons: 80, unarmed: 80 },
-    equippedWeaponId: 'bozar',
+    equippedWeaponId: 'bozar', equippedBodyArmorId: 'spiked_mutant_plate_armor',
+    naturalProtection: natural([0, 0, 0, 0, 0], [35, 25, 25, 25, 25]),
     radiationResistance: 20, gasResistance: 20, electricityResistance: 0,
   },
   {
@@ -144,7 +157,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 10, perception: 6, endurance: 10, charisma: 2, intelligence: 5, agility: 8, luck: 5 },
     maxHp: 80, armorClass: 20, maxAP: 11,
     skills: { ...defaultSkills(), smallGuns: 60, meleeWeapons: 75, unarmed: 70, sneak: 80 },
-    equippedWeaponId: 'super_sledge',
+    equippedWeaponId: 'super_sledge', equippedBodyArmorId: 'mutant_plate_armor',
+    naturalProtection: natural([0, 0, 0, 0, 0], [25, 20, 15, 20, 15]),
     radiationResistance: 10, gasResistance: 10, electricityResistance: 0,
   },
   {
@@ -154,16 +168,20 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 40, armorClass: 12, maxAP: 7,
     skills: { ...defaultSkills(), unarmed: 45, meleeWeapons: 35 },
     equippedWeaponId: 'centaur_spit',
-    radiationResistance: 15, gasResistance: 0, electricityResistance: 0,
+    // FEV/alien-family flesh: resistant to conventional weapons (manual alien family).
+    naturalProtection: natural([2, 0, 1, 0, 2], [40, 5, 15, 5, 40]),
+    radiationResistance: 30, gasResistance: 40, electricityResistance: 0,
   },
   {
     id: 'floater_creature', name: 'Floater', category: 'mutant',
-    description: 'A floating FEV gas-bag creature. Immune to floor traps and most gases.',
+    description: 'A floating FEV gas-bag creature. Immune to floor traps and most gases. Highly resistant to conventional weapons.',
     special: { strength: 6, perception: 7, endurance: 7, charisma: 1, intelligence: 2, agility: 9, luck: 5 },
-    maxHp: 38, armorClass: 18, maxAP: 12,
+    maxHp: 38, armorClass: 20, maxAP: 12,
     skills: { ...defaultSkills(), unarmed: 55 },
     equippedWeaponId: 'floater_bite',
-    radiationResistance: 10, gasResistance: 50, electricityResistance: 0,
+    // Manual Floater: DT 10/1/5/1/10, DR 95%/10%/40%/10%/90%; PR 95, RR 100, GR 100/100.
+    naturalProtection: natural([10, 1, 5, 1, 10], [90, 10, 40, 10, 90]),
+    radiationResistance: 100, gasResistance: 100, electricityResistance: 0,
   },
 
   // ─── ROBOT ──────────────────────────────────────────────────────────────────
@@ -174,6 +192,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 55, armorClass: 15, maxAP: 6,
     skills: { ...defaultSkills(), unarmed: 45, energyWeapons: 50 },
     equippedWeaponId: 'laser_pistol',
+    // Metal chassis: solid natural DT/DR.
+    naturalProtection: natural([6, 4, 4, 2, 6], [40, 40, 30, 20, 40]),
     radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
   },
   {
@@ -183,6 +203,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 50, armorClass: 20, maxAP: 10,
     skills: { ...defaultSkills(), meleeWeapons: 55, energyWeapons: 40, repair: 70, science: 60 },
     equippedWeaponId: 'ripper',
+    naturalProtection: natural([5, 3, 3, 2, 5], [35, 35, 25, 15, 35]),
     radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
   },
   {
@@ -192,6 +213,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 100, armorClass: 20, maxAP: 8,
     skills: { ...defaultSkills(), bigGuns: 80, smallGuns: 70, energyWeapons: 60 },
     equippedWeaponId: 'minigun',
+    // Heavy military armor plating.
+    naturalProtection: natural([12, 8, 8, 6, 12], [50, 50, 40, 30, 50]),
     radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
   },
   {
@@ -201,6 +224,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 20, armorClass: 25, maxAP: 14,
     skills: { ...defaultSkills(), energyWeapons: 55 },
     equippedWeaponId: 'laser_pistol',
+    // Small light drone chassis.
+    naturalProtection: natural([2, 1, 1, 1, 2], [20, 20, 15, 10, 20]),
     radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
   },
 
@@ -212,7 +237,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 60, armorClass: 22, maxAP: 14,
     skills: { ...defaultSkills(), unarmed: 70, meleeWeapons: 50, sneak: 40, outdoorsman: 60 },
     equippedWeaponId: 'deathclaw_claw',
-    radiationResistance: 25, gasResistance: 10, electricityResistance: 10,
+    // Manual Deathclaw hide: DT 4/0/4/0/4, DR 40%/0/40%/0/40%; scaled down slightly for a juvenile.
+    naturalProtection: natural([3, 0, 3, 0, 3], [30, 0, 30, 0, 30]),
+    radiationResistance: 60, gasResistance: 40, electricityResistance: 10,
   },
   {
     id: 'alpha_deathclaw', name: 'Alpha Deathclaw', category: 'beast',
@@ -221,7 +248,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 120, armorClass: 30, maxAP: 16,
     skills: { ...defaultSkills(), unarmed: 90, meleeWeapons: 80, sneak: 50, outdoorsman: 75 },
     equippedWeaponId: 'deathclaw_claw',
-    radiationResistance: 25, gasResistance: 10, electricityResistance: 10,
+    // Full manual Deathclaw values: DT 4/0/4/0/4, DR 40%/0/40%/0/40%.
+    naturalProtection: natural([4, 0, 4, 0, 4], [40, 0, 40, 0, 40]),
+    radiationResistance: 60, gasResistance: 40, electricityResistance: 10,
   },
   {
     id: 'deathclaw_mother', name: 'Deathclaw Mother', category: 'beast',
@@ -230,7 +259,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 150, armorClass: 28, maxAP: 14,
     skills: { ...defaultSkills(), unarmed: 95, meleeWeapons: 85, sneak: 45, outdoorsman: 80 },
     equippedWeaponId: 'deathclaw_claw',
-    radiationResistance: 30, gasResistance: 15, electricityResistance: 10,
+    // Massive matriarch — slightly above the manual's standard Deathclaw hide.
+    naturalProtection: natural([5, 0, 5, 0, 5], [45, 0, 45, 0, 45]),
+    radiationResistance: 60, gasResistance: 40, electricityResistance: 10,
   },
   {
     id: 'wasteland_dog', name: 'Wasteland Dog', category: 'beast',
@@ -257,7 +288,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 18, armorClass: 10, maxAP: 10,
     skills: { ...defaultSkills(), unarmed: 40, sneak: 35, outdoorsman: 50 },
     equippedWeaponId: 'molerat_bite',
-    radiationResistance: 5, gasResistance: 0, electricityResistance: 0,
+    // Manual Lesser Molerat: DT 1/0/0/0/1, DR 5%/0/0/0/5%; PR 50, RR 25.
+    naturalProtection: natural([1, 0, 0, 0, 1], [5, 0, 0, 0, 5]),
+    radiationResistance: 25, gasResistance: 0, electricityResistance: 0,
   },
   {
     id: 'giant_molerat', name: 'Giant Molerat', category: 'beast',
@@ -266,7 +299,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 35, armorClass: 12, maxAP: 9,
     skills: { ...defaultSkills(), unarmed: 55, sneak: 30, outdoorsman: 55 },
     equippedWeaponId: 'molerat_bite',
-    radiationResistance: 10, gasResistance: 0, electricityResistance: 0,
+    // Manual Greater Molerat: DT 4/1/0/0/0, DR 20%/5%/0/0/20%; PR 60, RR 25.
+    naturalProtection: natural([4, 1, 0, 0, 0], [20, 5, 0, 0, 20]),
+    radiationResistance: 25, gasResistance: 25, electricityResistance: 0,
   },
   {
     id: 'yaoguai_common', name: 'Yao Guai', category: 'beast',
@@ -275,7 +310,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 70, armorClass: 18, maxAP: 11,
     skills: { ...defaultSkills(), unarmed: 65, meleeWeapons: 50, outdoorsman: 65 },
     equippedWeaponId: 'yaoguai_claw',
-    radiationResistance: 15, gasResistance: 0, electricityResistance: 0,
+    // Thick mutated-bear hide (comparable to the manual's Dire Wolf DT 5, DR 40%).
+    naturalProtection: natural([3, 0, 0, 0, 2], [30, 0, 0, 0, 20]),
+    radiationResistance: 20, gasResistance: 0, electricityResistance: 0,
   },
   {
     id: 'alpha_yaoguai', name: 'Alpha Yao Guai', category: 'beast',
@@ -284,7 +321,8 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 100, armorClass: 20, maxAP: 12,
     skills: { ...defaultSkills(), unarmed: 80, meleeWeapons: 65, outdoorsman: 75 },
     equippedWeaponId: 'yaoguai_claw',
-    radiationResistance: 20, gasResistance: 0, electricityResistance: 0,
+    naturalProtection: natural([5, 0, 0, 0, 3], [40, 0, 0, 0, 25]),
+    radiationResistance: 25, gasResistance: 0, electricityResistance: 0,
   },
   {
     id: 'radscorpion_common', name: 'Radscorpion', category: 'beast',
@@ -293,7 +331,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 55, armorClass: 20, maxAP: 10,
     skills: { ...defaultSkills(), unarmed: 60, meleeWeapons: 50, outdoorsman: 60 },
     equippedWeaponId: 'scorpion_claw',
-    radiationResistance: 30, gasResistance: 30, electricityResistance: 0,
+    // Manual Lesser Radscorpion: DT 1/0/4/0/1, DR 5%/0/20%/0/5%; PR 100, RR 25, GR 30/100.
+    naturalProtection: natural([1, 0, 4, 0, 1], [5, 0, 20, 0, 5]),
+    radiationResistance: 25, gasResistance: 30, electricityResistance: 0,
   },
   {
     id: 'giant_radscorpion', name: 'Giant Radscorpion', category: 'beast',
@@ -302,7 +342,10 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 100, armorClass: 30, maxAP: 9,
     skills: { ...defaultSkills(), unarmed: 80, meleeWeapons: 65, outdoorsman: 70 },
     equippedWeaponId: 'scorpion_claw',
-    radiationResistance: 40, gasResistance: 40, electricityResistance: 0,
+    // Greater/Giant Radscorpion: heavier chitin (manual base DT 1/0/4/0/1 DR 5/0/20/0/5,
+    // scaled up for the largest specimens whose shell is nearly impenetrable).
+    naturalProtection: natural([4, 0, 8, 0, 4], [25, 0, 40, 0, 25]),
+    radiationResistance: 80, gasResistance: 40, electricityResistance: 0,
   },
   {
     id: 'brahmin_creature', name: 'Brahmin', category: 'beast',
@@ -311,7 +354,9 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     maxHp: 45, armorClass: 5, maxAP: 7,
     skills: { ...defaultSkills(), unarmed: 35, outdoorsman: 45 },
     equippedWeaponId: 'brahmin_horn',
-    radiationResistance: 5, gasResistance: 0, electricityResistance: 0,
+    // Manual Brahmin: DT 2/0/0/0/2, DR 10%/0/0/0/10%; PR 20, RR 30, GR 0/10.
+    naturalProtection: natural([2, 0, 0, 0, 2], [10, 0, 0, 0, 10]),
+    radiationResistance: 30, gasResistance: 0, electricityResistance: 0,
   },
 ];
 

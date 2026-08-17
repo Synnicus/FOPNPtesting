@@ -1,10 +1,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, BestiaryTemplate } from '@/context/types';
-import { BUILT_IN_WEAPONS } from '@/data/weapons';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate } from '@/context/types';
+import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseAC, calcBaseSkills, calcMaxAP, calcMaxHP, calcSequence } from '@/data/derived';
 import { clampConditionBoxes, CONDITION_BOXES_MAX } from '@/data/condition';
+import { computeModEffects } from '@/data/mods';
+
+/** Effective magazine size after mod magazineMult (extended/drum mags etc.). */
+function effectiveMagazineSize(weapon: Weapon): number {
+  if (weapon.magazineSize <= 0) return weapon.magazineSize;
+  const eff = computeModEffects(weapon.mods ?? []);
+  return Math.round(weapon.magazineSize * (eff.magazineMult ?? 1));
+}
 
 // v4 — new damage types (N/L/F/P/E), DR added to armor, pilot skill, custom bestiary
 const STORAGE_KEY = '@fallout_pnp_v4';
@@ -59,6 +67,12 @@ interface AppContextValue extends AppState {
   reloadWeapon: (characterId: string, weaponId: string) => void;
   jamWeapon: (characterId: string, weaponId: string) => void;
   setWeaponCondition: (characterId: string, weaponId: string, filledBoxes: number) => void;
+  setAmmoType: (characterId: string, weaponId: string, ammoTypeId: string | undefined) => void;
+  equipWeapon: (characterId: string, weaponId: string, hand?: 'left' | 'right' | 'both') => void;
+
+  addEffect: (characterId: string, effect: ActiveEffect) => void;
+  removeEffect: (characterId: string, effectId: string) => void;
+  applyChem: (characterId: string, effect: ActiveEffect) => void;
 
   addInjury: (characterId: string, injury: Injury) => void;
   removeInjury: (characterId: string, injuryId: string) => void;
@@ -241,11 +255,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === weaponId);
       if (!weapon || weapon.magazineSize === 0) { success = true; return s; }
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
-      const current = existing ? existing.currentAmmo : weapon.magazineSize;
+      const current = existing ? existing.currentAmmo : effectiveMagazineSize(weapon);
       if (current < shots) { success = false; return s; }
       success = true;
       const newStates: WeaponAmmoState[] = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0) });
+      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: existing?.ammoTypeId });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
     return success;
@@ -259,9 +273,102 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!weapon) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: weapon.magazineSize, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0) });
+      newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: existing?.ammoTypeId });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
+  }, []);
+
+  // ─── Ammo type (loaded round) ─────────────────────────────────────────────────
+  const setAmmoType = useCallback((characterId: string, weaponId: string, ammoTypeId: string | undefined) => {
+    setState(s => {
+      const char = s.characters.find(c => c.id === characterId);
+      if (!char) return s;
+      const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === weaponId);
+      const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
+      const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
+      newStates.push({
+        weaponId,
+        currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
+        conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
+        ammoTypeId,
+      });
+      return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
+    });
+  }, []);
+
+  // ─── Weapon equip / switch (hand slots + inventory) ───────────────────────────
+  const equipWeapon = useCallback((characterId: string, weaponId: string, hand: 'left' | 'right' | 'both' = 'both') => {
+    setState(s => {
+      const char = s.characters.find(c => c.id === characterId);
+      if (!char) return s;
+      const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === weaponId);
+      if (!weapon) return s;
+      const hands = getWeaponHands(weapon);
+      // Two-handed weapons always occupy both hands regardless of the request.
+      const useBoth = hands === 2 || hand === 'both';
+      let leftHandWeaponId = char.leftHandWeaponId;
+      let rightHandWeaponId = char.rightHandWeaponId;
+      if (useBoth) {
+        leftHandWeaponId = weaponId;
+        rightHandWeaponId = weaponId;
+      } else if (hand === 'left') {
+        leftHandWeaponId = weaponId;
+      } else {
+        rightHandWeaponId = weaponId;
+      }
+      // Keep the inventory (max 5, ids incl. equipped) in sync.
+      const inv = (char.inventoryWeaponIds ?? (char.equippedWeaponId ? [char.equippedWeaponId] : []));
+      const inventoryWeaponIds = inv.includes(weaponId) ? inv : [...inv, weaponId].slice(0, 5);
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === characterId
+          ? { ...c, equippedWeaponId: weaponId, leftHandWeaponId, rightHandWeaponId, inventoryWeaponIds }
+          : c),
+      };
+    });
+  }, []);
+
+  // ─── Active effects (chems) ───────────────────────────────────────────────────
+  const addEffect = useCallback((characterId: string, effect: ActiveEffect) => {
+    setState(s => ({
+      ...s,
+      characters: s.characters.map(c => c.id === characterId
+        ? { ...c, effects: [...(c.effects ?? []), effect] }
+        : c),
+    }));
+  }, []);
+
+  const removeEffect = useCallback((characterId: string, effectId: string) => {
+    setState(s => ({
+      ...s,
+      characters: s.characters.map(c => c.id === characterId
+        ? { ...c, effects: (c.effects ?? []).filter(e => e.id !== effectId) }
+        : c),
+    }));
+  }, []);
+
+  // Apply a chem: add its ActiveEffect and immediately resolve any HP heal/damage
+  // (hpMod on the effect: positive heals, negative damages).
+  const applyChem = useCallback((characterId: string, effect: ActiveEffect) => {
+    setState(s => ({
+      ...s,
+      characters: s.characters.map(c => {
+        if (c.id !== characterId) return c;
+        const hpMod = effect.hpMod ?? 0;
+        let currentHp = c.currentHp;
+        if (hpMod > 0) currentHp = Math.min(c.maxHp, c.currentHp + hpMod);
+        else if (hpMod < 0) currentHp = Math.max(0, c.currentHp + hpMod);
+        return { ...c, currentHp, effects: [...(c.effects ?? []), effect] };
+      }),
+      initiativeEntries: s.initiativeEntries.map(e => {
+        if (e.characterId !== characterId) return e;
+        const hpMod = effect.hpMod ?? 0;
+        let currentHp = e.currentHp;
+        if (hpMod > 0) currentHp = Math.min(e.maxHp, e.currentHp + hpMod);
+        else if (hpMod < 0) currentHp = Math.max(0, e.currentHp + hpMod);
+        return { ...e, currentHp };
+      }),
+    }));
   }, []);
 
   // A jam/miss FILLS one condition box (0 pristine … 10 jammed).
@@ -271,7 +378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!char) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1) });
+      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1), ammoTypeId: existing?.ammoTypeId });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -286,8 +393,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
       newStates.push({
         weaponId,
-        currentAmmo: existing?.currentAmmo ?? weapon?.magazineSize ?? 0,
+        currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
         conditionBoxes: clampConditionBoxes(filledBoxes),
+        ammoTypeId: existing?.ammoTypeId,
       });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
@@ -517,7 +625,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       allWeapons, allArmor,
       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
       applyDamage, healCharacter, spendAP, restoreAP, setPosition, addTempAC, clearTempAC,
-      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,
+      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon,
+      addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,
