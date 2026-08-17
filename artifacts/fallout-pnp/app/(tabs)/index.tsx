@@ -26,7 +26,7 @@ import { isMeleeWeapon, getWeaponHands } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
 import { CHEMS, getChem } from '@/data/chems';
-import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers } from '@/data/effects';
+import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
@@ -126,6 +126,29 @@ interface PerkBonus {
 }
 
 // Web-safe alert: RN's Alert.alert is a silent no-op on react-native-web.
+// Compact ammo label for the combatant card, e.g. "10mm JHP" from
+// "10mm JHP (Jacketed Hollow Point)" — strips parentheticals, caps length.
+function shortAmmoName(name: string): string {
+  const stripped = name.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+  return stripped.length > 18 ? stripped.slice(0, 17) + '…' : stripped;
+}
+
+// One-line summary of what an active effect changes (for combat cards).
+function describeEffectMods(e: {
+  statMods?: Partial<Record<string, number>>; acMod?: number; drMod?: number;
+  apMod?: number; sequenceMod?: number;
+}): string {
+  const bits: string[] = [];
+  for (const [k, v] of Object.entries(e.statMods ?? {})) {
+    if (v) bits.push(`${k.slice(0, 3).toUpperCase()} ${v > 0 ? '+' : ''}${v}`);
+  }
+  if (e.acMod) bits.push(`AC ${e.acMod > 0 ? '+' : ''}${e.acMod}`);
+  if (e.drMod) bits.push(`DR ${e.drMod > 0 ? '+' : ''}${e.drMod}%`);
+  if (e.apMod) bits.push(`AP ${e.apMod > 0 ? '+' : ''}${e.apMod}`);
+  if (e.sequenceMod) bits.push(`SEQ ${e.sequenceMod > 0 ? '+' : ''}${e.sequenceMod}`);
+  return bits.join(', ');
+}
+
 function notify(title: string, message?: string) {
   if (Platform.OS === 'web') window.alert(message ? `${title}\n\n${message}` : title);
   else Alert.alert(title, message);
@@ -631,7 +654,6 @@ export default function CombatScreen() {
   const [showAmmoPicker, setShowAmmoPicker] = useState(false);
   const [showWeaponPicker, setShowWeaponPicker] = useState(false);
   // Whether the currently open ammo/weapon picker should charge AP on selection.
-  const [ammoPickerCosted, setAmmoPickerCosted] = useState(false);
   const [weaponPickerFree, setWeaponPickerFree] = useState(false);
   // Inline result of the last streamlined-burst damage application.
   const [streamlinedDmgResult, setStreamlinedDmgResult] = useState<{ perHit: number[]; total: number; dt: number; dr: number } | null>(null);
@@ -708,12 +730,9 @@ export default function CombatScreen() {
   const attackerEffectMods = attacker ? computeEffectModifiers(attacker) : null;
   const defenderEffectMods = defender ? computeEffectModifiers(defender) : null;
   // Attacker SPECIAL after chem statMods (drives melee dmg / crit luck below).
+  // Chems may push stats PAST racial limits — no upper cap, floor 1.
   const attackerEffSpecial = (attacker && attacker.special)
-    ? ({
-        ...attacker.special,
-        ...Object.fromEntries(Object.entries(attackerEffectMods?.statMods ?? {}).map(([k, v]) =>
-          [k, Math.max(1, Math.min(10, (attacker.special as any)[k] + ((v as number) ?? 0)))])),
-      } as typeof attacker.special)
+    ? effectiveSpecial(attacker).stats
     : null;
   // Defender-side perk bonuses (Dodger AC, Toughness DR, …) + chem AC mods.
   const defenderPerkDef = computeDefensivePerkBonuses(defender, weapon?.damageType);
@@ -741,12 +760,19 @@ export default function CombatScreen() {
   //  We recompute using effective Agility (accounts for crippled limbs) and
   //  subtract the "lost" base-AC when the defender is crouching/prone.
   const defenderPos = defender?.position ?? 'standing';
-  const defenderBaseAgi = defenderInjury?.effectiveAgility ?? defender?.special?.agility ?? 0;
+  // AGI baked into the stored armorClass = base + permanent Gain Agility perks.
+  const defenderStoredAgi = defender?.special
+    ? defender.special.agility + (computePerkStatBonuses(defender).agility ?? 0)
+    : 0;
+  // Working AGI: injuries override, then chem statMods apply (may exceed 10).
+  const defenderChemAgiDelta = defender?.special ? (effectiveSpecial(defender).chemDelta.agility ?? 0) : 0;
+  const defenderBaseAgi = Math.max(0, (defenderInjury?.effectiveAgility ?? defenderStoredAgi) + defenderChemAgiDelta);
   let defenderPositionalAgiAC = defenderBaseAgi;
   if (defenderPos === 'crouching') defenderPositionalAgiAC = Math.min(defenderBaseAgi, 3);
   else if (defenderPos === 'prone') defenderPositionalAgiAC = Math.min(defenderBaseAgi, 1);
-  // How much AC is lost vs the stored armorClass (which included full base AGI AC).
-  const defenderAgiAcDelta = defenderBaseAgi - defenderPositionalAgiAC;
+  // AC delta vs the stored armorClass (which baked in defenderStoredAgi).
+  // Negative when a chem AGI boost exceeds positional loss (i.e. AC goes UP).
+  const defenderAgiAcDelta = defenderStoredAgi - defenderPositionalAgiAC;
   const defenderAC = defender
     ? Math.max(0, defender.armorClass + (defender.tempAC ?? 0) - defenderAgiAcDelta
         + defenderPerkDef.ac + (defenderEffectMods?.acMod ?? 0))
@@ -763,7 +789,11 @@ export default function CombatScreen() {
 
   // STR requirement penalty
   const effectiveMinStr = weapon ? Math.max(1, weapon.minStr - perkBonuses.strReqReduction) : 0;
-  const strReqPenalty = (attacker && weapon) ? (attacker.special && attacker.special.strength < effectiveMinStr ? (effectiveMinStr - attacker.special.strength) * 20 : 0) : 0;
+  // Uses effective STR (chems like Buffout can raise it past the requirement).
+  const attackerStr = attackerEffSpecial?.strength ?? attacker?.special?.strength ?? 0;
+  const strReqPenalty = (attacker && weapon && attacker.special)
+    ? (attackerStr < effectiveMinStr ? (effectiveMinStr - attackerStr) * 20 : 0)
+    : 0;
 
   // Ammo state
   const ammoState = (attacker && weapon) ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id) : null;
@@ -1179,35 +1209,14 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [attacker, spendAP, applyChem]);
 
-  // Set the loaded ammo type (free manual set — the AP-costed CHANGE AMMO flow
-  // spends AP separately before opening the picker).
-  // AP (when the picker was opened via the AP-costed CHANGE AMMO button) is only
-  // charged HERE, at selection time — cancelling the picker never spends AP.
+  // Set the loaded ammo type. Changing ammo is FREE (GM bookkeeping) — the AP
+  // cost of loading is handled by the RELOAD action, not by picking a type.
   const handleSetAmmo = useCallback((newAmmoId: string | undefined) => {
     if (!attacker || !weapon) return;
-    if (ammoPickerCosted) {
-      if (!spendAP(attacker.id, reloadApCost)) {
-        notify('Not Enough AP', `Changing ammo needs ${reloadApCost} AP; ${attacker.name} has ${attacker.currentAP}.`);
-        setShowAmmoPicker(false);
-        return;
-      }
-    }
     setAmmoType(attacker.id, weapon.id, newAmmoId);
     setShowAmmoPicker(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [attacker, weapon, setAmmoType, ammoPickerCosted, spendAP, reloadApCost]);
-
-  // AP-costed CHANGE AMMO (manual "Ammo (loading)") — opens the picker; AP is
-  // spent on selection so cancelling costs nothing.
-  const handleChangeAmmo = useCallback(() => {
-    if (!attacker || !weapon) return;
-    if (attacker.currentAP < reloadApCost) {
-      notify('Not Enough AP', `Changing ammo needs ${reloadApCost} AP; ${attacker.name} has ${attacker.currentAP}.`);
-      return;
-    }
-    setAmmoPickerCosted(true);
-    setShowAmmoPicker(true);
-  }, [attacker, weapon, reloadApCost]);
+  }, [attacker, weapon, setAmmoType]);
 
   // Equip/switch to a weapon from the inventory. Free manual SET WEAPON.
   const handleEquipWeapon = useCallback((weaponId: string, free: boolean) => {
@@ -1478,7 +1487,7 @@ export default function CombatScreen() {
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
-                    const seq = c.sequence ?? c.special.perception * 2;
+                    const seq = (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod;
                     rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
                   });
                   setInitRolls(rolls);
@@ -1492,7 +1501,7 @@ export default function CombatScreen() {
                     <CharacterAvatar portrait={c.portrait} name={c.name} size={32} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{c.name}</Text>
-                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>SEQ {c.sequence ?? c.special.perception * 2} · HP {c.currentHp}/{c.maxHp} · AP {c.maxAP}</Text>
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>SEQ {(c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod} · HP {c.currentHp}/{c.maxHp} · AP {c.maxAP}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.max(0, (prev[c.id] ?? 10) - 1) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
@@ -1500,7 +1509,7 @@ export default function CombatScreen() {
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.min(50, (prev[c.id] ?? 10) + 1) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                     <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => {
-                      const seq = c.sequence ?? c.special.perception * 2;
+                      const seq = (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod;
                       const roll = Math.floor(Math.random() * 10) + 1;
                       setInitRolls(prev => ({ ...prev, [c.id]: roll + seq }));
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1519,11 +1528,11 @@ export default function CombatScreen() {
                       characterId: c.id,
                       name: c.name,
                       initiative: initRolls[c.id] ?? 10,
-                      sequence: c.sequence ?? c.special.perception * 2,
+                      sequence: (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod,
                       maxHp: c.maxHp,
                       currentHp: c.currentHp,
-                      maxAP: c.maxAP,
-                      currentAP: c.maxAP,
+                      maxAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
+                      currentAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
                       armorClass: c.armorClass,
                       tempAC: 0,
                       position: c.position,
@@ -1588,7 +1597,7 @@ export default function CombatScreen() {
         {/* ─── Combatants ─── */}
         <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>COMBATANTS</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 8 }}>
             {/* Attacker */}
             <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: attacker ? colors.primary : colors.border, padding: 10, gap: 10, minHeight: 80 }} onPress={() => setShowAttackerPicker(true)}>
               {attacker ? (
@@ -1603,20 +1612,28 @@ export default function CombatScreen() {
                     </Text>}
                     {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {attacker.currentAP}/{attacker.maxAP} · {attackerPos}</Text>}
-                    {/* Ammo display */}
+                    {/* Ammo display: count + loaded ammo type (shorthand) */}
                     {weapon && weapon.magazineSize > 0 && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: hasAmmo ? colors.primary : colors.destructive }}>
                           [{currentAmmo}/{weapon.magazineSize}]
                         </Text>
-                        {/* Condition: FILLED boxes (0 pristine … 10 jammed) */}
-                        {[...Array(CONDITION_BOXES_MAX)].map((_, i) => (
-                          <View key={i} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: i < conditionBoxes ? colors.destructive : '#4a8c3f' }} />
-                        ))}
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: loadedAmmo ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
+                          {loadedAmmo ? shortAmmoName(loadedAmmo.name) : 'standard'}
+                        </Text>
+                        {conditionBoxes > 0 && (
+                          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>COND {conditionBoxes}/{CONDITION_BOXES_MAX}</Text>
+                        )}
                       </View>
                     )}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
+                    ))}
+                    {/* Active chem effects (green) */}
+                    {(attacker.effects ?? []).filter(e => e.isActive).map(e => (
+                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
+                        ⚗ {e.name}{describeEffectMods(e) ? ` — ${describeEffectMods(e)}` : ''}
+                      </Text>
                     ))}
                   </View>
                 </>
@@ -1629,7 +1646,7 @@ export default function CombatScreen() {
               <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>ATK</Text>
             </TouchableOpacity>
 
-            <Feather name="arrow-right" size={20} color={colors.mutedForeground} />
+            <Feather name="arrow-right" size={20} color={colors.mutedForeground} style={{ alignSelf: "center" }} />
 
             {/* Defender */}
             <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: defender ? colors.destructive : colors.border, padding: 10, gap: 10, minHeight: 80 }} onPress={() => setShowDefenderPicker(true)}>
@@ -1645,9 +1662,17 @@ export default function CombatScreen() {
                       {defenderProtSummary}
                     </Text>
                     {defenderNatural && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>incl. natural protection</Text>}
-                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Pos: {defenderPos}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                      Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${defender.currentAP}/${defender.maxAP}` : ''}
+                    </Text>
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
+                    ))}
+                    {/* Active chem effects (green) */}
+                    {(defender.effects ?? []).filter(e => e.isActive).map(e => (
+                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
+                        ⚗ {e.name}{describeEffectMods(e) ? ` — ${describeEffectMods(e)}` : ''}
+                      </Text>
                     ))}
                   </View>
                 </>
@@ -1795,19 +1820,10 @@ export default function CombatScreen() {
                     {compatibleAmmo.length > 0 && (
                       <TouchableOpacity
                         style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.mutedForeground }}
-                        onPress={() => { setAmmoPickerCosted(false); setShowAmmoPicker(true); }}
-                      >
-                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>SET AMMO</Text>
-                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>FREE</Text>
-                      </TouchableOpacity>
-                    )}
-                    {compatibleAmmo.length > 0 && (
-                      <TouchableOpacity
-                        style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}
-                        onPress={handleChangeAmmo}
+                        onPress={() => setShowAmmoPicker(true)}
                       >
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CHANGE AMMO</Text>
-                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{reloadApCost} AP</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>FREE</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -1913,7 +1929,7 @@ export default function CombatScreen() {
               {positionBonus !== 0 && <FormulaLine label={`Position (${POSITION_OPTIONS[posIdxFromChar].label})`} value={`+${positionBonus}%`} color="#4a8c3f" />}
               {targetedPenalty !== 0 && <FormulaLine label={`Targeted (${TARGETED_OPTIONS[targetedIdx].label})`} value={`−${targetedPenalty}%`} color={colors.destructive} />}
               {perkBonuses.toHit !== 0 && <FormulaLine label="Perk to-hit bonus" value={`+${perkBonuses.toHit}%`} color="#4a8c3f" />}
-              {strReqPenalty > 0 && <FormulaLine label="STR req penalty" value={`−${strReqPenalty}%`} color={colors.destructive} />}
+              {strReqPenalty > 0 && <FormulaLine label={`STR req penalty (STR ${attackerStr}/${effectiveMinStr})`} value={`−${strReqPenalty}%`} color={colors.destructive} />}
               {isBurst && effectiveBurstShots > 1 && <FormulaLine label="Burst penalties" value={burstPenalties.slice(1).map(p => `${p}%`).join(', ')} color={colors.destructive} />}
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
               <FormulaLine label="= Chance to Hit" value={`${shotChances[0]}%`} color={shotChances[0] >= 60 ? '#4a8c3f' : shotChances[0] >= 35 ? colors.primary : colors.destructive} />
@@ -2346,12 +2362,12 @@ export default function CombatScreen() {
           id: `init-${c.id}-${genId()}`,
           characterId: c.id,
           name: c.name,
-          initiative: (c.sequence ?? c.special.perception * 2) + Math.floor(Math.random() * 10) + 1,
-          sequence: c.sequence ?? c.special.perception * 2,
+          initiative: ((c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod) + Math.floor(Math.random() * 10) + 1,
+          sequence: (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod,
           maxHp: c.maxHp,
           currentHp: c.currentHp,
-          maxAP: c.maxAP,
-          currentAP: c.maxAP,
+          maxAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
+          currentAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
           armorClass: c.armorClass,
           tempAC: 0,
           position: c.position,
@@ -2421,10 +2437,8 @@ export default function CombatScreen() {
       {/* ─── Ammo picker (compatible types only) ─── */}
       <OptionPickerModal
         visible={showAmmoPicker}
-        title={ammoPickerCosted ? 'CHANGE AMMO' : 'SET AMMO (FREE)'}
-        subtitle={ammoPickerCosted
-          ? `${reloadApCost} AP — charged when an ammo type is selected`
-          : 'GM override — no AP spent'}
+        title="CHANGE AMMO"
+        subtitle="Free — no AP spent (loading costs come from RELOAD)"
         options={compatibleAmmo.map(a => ({
           key: a.id,
           label: `${a.name}${a.id === loadedAmmo?.id ? '  (loaded)' : ''}`,

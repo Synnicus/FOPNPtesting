@@ -93,6 +93,70 @@ export function applyTaggedBonus(skills: CharacterSkills, taggedSkills: string[]
   return result;
 }
 
+// ─── Perk-driven derived-stat bonuses ────────────────────────────────────────
+// Structured numeric perk effects that change character-sheet numbers.
+export interface PerkDerivedBonuses {
+  maxHP: number;          // Lifegiver: +4 max HP per level per rank
+  sequence: number;       // Earlier Sequence: +2 per rank
+  healingRate: number;    // Faster Healing / Fast Metabolism / Cancerous Growth
+  carryWeight: number;    // Pack Rat: +10 lbs per rank
+  doubleHPPerLevel: boolean; // Brutish Hulk: double HP gained per level
+  /** Levels gained since Brutish Hulk was taken (for the doubled HP). */
+  doubleHPLevels: number;
+  notes: string[];
+}
+
+export function computePerkDerivedBonuses(
+  perks: { perkId: string; rank: number; takenAtLevel?: number }[] | undefined,
+  level: number,
+): PerkDerivedBonuses {
+  const out: PerkDerivedBonuses = { maxHP: 0, sequence: 0, healingRate: 0, carryWeight: 0, doubleHPPerLevel: false, doubleHPLevels: 0, notes: [] };
+  for (const cp of perks ?? []) {
+    // Per-level HP perks only count levels gained AFTER the perk was taken
+    // (no retroactive award). Older saves without takenAtLevel get 0 until
+    // the character levels up again.
+    const levelsSince = Math.max(0, level - (cp.takenAtLevel ?? level));
+    switch (cp.perkId) {
+      case 'lifegiver':
+        out.maxHP += 4 * cp.rank * levelsSince;
+        out.notes.push(`Lifegiver: +${4 * cp.rank} max HP per level (from Lv ${cp.takenAtLevel ?? level})`);
+        break;
+      case 'earlier_sequence':
+        out.sequence += 2 * cp.rank;
+        out.notes.push(`Earlier Sequence: +${2 * cp.rank} Sequence`);
+        break;
+      case 'faster_healing':
+        out.healingRate += 2 * cp.rank;
+        out.notes.push(`Faster Healing: +${2 * cp.rank} Healing Rate`);
+        break;
+      case 'fast_metabolism':
+        out.healingRate += 2;
+        out.notes.push('Fast Metabolism: +2 Healing Rate');
+        break;
+      case 'cancerous_growth':
+        out.healingRate += 2;
+        out.notes.push('Cancerous Growth: +2 Healing Rate');
+        break;
+      case 'pack_rat':
+        out.carryWeight += 10 * cp.rank;
+        out.notes.push(`Pack Rat: +${10 * cp.rank} lbs carry weight`);
+        break;
+      case 'brutish_hulk':
+        out.doubleHPPerLevel = true;
+        out.doubleHPLevels = levelsSince;
+        out.notes.push('Brutish Hulk: double HP gained per level');
+        break;
+    }
+  }
+  return out;
+}
+
+/** Extra max HP from Brutish Hulk = the per-level HP gain again, for each
+ *  level gained since the perk was taken (no retroactive award). */
+export function brutishHulkExtraHP(special: SPECIALStats, levelsSince: number, raceBonusHPPerLevel: number = 0): number {
+  return Math.max(0, levelsSince) * (1 + Math.floor(special.endurance / 2) + raceBonusHPPerLevel);
+}
+
 // ─── Effective AC (position + armor + tempAC) ────────────────────────────────
 
 export function calcEffectiveAC(

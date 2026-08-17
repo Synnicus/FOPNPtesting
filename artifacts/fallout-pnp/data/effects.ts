@@ -159,5 +159,64 @@ export function computeEffectModifiers(
   return agg;
 }
 
+// ─── Effective SPECIAL (base + permanent Gain-X perks + active chem effects) ──
+
+/** Gain X perks permanently raise a stat by +1 per rank (manual p. Perks). */
+const GAIN_STAT_PERKS: Record<string, keyof SPECIALStats> = {
+  gain_strength: 'strength',
+  gain_perception: 'perception',
+  gain_endurance: 'endurance',
+  gain_charisma: 'charisma',
+  gain_intelligence: 'intelligence',
+  gain_agility: 'agility',
+  gain_luck: 'luck',
+};
+
+/** Permanent SPECIAL bonuses from perks (Gain Strength etc.), +1 per rank. */
+export function computePerkStatBonuses(
+  char: Pick<Character, 'perks'>,
+): Partial<SPECIALStats> {
+  const out: Partial<SPECIALStats> = {};
+  for (const cp of char.perks ?? []) {
+    const stat = GAIN_STAT_PERKS[cp.perkId];
+    if (stat) out[stat] = (out[stat] ?? 0) + cp.rank;
+  }
+  return out;
+}
+
+export interface EffectiveSpecial {
+  /** Final stat values: base + perk bonuses + chem mods (min 1, NO upper cap —
+   *  chems may temporarily push a stat past racial limits). */
+  stats: SPECIALStats;
+  /** Per-stat delta contributed by ACTIVE CHEM EFFECTS only (0 = untouched).
+   *  Positive values should render green in the UI. */
+  chemDelta: Partial<SPECIALStats>;
+  /** True when any chem is currently modifying any stat. */
+  hasChemMods: boolean;
+}
+
+/**
+ * The character's working SPECIAL: base stats plus permanent Gain-X perks plus
+ * temporary chem statMods. Chem boosts may exceed racial maximums by design;
+ * the floor is 1. Base `char.special` is never mutated — effects revert simply
+ * by ending (the delta disappears from this computation).
+ */
+export function effectiveSpecial(
+  char: Pick<Character, 'special' | 'perks' | 'effects'>,
+): EffectiveSpecial {
+  const perkBonus = computePerkStatBonuses(char);
+  const chem = computeEffectModifiers(char).statMods;
+  const stats = { ...char.special };
+  const chemDelta: Partial<SPECIALStats> = {};
+  let hasChemMods = false;
+  for (const key of SPECIAL_KEYS) {
+    const withPerks = stats[key] + (perkBonus[key] ?? 0);
+    const delta = chem[key] ?? 0;
+    stats[key] = Math.max(1, withPerks + delta);
+    if (delta !== 0) { chemDelta[key] = delta; hasChemMods = true; }
+  }
+  return { stats, chemDelta, hasChemMods };
+}
+
 /** Re-export so callers can resolve a chem from an effect in one import. */
 export { getChem };

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList, Image, Modal, PanResponder, Platform, ScrollView, Text,
-  TextInput, TouchableOpacity, View,
+  TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,6 +21,7 @@ import {
   calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
   calcCriticalChance, calcHealingRate, calcCarryWeight, calcMeleeDamageBonus,
   calcSkillPointsPerLevel, xpForLevel, levelForXP,
+  computePerkDerivedBonuses, brutishHulkExtraHP,
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
@@ -28,7 +29,7 @@ import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
-import { makeChemEffect, progressChemEffect, chemHasNextStage } from '@/data/effects';
+import { makeChemEffect, progressChemEffect, chemHasNextStage, effectiveSpecial, computePerkStatBonuses, computeEffectModifiers } from '@/data/effects';
 import { getWeaponHands } from '@/data/weapons';
 
 // Perk points available given a race's perksPerLevels cadence (default 3)
@@ -194,10 +195,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     const bodyArmor = allArmor.find(a => a.id === updatedChar.equippedBodyArmorId);
     const helmet = allArmor.find(a => a.id === updatedChar.equippedHelmetId);
     const armorACBonus = (bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0);
-    const maxHp = calcMaxHP(updatedChar.special, updatedChar.level, raceRef.bonusHPPerLevel ?? 0);
-    const maxAP = calcMaxAP(updatedChar.special);
-    const armorClass = calcBaseAC(updatedChar.special) + armorACBonus + raceRef.naturalACBonus;
-    const sequence = calcSequence(updatedChar.special);
+    // Derived stats use base SPECIAL + permanent Gain-X perks (NOT chem mods —
+    // chems are temporary and applied at display/combat time instead).
+    const perkStat = computePerkStatBonuses(updatedChar);
+    const specialFx = { ...updatedChar.special };
+    for (const k of SPECIAL_KEYS) specialFx[k] += perkStat[k] ?? 0;
+    const pdb = computePerkDerivedBonuses(updatedChar.perks, updatedChar.level);
+    const maxHp = calcMaxHP(specialFx, updatedChar.level, raceRef.bonusHPPerLevel ?? 0)
+      + pdb.maxHP
+      + (pdb.doubleHPPerLevel ? brutishHulkExtraHP(specialFx, pdb.doubleHPLevels, raceRef.bonusHPPerLevel ?? 0) : 0);
+    const maxAP = calcMaxAP(specialFx);
+    const armorClass = calcBaseAC(specialFx) + armorACBonus + raceRef.naturalACBonus;
+    const sequence = calcSequence(specialFx) + pdb.sequence;
     const radRes = Math.max(updatedChar.radiationResistance, raceRef.naturalDR);
     const gasRes = Math.max(updatedChar.gasResistance, raceRef.naturalGasDR);
     const elecRes = Math.min(100, Math.max(updatedChar.electricityResistance, raceRef.naturalElecDR));
@@ -344,14 +353,14 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           return prev;
         }
-        if (!existing) return { ...prev, perks: [...prev.perks, { perkId, rank: 1 }] };
-        return { ...prev, perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p) };
+        if (!existing) return recomputeDerived({ ...prev, perks: [...prev.perks, { perkId, rank: 1, takenAtLevel: prev.level }] });
+        return recomputeDerived({ ...prev, perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p) });
       } else {
         // At max rank — tapping removes entirely.
-        return { ...prev, perks: prev.perks.filter(p => p.perkId !== perkId) };
+        return recomputeDerived({ ...prev, perks: prev.perks.filter(p => p.perkId !== perkId) });
       }
     });
-  }, [perkPointsRemaining]);
+  }, [perkPointsRemaining, recomputeDerived]);
 
   const pickPortrait = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -562,7 +571,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           ))}
         </ScrollView>
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 100 }} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 100, width: '100%', maxWidth: 820, alignSelf: 'center' }} keyboardShouldPersistTaps="handled">
 
           {/* ── BASICS ── */}
           {activeTab === 0 && (
@@ -807,14 +816,20 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
               <PointCounter label="SPECIAL POINTS REMAINING" remaining={specialRemaining} total={specialPoolTotal} warn />
 
-              {/* Derived stats preview */}
+              {/* Derived stats preview (includes Gain-X + numeric perk bonuses) */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {[
-                  ['Max HP', char.maxHp], ['Max AP', char.maxAP], ['AC', char.armorClass],
-                  ['Sequence', char.sequence], ['Crit%', calcCriticalChance(char.special)],
-                  ['Heal/day', calcHealingRate(char.special)], ['Carry', `${calcCarryWeight(char.special)}lb`],
-                  ['Melee+', calcMeleeDamageBonus(char.special)], ['SP/lvl', calcSkillPointsPerLevel(char.special)],
-                ].map(([l, v]) => (
+                {(() => {
+                  const perkStat = computePerkStatBonuses(char);
+                  const sFx = { ...char.special };
+                  for (const k of SPECIAL_KEYS) sFx[k] += perkStat[k] ?? 0;
+                  const pdb = computePerkDerivedBonuses(char.perks, char.level);
+                  return [
+                    ['Max HP', char.maxHp], ['Max AP', char.maxAP], ['AC', char.armorClass],
+                    ['Sequence', char.sequence], ['Crit%', calcCriticalChance(sFx)],
+                    ['Heal/day', calcHealingRate(sFx) + pdb.healingRate], ['Carry', `${calcCarryWeight(sFx) + pdb.carryWeight}lb`],
+                    ['Melee+', calcMeleeDamageBonus(sFx)], ['SP/lvl', calcSkillPointsPerLevel(sFx)],
+                  ] as [string, string | number][];
+                })().map(([l, v]) => (
                   <View key={l} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
                     <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{l}</Text>
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary }}>{v}</Text>
@@ -1087,6 +1102,11 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                             <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND'}</Text>
                             <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: w ? colors.foreground : colors.mutedForeground, marginTop: 4 }} numberOfLines={2}>{w?.name ?? 'None'}</Text>
                             {w && getWeaponHands(w) === 2 && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, marginTop: 2 }}>2-HANDED</Text>}
+                            {w && (
+                              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2, color: effectiveSpecial(char).stats.strength >= w.minStr ? '#4a8c3f' : colors.destructive }}>
+                                STR REQ {effectiveSpecial(char).stats.strength}/{w.minStr}
+                              </Text>
+                            )}
                           </TouchableOpacity>
                         );
                       })}
@@ -1492,6 +1512,12 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
   const weapon = allWeapons.find(w => w.id === character.equippedWeaponId);
   const activeInjuries = (character.injuries ?? []).filter(i => i.isActive);
   const injuryEffects = computeInjuryEffects(character);
+  const activeEffects = (character.effects ?? []).filter(e => e.isActive);
+  const effSpecial = effectiveSpecial(character);
+  const SPECIAL_ROW: [keyof typeof effSpecial.stats, string][] = [
+    ['strength', 'STR'], ['perception', 'PER'], ['endurance', 'END'], ['charisma', 'CHA'],
+    ['intelligence', 'INT'], ['agility', 'AGI'], ['luck', 'LCK'],
+  ];
   return (
     <TouchableOpacity style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -1536,6 +1562,37 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
               <View key={tid} style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.primary + '1a', borderRadius: 4, borderWidth: 1, borderColor: colors.primary + '55' }}>
                 <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>{trait.name}</Text>
               </View>
+            );
+          })}
+        </View>
+      )}
+      {/* SPECIAL row — chem-boosted stats render green (may exceed racial max) */}
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {SPECIAL_ROW.map(([key, label]) => {
+          const delta = effSpecial.chemDelta[key] ?? 0;
+          const color = delta > 0 ? '#4a8c3f' : delta < 0 ? colors.destructive : colors.foreground;
+          return (
+            <View key={key} style={{ flex: 1, alignItems: 'center', paddingVertical: 4, borderRadius: 4, backgroundColor: colors.secondary, borderWidth: 1, borderColor: delta !== 0 ? color + '88' : colors.border }}>
+              <Text style={{ fontSize: 8, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{label}</Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color }}>{effSpecial.stats[key]}</Text>
+            </View>
+          );
+        })}
+      </View>
+      {/* Active chem effects — shown like injuries, in green */}
+      {activeEffects.length > 0 && (
+        <View style={{ backgroundColor: '#4a8c3f14', borderRadius: 8, borderWidth: 1, borderColor: '#4a8c3f44', padding: 8, gap: 2 }}>
+          {activeEffects.map(e => {
+            const bits: string[] = [];
+            for (const [k, v] of Object.entries(e.statMods ?? {})) if (v) bits.push(`${k.slice(0, 3).toUpperCase()} ${(v as number) > 0 ? '+' : ''}${v}`);
+            if (e.acMod) bits.push(`AC ${e.acMod > 0 ? '+' : ''}${e.acMod}`);
+            if (e.drMod) bits.push(`DR ${e.drMod > 0 ? '+' : ''}${e.drMod}%`);
+            if (e.apMod) bits.push(`AP ${e.apMod > 0 ? '+' : ''}${e.apMod}`);
+            if (e.sequenceMod) bits.push(`SEQ ${e.sequenceMod > 0 ? '+' : ''}${e.sequenceMod}`);
+            return (
+              <Text key={e.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>
+                ⚗ {e.name}{bits.length ? ` — ${bits.join(', ')}` : ''}
+              </Text>
             );
           })}
         </View>

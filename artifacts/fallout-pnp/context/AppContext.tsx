@@ -6,6 +6,15 @@ import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseAC, calcBaseSkills, calcMaxAP, calcMaxHP, calcSequence } from '@/data/derived';
 import { clampConditionBoxes, CONDITION_BOXES_MAX } from '@/data/condition';
 import { computeModEffects } from '@/data/mods';
+import { computeEffectModifiers } from '@/data/effects';
+
+// Effective max AP for a character: derived max plus active chem apMod
+// (Jet grants +2 AP, etc.). Floor 1 so a crashing chem never zeroes AP.
+function charMaxAP(c: Character): number {
+  const base = c.maxAP ?? calcMaxAP(c.special);
+  const apMod = computeEffectModifiers(c).apMod;
+  return Math.max(1, base + apMod);
+}
 
 /** Effective magazine size after mod magazineMult (extended/drum mags etc.). */
 function effectiveMagazineSize(weapon: Weapon): number {
@@ -358,7 +367,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let currentHp = c.currentHp;
         if (hpMod > 0) currentHp = Math.min(c.maxHp, c.currentHp + hpMod);
         else if (hpMod < 0) currentHp = Math.max(0, c.currentHp + hpMod);
-        return { ...c, currentHp, effects: [...(c.effects ?? []), effect] };
+        // Immediate AP boost/drain (Jet +2 AP, crash −AP) applies right away.
+        const apMod = effect.apMod ?? 0;
+        const withEffect = { ...c, currentHp, effects: [...(c.effects ?? []), effect] };
+        const currentAP = apMod !== 0
+          ? Math.max(0, Math.min(charMaxAP(withEffect), c.currentAP + apMod))
+          : c.currentAP;
+        return { ...withEffect, currentAP };
       }),
       initiativeEntries: s.initiativeEntries.map(e => {
         if (e.characterId !== characterId) return e;
@@ -366,7 +381,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let currentHp = e.currentHp;
         if (hpMod > 0) currentHp = Math.min(e.maxHp, e.currentHp + hpMod);
         else if (hpMod < 0) currentHp = Math.max(0, e.currentHp + hpMod);
-        return { ...e, currentHp };
+        // Keep entry AP in sync with the character (Jet +AP, crash −AP).
+        const apMod = effect.apMod ?? 0;
+        const maxAP = Math.max(1, e.maxAP + apMod);
+        const currentAP = apMod !== 0
+          ? Math.max(0, Math.min(maxAP, e.currentAP + apMod))
+          : e.currentAP;
+        return { ...e, currentHp, maxAP, currentAP };
       }),
     }));
   }, []);
@@ -520,7 +541,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }));
         const firstChar = entries[0]?.characterId;
         if (firstChar) {
-          chars = chars.map(c => c.id === firstChar ? { ...c, currentAP: c.maxAP, tempAC: 0 } : c);
+          chars = chars.map(c => c.id === firstChar ? { ...c, currentAP: charMaxAP(c), tempAC: 0 } : c);
         }
         return { ...s, initiativeEntries: entries, characters: chars, currentRound: round, activeEntryId: entries[0].id };
       }
@@ -538,7 +559,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }));
       const nextActive = entries[nextIdx];
       if (nextActive?.characterId) {
-        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: c.maxAP, tempAC: 0 } : c);
+        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: charMaxAP(c), tempAC: 0 } : c);
       }
       return { ...s, initiativeEntries: entries, characters: chars, activeEntryId: nextActive?.id ?? null };
     });
@@ -555,7 +576,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }));
       const firstChar = entries[0]?.characterId;
       const chars = firstChar
-        ? s.characters.map(c => c.id === firstChar ? { ...c, currentAP: c.maxAP, tempAC: 0 } : c)
+        ? s.characters.map(c => c.id === firstChar ? { ...c, currentAP: charMaxAP(c), tempAC: 0 } : c)
         : s.characters;
       return { ...s, initiativeEntries: entries, characters: chars, currentRound: s.currentRound + 1, activeEntryId: entries[0]?.id ?? null };
     });

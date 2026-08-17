@@ -141,6 +141,9 @@ export interface Armor {
 export interface CharacterPerk {
   perkId: string;
   rank: number;
+  /** Level at which the perk was (first) taken — used so per-level HP perks
+   *  (Lifegiver, Brutish Hulk) only count levels gained AFTER acquisition. */
+  takenAtLevel?: number;
 }
 
 // ─── Injury ───────────────────────────────────────────────────────────────────
