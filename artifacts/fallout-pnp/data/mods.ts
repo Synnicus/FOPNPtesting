@@ -63,6 +63,14 @@ export interface WeaponModDef {
   festering?: boolean;
   /** Barbed Point: weapon hooks in flesh; removing it deals 3d4 damage. */
   barbed?: boolean;
+
+  // ── Shield fields (custom house-rule mod) ──────────────────────────────────
+  /** Shield: flat AC bonus to the wielder while the weapon is in hand. */
+  acBonus?: number;
+  /** Shield: DT added to the wielder's protection (per damage type). */
+  shieldDt?: { normal: number; laser: number; fire: number; plasma: number; explosion: number };
+  /** Shield: DR% added to the wielder's protection (per damage type). */
+  shieldDr?: { normal: number; laser: number; fire: number; plasma: number; explosion: number };
 }
 
 // ─── Poison type reference (manual "Poison Types and Effects", p.40) ──────────
@@ -195,6 +203,38 @@ export const WEAPON_MOD_DEFS: WeaponModDef[] = [
     description: 'A strap that supports a two-handed weapon against the body, letting it be wielded even with one crippled arm.',
     sling: true,
   },
+
+  // ── Shields (NEW house rule) ────────────────────────────────────────────────
+  // A shield strapped to a weapon (or arm) buffs the wielder's AC/DT/DR while
+  // the weapon is in hand. Defensive stats mirror the equivalent-tier helmet.
+  {
+    id: 'shield_t1', name: 'Shield T1 (Primitive)', appliesTo: 'any', weight: 4,
+    description: 'A crude shield of hide and scrap wood. Grants the defensive stats of a leather helmet (+5 AC) while the weapon is held.',
+    acBonus: 5,
+    shieldDt: { normal: 1, laser: 0, fire: 0, plasma: 0, explosion: 0 },
+    shieldDr: { normal: 10, laser: 10, fire: 5, plasma: 5, explosion: 10 },
+  },
+  {
+    id: 'shield_t2', name: 'Shield T2 (Metal)', appliesTo: 'any', weight: 7,
+    description: 'A hammered-metal shield. Grants the defensive stats of a metal helmet (+5 AC) while the weapon is held.',
+    acBonus: 5,
+    shieldDt: { normal: 3, laser: 0, fire: 1, plasma: 0, explosion: 1 },
+    shieldDr: { normal: 15, laser: 10, fire: 10, plasma: 5, explosion: 15 },
+  },
+  {
+    id: 'shield_t3', name: 'Shield T3 (Combat/Riot)', appliesTo: 'any', weight: 6,
+    description: 'A polymer riot shield. Grants the defensive stats of a combat helmet (+10 AC) while the weapon is held.',
+    acBonus: 10,
+    shieldDt: { normal: 4, laser: 2, fire: 2, plasma: 2, explosion: 3 },
+    shieldDr: { normal: 25, laser: 20, fire: 20, plasma: 15, explosion: 25 },
+  },
+  {
+    id: 'shield_t4', name: 'Shield T4 (Advanced/Power)', appliesTo: 'any', weight: 10,
+    description: 'A powered composite shield. Grants the defensive stats of a power armor helmet (+10 AC) while the weapon is held.',
+    acBonus: 10,
+    shieldDt: { normal: 8, laser: 6, fire: 6, plasma: 8, explosion: 8 },
+    shieldDr: { normal: 30, laser: 40, fire: 20, plasma: 30, explosion: 30 },
+  },
 ];
 
 // ─── Lookups ──────────────────────────────────────────────────────────────────
@@ -220,6 +260,14 @@ export interface AggregatedModEffects {
   reloadApOverride?: number;
   /** All poison coatings currently applied. */
   poisons: PoisonSpec[];
+  /** Shield: AC bonus to the wielder while the weapon is in hand. */
+  acBonus: number;
+  /** Shield: summed DT/DR added to the wielder's protection, in the same
+   *  dtNormal/drNormal… field shape as Armor (null when no shield mods). */
+  shieldProtection: {
+    dtNormal: number; dtLaser: number; dtFire: number; dtPlasma: number; dtExplosion: number;
+    drNormal: number; drLaser: number; drFire: number; drPlasma: number; drExplosion: number;
+  } | null;
   /** Ids that were not recognised. */
   unknownIds: string[];
 }
@@ -233,7 +281,7 @@ export function computeModEffects(weaponOrIds: Weapon | string[] | null | undefi
     toHit: 0, damage: 0, range: 0, magazineMult: 1,
     negatesAimedPenalty: false, ignoresLightPenalty: false, forcesAimed: false,
     silencer: false, sling: false, festering: false, barbed: false,
-    reloadApOverride: undefined, poisons: [], unknownIds: [],
+    reloadApOverride: undefined, poisons: [], acBonus: 0, shieldProtection: null, unknownIds: [],
   };
 
   for (const id of ids) {
@@ -256,6 +304,22 @@ export function computeModEffects(weaponOrIds: Weapon | string[] | null | undefi
         : Math.min(eff.reloadApOverride, mod.reloadApOverride);
     }
     if (mod.poison) eff.poisons.push(mod.poison);
+    if (mod.acBonus) eff.acBonus += mod.acBonus;
+    if (mod.shieldDt || mod.shieldDr) {
+      const p = eff.shieldProtection ?? {
+        dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0,
+        drNormal: 0, drLaser: 0, drFire: 0, drPlasma: 0, drExplosion: 0,
+      };
+      if (mod.shieldDt) {
+        p.dtNormal += mod.shieldDt.normal; p.dtLaser += mod.shieldDt.laser; p.dtFire += mod.shieldDt.fire;
+        p.dtPlasma += mod.shieldDt.plasma; p.dtExplosion += mod.shieldDt.explosion;
+      }
+      if (mod.shieldDr) {
+        p.drNormal += mod.shieldDr.normal; p.drLaser += mod.shieldDr.laser; p.drFire += mod.shieldDr.fire;
+        p.drPlasma += mod.shieldDr.plasma; p.drExplosion += mod.shieldDr.explosion;
+      }
+      eff.shieldProtection = p;
+    }
   }
 
   return eff;

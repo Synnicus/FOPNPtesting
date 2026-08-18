@@ -87,6 +87,7 @@ interface AppContextValue extends AppState {
   setWeaponCondition: (characterId: string, weaponId: string, filledBoxes: number) => void;
   setAmmoType: (characterId: string, weaponId: string, ammoTypeId: string | undefined) => void;
   equipWeapon: (characterId: string, weaponId: string, hand?: 'left' | 'right' | 'both') => void;
+  setActiveWeapon: (characterId: string, weaponId: string) => void;
 
   addEffect: (characterId: string, effect: ActiveEffect) => void;
   removeEffect: (characterId: string, effectId: string) => void;
@@ -339,10 +340,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (useBoth) {
         leftHandWeaponId = weaponId;
         rightHandWeaponId = weaponId;
-      } else if (hand === 'left') {
-        leftHandWeaponId = weaponId;
       } else {
-        rightHandWeaponId = weaponId;
+        // Placing a 1-handed weapon in one hand: if the OTHER hand currently
+        // holds a two-handed weapon (same id in both hands), it must be
+        // stowed — clear it so the 1H weapon doesn't share hands with a 2H.
+        const otherId = hand === 'left' ? rightHandWeaponId : leftHandWeaponId;
+        const otherWeapon = otherId ? [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === otherId) : undefined;
+        const otherIsTwoHanded = otherWeapon ? getWeaponHands(otherWeapon) === 2 : false;
+        // Also never let a 1-handed weapon occupy both hand slots — if the
+        // other hand already holds this same weapon id, clear it.
+        if (hand === 'left') {
+          leftHandWeaponId = weaponId;
+          if (otherIsTwoHanded || rightHandWeaponId === weaponId) rightHandWeaponId = undefined;
+        } else {
+          rightHandWeaponId = weaponId;
+          if (otherIsTwoHanded || leftHandWeaponId === weaponId) leftHandWeaponId = undefined;
+        }
       }
       // Keep the inventory (max 5, ids incl. equipped) in sync.
       const inv = (char.inventoryWeaponIds ?? (char.equippedWeaponId ? [char.equippedWeaponId] : []));
@@ -354,6 +367,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : c),
       };
     });
+  }, []);
+
+  // Switch the ACTIVE weapon between weapons already held in the hands —
+  // does not touch hand assignments or inventory.
+  const setActiveWeapon = useCallback((characterId: string, weaponId: string) => {
+    setState(s => ({
+      ...s,
+      characters: s.characters.map(c => {
+        if (c.id !== characterId) return c;
+        const held = [c.leftHandWeaponId, c.rightHandWeaponId, c.equippedWeaponId];
+        if (!held.includes(weaponId)) return c;
+        return { ...c, equippedWeaponId: weaponId };
+      }),
+    }));
   }, []);
 
   // ─── Active effects (chems) ───────────────────────────────────────────────────
@@ -682,7 +709,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       allWeapons, allArmor,
       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
       applyDamage, healCharacter, spendAP, restoreAP, setPosition, setKnockedOut, addTempAC, clearTempAC,
-      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon,
+      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,

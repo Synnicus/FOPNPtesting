@@ -85,16 +85,19 @@ function combinedProtectionFor(
   bodyArmor: { [k: string]: any } | null,
   helmet: { [k: string]: any } | null,
   natural: NaturalProtection | null | undefined,
+  shield?: { [k: string]: number } | null,
 ): { dt: number; dr: number } {
   const cap = dmgType.charAt(0).toUpperCase() + dmgType.slice(1);
   const dtField = `dt${cap}`;
   const drField = `dr${cap}`;
   const dt = ((bodyArmor?.[dtField] as number) ?? 0)
     + ((helmet?.[dtField] as number) ?? 0)
-    + ((natural?.[dtField as keyof NaturalProtection] as number) ?? 0);
+    + ((natural?.[dtField as keyof NaturalProtection] as number) ?? 0)
+    + ((shield?.[dtField] as number) ?? 0);
   const dr = Math.min(90, ((bodyArmor?.[drField] as number) ?? 0)
     + ((helmet?.[drField] as number) ?? 0)
-    + ((natural?.[drField as keyof NaturalProtection] as number) ?? 0));
+    + ((natural?.[drField as keyof NaturalProtection] as number) ?? 0)
+    + ((shield?.[drField] as number) ?? 0));
   return { dt, dr };
 }
 
@@ -586,7 +589,7 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, applyChem, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -660,6 +663,10 @@ export default function CombatScreen() {
   const [showWeaponPicker, setShowWeaponPicker] = useState(false);
   // Whether the currently open ammo/weapon picker should charge AP on selection.
   const [weaponPickerFree, setWeaponPickerFree] = useState(false);
+  // Pending 1H equip that needs a hand choice (both hands hold 1H weapons).
+  const [pendingHandChoice, setPendingHandChoice] = useState<{ weaponId: string; free: boolean } | null>(null);
+  // Dual-gun reload chooser.
+  const [showReloadPicker, setShowReloadPicker] = useState(false);
   // Inline result of the last streamlined-burst damage application.
   const [streamlinedDmgResult, setStreamlinedDmgResult] = useState<{ perHit: number[]; total: number; dt: number; dr: number } | null>(null);
 
@@ -678,6 +685,40 @@ export default function CombatScreen() {
   const weapon = attacker?.equippedWeaponId ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null : null;
   const bodyArmor = defender?.equippedBodyArmorId ? allArmor.find(a => a.id === defender.equippedBodyArmorId) ?? null : null;
   const helmet = defender?.equippedHelmetId ? allArmor.find(a => a.id === defender.equippedHelmetId) ?? null : null;
+
+  // ── Dual-wield state (two DIFFERENT 1H weapons, one per hand) ──────────────
+  // Absent hand ids fall back to "equipped weapon in the right hand".
+  const attackerLeftId = attacker?.leftHandWeaponId;
+  const attackerRightId = attacker?.rightHandWeaponId ?? (attacker?.leftHandWeaponId ? undefined : attacker?.equippedWeaponId);
+  const leftWeapon = attackerLeftId ? allWeapons.find(w => w.id === attackerLeftId) ?? null : null;
+  const rightWeapon = attackerRightId ? allWeapons.find(w => w.id === attackerRightId) ?? null : null;
+  const dualWielding = !!(leftWeapon && rightWeapon && leftWeapon.id !== rightWeapon.id);
+  // The held weapon that is NOT the active (equipped) one.
+  const offhandWeapon = dualWielding
+    ? (weapon?.id === leftWeapon!.id ? rightWeapon : leftWeapon)
+    : null;
+
+  // ── Shield mods: a held weapon with a shield buffs the wielder's AC/DT/DR ──
+  const shieldFor = (c: Character | null): { ac: number; prot: Record<string, number> | null } => {
+    if (!c) return { ac: 0, prot: null };
+    const ids = new Set<string>();
+    if (c.leftHandWeaponId) ids.add(c.leftHandWeaponId);
+    if (c.rightHandWeaponId) ids.add(c.rightHandWeaponId);
+    if (ids.size === 0 && c.equippedWeaponId) ids.add(c.equippedWeaponId);
+    let ac = 0; let prot: Record<string, number> | null = null;
+    for (const id of ids) {
+      const w = allWeapons.find(x => x.id === id);
+      if (!w) continue;
+      const fx = computeModEffects(w);
+      ac += fx.acBonus;
+      if (fx.shieldProtection) {
+        prot = prot ?? { dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0, drNormal: 0, drLaser: 0, drFire: 0, drPlasma: 0, drExplosion: 0 };
+        for (const k of Object.keys(fx.shieldProtection)) prot[k] += (fx.shieldProtection as any)[k];
+      }
+    }
+    return { ac, prot };
+  };
+  const defenderShield = shieldFor(defender);
   const isRanged = weapon ? RANGED_SKILLS.has(weapon.skill) : true;
   const isMelee = weapon ? isMeleeWeapon(weapon) : false;
   const isUnarmed = weapon ? weapon.skill === 'unarmed' : false;
@@ -780,7 +821,7 @@ export default function CombatScreen() {
   const defenderAgiAcDelta = defenderStoredAgi - defenderPositionalAgiAC;
   const defenderAC = defender
     ? Math.max(0, defender.armorClass + (defender.tempAC ?? 0) - defenderAgiAcDelta
-        + defenderPerkDef.ac + (defenderEffectMods?.acMod ?? 0))
+        + defenderPerkDef.ac + (defenderEffectMods?.acMod ?? 0) + defenderShield.ac)
     : 0;
 
   // Blind attacker suffers worst-case darkness penalty (manual light table).
@@ -1095,7 +1136,7 @@ export default function CombatScreen() {
     if (!weapon || shotResults.length === 0) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // Combined DT/DR from armor + defender natural protection (DT adds, DR sums capped at 90%)
-    const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural);
+    const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
     // Ammo: ignoresDT bypasses DT; drMod adjusts the target's DR (negative = AP).
     const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
     const ammoDrMod = loadedAmmo?.drMod ?? 0;
@@ -1186,6 +1227,42 @@ export default function CombatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, effectiveAPCost, spendAP]);
 
+  // Off-hand weapon single-attack AP cost (dual wield): the off-hand gets its
+  // own SPEND button when its cost differs from the active weapon's.
+  const offhandAPCost = offhandWeapon
+    ? Math.max(1, (offhandWeapon.apSingle ?? AP_COSTS.ATTACK_SINGLE) - perkBonuses.apDiscount)
+    : null;
+  const handleSpendOffhandAP = useCallback(() => {
+    if (!attacker || offhandAPCost === null) return;
+    spendAP(attacker.id, offhandAPCost);
+    setApSpent(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [attacker, offhandAPCost, spendAP]);
+
+  // Reload a SPECIFIC held gun (dual-wield chooser) — uses that weapon's own
+  // mods for reload cost/magazine, not the active weapon's.
+  const handleReloadWeapon = useCallback((w: Weapon) => {
+    if (!attacker) return;
+    const fx = computeModEffects(w);
+    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
+    const state = attacker.weaponAmmoStates.find(a => a.weaponId === w.id);
+    const cur = state?.currentAmmo ?? mag;
+    const cost = fx.reloadApOverride ?? AP_COSTS.RELOAD;
+    setShowReloadPicker(false);
+    if (cur >= mag) {
+      if (Platform.OS === 'web') alert(`${w.name} is already fully loaded (${cur}/${mag}).`);
+      else Alert.alert('Magazine Full', `${w.name} is already fully loaded (${cur}/${mag}).`);
+      return;
+    }
+    if (!spendAP(attacker.id, cost)) {
+      if (Platform.OS === 'web') alert(`Not enough AP (need ${cost}) to reload.`);
+      else Alert.alert('Not Enough AP', `Reload needs ${cost} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
+    reloadWeapon(attacker.id, w.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [attacker, spendAP, reloadWeapon]);
+
   const handleReload = useCallback(() => {
     if (!attacker || !weapon) return;
     // No-op when the magazine is already full.
@@ -1229,8 +1306,9 @@ export default function CombatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, weapon, setAmmoType]);
 
-  // Equip/switch to a weapon from the inventory. Free manual SET WEAPON.
-  const handleEquipWeapon = useCallback((weaponId: string, free: boolean) => {
+  // Equip into a specific hand, charging AP unless free. Used directly for
+  // unambiguous switches and by the hand-choice modal for dual-wield swaps.
+  const equipWithHand = useCallback((weaponId: string, free: boolean, hand: 'left' | 'right' | 'both') => {
     if (!attacker) return;
     if (!free) {
       if (!spendAP(attacker.id, AP_COSTS.EQUIP_WEAPON)) {
@@ -1239,10 +1317,40 @@ export default function CombatScreen() {
         return;
       }
     }
-    equipWeapon(attacker.id, weaponId, 'both');
+    equipWeapon(attacker.id, weaponId, hand);
     setShowWeaponPicker(false);
+    setPendingHandChoice(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, spendAP, equipWeapon]);
+
+  // Equip/switch to a weapon from the inventory. Free manual SET WEAPON.
+  // Hand-aware: a 1H weapon goes to an open hand when one is free; when both
+  // hands hold different 1H weapons, the user chooses which one to replace.
+  const handleEquipWeapon = useCallback((weaponId: string, free: boolean) => {
+    if (!attacker) return;
+    const newW = allWeapons.find(w => w.id === weaponId);
+    if (!newW) return;
+    if (getWeaponHands(newW) === 2) { equipWithHand(weaponId, free, 'both'); return; }
+    // Effective hands (absent hands fall back to equipped-in-right-hand).
+    const L = attacker.leftHandWeaponId;
+    const R = attacker.rightHandWeaponId ?? (attacker.leftHandWeaponId ? undefined : attacker.equippedWeaponId);
+    // Already holding this weapon → just make it the active one (free, no
+    // hand reassignment — prevents a 1H weapon occupying both hand slots).
+    if (weaponId === L || weaponId === R) {
+      setActiveWeapon(attacker.id, weaponId);
+      setShowWeaponPicker(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      return;
+    }
+    const lW = L ? allWeapons.find(w => w.id === L) : undefined;
+    const heldTwoHanded = !!(L && R && L === R && lW && getWeaponHands(lW) === 2);
+    if (heldTwoHanded) { equipWithHand(weaponId, free, 'right'); return; } // stows the 2H (context clears the other hand)
+    if (!L && !R) { equipWithHand(weaponId, free, 'right'); return; }
+    if (!L) { equipWithHand(weaponId, free, 'left'); return; }   // left hand open
+    if (!R) { equipWithHand(weaponId, free, 'right'); return; }  // right hand open
+    // Both hands hold 1H weapons → ask which to replace.
+    setPendingHandChoice({ weaponId, free });
+  }, [attacker, allWeapons, equipWithHand, setActiveWeapon]);
 
   // Weapons the attacker can switch to: their carried inventory (equipped
   // weapon included as fallback for older characters).
@@ -1428,7 +1536,7 @@ export default function CombatScreen() {
         const selfBodyArmor = attacker.equippedBodyArmorId ? allArmor.find(a => a.id === attacker.equippedBodyArmorId) ?? null : null;
         const selfHelmet = attacker.equippedHelmetId ? allArmor.find(a => a.id === attacker.equippedHelmetId) ?? null : null;
         const selfNatural = attacker.naturalProtection ?? getRaceById(attacker.race)?.naturalProtection ?? null;
-        const sp = combinedProtectionFor(weapon.damageType, selfBodyArmor as any, selfHelmet as any, selfNatural);
+        const sp = combinedProtectionFor(weapon.damageType, selfBodyArmor as any, selfHelmet as any, selfNatural, shieldFor(attacker).prot);
         const finalSelf = applyProtection(half, sp.dt, sp.dr);
         applyDamage(attacker.id, finalSelf);
         notes.push(`Damaged self — ${finalSelf} damage (half of ${rawBase}, armor applied)`);
@@ -1456,13 +1564,13 @@ export default function CombatScreen() {
   }, [attacker, weapon, currentAmmo, allArmor, spendAmmo, jamWeapon, spendAP, applyDamage, setPosition, setWeaponCondition]);
 
   // Display-level DT/DR (before calculateDamage is called) — armor + natural protection
-  const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural) : { dt: 0, dr: 0 };
+  const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot) : { dt: 0, dr: 0 };
   const combinedDT = displayProt.dt;
   const combinedDR = displayProt.dr;
 
   // Compact DT/DR summary across all damage types for the defender info panel
   const defenderProtSummary = DAMAGE_TYPE_ORDER.map(dt => {
-    const p = combinedProtectionFor(dt, bodyArmor as any, helmet as any, defenderNatural);
+    const p = combinedProtectionFor(dt, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
     return `${DAMAGE_TYPE_LABELS[dt]} ${p.dt}/${p.dr}%`;
   }).join('  ');
 
@@ -1661,6 +1769,18 @@ export default function CombatScreen() {
                         )}
                       </View>
                     )}
+                    {/* Dual wield: off-hand weapon (+ its ammo) and a free hand-swap */}
+                    {dualWielding && offhandWeapon && (
+                      <TouchableOpacity onPress={() => setActiveWeapon(attacker.id, offhandWeapon.id)} style={{ marginTop: 2 }}>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }} numberOfLines={1}>
+                          ⇄ Off-hand: {offhandWeapon.name}
+                          {offhandWeapon.magazineSize > 0
+                            ? ` [${attacker.weaponAmmoStates.find(a => a.weaponId === offhandWeapon.id)?.currentAmmo ?? offhandWeapon.magazineSize}/${offhandWeapon.magazineSize}]`
+                            : ''}
+                          {'  (tap to use)'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
                     ))}
@@ -1697,6 +1817,7 @@ export default function CombatScreen() {
                       {defenderProtSummary}
                     </Text>
                     {defenderNatural && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>incl. natural protection</Text>}
+                    {(defenderShield.ac > 0 || defenderShield.prot) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>🛡 incl. shield{defenderShield.ac > 0 ? ` (+${defenderShield.ac} AC)` : ''}</Text>}
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${defender.currentAP}/${defender.maxAP}` : ''}
                     </Text>
@@ -1738,8 +1859,18 @@ export default function CombatScreen() {
                 </TouchableOpacity>
               )}
               {apSpent && <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: '#4a8c3f22', borderWidth: 1, borderColor: '#4a8c3f' }}><Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>✓ AP SPENT</Text></View>}
+              {/* Dual wield: off-hand weapon gets its own SPEND button when its AP cost differs */}
+              {!apSpent && dualWielding && offhandWeapon && offhandAPCost !== null && offhandAPCost !== effectiveAPCost && (
+                <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary }} onPress={handleSpendOffhandAP}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>SPEND {offhandAPCost} AP — {offhandWeapon.name.toUpperCase()}</Text>
+                </TouchableOpacity>
+              )}
               {weapon && weapon.magazineSize > 0 && (
-                <TouchableOpacity disabled={magazineFull} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 4, opacity: magazineFull ? 0.4 : 1 }} onPress={handleReload}>
+                <TouchableOpacity disabled={magazineFull && !(dualWielding && offhandWeapon && offhandWeapon.magazineSize > 0)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 4, opacity: (magazineFull && !(dualWielding && offhandWeapon && offhandWeapon.magazineSize > 0)) ? 0.4 : 1 }} onPress={() => {
+                  // Two guns held → choose which one to reload.
+                  if (dualWielding && offhandWeapon && offhandWeapon.magazineSize > 0) setShowReloadPicker(true);
+                  else handleReload();
+                }}>
                   <Feather name="refresh-cw" size={13} color={colors.mutedForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>RELOAD {reloadApCost} AP</Text>
                 </TouchableOpacity>
@@ -2161,7 +2292,7 @@ export default function CombatScreen() {
             </TouchableOpacity>
             {streamlinedRolled && streamlinedHits > 0 && weapon && !streamlinedDmgResult && (
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary }} onPress={() => {
-                const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural);
+                const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
                 const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
                 const burstDT = ammoIgnoresDT ? 0 : Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
                 const burstDR = Math.max(0, Math.min(90, burstProt.dr + (loadedAmmo?.drMod ?? 0) + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
@@ -2475,6 +2606,39 @@ export default function CombatScreen() {
         }))}
         onSelect={(id) => handleEquipWeapon(id, weaponPickerFree)}
         onClose={() => setShowWeaponPicker(false)}
+      />
+      {/* ─── Hand chooser: both hands hold 1H weapons — which gets replaced? ─── */}
+      <OptionPickerModal
+        visible={!!pendingHandChoice}
+        title="REPLACE WHICH WEAPON?"
+        subtitle={pendingHandChoice
+          ? `Equipping ${allWeapons.find(w => w.id === pendingHandChoice.weaponId)?.name ?? 'weapon'}${pendingHandChoice.free ? ' (free)' : ` — ${AP_COSTS.EQUIP_WEAPON} AP`}`
+          : undefined}
+        options={[
+          { key: 'left', label: `Left hand — ${leftWeapon?.name ?? 'empty'}`, sublabel: 'Replace the left-hand weapon' },
+          { key: 'right', label: `Right hand — ${rightWeapon?.name ?? 'empty'}`, sublabel: 'Replace the right-hand weapon' },
+        ]}
+        onSelect={(hand) => { if (pendingHandChoice) equipWithHand(pendingHandChoice.weaponId, pendingHandChoice.free, hand as 'left' | 'right'); }}
+        onClose={() => setPendingHandChoice(null)}
+      />
+      {/* ─── Reload chooser (dual-wielded guns) ─── */}
+      <OptionPickerModal
+        visible={showReloadPicker}
+        title="RELOAD WHICH GUN?"
+        subtitle="AP is charged for the selected gun only"
+        options={[weapon, offhandWeapon].filter((w): w is Weapon => !!w && w.magazineSize > 0).map(w => {
+          const fx = computeModEffects(w);
+          const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
+          const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
+          return {
+            key: w.id,
+            label: `${w.name}  [${cur}/${mag}]`,
+            sublabel: `${fx.reloadApOverride ?? AP_COSTS.RELOAD} AP`,
+            disabled: cur >= mag,
+          };
+        })}
+        onSelect={(id) => { const w = [weapon, offhandWeapon].find(x => x?.id === id); if (w) handleReloadWeapon(w); }}
+        onClose={() => setShowReloadPicker(false)}
       />
       {/* ─── Ammo picker (compatible types only) ─── */}
       <OptionPickerModal
