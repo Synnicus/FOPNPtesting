@@ -23,7 +23,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 4, perception: 4, endurance: 4, charisma: 3, intelligence: 3, agility: 5, luck: 3 },
     maxHp: 22, armorClass: 10, maxAP: 8,
     skills: { ...defaultSkills(), smallGuns: 35, meleeWeapons: 30, unarmed: 30, firstAid: 15, sneak: 25 },
-    equippedWeaponId: 'pipe_pistol', equippedBodyArmorId: 'leather_armor',
+    equippedWeaponId: 'zip_gun', inventoryWeaponIds: ['zip_gun', 'knife', 'molotov'], equippedBodyArmorId: 'leather_armor',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -32,7 +32,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 6, perception: 5, endurance: 5, charisma: 3, intelligence: 4, agility: 6, luck: 4 },
     maxHp: 40, armorClass: 20, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 60, meleeWeapons: 50, unarmed: 45, firstAid: 25, sneak: 35 },
-    equippedWeaponId: 'assault_rifle', equippedBodyArmorId: 'metal_armor',
+    equippedWeaponId: 'assault_rifle', inventoryWeaponIds: ['assault_rifle', '10mm_pistol', 'machete', 'frag_grenade'], equippedBodyArmorId: 'metal_armor',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -41,7 +41,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 8, perception: 6, endurance: 7, charisma: 5, intelligence: 5, agility: 6, luck: 5 },
     maxHp: 60, armorClass: 22, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 75, meleeWeapons: 65, unarmed: 60, bigGuns: 40, firstAid: 40, speech: 35 },
-    equippedWeaponId: 'combat_shotgun', equippedBodyArmorId: 'reaver_banding',
+    equippedWeaponId: 'combat_shotgun', inventoryWeaponIds: ['combat_shotgun', 'desert_eagle', 'sledgehammer', 'frag_grenade'], equippedBodyArmorId: 'reaver_banding',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -50,7 +50,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 6, perception: 6, endurance: 6, charisma: 4, intelligence: 3, agility: 7, luck: 5 },
     maxHp: 38, armorClass: 12, maxAP: 10,
     skills: { ...defaultSkills(), meleeWeapons: 55, unarmed: 50, throwing: 40, sneak: 45, outdoorsman: 60 },
-    equippedWeaponId: 'spear',
+    equippedWeaponId: 'spear', inventoryWeaponIds: ['spear', 'knife', 'sharpened_pole_throwing'],
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -59,7 +59,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 5, perception: 6, endurance: 5, charisma: 4, intelligence: 5, agility: 5, luck: 4 },
     maxHp: 42, armorClass: 22, maxAP: 8,
     skills: { ...defaultSkills(), smallGuns: 65, meleeWeapons: 40, firstAid: 45, speech: 35, outdoorsman: 40 },
-    equippedWeaponId: 'assault_rifle', equippedBodyArmorId: 'combat_armor', equippedHelmetId: 'combat_helmet',
+    equippedWeaponId: 'assault_rifle', inventoryWeaponIds: ['assault_rifle', 'vp91z_m9_fs_9mm_beretta_pistol', 'combat_knife', 'frag_grenade'], equippedBodyArmorId: 'combat_armor', equippedHelmetId: 'combat_helmet',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -68,7 +68,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 7, perception: 6, endurance: 7, charisma: 4, intelligence: 6, agility: 5, luck: 5 },
     maxHp: 70, armorClass: 35, maxAP: 8,
     skills: { ...defaultSkills(), smallGuns: 80, energyWeapons: 70, meleeWeapons: 65, repair: 60, science: 50 },
-    equippedWeaponId: 'laser_rifle', equippedBodyArmorId: 'brotherhood_power_armor', equippedHelmetId: 'power_helmet',
+    equippedWeaponId: 'laser_rifle', inventoryWeaponIds: ['laser_rifle', 'laser_pistol', 'super_sledge', 'pulse_grenade'], equippedBodyArmorId: 'brotherhood_power_armor', equippedHelmetId: 'power_helmet',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
   {
@@ -77,7 +77,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 6, perception: 7, endurance: 6, charisma: 3, intelligence: 6, agility: 6, luck: 4 },
     maxHp: 65, armorClass: 30, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 80, energyWeapons: 75, meleeWeapons: 55, science: 60, repair: 55 },
-    equippedWeaponId: 'plasma_rifle', equippedBodyArmorId: 'adv_power_armor', equippedHelmetId: 'adv_power_helmet',
+    equippedWeaponId: 'plasma_rifle', inventoryWeaponIds: ['plasma_rifle', 'plasma_pistol', 'combat_knife', 'plasma_grenade'], equippedBodyArmorId: 'adv_power_armor', equippedHelmetId: 'adv_power_helmet',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
 
@@ -115,7 +115,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 5, perception: 8, endurance: 7, charisma: 3, intelligence: 6, agility: 6, luck: 5 },
     maxHp: 50, armorClass: 15, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 50, meleeWeapons: 45, unarmed: 40, firstAid: 30, science: 30 },
-    equippedWeaponId: 'hunting_rifle', equippedBodyArmorId: 'superior_ghoul_armor',
+    equippedWeaponId: 'hunting_rifle', inventoryWeaponIds: ['hunting_rifle', '10mm_pistol', 'knife', 'molotov'], equippedBodyArmorId: 'superior_ghoul_armor',
     radiationResistance: 60, gasResistance: 0, electricityResistance: 0,
   },
 
@@ -126,7 +126,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 9, perception: 5, endurance: 9, charisma: 2, intelligence: 3, agility: 5, luck: 4 },
     maxHp: 65, armorClass: 10, maxAP: 8,
     skills: { ...defaultSkills(), smallGuns: 50, bigGuns: 40, meleeWeapons: 55, unarmed: 60, firstAid: 20 },
-    equippedWeaponId: 'assault_rifle', equippedBodyArmorId: 'mutant_plate_armor',
+    equippedWeaponId: 'assault_rifle', inventoryWeaponIds: ['assault_rifle', 'super_sledge', 'frag_grenade'], equippedBodyArmorId: 'mutant_plate_armor',
     // Super mutants have thick FEV-toughened hide (matches premade mutant NP 0/25).
     naturalProtection: natural([0, 0, 0, 0, 0], [25, 15, 15, 15, 15]),
     radiationResistance: 10, gasResistance: 10, electricityResistance: 0,
@@ -137,7 +137,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 11, perception: 5, endurance: 11, charisma: 2, intelligence: 3, agility: 4, luck: 4 },
     maxHp: 90, armorClass: 10, maxAP: 7,
     skills: { ...defaultSkills(), smallGuns: 55, bigGuns: 65, meleeWeapons: 70, unarmed: 70 },
-    equippedWeaponId: 'minigun', equippedBodyArmorId: 'mutant_plate_armor',
+    equippedWeaponId: 'minigun', inventoryWeaponIds: ['minigun', 'super_sledge', 'frag_grenade'], equippedBodyArmorId: 'mutant_plate_armor',
     naturalProtection: natural([0, 0, 0, 0, 0], [30, 20, 20, 20, 20]),
     radiationResistance: 15, gasResistance: 15, electricityResistance: 0,
   },
@@ -147,7 +147,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 12, perception: 7, endurance: 12, charisma: 4, intelligence: 6, agility: 6, luck: 6 },
     maxHp: 120, armorClass: 15, maxAP: 9,
     skills: { ...defaultSkills(), smallGuns: 75, bigGuns: 80, energyWeapons: 65, meleeWeapons: 80, unarmed: 80 },
-    equippedWeaponId: 'bozar', equippedBodyArmorId: 'spiked_mutant_plate_armor',
+    equippedWeaponId: 'bozar', inventoryWeaponIds: ['bozar', 'super_sledge', 'plasma_grenade'], equippedBodyArmorId: 'spiked_mutant_plate_armor',
     naturalProtection: natural([0, 0, 0, 0, 0], [35, 25, 25, 25, 25]),
     radiationResistance: 20, gasResistance: 20, electricityResistance: 0,
   },
@@ -157,7 +157,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 10, perception: 6, endurance: 10, charisma: 2, intelligence: 5, agility: 8, luck: 5 },
     maxHp: 80, armorClass: 20, maxAP: 11,
     skills: { ...defaultSkills(), smallGuns: 60, meleeWeapons: 75, unarmed: 70, sneak: 80 },
-    equippedWeaponId: 'super_sledge', equippedBodyArmorId: 'mutant_plate_armor',
+    equippedWeaponId: 'super_sledge', inventoryWeaponIds: ['super_sledge', 'plasma_pistol'], equippedBodyArmorId: 'mutant_plate_armor',
     naturalProtection: natural([0, 0, 0, 0, 0], [25, 20, 15, 20, 15]),
     radiationResistance: 10, gasResistance: 10, electricityResistance: 0,
   },
@@ -220,7 +220,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
   {
     id: 'eyebot', name: 'Eyebot', category: 'robot',
     description: 'A small floating surveillance drone with a laser.',
-    special: { strength: 2, perception: 12, endurance: 3, charisma: 1, intelligence: 6, agility: 12, luck: 5 },
+    special: { strength: 3, perception: 12, endurance: 3, charisma: 1, intelligence: 6, agility: 12, luck: 5 },
     maxHp: 20, armorClass: 25, maxAP: 14,
     skills: { ...defaultSkills(), energyWeapons: 55 },
     equippedWeaponId: 'laser_pistol',

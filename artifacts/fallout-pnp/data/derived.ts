@@ -51,8 +51,10 @@ export function calcCarryWeight(special: SPECIALStats): number {
   return 25 + special.strength * 25;
 }
 
+/** Melee Damage (MD) per the manual's STR table: STR 1-6 → 1, then +1 per
+ *  point above 6 (7→2, 8→3, … "and so on"). Minimum 1. */
 export function calcMeleeDamageBonus(special: SPECIALStats): number {
-  return Math.max(0, Math.floor(special.strength / 2) - 2);
+  return Math.max(1, special.strength - 5);
 }
 
 // ─── Base Skill Values from SPECIAL ──────────────────────────────────────────

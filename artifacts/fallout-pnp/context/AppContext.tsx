@@ -10,6 +10,14 @@ import { computeEffectModifiers } from '@/data/effects';
 
 // Effective max AP for a character: derived max plus active chem apMod
 // (Jet grants +2 AP, etc.). Floor 1 so a crashing chem never zeroes AP.
+// When a knocked-out combatant's own turn begins, one KO turn elapses; they
+// wake once the counter runs out (position stays prone until they Get Up).
+function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
+  if (!c.isKnockedOut) return c;
+  const left = Math.max(0, (c.knockOutRoundsLeft ?? 0) - 1);
+  return { ...c, knockOutRoundsLeft: left, isKnockedOut: left > 0 };
+}
+
 function charMaxAP(c: Character): number {
   const base = c.maxAP ?? calcMaxAP(c.special);
   const apMod = computeEffectModifiers(c).apMod;
@@ -69,6 +77,7 @@ interface AppContextValue extends AppState {
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
   setPosition: (characterId: string, position: PositionType) => void;
+  setKnockedOut: (characterId: string, rounds: number) => void;
   addTempAC: (characterId: string, ac: number) => void;
   clearTempAC: (characterId: string) => void;
 
@@ -227,6 +236,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
         ? { ...e, currentAP: amount !== undefined ? Math.min(e.maxAP, e.currentAP + amount) : e.maxAP }
         : e),
+    }));
+  }, []);
+
+  // Knock a character unconscious for N of their own turns. 0 rounds wakes them.
+  const setKnockedOut = useCallback((characterId: string, rounds: number) => {
+    setState(s => ({
+      ...s,
+      characters: s.characters.map(c => c.id === characterId
+        ? { ...c, isKnockedOut: rounds > 0, knockOutRoundsLeft: Math.max(0, rounds) }
+        : c),
     }));
   }, []);
 
@@ -523,9 +542,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         return e;
       });
+      // End of the current combatant's turn: convert AP → tempAC and, if
+      // knocked out, consume one KO turn NOW (their skipped turn is over).
       let chars = s.characters.map(c => {
         if (c.id === currentActive?.characterId) {
-          return { ...c, tempAC: c.tempAC + c.currentAP, currentAP: 0 };
+          return koTick({ ...c, tempAC: c.tempAC + c.currentAP, currentAP: 0 });
         }
         return c;
       });
@@ -534,14 +555,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // tempAC (from unspent AP) until their own turn comes around again.
       if (entries.every(e => e.hasActed)) {
         const round = s.currentRound + 1;
+        const firstChar0 = entries[0]?.characterId;
+        // Turn start: KO'd combatants get no AP (they can't act this turn).
+        const firstKO = !!chars.find(c => c.id === firstChar0)?.isKnockedOut;
         entries = entries.map((e, i) => ({
           ...e, hasActed: false, isActive: i === 0,
           // Only the new active combatant replenishes AP and loses tempAC
-          ...(i === 0 ? { currentAP: e.maxAP, tempAC: 0 } : {}),
+          ...(i === 0 ? { currentAP: firstKO ? 0 : e.maxAP, tempAC: 0 } : {}),
         }));
-        const firstChar = entries[0]?.characterId;
-        if (firstChar) {
-          chars = chars.map(c => c.id === firstChar ? { ...c, currentAP: charMaxAP(c), tempAC: 0 } : c);
+        if (firstChar0) {
+          chars = chars.map(c => c.id === firstChar0 ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c), tempAC: 0 } : c);
         }
         return { ...s, initiativeEntries: entries, characters: chars, currentRound: round, activeEntryId: entries[0].id };
       }
@@ -552,14 +575,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         nextIdx = (nextIdx + 1) % entries.length;
         loops++;
       }
+      // Turn start: KO'd combatants get no AP (they can't act this turn) —
+      // mirrored on both the initiative entry and the character.
+      const nextKO = !!chars.find(c => c.id === entries[nextIdx]?.characterId)?.isKnockedOut;
       entries = entries.map((e, i) => ({
         ...e,
         isActive: i === nextIdx,
-        ...(i === nextIdx ? { tempAC: 0, currentAP: e.maxAP } : {}),
+        ...(i === nextIdx ? { tempAC: 0, currentAP: nextKO ? 0 : e.maxAP } : {}),
       }));
       const nextActive = entries[nextIdx];
       if (nextActive?.characterId) {
-        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: charMaxAP(c), tempAC: 0 } : c);
+        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c), tempAC: 0 } : c);
       }
       return { ...s, initiativeEntries: entries, characters: chars, activeEntryId: nextActive?.id ?? null };
     });
@@ -568,16 +594,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const nextRound = useCallback(() => {
     setState(s => {
       if (s.initiativeEntries.length === 0) return s;
+      const firstChar = s.initiativeEntries[0]?.characterId;
+      const prevActiveChar = s.initiativeEntries.find(e => e.id === s.activeEntryId)?.characterId;
+      // Skipping ahead ends the previously active combatant's turn — consume a
+      // KO turn for them unconditionally (even if they are also first in
+      // order), THEN start the new first turn using the ticked state.
+      const chars = s.characters.map(c => {
+        let out = c.id === prevActiveChar ? koTick(c) : c;
+        if (out.id === firstChar) {
+          out = { ...out, currentAP: out.isKnockedOut ? 0 : charMaxAP(out), tempAC: 0 };
+        }
+        return out;
+      });
       // Only the new active (first) combatant replenishes AP / clears tempAC —
-      // everyone else keeps their tempAC until their own turn starts.
+      // everyone else keeps their tempAC until their own turn starts. A still-
+      // KO'd first combatant gets no AP (mirrored on entry and character).
+      const firstKO = !!chars.find(c => c.id === firstChar)?.isKnockedOut;
       const entries = s.initiativeEntries.map((e, i) => ({
         ...e, hasActed: false, isActive: i === 0,
-        ...(i === 0 ? { currentAP: e.maxAP, tempAC: 0 } : {}),
+        ...(i === 0 ? { currentAP: firstKO ? 0 : e.maxAP, tempAC: 0 } : {}),
       }));
-      const firstChar = entries[0]?.characterId;
-      const chars = firstChar
-        ? s.characters.map(c => c.id === firstChar ? { ...c, currentAP: charMaxAP(c), tempAC: 0 } : c)
-        : s.characters;
       return { ...s, initiativeEntries: entries, characters: chars, currentRound: s.currentRound + 1, activeEntryId: entries[0]?.id ?? null };
     });
   }, []);
@@ -645,7 +681,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...state,
       allWeapons, allArmor,
       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
-      applyDamage, healCharacter, spendAP, restoreAP, setPosition, addTempAC, clearTempAC,
+      applyDamage, healCharacter, spendAP, restoreAP, setPosition, setKnockedOut, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon,
       addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,

@@ -34,3 +34,5 @@ Integrated into the combat screen (index.tsx) — no separate initiative tab.
 - `nextRound()`: resets all AP to max, clears tempAC
 
 **Why:** DT-then-DR is the Fallout PnP rulebook formula. 'bio' was dropped as a damage type in v4.
+
+Melee Damage (MD): manual table = `max(1, STR−5)` (STR 1-6→1, 7→2, 8→3…). Bonus HtH Damage perk (+2/rank) and trait bonuses (Heavy Handed +4, Domesticated −2) raise MD itself — add them inside the MD term only, never also via the generic perk-damage path (double-count risk).

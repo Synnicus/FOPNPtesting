@@ -289,6 +289,8 @@ export interface BestiaryTemplate {
   skills: CharacterSkills;
 
   equippedWeaponId?: string;
+  /** Carried weapons incl. the equipped one — sidearms / melee / throwables. */
+  inventoryWeaponIds?: string[];
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;
 

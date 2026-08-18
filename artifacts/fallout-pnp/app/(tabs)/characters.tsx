@@ -25,7 +25,7 @@ import {
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
-import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait } from '@/data/traits';
+import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
@@ -563,7 +563,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         </View>
 
         {/* Tab bar */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }} contentContainerStyle={{ paddingHorizontal: 8 }}>
+        {/* flexGrow: 0 — a horizontal ScrollView otherwise stretches to fill the
+            modal's vertical flex space, leaving a huge blank gap under the tabs. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }} contentContainerStyle={{ paddingHorizontal: 8 }}>
           {TABS.map((t, i) => (
             <TouchableOpacity key={t} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primary : 'transparent' }} onPress={() => setActiveTab(i)}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: activeTab === i ? colors.primary : colors.mutedForeground }}>{t.toUpperCase()}</Text>
@@ -827,7 +829,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     ['Max HP', char.maxHp], ['Max AP', char.maxAP], ['AC', char.armorClass],
                     ['Sequence', char.sequence], ['Crit%', calcCriticalChance(sFx)],
                     ['Heal/day', calcHealingRate(sFx) + pdb.healingRate], ['Carry', `${calcCarryWeight(sFx) + pdb.carryWeight}lb`],
-                    ['Melee+', calcMeleeDamageBonus(sFx)], ['SP/lvl', calcSkillPointsPerLevel(sFx)],
+                    ['Melee dmg', calcMeleeDamageBonus(sFx)
+                      + 2 * (char.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0)
+                      + (computeTraitEffects(char).meleeDamageBonus ?? 0)],
+                    ['SP/lvl', calcSkillPointsPerLevel(sFx)],
                   ] as [string, string | number][];
                 })().map(([l, v]) => (
                   <View key={l} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>

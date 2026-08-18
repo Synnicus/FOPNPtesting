@@ -175,7 +175,9 @@ function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRan
       if (fx.rangedDamageBonus) { result.damage += fx.rangedDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.rangedDamageBonus * rank} ranged dmg`); }
     } else {
       if (fx.meleeToHitBonus) { result.toHit += fx.meleeToHitBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeToHitBonus * rank}% melee to-hit`); }
-      if (fx.meleeDamageBonus) { result.damage += fx.meleeDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeDamageBonus * rank} melee dmg`); }
+      // Bonus HtH Damage raises the Melee Damage (MD) stat itself — it is
+      // counted inside the MD term of the damage sum, NOT here (would double).
+      if (fx.meleeDamageBonus && perk.id !== 'bonus_hth_damage') { result.damage += fx.meleeDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeDamageBonus * rank} melee dmg`); }
       if (fx.allHitsAreCrits) { result.allHitsAreCrits = true; result.notes.push(`${perk.name}: all hits are crits`); }
     }
     // Penetrator etc.: DT ignore applies to the attack regardless of ranged/melee
@@ -476,9 +478,9 @@ function KnockdownCard({ damage, defenderStr, defenderEnd, onProne }: {
 }
 
 // ─── Critical Hit Modal (non-aimed) ──────────────────────────────────────────
-function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, betterCriticals }: {
+function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, onSelect, betterCriticals }: {
   visible: boolean; onClose: () => void; rolledEntry: CritTableEntry | null;
-  onRoll: () => void; betterCriticals: boolean;
+  onRoll: () => void; onSelect: (entry: CritTableEntry) => void; betterCriticals: boolean;
 }) {
   const colors = useColors();
   return (
@@ -497,23 +499,26 @@ function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, betterCritica
             {betterCriticals && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: '#4a8c3f', marginBottom: 4 }}>Better Criticals: non-fatal crits deal ×1.5 damage.</Text>
             )}
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginBottom: 2 }}>
+              {rolledEntry ? 'Result applied — resolves once per critical.' : 'Rolled the dice at the table? Tap a row to apply that result manually.'}
+            </Text>
             {CRITICAL_HIT_TABLE.map(entry => {
               const active = rolledEntry?.roll === entry.roll;
               return (
-                <View key={entry.roll} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 6, backgroundColor: active ? colors.primary + '33' : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
+                <TouchableOpacity key={entry.roll} disabled={!!rolledEntry} onPress={() => onSelect(entry)} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 6, opacity: rolledEntry && !active ? 0.5 : 1, backgroundColor: active ? colors.primary + '33' : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
                   <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: active ? colors.primary : colors.mutedForeground, minWidth: 22, textAlign: 'center' }}>{entry.roll}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: active ? colors.primary : colors.foreground }}>{entry.title}</Text>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{entry.description}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </ScrollView>
           <View style={{ padding: 14, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 }}>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={onRoll}>
-              <Feather name="refresh-cw" size={16} color={colors.primaryForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL 1d10</Text>
+            <TouchableOpacity disabled={!!rolledEntry} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: rolledEntry ? colors.secondary : colors.primary }} onPress={onRoll}>
+              <Feather name="refresh-cw" size={16} color={rolledEntry ? colors.mutedForeground : colors.primaryForeground} />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: rolledEntry ? colors.mutedForeground : colors.primaryForeground }}>ROLL 1d10</Text>
             </TouchableOpacity>
             {rolledEntry && (
               <View style={{ padding: 10, borderRadius: colors.radius, backgroundColor: colors.primary + '22', borderWidth: 1, borderColor: colors.primary }}>
@@ -581,7 +586,7 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, applyChem, setPosition, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, applyChem, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -1102,10 +1107,16 @@ export default function CombatScreen() {
     // Optional manual base-damage override (replaces the rolled dice total).
     const overrideVal = damageOverride.trim() === '' ? null : Math.max(0, parseInt(damageOverride, 10) || 0);
 
-    // Melee/unarmed damage bonus from STR + race bonus (e.g. Deathclaw +5)
+    // Melee Damage (MD): STR table (chem-adjusted STR, e.g. Buffout) + race
+    // bonus (e.g. Deathclaw +5) + Bonus HtH Damage perk (+2/rank — the perk
+    // raises MD itself, so it lives HERE and not in perkBonuses) + traits
+    // (Heavy Handed +4, Domesticated −2).
     const raceMeleeBonus = isMeleeOrUnarmed ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
-    // Uses chem-adjusted STR (e.g. Buffout) for the melee damage bonus.
-    const meleeDmgBonus = (isMeleeOrUnarmed && attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus;
+    const hthPerkBonus = isMeleeOrUnarmed ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
+    const traitMeleeBonus = isMeleeOrUnarmed && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
+    const meleeDmgBonus = isMeleeOrUnarmed
+      ? Math.max(0, (attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
+      : 0;
 
     const damages = shotResults.map((shot, i) => {
       if (!shot.hit) return null;
@@ -1311,11 +1322,17 @@ export default function CombatScreen() {
     if (fx.cripples === 'arm') { const loc = pickLimbSide('arm'); addInjury(defender.id, makeInjury(loc, 'Crippled arm')); notes.push(`Crippled ${loc}`); }
     if (fx.cripples === 'leg') { const loc = pickLimbSide('leg'); addInjury(defender.id, makeInjury(loc, 'Crippled leg')); notes.push(`Crippled ${loc}`); }
     if (fx.blinds) { addInjury(defender.id, makeInjury('eyes', 'Blindness')); notes.push('Blinded (PE → 1)'); }
-    if (fx.knocksUnconscious) notes.push('Target knocked unconscious');
+    if (fx.knocksUnconscious) {
+      // Unconscious targets drop prone automatically and skip their turns (1d4).
+      const turns = rollDie(4);
+      setPosition(defender.id, 'prone');
+      setKnockedOut(defender.id, turns);
+      notes.push(`Target knocked unconscious for ${turns} turn(s) — knocked prone`);
+    }
     setAimedCritNotes(notes);
     setAimedCritApplied(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury]);
+  }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
 
   const handleApplyDamage = useCallback(() => {
     if (!defender || totalDamage === 0) return;
@@ -1328,23 +1345,38 @@ export default function CombatScreen() {
     setDamageApplied(true);
   }, [defender, totalDamage, applyDamage, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
 
-  // Roll on the non-aimed critical-hit table (1d10) and apply the result.
-  const rollCritTable = useCallback(() => {
+  // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
+  // and the manual "player rolled in real life" selection).
+  const applyCritEntry = useCallback((entry: CritTableEntry, manual: boolean) => {
     if (!defender) return;
-    const critRoll = rollD10();
-    const entry = CRITICAL_HIT_TABLE.find(e => e.roll === critRoll) ?? CRITICAL_HIT_TABLE[0];
+    // One resolution per critical event — repeated taps/rolls would stack
+    // duplicate injuries. The entry resets when a new attack is rolled.
+    if (critTableEntry) return;
     setCritTableEntry(entry);
     setShotDamages(null); setDamageApplied(false);
-    const notes: string[] = [`Rolled ${entry.roll}: ${entry.title}`];
+    const notes: string[] = [`${manual ? 'Manual pick' : 'Rolled'} ${entry.roll}: ${entry.title}`];
     if (entry.cripples === 'arm') { const loc = pickLimbSide('arm'); addInjury(defender.id, makeInjury(loc, 'Crippled arm')); notes.push(`Crippled ${loc}`); }
     if (entry.cripples === 'leg') { const loc = pickLimbSide('leg'); addInjury(defender.id, makeInjury(loc, 'Crippled leg')); notes.push(`Crippled ${loc}`); }
     if (entry.blinds) { addInjury(defender.id, makeInjury('eyes', 'Blindness')); notes.push('Blinded (PE → 1)'); }
     if (entry.knockdown) { setPosition(defender.id, 'prone'); notes.push('Knocked down (prone)'); }
-    if (entry.unconsciousTurns) { const turns = rollDie(4); notes.push(`Unconscious for ${turns} turn(s) (${entry.unconsciousTurns})`); }
+    if (entry.unconsciousTurns) {
+      const turns = rollDie(4);
+      // Unconscious targets drop prone automatically and skip their turns.
+      setPosition(defender.id, 'prone');
+      setKnockedOut(defender.id, turns);
+      notes.push(`Unconscious for ${turns} turn(s) (${entry.unconsciousTurns}) — knocked prone`);
+    }
     if (entry.instantDeath) { applyDamage(defender.id, defender.currentHp); notes.push('INSTANT DEATH — HP set to 0'); }
     setCritEffectNotes(notes);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [defender, pickLimbSide, addInjury, makeInjury, setPosition, applyDamage]);
+  }, [defender, critTableEntry, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut, applyDamage]);
+
+  // Roll on the non-aimed critical-hit table (1d10) and apply the result.
+  const rollCritTable = useCallback(() => {
+    const critRoll = rollD10();
+    const entry = CRITICAL_HIT_TABLE.find(e => e.roll === critRoll) ?? CRITICAL_HIT_TABLE[0];
+    applyCritEntry(entry, false);
+  }, [applyCritEntry]);
 
   // A critical failure must be resolved (rolled on the Critical Failure table)
   // before the attacker may continue — the failure effect can't be skipped.
@@ -1352,7 +1384,9 @@ export default function CombatScreen() {
   // The attack button is blocked while a crit-fail is unresolved, or when the
   // attacker physically cannot make this attack (crippled arms / two-handed
   // block / prone melee).
-  const attackBlocked = critFailPending || cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked;
+  // A knocked-out attacker cannot act at all.
+  const attackerKO = !!attacker?.isKnockedOut;
+  const attackBlocked = critFailPending || cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked || attackerKO;
 
   // Roll on the Critical Failure table (1d10) and auto-apply to the ATTACKER.
   const rollCritFailTable = useCallback(() => {
@@ -1611,6 +1645,7 @@ export default function CombatScreen() {
                       Range: {effectiveRange} sq{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
                     </Text>}
                     {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
+                    {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
                     {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {attacker.currentAP}/{attacker.maxAP} · {attackerPos}</Text>}
                     {/* Ammo display: count + loaded ammo type (shorthand) */}
                     {weapon && weapon.magazineSize > 0 && (
@@ -1665,6 +1700,7 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${defender.currentAP}/${defender.maxAP}` : ''}
                     </Text>
+                    {defender.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
                     ))}
@@ -1941,11 +1977,12 @@ export default function CombatScreen() {
                   {sniperApplies ? 'Sniper' : 'Slayer'}: on a hit, also crit if 1d10 ≤ Luck ({attackerLuck})
                 </Text>
               )}
-              {(cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked) && (
+              {(cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked || attackerKO) && (
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, marginTop: 2 }}>
                   {cannotUseWeapons ? '⚠ Both arms crippled — cannot use weapons. ' : ''}
                   {twoHandedBlocked ? '⚠ Cannot use two-handed weapon (crippled arm). ' : ''}
                   {proneMeleeBlocked ? '⚠ Prone characters cannot make melee/unarmed attacks.' : ''}
+                  {attackerKO ? `⚠ Unconscious — cannot act (${attacker?.knockOutRoundsLeft ?? 0} turn(s) left).` : ''}
                 </Text>
               )}
             </View>
@@ -2129,7 +2166,11 @@ export default function CombatScreen() {
                 const burstDT = ammoIgnoresDT ? 0 : Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
                 const burstDR = Math.max(0, Math.min(90, burstProt.dr + (loadedAmmo?.drMod ?? 0) + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
                 const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
-                const meleeDmgBonus = (isMelee && attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus;
+                const hthPerkBonus = isMelee ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
+                const traitMeleeBonus = isMelee && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
+                const meleeDmgBonus = isMelee
+                  ? Math.max(0, (attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
+                  : 0;
                 const perHit = Array.from({ length: streamlinedHits }, () => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
                   const ammoRolls = loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
@@ -2306,7 +2347,7 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>Shot {i + 1}{dmg.critMultiplier > 1 ? ` ⚡ ×${dmg.critMultiplier} CRIT` : ''}</Text>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
                       Weapon dice: [{dmg.baseRolls.join(', ')}]{weapon.damageBonus > 0 ? ` +${weapon.damageBonus} wpn` : ''}
-                      {dmg.meleeDmgBonus > 0 ? ` +${dmg.meleeDmgBonus} melee` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} mods` : ''}{perkBonuses.damage > 0 ? ` +${perkBonuses.damage} perks` : ''}{dmg.critMultiplier > 1 ? ` ×${dmg.critMultiplier}` : ''} = {dmg.baseDmg}
+                      {dmg.meleeDmgBonus > 0 ? ` +${dmg.meleeDmgBonus} MD` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} mods` : ''}{perkBonuses.damage > 0 ? ` +${perkBonuses.damage} perks` : ''}{dmg.critMultiplier > 1 ? ` ×${dmg.critMultiplier}` : ''} = {dmg.baseDmg}
                     </Text>
                     {dmg.critNotes.length > 0 && dmg.critNotes.map((n, k) => <Text key={k} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary }}>⚡ {n}</Text>)}
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>− DT {dmg.combinedDT} → {dmg.afterDT}</Text>
@@ -2382,6 +2423,7 @@ export default function CombatScreen() {
         onClose={() => setShowCritModal(false)}
         rolledEntry={critTableEntry}
         onRoll={rollCritTable}
+        onSelect={(entry) => applyCritEntry(entry, true)}
         betterCriticals={hasBetterCriticals}
       />
       <CriticalFailureModal

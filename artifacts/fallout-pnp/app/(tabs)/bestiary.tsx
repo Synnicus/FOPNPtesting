@@ -634,6 +634,11 @@ export default function BestiaryScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const id = genId();
     const weapon = allWeapons.find(w => w.id === template.equippedWeaponId);
+    // Full loadout (primary + sidearm/melee/throwables); primary always included.
+    const inventoryIds = Array.from(new Set([
+      ...(template.equippedWeaponId ? [template.equippedWeaponId] : []),
+      ...(template.inventoryWeaponIds ?? []),
+    ])).filter(id => allWeapons.some(w => w.id === id));
     const char: Character = {
       id,
       name: spawnName,
@@ -659,11 +664,14 @@ export default function BestiaryScreen() {
       electricityResistance: template.electricityResistance,
       naturalProtection: template.naturalProtection ? { ...template.naturalProtection } : undefined,
       equippedWeaponId: template.equippedWeaponId,
+      inventoryWeaponIds: inventoryIds.length > 0 ? inventoryIds : undefined,
       equippedBodyArmorId: template.equippedBodyArmorId,
       equippedHelmetId: template.equippedHelmetId,
-      weaponAmmoStates: weapon && weapon.magazineSize > 0
-        ? [{ weaponId: weapon.id, currentAmmo: weapon.magazineSize, conditionBoxes: 0 }]
-        : [],
+      // Full magazines for every carried weapon that uses ammo.
+      weaponAmmoStates: inventoryIds
+        .map(wid => allWeapons.find(w => w.id === wid))
+        .filter((w): w is NonNullable<typeof w> => !!w && w.magazineSize > 0)
+        .map(w => ({ weaponId: w.id, currentAmmo: w.magazineSize, conditionBoxes: 0 })),
       injuries: [],
       isKnockedOut: false,
       knockOutRoundsLeft: 0,

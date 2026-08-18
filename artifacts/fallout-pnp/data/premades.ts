@@ -94,8 +94,9 @@ Current Sketch: Maverick travels around gambling and cheating his way into fame 
     skills: { smallGuns: 45, bigGuns: 20, energyWeapons: 20, meleeWeapons: 48, unarmed: 58, throwing: 40, firstAid: 40, doctor: 19, sneak: 35, lockpick: 30, steal: 30, traps: 30, science: 8, repair: 6, speech: 35, barter: 28, gambling: 12, outdoorsman: 12, pilot: 40 },
     taggedSkills: ['smallGuns', 'energyWeapons', 'sneak'],
     radiationResistance: 8, gasResistance: 0, electricityResistance: 30,
-    weaponId: 'sniper_rifle',
-    inventoryWeaponIds: ['sniper_rifle', '10mm_pistol', 'combat_knife'],
+    // STR 4 can't shoulder a sniper rifle (STR 5) — M1 Garand (STR 4) keeps the marksman role.
+    weaponId: 'm1_garand_rifle',
+    inventoryWeaponIds: ['m1_garand_rifle', '10mm_pistol', 'combat_knife'],
     equippedBodyArmorId: 'combat_armor',
     traits: 'None',
     biography: `It would be an error to call Needlepoint stupid, but she certainly isn't the sharpest knife in the drawer. Born into relative privilege in Vault City, Needlepoint was always popular in school, even if her grades were the lowest in the class and she could hardly form complete sentences.
@@ -116,7 +117,8 @@ Current Sketch: Since leaving Vault City, Needlepoint has made her way slowly so
     taggedSkills: ['repair', 'pilot', 'gambling'],
     radiationResistance: 86, gasResistance: 0, electricityResistance: 0,
     weaponId: '10mm_pistol',
-    inventoryWeaponIds: ['10mm_pistol', 'wrench', 'crowbar'],
+    // Crowbar needs STR 5 (Crystal has 3) — claw hammer fits the mechanic kit.
+    inventoryWeaponIds: ['10mm_pistol', 'wrench', 'claw_hammer'],
     equippedBodyArmorId: 'leather_armor',
     traits: 'Fear the Reaper',
     biography: `Before the war, Crystal was a mechanic at a Daytona race track. Ever since she was a little girl, she loved the fast cars and excitement of the race whenever her mother took her to the tracks, and when Crystal was in school, she learned all she could about the operation of these mighty machines.
