@@ -30,7 +30,18 @@ import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, effectiveSpecial, computePerkStatBonuses, computeEffectModifiers } from '@/data/effects';
-import { getWeaponHands } from '@/data/weapons';
+import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
+import { computeModEffects } from '@/data/mods';
+import {
+  applySkillPointOperation,
+  canChangeSkillTags,
+  rebaseSkillValue,
+  reconcileUnspentSkillPoints,
+} from '@/data/skillAdvancement';
+
+// ─── Perk ids that are actually traits in the manual; hide from perk browser
+//     but do NOT delete saved Character.perks entries or remove lookup/effects.
+const LEGACY_TRAIT_PERK_IDS = new Set(['finesse', 'fast_metabolism', 'chem_resistant', 'glowing_one']);
 
 // Perk points available given a race's perksPerLevels cadence (default 3)
 function perkPointsForRaceLevel(level: number, race: RaceType): number {
@@ -46,6 +57,7 @@ const genId = () => Date.now().toString() + Math.random().toString(36).substr(2,
 const DEFAULT_SPECIAL: SPECIALStats = { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 };
 const SPECIAL_KEYS: (keyof SPECIALStats)[] = ['strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck'];
 const SPECIAL_SHORT: Record<keyof SPECIALStats, string> = { strength: 'STR', perception: 'PER', endurance: 'END', charisma: 'CHA', intelligence: 'INT', agility: 'AGI', luck: 'LCK' };
+const ALL_SKILLS: SkillType[] = [...COMBAT_SKILLS, ...SUPPORT_SKILLS];
 
 function makeDefaultCharacter(): Character {
   const special = { ...DEFAULT_SPECIAL };
@@ -83,13 +95,126 @@ function PointCounter({ label, remaining, total, warn }: { label: string; remain
   );
 }
 
+// ─── HoldButton ──────────────────────────────────────────────────────────────
+// A button that fires one operation on quick tap; after a 2-second hold it
+// fires at 5 ops/sec until released. Timers are always cleaned up.
+// disabled: renders at reduced opacity and ignores all interactions.
+function HoldButton({
+  onAction, disabled, active = true, style, children,
+}: {
+  onAction: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  style?: any;
+  children: React.ReactNode;
+}) {
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const didHold = useRef(false);
+
+  const clearTimers = () => {
+    if (holdTimer.current !== null) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+    if (repeatInterval.current !== null) { clearInterval(repeatInterval.current); repeatInterval.current = null; }
+  };
+
+  useEffect(() => {
+    if (!active) {
+      clearTimers();
+      didHold.current = false;
+    }
+    return () => clearTimers();
+  }, [active]);
+
+  const handlePressIn = () => {
+    if (disabled || !active) return;
+    didHold.current = false;
+    holdTimer.current = setTimeout(() => {
+      didHold.current = true;
+      // Fire immediately at hold-start, then every 200ms (5/sec)
+      onAction();
+      repeatInterval.current = setInterval(() => {
+        onAction();
+      }, 200);
+    }, 2000);
+  };
+
+  const handlePressOut = () => {
+    clearTimers();
+  };
+
+  const handlePress = () => {
+    // onPress fires after onPressOut. Only fire a single operation when it was
+    // NOT a hold (didHold = false means the 2s threshold was not crossed).
+    if (!disabled && active && !didHold.current) {
+      onAction();
+    }
+    didHold.current = false;
+  };
+
+  return (
+    <TouchableOpacity
+      style={[style, { opacity: disabled ? 0.3 : 1 }]}
+      onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled || !active}
+      delayPressIn={0}
+    >
+      {children}
+    </TouchableOpacity>
+  );
+}
+
 // ─── SelectionModal ───────────────────────────────────────────────────────────
-function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderItem, title }: {
+// Supports optional weapon-category grouping via the `groupBy` prop.
+// When groupBy is provided, items are rendered under category headers in
+// WEAPON_CATEGORY_ORDER order; items that match no category appear last.
+type SelectionModalRow<T> = { type: 'item'; item: T } | { type: 'header'; label: string } | { type: 'none' };
+
+function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderItem, title, groupBy }: {
   visible: boolean; onClose: () => void; onSelect: (item: T | null) => void;
   items: T[]; keyFn: (i: T) => string; renderItem: (i: T) => React.ReactNode; title: string;
+  /** Optional: function that returns a WeaponCategory string for each item.
+   *  When provided, items are grouped under category headers. */
+  groupBy?: (i: T) => string;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+
+  // Build flat row list, optionally with group headers
+  const rows = useMemo((): SelectionModalRow<T>[] => {
+    const result: SelectionModalRow<T>[] = [{ type: 'none' }];
+    if (!groupBy) {
+      items.forEach(item => result.push({ type: 'item', item }));
+      return result;
+    }
+    // Group by category order
+    const byCategory: Record<string, T[]> = {};
+    const uncategorized: T[] = [];
+    for (const item of items) {
+      const cat = groupBy(item);
+      if (cat) {
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(item);
+      } else {
+        uncategorized.push(item);
+      }
+    }
+    for (const cat of WEAPON_CATEGORY_ORDER) {
+      const catItems = byCategory[cat];
+      if (catItems && catItems.length > 0) {
+        result.push({ type: 'header', label: (WEAPON_CATEGORY_LABELS as Record<string, string>)[cat] ?? cat });
+        catItems.forEach(item => result.push({ type: 'item', item }));
+      }
+    }
+    // Append any items with unrecognised category keys
+    if (uncategorized.length > 0) {
+      result.push({ type: 'header', label: 'Other' });
+      uncategorized.forEach(item => result.push({ type: 'item', item }));
+    }
+    return result;
+  }, [items, groupBy]);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.8)' }}>
@@ -99,14 +224,30 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
           <FlatList
-            data={[null, ...items]}
-            keyExtractor={item => item ? keyFn(item) : '__none__'}
+            data={rows}
+            keyExtractor={(row, idx) => {
+              if (row.type === 'none') return '__none__';
+              if (row.type === 'header') return `__header__${row.label}`;
+              return keyFn(row.item);
+            }}
             contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { onSelect(item); onClose(); }}>
-                {item ? renderItem(item) : <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>None</Text>}
-              </TouchableOpacity>
-            )}
+            renderItem={({ item: row }) => {
+              if (row.type === 'header') {
+                return (
+                  <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, backgroundColor: colors.background }}>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{row.label.toUpperCase()}</Text>
+                  </View>
+                );
+              }
+              return (
+                <TouchableOpacity style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { onSelect(row.type === 'none' ? null : row.item); onClose(); }}>
+                  {row.type === 'none'
+                    ? <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>None</Text>
+                    : renderItem(row.item)
+                  }
+                </TouchableOpacity>
+              );
+            }}
           />
         </View>
       </View>
@@ -176,7 +317,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const [injDesc, setInjDesc] = useState('');
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      // Modal is closing — always restore scrollability in case a crop drag was
+      // interrupted (e.g. modal dismissed by swipe while dragging).
+      setCropDragging(false);
+      return;
+    }
     const c = character ?? makeDefaultCharacter();
     setChar(c);
     setActiveTab(0);
@@ -189,6 +335,13 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // ─── Derived computations ────────────────────────────────────────────────────
   const race = getRaceById(char.race) ?? RACES[0];
   const baseSkills = useMemo(() => calcBaseSkills(char.special), [char.special]);
+  const tagChangesLocked = useMemo(
+    () => !canChangeSkillTags(
+      ALL_SKILLS.map(sk => char.skills[sk]),
+      ALL_SKILLS.map(sk => baseSkills[sk]),
+    ),
+    [char.skills, baseSkills],
+  );
 
   const recomputeDerived = useCallback((updatedChar: Character): Character => {
     const raceRef = getRaceById(updatedChar.race) ?? RACES[0];
@@ -229,11 +382,13 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       const oldBase = calcBaseSkills(prev.special);
       const newBase = calcBaseSkills(newSpecial);
       const skills = { ...prev.skills };
-      for (const sk of [...COMBAT_SKILLS, ...SUPPORT_SKILLS] as SkillType[]) {
-        const offset = prev.skills[sk] - oldBase[sk];
-        skills[sk] = newBase[sk] + offset;
+      for (const sk of ALL_SKILLS) {
+        skills[sk] = rebaseSkillValue(prev.skills[sk], oldBase[sk], newBase[sk]);
       }
-      return recomputeDerived({ ...prev, special: newSpecial, skills });
+      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
+      const newTotal = calcSkillPointsPerLevel(newSpecial) * prev.level;
+      const unspentSkillPoints = reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal);
+      return recomputeDerived({ ...prev, special: newSpecial, skills, unspentSkillPoints });
     });
   }, [recomputeDerived]);
 
@@ -244,6 +399,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       for (const k of SPECIAL_KEYS) {
         special[k] = Math.max(raceRef.specialMin[k], Math.min(raceRef.specialMax[k], special[k]));
       }
+      // Race bounds can move SPECIAL-derived skill bases. Preserve every
+      // purchased offset so a race change cannot erase the tag-change lock or
+      // revalue previously spent skill points.
+      const oldBase = calcBaseSkills(prev.special);
+      const newBase = calcBaseSkills(special);
+      const skills = { ...prev.skills };
+      for (const sk of ALL_SKILLS) {
+        skills[sk] = rebaseSkillValue(prev.skills[sk], oldBase[sk], newBase[sk]);
+      }
+      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
+      const newTotal = calcSkillPointsPerLevel(special) * prev.level;
+      const unspentSkillPoints = reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal);
       // Reset elemental resistances to the new race's natural defaults
       const radiationResistance = raceRef.naturalDR;
       const gasResistance = raceRef.naturalGasDR;
@@ -251,7 +418,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       // Reset natural protection to the new race's defaults (or undefined)
       const naturalProtection = raceRef.naturalProtection ? { ...raceRef.naturalProtection } : undefined;
       return recomputeDerived({
-        ...prev, race: newRace, special,
+        ...prev, race: newRace, special, skills, unspentSkillPoints,
         radiationResistance, gasResistance, electricityResistance, naturalProtection,
       });
     });
@@ -262,9 +429,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     setChar(prev => {
       const clamped = Math.max(1, Math.min(99, newLevel));
       if (clamped === prev.level) return prev;
-      const levelDelta = clamped - prev.level;
-      const spPerLevel = calcSkillPointsPerLevel(prev.special);
-      const unspentSkillPoints = Math.max(0, prev.unspentSkillPoints + levelDelta * spPerLevel);
+      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
+      const newTotal = calcSkillPointsPerLevel(prev.special) * clamped;
+      const unspentSkillPoints = reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal);
       return recomputeDerived({
         ...prev, level: clamped, xp: xpForLevel(clamped), unspentSkillPoints,
       });
@@ -276,10 +443,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     setChar(prev => {
       const xp = Math.max(0, Math.min(999999999, Math.floor(newXP) || 0));
       const newLevel = levelForXP(xp);
-      const levelDelta = newLevel - prev.level;
-      const spPerLevel = calcSkillPointsPerLevel(prev.special);
-      const unspentSkillPoints = levelDelta !== 0
-        ? Math.max(0, prev.unspentSkillPoints + levelDelta * spPerLevel)
+      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
+      const newTotal = calcSkillPointsPerLevel(prev.special) * newLevel;
+      const unspentSkillPoints = newLevel !== prev.level
+        ? reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal)
         : prev.unspentSkillPoints;
       return recomputeDerived({ ...prev, xp, level: newLevel, unspentSkillPoints });
     });
@@ -308,26 +475,42 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // Skill points: unspentSkillPoints from char
   const skillPointsTotal = calcSkillPointsPerLevel(char.special) * char.level;
 
-  // Skill update: costs 1 point per +1 above base
-  const adjustSkill = useCallback((sk: SkillType, delta: number) => {
+  // Skill update: tagged skills cost 1 point for +2; untagged cost 1 point for +1.
+  // Decrement is symmetric: tagged -2 refunds 1 point, untagged -1 refunds 1 point.
+  // 'delta' is always +1 or -1 (one operation = one button press).
+  const adjustSkill = useCallback((sk: SkillType, delta: 1 | -1) => {
     setChar(prev => {
       const base = calcBaseSkills(prev.special)[sk];
-      const currentOffset = prev.skills[sk] - base;
-      if (delta > 0) {
-        if (prev.unspentSkillPoints <= 0) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          return prev;
-        }
-        return { ...prev, skills: { ...prev.skills, [sk]: prev.skills[sk] + delta }, unspentSkillPoints: prev.unspentSkillPoints - delta };
-      } else {
-        if (currentOffset <= 0) return prev; // can't go below base
-        return { ...prev, skills: { ...prev.skills, [sk]: prev.skills[sk] + delta }, unspentSkillPoints: prev.unspentSkillPoints - delta };
+      const isTagged = prev.taggedSkills.includes(sk);
+      const result = applySkillPointOperation({
+        currentValue: prev.skills[sk],
+        baseValue: base,
+        unspentSkillPoints: prev.unspentSkillPoints,
+        tagged: isTagged,
+        direction: delta,
+      });
+      if (!result.changed) {
+        if (delta > 0) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return prev;
       }
+      return {
+        ...prev,
+        skills: { ...prev.skills, [sk]: result.skillValue },
+        unspentSkillPoints: result.unspentSkillPoints,
+      };
     });
   }, []);
 
   const toggleTag = useCallback((sk: SkillType) => {
     setChar(prev => {
+      const baseSkills = calcBaseSkills(prev.special);
+      if (!canChangeSkillTags(
+        ALL_SKILLS.map(skill => prev.skills[skill]),
+        ALL_SKILLS.map(skill => baseSkills[skill]),
+      )) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return prev;
+      }
       const isTagged = prev.taggedSkills.includes(sk);
       if (!isTagged && prev.taggedSkills.length >= 3) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -507,12 +690,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   }, [syncPrimaryWeapon]);
 
   // ─── Portrait drag-crop (PanResponder, works with mouse on web) ─────────────
+  // While dragging, we disable the outer editor ScrollView so the crop gesture
+  // doesn't fight with vertical scroll. We restore it on release/termination.
   const bannerLayout = useRef({ width: 1, height: 260 });
   const dragMoved = useRef(false);
+  const [cropDragging, setCropDragging] = useState(false);
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => (char.portraitFit ?? 'cover') === 'cover' && !!char.portrait,
     onMoveShouldSetPanResponder: () => (char.portraitFit ?? 'cover') === 'cover' && !!char.portrait,
-    onPanResponderGrant: () => { dragMoved.current = false; },
+    onPanResponderGrant: () => {
+      dragMoved.current = false;
+      setCropDragging(true);
+    },
     onPanResponderMove: (_e, g) => {
       if (Math.abs(g.dx) > 3 || Math.abs(g.dy) > 3) dragMoved.current = true;
       const { width, height } = bannerLayout.current;
@@ -524,14 +713,20 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       });
     },
     onPanResponderRelease: () => {
+      setCropDragging(false);
       if (!dragMoved.current) pickPortrait();
+    },
+    onPanResponderTerminate: () => {
+      setCropDragging(false);
     },
   }), [char.portraitFit, char.portrait, pickPortrait]);
 
-  // All perks (search-filtered). Gating is done per-row via canTakePerk so
-  // unavailable perks stay visible but disabled with their reasons.
+  // All perks (search-filtered). Legacy trait-as-perk ids are hidden from the
+  // browser (they are traits in the manual) but their saved data / effects are
+  // preserved — we just don't display or allow adding them here.
   const perkList = useMemo(() =>
     PERKS.filter(p => {
+      if (LEGACY_TRAIT_PERK_IDS.has(p.id)) return false;
       if (perkSearch && !p.name.toLowerCase().includes(perkSearch.toLowerCase()) && !p.description.toLowerCase().includes(perkSearch.toLowerCase())) return false;
       return true;
     }), [perkSearch]);
@@ -567,13 +762,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             modal's vertical flex space, leaving a huge blank gap under the tabs. */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }} contentContainerStyle={{ paddingHorizontal: 8 }}>
           {TABS.map((t, i) => (
-            <TouchableOpacity key={t} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primary : 'transparent' }} onPress={() => setActiveTab(i)}>
+            <TouchableOpacity key={t} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primary : 'transparent' }} onPress={() => { setCropDragging(false); setActiveTab(i); }}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: activeTab === i ? colors.primary : colors.mutedForeground }}>{t.toUpperCase()}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 100, width: '100%', maxWidth: 820, alignSelf: 'center' }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 100, width: '100%', maxWidth: 820, alignSelf: 'center' }}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={!cropDragging}
+        >
 
           {/* ── BASICS ── */}
           {activeTab === 0 && (
@@ -900,7 +1100,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   </View>
                 </View>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>GM customization only — manually grant or remove skill points. Accepts negatives.</Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Tagged skills ({char.taggedSkills.length}/3) get a free +20% bonus, shown in orange. Each +1 spends 1 skill point above base.</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Choose up to 3 tags before spending skill points. Tagged skills get a free +20% bonus shown in orange. Each press costs 1 skill point: +2% for tagged skills, +1% for untagged. Hold for 2s to auto-repeat.</Text>
+                {tagChangesLocked && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Refund all purchased skill points before changing tags.</Text>}
               </View>
 
               {(['combat', 'support'] as const).map(group => (
@@ -914,7 +1115,24 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     const displayTotal = total + (isTagged ? 20 : 0);
                     return (
                       <View key={sk} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
-                        <TouchableOpacity onPress={() => toggleTag(sk)} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 2, borderColor: isTagged ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: isTagged ? colors.primary + '33' : 'transparent' }}>
+                        <TouchableOpacity
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: isTagged, disabled: tagChangesLocked }}
+                          disabled={tagChangesLocked}
+                          onPress={() => toggleTag(sk)}
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 4,
+                            borderWidth: 2,
+                            borderColor: tagChangesLocked ? colors.mutedForeground + '55' : isTagged ? colors.primary : colors.border,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: tagChangesLocked ? colors.secondary : isTagged ? colors.primary + '33' : 'transparent',
+                            opacity: tagChangesLocked ? 0.4 : 1,
+                            pointerEvents: tagChangesLocked ? 'none' : 'auto',
+                          }}
+                        >
                           {isTagged && <Feather name="tag" size={12} color={colors.primary} />}
                         </TouchableOpacity>
                         <View style={{ flex: 1 }}>
@@ -924,9 +1142,23 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                           </Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', opacity: offset <= 0 ? 0.3 : 1 }} onPress={() => adjustSkill(sk, -1)} disabled={offset <= 0}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
+                          <HoldButton
+                            active={visible}
+                            disabled={offset <= 0}
+                            onAction={() => adjustSkill(sk, -1)}
+                            style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Feather name="minus" size={12} color={colors.foreground} />
+                          </HoldButton>
                           <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: isTagged ? colors.primary : displayTotal >= 75 ? '#4a8c3f' : colors.foreground, minWidth: 48, textAlign: 'center' }}>{displayTotal}%</Text>
-                          <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: char.unspentSkillPoints <= 0 ? colors.mutedForeground : colors.border, alignItems: 'center', justifyContent: 'center', opacity: char.unspentSkillPoints <= 0 ? 0.3 : 1 }} onPress={() => adjustSkill(sk, 1)} disabled={char.unspentSkillPoints <= 0}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+                          <HoldButton
+                            active={visible}
+                            disabled={char.unspentSkillPoints <= 0}
+                            onAction={() => adjustSkill(sk, 1)}
+                            style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: char.unspentSkillPoints <= 0 ? colors.mutedForeground : colors.border, alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Feather name="plus" size={12} color={colors.foreground} />
+                          </HoldButton>
                         </View>
                       </View>
                     );
@@ -1161,12 +1393,45 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               ))}
 
               {/* Cumulative protection summary: AC + per-type DT/DR from armor,
-                  helmet, natural/racial protection and defensive perks. */}
+                  helmet, natural/racial protection, shield mods on held weapons,
+                  and defensive perks. */}
               {(() => {
                 const body = allArmor.find(a => a.id === char.equippedBodyArmorId) ?? null;
                 const helm = allArmor.find(a => a.id === char.equippedHelmetId) ?? null;
                 const natural = char.naturalProtection ?? race.naturalProtection ?? null;
-                // Defensive perk bonuses (Dodger AC / Toughness DR etc.)
+
+                // ── Shield contributions from held weapons ─────────────────────
+                // Deduplicate: if both hands hold the same weapon id (2-handed),
+                // count its shield mods only once.
+                const heldWeaponIds = new Set<string>();
+                if (char.leftHandWeaponId) heldWeaponIds.add(char.leftHandWeaponId);
+                if (char.rightHandWeaponId) heldWeaponIds.add(char.rightHandWeaponId);
+                if (heldWeaponIds.size === 0 && char.equippedWeaponId) heldWeaponIds.add(char.equippedWeaponId);
+
+                let shieldAC = 0;
+                const shieldDT: Record<string, number> = { Normal: 0, Laser: 0, Fire: 0, Plasma: 0, Explosion: 0 };
+                const shieldDR: Record<string, number> = { Normal: 0, Laser: 0, Fire: 0, Plasma: 0, Explosion: 0 };
+                let hasShield = false;
+                const shieldWeaponNames: string[] = [];
+                for (const wid of Array.from(heldWeaponIds)) {
+                  const w = allWeapons.find(x => x.id === wid);
+                  if (!w) continue;
+                  const fx = computeModEffects(w);
+                  if (fx.acBonus) { shieldAC += fx.acBonus; hasShield = true; shieldWeaponNames.push(w.name); }
+                  if (fx.shieldProtection) {
+                    hasShield = true;
+                    if (!shieldWeaponNames.includes(w.name)) shieldWeaponNames.push(w.name);
+                    const sp = fx.shieldProtection;
+                    shieldDT.Normal += sp.dtNormal; shieldDT.Laser += sp.dtLaser;
+                    shieldDT.Fire += sp.dtFire; shieldDT.Plasma += sp.dtPlasma;
+                    shieldDT.Explosion += sp.dtExplosion;
+                    shieldDR.Normal += sp.drNormal; shieldDR.Laser += sp.drLaser;
+                    shieldDR.Fire += sp.drFire; shieldDR.Plasma += sp.drPlasma;
+                    shieldDR.Explosion += sp.drExplosion;
+                  }
+                }
+
+                // ── Defensive perk bonuses (Dodger AC / Toughness DR etc.) ─────
                 let perkAC = 0; let perkDR = 0;
                 for (const cp of char.perks ?? []) {
                   const p = getPerkById(cp.perkId);
@@ -1175,32 +1440,35 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   if (/HP\s*<\s*50%/i.test(fx.combatNote ?? '')) continue; // situational
                   if (fx.armorClassBonus) perkAC += fx.armorClassBonus * cp.rank;
                   if (fx.damageResistBonus) perkDR += fx.damageResistBonus * cp.rank;
-                  if (p?.id === 'tough_hide') perkDR += 10 * cp.rank; // +10% all resistances/rank
+                  if (p?.id === 'tough_hide') perkDR += 10 * cp.rank;
                 }
-                // Hide of Scars: +15%/rank to all resistances EXCEPT fire (handled per-type below)
+                // Hide of Scars: +15%/rank to all resistances EXCEPT fire
                 const hideOfScars = (char.perks ?? []).find(cp => cp.perkId === 'hide_of_scars');
                 const hideOfScarsDR = hideOfScars ? 15 * hideOfScars.rank : 0;
+
                 const types: { key: string; label: string }[] = [
                   { key: 'Normal', label: 'NORM' }, { key: 'Laser', label: 'LASER' },
                   { key: 'Fire', label: 'FIRE' }, { key: 'Plasma', label: 'PLASMA' },
                   { key: 'Explosion', label: 'EXPL' },
                 ];
+                const totalAC = char.armorClass + perkAC + shieldAC;
                 const acParts = [`AGI-based ${char.special.agility <= 0 ? 0 : Math.min(char.special.agility, 99)}`];
                 if (body?.acBonus) acParts.push(`+${body.acBonus} armor`);
                 if (helm?.acBonus) acParts.push(`+${helm.acBonus} helmet`);
                 if (race.naturalACBonus > 0) acParts.push(`+${race.naturalACBonus} racial`);
                 if (perkAC > 0) acParts.push(`+${perkAC} perks`);
+                if (shieldAC > 0) acParts.push(`+${shieldAC} shield`);
                 return (
                   <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CUMULATIVE PROTECTION</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-                      <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary }}>AC {char.armorClass + perkAC}</Text>
+                      <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary }}>AC {totalAC}</Text>
                       <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, flexShrink: 1 }}>{acParts.join(' ')}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
                       {types.map(t => {
-                        const dt = ((body as any)?.[`dt${t.key}`] ?? 0) + ((helm as any)?.[`dt${t.key}`] ?? 0) + ((natural as any)?.[`dt${t.key}`] ?? 0);
-                        const dr = Math.min(90, ((body as any)?.[`dr${t.key}`] ?? 0) + ((helm as any)?.[`dr${t.key}`] ?? 0) + ((natural as any)?.[`dr${t.key}`] ?? 0) + perkDR + (t.key !== 'Fire' ? hideOfScarsDR : 0));
+                        const dt = ((body as any)?.[`dt${t.key}`] ?? 0) + ((helm as any)?.[`dt${t.key}`] ?? 0) + ((natural as any)?.[`dt${t.key}`] ?? 0) + shieldDT[t.key];
+                        const dr = Math.min(90, ((body as any)?.[`dr${t.key}`] ?? 0) + ((helm as any)?.[`dr${t.key}`] ?? 0) + ((natural as any)?.[`dr${t.key}`] ?? 0) + shieldDR[t.key] + perkDR + (t.key !== 'Fire' ? hideOfScarsDR : 0));
                         return (
                           <View key={t.key} style={{ flexGrow: 1, minWidth: 58, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
                             <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{t.label}</Text>
@@ -1211,7 +1479,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       })}
                     </View>
                     <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
-                      Sources: equipment + natural/racial protection{perkAC > 0 || perkDR > 0 ? ' + perks' : ''}. Situational perk bonuses (e.g. HP &lt; 50%) apply in combat only.
+                      Sources: equipment{hasShield ? ` + shield (${shieldWeaponNames.join(', ')})` : ''} + natural/racial protection{perkAC > 0 || perkDR > 0 ? ' + perks' : ''}. DR capped at 90%. Situational perk bonuses (e.g. HP &lt; 50%) apply in combat only.
                     </Text>
                   </View>
                 );
@@ -1387,21 +1655,32 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         </ScrollView>
 
         {/* Equipment selection modals */}
+        {/* Hand picker: only weapons already in inventory (or 2-handed with sling for crippled arms).
+            Uses weapon-category grouping so the list is easy to scan. */}
         <SelectionModal
           visible={handPick !== null} onClose={() => setHandPick(null)}
           title={handPick === 'left' ? 'LEFT HAND WEAPON' : 'RIGHT HAND WEAPON'}
-          items={handPick ? allWeapons.filter(w => weaponLegalForHand(w, handPick)) : []} keyFn={w => w.id}
+          items={handPick
+            ? allWeapons.filter(w =>
+                (char.inventoryWeaponIds ?? []).includes(w.id) && weaponLegalForHand(w, handPick)
+              )
+            : []
+          }
+          keyFn={w => w.id}
           onSelect={w => { if (handPick) equipHand(handPick, w); }}
+          groupBy={w => w.category ?? ''}
           renderItem={w => (
             <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
               {w.name}{getWeaponHands(w) === 2 ? ' (2H)' : ''}
             </Text>
           )}
         />
+        {/* Add Carried Weapon: full armory (minus already-carried), grouped by category */}
         <SelectionModal
           visible={showInventoryPick} onClose={() => setShowInventoryPick(false)} title="ADD CARRIED WEAPON"
           items={allWeapons.filter(w => !(char.inventoryWeaponIds ?? []).includes(w.id))} keyFn={w => w.id}
           onSelect={w => addToInventory(w)}
+          groupBy={w => w.category ?? ''}
           renderItem={w => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{w.name}</Text>}
         />
         <SelectionModal
