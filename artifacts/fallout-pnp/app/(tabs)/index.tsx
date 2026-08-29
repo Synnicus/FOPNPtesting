@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, FlatList, Modal, Platform, ScrollView, Text, TouchableOpacity, View,
+  Alert, FlatList, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +30,7 @@ import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial,
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
+import { resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import {
   SPECIAL_UNARMED_ATTACKS,
@@ -126,6 +127,7 @@ interface ShotDamage {
   shotIndex: number; baseRolls: number[]; baseDmg: number;
   combinedDT: number; combinedDR: number; finalDmg: number; critMultiplier: number;
   meleeDmgBonus: number; afterDT: number; bypassArmor: boolean; critNotes: string[];
+  manualBaseDamage: number | null;
 }
 
 // ─── Perk Bonuses Computed ────────────────────────────────────────────────────
@@ -644,6 +646,7 @@ export default function CombatScreen() {
   const [tensFace, setTensFace] = useState<number | null>(null);
   const [unitsFace, setUnitsFace] = useState<number | null>(null);
   const [rolling, setRolling] = useState(false);
+  const [physicalHitConfirmed, setPhysicalHitConfirmed] = useState(false);
 
   // Burst
   const [isBurst, setIsBurst] = useState(false);
@@ -689,6 +692,8 @@ export default function CombatScreen() {
 
   // AP spent flag
   const [apSpent, setApSpent] = useState(false);
+  // Local attack-session weapon. Null means the character's active weapon.
+  const [attackWeaponId, setAttackWeaponId] = useState<string | null>(null);
 
   // Pickers
   const [showAttackerPicker, setShowAttackerPicker] = useState(false);
@@ -723,7 +728,7 @@ export default function CombatScreen() {
   const defender = characters.find(c => c.id === defenderId) ?? null;
   // Empty hands still make a normal Unarmed attack. Treat them as the built-in
   // Fists and Feet profile without mutating the character's carried inventory.
-  const weapon = attacker
+  const activeWeapon = attacker
     ? (attacker.equippedWeaponId
         ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
         : allWeapons.find(w => w.id === 'unarmed') ?? null)
@@ -740,8 +745,20 @@ export default function CombatScreen() {
   const dualWielding = !!(leftWeapon && rightWeapon && leftWeapon.id !== rightWeapon.id);
   // The held weapon that is NOT the active (equipped) one.
   const offhandWeapon = dualWielding
-    ? (weapon?.id === leftWeapon!.id ? rightWeapon : leftWeapon)
+    ? (activeWeapon?.id === leftWeapon!.id ? rightWeapon : leftWeapon)
     : null;
+  // Every rule below consumes this one authoritative attack-session weapon.
+  const weapon = resolveAttackWeapon(activeWeapon, attackWeaponId, [leftWeapon, rightWeapon]);
+  const heldWeapons: Weapon[] = dualWielding
+    ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
+    : (weapon ? [weapon] : []);
+  const reloadableHeldWeapons = heldWeapons.filter(w => w.magazineSize > 0);
+  const allHeldMagazinesFull = reloadableHeldWeapons.every(w => {
+    const fx = computeModEffects(w);
+    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
+    const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
+    return cur >= mag;
+  });
 
   // ── Shield mods: a held weapon with a shield buffs the wielder's AC/DT/DR ──
   const shieldFor = (c: Character | null): { ac: number; prot: Record<string, number> | null } => {
@@ -907,7 +924,6 @@ export default function CombatScreen() {
   const ammoState = (attacker && weapon) ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id) : null;
   const currentAmmo = ammoState?.currentAmmo ?? effectiveMagazine;
   const hasAmmo = !weapon || weapon.magazineSize === 0 || currentAmmo > 0;
-  const magazineFull = !weapon || weapon.magazineSize === 0 || currentAmmo >= effectiveMagazine;
 
   // ─── Weapon condition (data/condition.ts — FILLED boxes 0..10) ─────────────────
   // conditionBoxes counts FILLED boxes (0 pristine … 10 jammed). Legacy stored
@@ -980,20 +996,22 @@ export default function CombatScreen() {
   const hasBetterCriticals = !!attacker && hasPerk(attacker, 'better_criticals');
 
   // Shot results
-  const shotResults: ShotResult[] = shotChances.map((cth, i) => {
+  const resolvedShotChances = physicalHitConfirmed ? shotChances.slice(0, 1) : shotChances;
+  const shotResults: ShotResult[] = resolvedShotChances.map((cth, i) => {
     const roll = rollTotal;
-    const hit = roll !== null && roll <= cth;
+    const hit = physicalHitConfirmed ? i === 0 : roll !== null && roll <= cth;
     // Primary shot crit is resolved in rollDice() (needs the luck roll); other
     // burst shots use the crit-chance threshold directly for display.
     const isCrit = i === 0
       ? (hit && primaryIsCrit)
       : (hit && roll !== null && roll <= totalCritChance);
-    const isCritFail = !hit && roll !== null && roll >= 97;
+    const isCritFail = !physicalHitConfirmed && !hit && roll !== null && roll >= 97;
     const margin = (roll !== null && hit) ? cth - roll : 0;
     return { index: i, chanceToHit: cth, penalty: burstPenalties[i], roll, hit, margin, isCrit, isCritFail };
   });
 
   const canRoll = !!(attacker && defender && weapon);
+  const attackResolved = rollTotal !== null || physicalHitConfirmed;
 
   // ─── AP cost (per-weapon apSingle/apTargeted/apBurst; fallback AP_COSTS) ───────
   const wSingle = weapon?.apSingle ?? AP_COSTS.ATTACK_SINGLE;
@@ -1042,6 +1060,7 @@ export default function CombatScreen() {
   const resetAttackState = useCallback(() => {
     setTensFace(null);
     setUnitsFace(null);
+    setPhysicalHitConfirmed(false);
     setShotDamages(null);
     setDamageApplied(false);
     setPrimaryIsCrit(false);
@@ -1074,7 +1093,17 @@ export default function CombatScreen() {
     setIsBurst(false); setBurstShots(1); setTargetedIdx(0);
     setDoubleShotActive(false); setStreamlinedDice([]); setStreamlinedRolled(false); setStreamlinedDmgResult(null);
     setSpecialUnarmedAttackId(null);
+    setAttackWeaponId(null);
+    setDamageOverride('');
   }, [attackerId]);
+
+  // If equipment changes and the selected session weapon is no longer held,
+  // return to the character's active weapon.
+  useEffect(() => {
+    if (attackWeaponId && attackWeaponId !== leftWeapon?.id && attackWeaponId !== rightWeapon?.id) {
+      setAttackWeaponId(null);
+    }
+  }, [attackWeaponId, leftWeapon?.id, rightWeapon?.id]);
 
   useEffect(() => {
     if (!canUseSpecialUnarmed) {
@@ -1135,6 +1164,7 @@ export default function CombatScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setRolling(true);
+    setPhysicalHitConfirmed(false);
     const t = rollD10(); const u = rollD10();
     setTensFace(t); setUnitsFace(u);
     setShotDamages(null); setDamageApplied(false);
@@ -1180,6 +1210,39 @@ export default function CombatScreen() {
     setTimeout(() => setRolling(false), 350);
   }, [weaponBroken, hasAmmo, attacker, weapon, shotChances, totalCritChance, isAimed, targetedBodyPart,
       luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon]);
+
+  const confirmPhysicalHit = useCallback(() => {
+    if (attackResolved || isBurst) return;
+    if (weaponBroken) {
+      notify('Weapon Broken', 'This weapon is jammed/broken and cannot attack until repaired.');
+      return;
+    }
+    if (!hasAmmo) {
+      notify('Empty Magazine', 'No ammo remaining. Reload first!');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setTensFace(null);
+    setUnitsFace(null);
+    setPhysicalHitConfirmed(true);
+    setShotDamages(null);
+    setDamageApplied(false);
+    setPrimaryIsCrit(false);
+    setAimedCritPart(null);
+    setAimedCritApplied(false);
+    setAimedCritNotes([]);
+    setShowCritModal(false);
+    setCritTableEntry(null);
+    setCritEffectNotes([]);
+    setIsCritFail(false);
+    setShowCritFailModal(false);
+    setCritFailEntry(null);
+    setCritFailNotes([]);
+    setApSpent(false);
+    if (attacker && weapon && weapon.magazineSize > 0) {
+      spendAmmo(attacker.id, weapon.id, 1);
+    }
+  }, [attackResolved, isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
 
   const rollStreamlined = useCallback(() => {
     if (weaponBroken) {
@@ -1265,9 +1328,11 @@ export default function CombatScreen() {
       }
 
       const dieCount = doubleShotActive ? weapon.damageDieCount * 2 : weapon.damageDieCount;
-      const weaponRolls = Array.from({ length: dieCount }, () => rollDie(weapon.damageDie));
+      const weaponRolls = overrideVal === null
+        ? Array.from({ length: dieCount }, () => rollDie(weapon.damageDie))
+        : [];
       // Ammo contributes its own dice (manual: gun damage = weapon dice + ammo).
-      const ammoRolls = loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
+      const ammoRolls = overrideVal === null && loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
         ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie))
         : [];
       if (loadedAmmo && (ammoRolls.length > 0 || loadedAmmo.dmgBonus)) {
@@ -1282,15 +1347,21 @@ export default function CombatScreen() {
       if (specialUnarmedAttack) {
         notes.push(`${specialUnarmedAttack.name}: +${specialDamageBonus} damage${specialUnarmedAttack.armorClassPiercing ? ', Armor Class ignored for hit roll' : ''}`);
       }
-      const rawBaseDmg = Math.round((rolledSum + weapon.damageBonus + ammoFlat + meleeDmgBonus + specialDamageBonus + modBonuses.damage + perkBonuses.damage) * critMult);
-
       const dt = bypassArmor ? 0 : baseDT;
       const dr = bypassArmor ? 0 : baseDR;
       if (bypassArmor) notes.push('Bypasses armor (DT/DR ignored)');
       // Apply DT first, then DR: finalDmg = max(0, (baseDmg − DT) × (1 − DR/100))
-      const afterDT = Math.max(0, rawBaseDmg - dt);
-      const finalDmg = applyProtection(rawBaseDmg, dt, dr);
-      return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes };
+      const resolvedDamage = resolveDamagePipeline({
+        initialDiceDamage: rolledSum,
+        flatDamageBonus: weapon.damageBonus + ammoFlat + meleeDmgBonus + specialDamageBonus + modBonuses.damage + perkBonuses.damage,
+        criticalMultiplier: critMult,
+        damageThreshold: dt,
+        damageResistance: dr,
+      });
+      const rawBaseDmg = resolvedDamage.baseDamage;
+      const afterDT = resolvedDamage.afterDamageThreshold;
+      const finalDmg = resolvedDamage.finalDamage;
+      return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes, manualBaseDamage: overrideVal };
     });
     setShotDamages(damages); setDamageApplied(false);
   }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, attackerEffSpecial, specialUnarmedAttack]);
@@ -1307,20 +1378,18 @@ export default function CombatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, effectiveAPCost, spendAP]);
 
-  // Off-hand weapon single-attack AP cost (dual wield): the off-hand gets its
-  // own SPEND button when its cost differs from the active weapon's.
-  const offhandAPCost = offhandWeapon
-    ? Math.max(1, (offhandWeapon.apSingle ?? AP_COSTS.ATTACK_SINGLE) - perkBonuses.apDiscount)
-    : null;
-  const handleSpendOffhandAP = useCallback(() => {
-    if (!attacker || offhandAPCost === null) return;
-    if (!spendAP(attacker.id, offhandAPCost)) {
-      notify('Not Enough AP', `${attacker.name} needs ${offhandAPCost} AP to attack with ${offhandWeapon?.name ?? 'the off-hand weapon'}.`);
-      return;
-    }
-    setApSpent(true);
+  const selectAttackWeapon = useCallback((weaponId: string) => {
+    if (weapon?.id === weaponId) return;
+    setAttackWeaponId(weaponId === activeWeapon?.id ? null : weaponId);
+    setIsBurst(false);
+    setBurstShots(1);
+    setTargetedIdx(0);
+    setDoubleShotActive(false);
+    setSpecialUnarmedAttackId(null);
+    setDamageOverride('');
+    resetAttackState();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [attacker, offhandAPCost, offhandWeapon, spendAP]);
+  }, [weapon?.id, activeWeapon?.id, resetAttackState]);
 
   // Reload a SPECIFIC held gun (dual-wield chooser) — uses that weapon's own
   // mods for reload cost/magazine, not the active weapon's.
@@ -1345,24 +1414,6 @@ export default function CombatScreen() {
     reloadWeapon(attacker.id, w.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [attacker, spendAP, reloadWeapon]);
-
-  const handleReload = useCallback(() => {
-    if (!attacker || !weapon) return;
-    // No-op when the magazine is already full.
-    if (magazineFull) {
-      if (Platform.OS === 'web') alert('Magazine already full.');
-      else Alert.alert('Magazine Full', `${weapon.name} is already fully loaded (${currentAmmo}/${effectiveMagazine}).`);
-      return;
-    }
-    // Spend AP first — reload only happens if the character can afford it.
-    if (!spendAP(attacker.id, reloadApCost)) {
-      if (Platform.OS === 'web') alert(`Not enough AP (need ${reloadApCost}) to reload.`);
-      else Alert.alert('Not Enough AP', `Reload needs ${reloadApCost} AP; ${attacker.name} has ${attacker.currentAP}.`);
-      return;
-    }
-    reloadWeapon(attacker.id, weapon.id);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, weapon, reloadWeapon, spendAP, magazineFull, currentAmmo, effectiveMagazine, reloadApCost]);
 
   // Take a chem (manual: using an item costs 3 AP). Applies the chem's immediate
   // stage as an ActiveEffect and resolves any HP heal/damage.
@@ -1853,15 +1904,15 @@ export default function CombatScreen() {
                         )}
                       </View>
                     )}
-                    {/* Dual wield: off-hand weapon (+ its ammo) and a free hand-swap */}
+                    {/* Dual wield: off-hand weapon (+ its ammo) and attack-session selection. */}
                     {dualWielding && offhandWeapon && (
-                      <TouchableOpacity onPress={() => setActiveWeapon(attacker.id, offhandWeapon.id)} style={{ marginTop: 2 }}>
+                      <TouchableOpacity onPress={() => selectAttackWeapon(offhandWeapon.id)} style={{ marginTop: 2 }}>
                         <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }} numberOfLines={1}>
                           ⇄ Off-hand: {offhandWeapon.name}
                           {offhandWeapon.magazineSize > 0
                             ? ` [${attacker.weaponAmmoStates.find(a => a.weaponId === offhandWeapon.id)?.currentAmmo ?? offhandWeapon.magazineSize}/${offhandWeapon.magazineSize}]`
                             : ''}
-                          {'  (tap to use)'}
+                          {weapon?.id === offhandWeapon.id ? '  (selected)' : '  (tap to attack)'}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -1956,6 +2007,29 @@ export default function CombatScreen() {
             </View>
           )}
 
+          {/* A local attack choice keeps the persistent active hand separate from
+              the weapon whose rules drive this attack. */}
+          {canRoll && dualWielding && activeWeapon && offhandWeapon && (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>ATTACK WITH</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[{ label: 'PRIMARY', value: activeWeapon }, { label: 'OFF-HAND', value: offhandWeapon }].map(option => {
+                  const selected = weapon?.id === option.value.id;
+                  return (
+                    <TouchableOpacity
+                      key={option.label}
+                      onPress={() => selectAttackWeapon(option.value.id)}
+                      style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
+                    >
+                      <Text style={{ textAlign: 'center', fontSize: 10, fontFamily: 'Inter_700Bold', color: selected ? colors.primaryForeground : colors.mutedForeground, letterSpacing: 1 }}>{option.label}</Text>
+                      <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{option.value.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           {/* Attack AP controls; the active weapon name removes dual-wield ambiguity. */}
           {canRoll && (
             <View style={{ gap: 8 }}>
@@ -1986,26 +2060,17 @@ export default function CombatScreen() {
                     <Text style={{ textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>✓ AP SPENT — {weapon?.name.toUpperCase()}</Text>
                   </View>
                 )}
-                {/* Dual wield: off-hand weapon gets its own button when its AP cost differs. */}
-                {!apSpent && dualWielding && offhandWeapon && offhandAPCost !== null && offhandAPCost !== effectiveAPCost && (
-                  <TouchableOpacity
-                    disabled={(attacker?.currentAP ?? 0) < offhandAPCost || attackBlocked}
-                    style={{ minWidth: '48%', flexGrow: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary, opacity: (attacker?.currentAP ?? 0) < offhandAPCost || attackBlocked ? 0.45 : 1 }}
-                    onPress={handleSpendOffhandAP}
-                  >
-                    <Text style={{ textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>SPEND {offhandAPCost} AP — {offhandWeapon.name.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                )}
               </View>
               {/* Reload belongs below the attack-spend control(s). */}
-              {weapon && weapon.magazineSize > 0 && (
-                <TouchableOpacity disabled={magazineFull && !(dualWielding && offhandWeapon && offhandWeapon.magazineSize > 0)} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, opacity: (magazineFull && !(dualWielding && offhandWeapon && offhandWeapon.magazineSize > 0)) ? 0.4 : 1 }} onPress={() => {
-                  // Two guns held → choose which one to reload.
-                  if (dualWielding && offhandWeapon && offhandWeapon.magazineSize > 0) setShowReloadPicker(true);
-                  else handleReload();
+              {reloadableHeldWeapons.length > 0 && (
+                <TouchableOpacity disabled={allHeldMagazinesFull} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, opacity: allHeldMagazinesFull ? 0.4 : 1 }} onPress={() => {
+                  if (reloadableHeldWeapons.length > 1) setShowReloadPicker(true);
+                  else handleReloadWeapon(reloadableHeldWeapons[0]);
                 }}>
                   <Feather name="refresh-cw" size={13} color={colors.mutedForeground} />
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>RELOAD {reloadApCost} AP</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>
+                    {reloadableHeldWeapons.length > 1 ? 'RELOAD HELD WEAPON' : `RELOAD ${computeModEffects(reloadableHeldWeapons[0]).reloadApOverride ?? AP_COSTS.RELOAD} AP`}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -2386,9 +2451,24 @@ export default function CombatScreen() {
             </View>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: (canRoll && !attackBlocked) ? colors.primary : colors.secondary, opacity: (canRoll && !attackBlocked) ? 1 : 0.5 }} onPress={rollDice} disabled={!canRoll || attackBlocked}>
               <Feather name="crosshair" size={16} color={canRoll ? colors.primaryForeground : colors.mutedForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>{attackActionLabel}{rollTotal !== null ? ' AGAIN' : ''}</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>{attackActionLabel}{attackResolved ? ' AGAIN' : ''}</Text>
             </TouchableOpacity>
-            {rollTotal !== null && (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || attackResolved || isBurst) ? 0.5 : 1 }}
+              onPress={confirmPhysicalHit}
+              disabled={!canRoll || attackBlocked || attackResolved || isBurst}
+            >
+              <Feather name="check-circle" size={16} color={physicalHitConfirmed ? '#4a8c3f' : colors.primary} />
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? '#4a8c3f' : colors.primary }}>
+                {physicalHitConfirmed ? 'PHYSICAL HIT CONFIRMED' : 'CONFIRM PHYSICAL HIT'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
+              {isBurst
+                ? 'Physical hit confirmation is available for single attacks only.'
+                : 'Use after a successful physical percentile roll. Records one normal hit and consumes this weapon’s ammo.'}
+            </Text>
+            {attackResolved && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
                 Press {attackActionLabel} again to make another attack (costs {effectiveAPCost} AP — spend it above).
               </Text>
@@ -2465,7 +2545,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Shot Results (Complex/Single) ─── */}
-        {rollTotal !== null && canRoll && (!isBurst || burstMode === 'complex') && (
+        {attackResolved && canRoll && (!isBurst || burstMode === 'complex') && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>SHOT RESULTS</Text>
             {shotResults.map((shot, i) => (
@@ -2478,11 +2558,19 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_500Medium', color: colors.foreground }}>
                       Shot {i + 1}{shot.penalty !== 0 && <Text style={{ color: colors.mutedForeground }}> ({shot.penalty}%)</Text>}
                       {'  '}
-                      <Text style={{ color: colors.primary }}>{String(shot.roll ?? 0).padStart(2, '0')}</Text>
-                      <Text style={{ color: colors.mutedForeground }}> vs </Text>
-                      <Text style={{ color: shot.hit ? '#4a8c3f' : colors.destructive }}>{shot.chanceToHit}%</Text>
+                       {shot.roll === null ? (
+                         <Text style={{ color: colors.primary }}>PHYSICAL ROLL</Text>
+                       ) : (
+                         <>
+                           <Text style={{ color: colors.primary }}>{String(shot.roll).padStart(2, '0')}</Text>
+                           <Text style={{ color: colors.mutedForeground }}> vs </Text>
+                           <Text style={{ color: shot.hit ? '#4a8c3f' : colors.destructive }}>{shot.chanceToHit}%</Text>
+                         </>
+                       )}
                     </Text>
-                    {shot.hit && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 2 }}>Beat by {shot.margin}%{shot.isCrit ? ' · CRITICAL HIT' : ''}</Text>}
+                    {shot.hit && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 2 }}>
+                      {shot.roll === null ? 'Successful roll confirmed · NORMAL HIT' : `Beat by ${shot.margin}%${shot.isCrit ? ' · CRITICAL HIT' : ''}`}
+                    </Text>}
                   </View>
                 </View>
               </View>
@@ -2582,7 +2670,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Damage ─── */}
-        {rollTotal !== null && shotResults.some(s => s.hit) && weapon && (!isBurst || burstMode === 'complex') && (
+        {attackResolved && shotResults.some(s => s.hit) && weapon && (!isBurst || burstMode === 'complex') && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>DAMAGE CALCULATION</Text>
             <View style={{ gap: 2 }}>
@@ -2593,6 +2681,39 @@ export default function CombatScreen() {
                 DT {weapon ? DAMAGE_TYPE_LABELS[weapon.damageType] : ''}: {combinedDT}{perkBonuses.ignoreDT > 0 ? ` (−${perkBonuses.ignoreDT} ignored)` : ''} → effective {Math.max(0, combinedDT - perkBonuses.ignoreDT)}{combinedDR > 0 ? ` · DR ${combinedDR}%` : ''} — formula: max(0,(base−DT)×(1−DR%))
               </Text>
               {perkBonuses.damage > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>Perk damage bonus: +{perkBonuses.damage}</Text>}
+            </View>
+
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>PHYSICAL DAMAGE DICE (OPTIONAL)</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  value={damageOverride}
+                  onChangeText={(value) => {
+                    setDamageOverride(value.replace(/[^0-9]/g, ''));
+                    setShotDamages(null);
+                    setDamageApplied(false);
+                  }}
+                  keyboardType="number-pad"
+                  placeholder="Enter weapon + ammo dice total"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={{ flex: 1, color: colors.foreground, backgroundColor: colors.secondary, borderWidth: 1, borderColor: damageOverride ? colors.primary : colors.border, borderRadius: colors.radius, paddingHorizontal: 12, paddingVertical: 10, fontFamily: 'Inter_600SemiBold', fontSize: 13 }}
+                />
+                {damageOverride !== '' && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setDamageOverride('');
+                      setShotDamages(null);
+                      setDamageApplied(false);
+                    }}
+                    style={{ paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+                  >
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CLEAR</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                Replaces only the initial weapon and ammunition dice. Critical multipliers, flat bonuses, DT, and DR still apply.
+              </Text>
             </View>
 
             {!shotDamages ? (
@@ -2610,7 +2731,7 @@ export default function CombatScreen() {
                   <View key={i} style={{ borderWidth: 1, borderRadius: colors.radius, padding: 10, borderColor: colors.border, gap: 4 }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>Shot {i + 1}{dmg.critMultiplier > 1 ? ` ⚡ ×${dmg.critMultiplier} CRIT` : ''}</Text>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
-                      Weapon dice: [{dmg.baseRolls.join(', ')}]{weapon.damageBonus > 0 ? ` +${weapon.damageBonus} wpn` : ''}
+                      {dmg.manualBaseDamage !== null ? `Physical dice total: ${dmg.manualBaseDamage}` : `Weapon/ammo dice: [${dmg.baseRolls.join(', ')}]`}{weapon.damageBonus > 0 ? ` +${weapon.damageBonus} wpn` : ''}
                       {dmg.meleeDmgBonus > 0 ? ` +${dmg.meleeDmgBonus} MD` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} mods` : ''}{perkBonuses.damage > 0 ? ` +${perkBonuses.damage} perks` : ''}{dmg.critMultiplier > 1 ? ` ×${dmg.critMultiplier}` : ''} = {dmg.baseDmg}
                     </Text>
                     {dmg.critNotes.length > 0 && dmg.critNotes.map((n, k) => <Text key={k} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary }}>⚡ {n}</Text>)}
@@ -2831,7 +2952,7 @@ export default function CombatScreen() {
         visible={showReloadPicker}
         title="RELOAD WHICH GUN?"
         subtitle="AP is charged for the selected gun only"
-        options={[weapon, offhandWeapon].filter((w): w is Weapon => !!w && w.magazineSize > 0).map(w => {
+        options={reloadableHeldWeapons.map(w => {
           const fx = computeModEffects(w);
           const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
           const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
@@ -2842,7 +2963,7 @@ export default function CombatScreen() {
             disabled: cur >= mag,
           };
         })}
-        onSelect={(id) => { const w = [weapon, offhandWeapon].find(x => x?.id === id); if (w) handleReloadWeapon(w); }}
+        onSelect={(id) => { const w = reloadableHeldWeapons.find(x => x.id === id); if (w) handleReloadWeapon(w); }}
         onClose={() => setShowReloadPicker(false)}
       />
       {/* ─── Ammo picker (compatible types only) ─── */}

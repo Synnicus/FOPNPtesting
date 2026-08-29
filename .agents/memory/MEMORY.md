@@ -5,3 +5,4 @@
 - [Fallout PnP Effective Stats](fallout-pnp-effective-stats.md) — one layering: base → Gain-X perks (baked in derived) → chem mods at display time, uncapped; per-level HP perks use takenAtLevel, never retroactive
 - [Fallout PnP Web Quirks](fallout-pnp-web-quirks.md) — Alert.alert is a no-op on RN-web (use notify/window.confirm); AP charged on picker selection, never on open
 - [Fallout PnP Special Unarmed](fallout-pnp-special-unarmed.md) — techniques use effective tagged Unarmed; piercing ignores AC only; printed pp. 18–19 are authoritative
+- [Fallout PnP Attack Sessions](fallout-pnp-attack-sessions.md) — resolve attacks from a local selected held weapon; do not mutate persistent active equipment for off-hand attacks
