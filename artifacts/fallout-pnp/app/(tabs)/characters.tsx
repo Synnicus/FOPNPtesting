@@ -354,6 +354,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     traits: char.traits, perks: char.perks, conditions: char.conditions, effects: char.effects,
     raceBounds: { min: race.specialMin, max: race.specialMax },
     racialNaturalArmorClass: race.naturalACBonus,
+    manualDerivedStats: char.manualDerivedStats,
     nightPersonPeriod: char.nightPersonPeriod,
     tempAC: char.tempAC,
     radiationResistance: char.radiationResistance, gasResistance: char.gasResistance,
@@ -368,6 +369,15 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   );
 
   const recomputeDerived = useCallback((updatedChar: Character): Character => {
+    if (updatedChar.manualDerivedStats) {
+      return {
+        ...updatedChar,
+        armorClass: updatedChar.manualDerivedStats.armorClass,
+        maxAP: updatedChar.manualDerivedStats.maxAP,
+        sequence: updatedChar.manualDerivedStats.sequence,
+        currentAP: Math.min(updatedChar.currentAP, updatedChar.manualDerivedStats.maxAP),
+      };
+    }
     const raceRef = getRaceById(updatedChar.race) ?? RACES[0];
     // Derived stats use base SPECIAL + permanent Gain-X perks (NOT chem mods —
     // chems are temporary and applied at display/combat time instead).
@@ -1965,6 +1975,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
     taggedSkills: [...character.taggedSkills, ...tagRules.freeTagSkills],
     traits: character.traits, perks: character.perks, conditions: character.conditions, effects: character.effects,
     raceBounds: { min: race.specialMin, max: race.specialMax }, racialNaturalArmorClass: race.naturalACBonus,
+    manualDerivedStats: character.manualDerivedStats,
     nightPersonPeriod: character.nightPersonPeriod, tempAC: character.tempAC,
     radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
     poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,

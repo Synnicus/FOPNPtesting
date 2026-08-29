@@ -7,3 +7,4 @@
 - [Fallout PnP Special Unarmed](fallout-pnp-special-unarmed.md) — techniques use effective tagged Unarmed; piercing ignores AC only; printed pp. 18–19 are authoritative
 - [Fallout PnP Attack Sessions](fallout-pnp-attack-sessions.md) — resolve attacks from a local selected held weapon; do not mutate persistent active equipment for off-hand attacks
 - [Fallout PnP Helmet Gas Ratings](fallout-pnp-helmet-gas-ratings.md) — `GR 100/10` and `100/20` map to +100 Gas only; the second number is intentionally unmodeled
+- [Fallout PnP Bestiary Authority](fallout-pnp-bestiary-authority.md) — Part V has no SPECIAL; printed combat stats and both GR numbers remain authoritative after spawning

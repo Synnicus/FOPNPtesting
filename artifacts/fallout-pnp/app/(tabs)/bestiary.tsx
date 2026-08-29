@@ -8,8 +8,8 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { BestiaryTemplate, BestiaryCategory, Character, CharacterSkills, SPECIALStats, DEFAULT_SKILLS, NaturalProtection, EMPTY_NATURAL_PROTECTION, Armor, DamageType, DAMAGE_TYPE_NAMES } from '@/context/types';
-import { BUILT_IN_BESTIARY, BESTIARY_CATEGORIES } from '@/data/bestiary';
+import { BestiaryTemplate, BestiaryCategory, CharacterSkills, SPECIALStats, DEFAULT_SKILLS, NaturalProtection, EMPTY_NATURAL_PROTECTION, Armor, DamageType, DAMAGE_TYPE_NAMES } from '@/context/types';
+import { BUILT_IN_BESTIARY, BESTIARY_CATEGORIES, spawnBestiaryTemplate } from '@/data/bestiary';
 import { calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills } from '@/data/derived';
 import { RACES, getRaceById } from '@/data/races';
 import { computeCombinedProtection } from '@/data/armor';
@@ -43,7 +43,7 @@ function combinedProtectionFor(
   const armor = computeCombinedProtection(body, helmet, t.type);
   const npDt = np ? (np[t.dtKey] as number) : 0;
   const npDr = np ? (np[t.drKey] as number) : 0;
-  return { dt: armor.dt + npDt, dr: Math.min(90, armor.dr + npDr) };
+  return { dt: armor.dt + npDt, dr: armor.dr + npDr };
 }
 
 // ─── Spawn Modal ─────────────────────────────────────────────────────────────
@@ -57,7 +57,10 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
   const [customName, setCustomName] = useState('');
   if (!template) return null;
   const spawnName = customName.trim() || template.name;
-  const weapon = allWeapons.find(w => w.id === template.equippedWeaponId);
+  const attacks = (template.naturalAttacks ?? []).map(attack => ({
+    ...attack,
+    weapon: allWeapons.find(w => w.id === attack.weaponId),
+  })).filter(attack => !!attack.weapon);
   const spawnBody = allArmor.find(a => a.id === template.equippedBodyArmorId);
   const spawnHelmet = allArmor.find(a => a.id === template.equippedHelmetId);
 
@@ -74,29 +77,20 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {[
               ['HP', template.maxHp], ['AC', template.armorClass], ['AP', template.maxAP],
-              ['SEQ', template.special.perception * 2], ['RAD', `${template.radiationResistance}%`],
+              ['SEQ', template.sequence], ['XP', template.xpValue ?? '—'],
+              ['CC', template.criticalChance === undefined ? '—' : `${template.criticalChance}%`],
             ].map(([l, v]) => (
               <View key={l} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
                 <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{l}</Text>
                 <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary }}>{v}</Text>
               </View>
             ))}
-            {weapon && (
-              <View style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
-                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>WEAPON</Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{weapon.name}</Text>
-              </View>
-            )}
           </View>
 
-          {/* SPECIAL */}
-          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-            {Object.entries(template.special).map(([k, v]) => (
-              <View key={k} style={{ alignItems: 'center', width: 40, paddingVertical: 4, backgroundColor: colors.secondary, borderRadius: 4 }}>
-                <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{k.slice(0,3).toUpperCase()}</Text>
-                <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary }}>{v}</Text>
-              </View>
-            ))}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>PR {template.poisonResistance ?? 0}%</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>RR {template.radiationResistance}%</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>GR {template.gasResistance}/{template.gasResistanceSecondary ?? 0}</Text>
           </View>
 
           {/* Top combat skills */}
@@ -111,11 +105,16 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
             ))}
           </View>
 
+          {attacks.map(({ weapon, hitChance, notes }) => weapon && (
+            <Text key={weapon.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
+            </Text>
+          ))}
+
           {/* Derived DT/DR (armor + natural protection) */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {NP_TYPES.map(t => {
               const c = combinedProtectionFor(template.naturalProtection, spawnBody, spawnHelmet, t);
-              if (c.dt === 0 && c.dr === 0) return null;
               return (
                 <View key={t.type} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
                   <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{DAMAGE_TYPE_NAMES[t.type].charAt(0)}</Text>
@@ -167,6 +166,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
   const [skills, setSkills] = useState<CharacterSkills>(editTemplate?.skills ?? { ...DEFAULT_SKILLS });
   const [maxHp, setMaxHp] = useState(editTemplate?.maxHp ?? 30);
   const [maxAP, setMaxAP] = useState(editTemplate?.maxAP ?? 8);
+  const [sequence, setSequence] = useState(editTemplate?.sequence ?? calcSequence(editTemplate?.special ?? DEFAULT_SPECIAL));
   const [radRes, setRadRes] = useState(editTemplate?.radiationResistance ?? 0);
   const [weaponId, setWeaponId] = useState(editTemplate?.equippedWeaponId ?? '');
   const [bodyArmorId, setBodyArmorId] = useState(editTemplate?.equippedBodyArmorId ?? '');
@@ -187,6 +187,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     setSkills({ ...t.skills });
     setMaxHp(t.maxHp);
     setMaxAP(t.maxAP);
+    setSequence(t.sequence);
     setRadRes(t.radiationResistance);
     setWeaponId(t.equippedWeaponId ?? '');
     setBodyArmorId(t.equippedBodyArmorId ?? '');
@@ -212,6 +213,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
       setSkills({ ...DEFAULT_SKILLS });
       setMaxHp(30);
       setMaxAP(8);
+      setSequence(calcSequence(DEFAULT_SPECIAL));
       setRadRes(0);
       setWeaponId('');
       setBodyArmorId('');
@@ -225,6 +227,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     if (useComputed) {
       setMaxHp(calcMaxHP(special, 1));
       setMaxAP(calcMaxAP(special));
+      setSequence(calcSequence(special));
       setSkills(calcBaseSkills(special));
     }
   }, [special, useComputed]);
@@ -264,7 +267,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     const t: BestiaryTemplate = {
       id: editTemplate?.id ?? genId(),
       name: name.trim(), category, description,
-      special, maxHp, armorClass: derivedAC, maxAP, skills,
+      special, maxHp, armorClass: derivedAC, maxAP, sequence, skills,
       equippedWeaponId: weaponId || undefined,
       equippedBodyArmorId: bodyArmorId || undefined,
       equippedHelmetId: helmetId || undefined,
@@ -353,6 +356,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
                 {[
                   { label: 'Max HP', val: maxHp, set: setMaxHp, min: 1, max: 999 },
                   { label: 'Max AP', val: maxAP, set: setMaxAP, min: 1, max: 20 },
+                  { label: 'Sequence', val: sequence, set: setSequence, min: 0, max: 30 },
                   { label: 'Radiation Resistance %', val: radRes, set: setRadRes, min: 0, max: 100 },
                 ].map(({ label, val, set, min, max }) => (
                   <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -539,7 +543,10 @@ function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
 }) {
   const colors = useColors();
   const cat = BESTIARY_CATEGORIES.find(c => c.id === template.category);
-  const weapon = allWeapons.find(w => w.id === template.equippedWeaponId);
+  const attacks = (template.naturalAttacks ?? []).map(attack => ({
+    ...attack,
+    weapon: allWeapons.find(w => w.id === attack.weaponId),
+  })).filter(attack => !!attack.weapon);
   const topSkills = SKILL_SHORTHAND.filter(sk => template.skills[sk] > 0);
 
   return (
@@ -561,28 +568,29 @@ function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
 
       {/* Stats */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {[['HP', template.maxHp], ['AC', template.armorClass], ['AP', template.maxAP], ['SEQ', template.special.perception * 2]].map(([l, v]) => (
+        {[['HP', template.maxHp], ['AC', template.armorClass], ['AP', template.maxAP], ['SEQ', template.sequence], ['XP', template.xpValue ?? '—'], ['CC', template.criticalChance === undefined ? '—' : `${template.criticalChance}%`]].map(([l, v]) => (
           <View key={l} style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4 }}>
             <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{l}</Text>
             <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{v}</Text>
           </View>
         ))}
-        {template.radiationResistance > 0 && (
-          <View style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#4a8c3f33', borderRadius: 4 }}>
-            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>RAD</Text>
-            <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>{template.radiationResistance}%</Text>
-          </View>
-        )}
       </View>
 
-      {/* SPECIAL row */}
-      <View style={{ flexDirection: 'row', gap: 4 }}>
-        {Object.entries(template.special).map(([k, v]) => (
-          <View key={k} style={{ flex: 1, alignItems: 'center', paddingVertical: 2, backgroundColor: colors.secondary, borderRadius: 3 }}>
-            <Text style={{ fontSize: 8, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{k.slice(0,1).toUpperCase()}</Text>
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: v >= 8 ? colors.primary : colors.foreground }}>{v}</Text>
-          </View>
-        ))}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>PR {template.poisonResistance ?? 0}%</Text>
+        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>RR {template.radiationResistance}%</Text>
+        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>GR {template.gasResistance}/{template.gasResistanceSecondary ?? 0}</Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+        {NP_TYPES.map(t => {
+          const protection = combinedProtectionFor(template.naturalProtection, undefined, undefined, t);
+          return (
+            <Text key={t.type} style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
+              {DAMAGE_TYPE_NAMES[t.type].charAt(0)} {protection.dt}/{protection.dr}
+            </Text>
+          );
+        })}
       </View>
 
       {/* Top skills */}
@@ -597,7 +605,11 @@ function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
         </View>
       )}
 
-      {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>⚔ {weapon.name}</Text>}
+      {attacks.map(({ weapon, hitChance, notes }) => weapon && (
+        <Text key={weapon.id} style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={2}>
+          {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
+        </Text>
+      ))}
 
       <TouchableOpacity
         style={{ paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.primary, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
@@ -616,7 +628,7 @@ export default function BestiaryScreen() {
   const insets = useSafeAreaInsets();
   const { addCharacter, customBestiaryTemplates, addCustomBestiaryTemplate, removeCustomBestiaryTemplate, allWeapons, allArmor } = useApp();
 
-  const [activeCategory, setActiveCategory] = useState<BestiaryCategory>('human');
+  const [activeCategory, setActiveCategory] = useState<BestiaryCategory>('beast');
   const [spawnTarget, setSpawnTarget] = useState<BestiaryTemplate | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<BestiaryTemplate | null>(null);
@@ -632,51 +644,7 @@ export default function BestiaryScreen() {
 
   const handleSpawn = (template: BestiaryTemplate, spawnName: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const id = genId();
-    const weapon = allWeapons.find(w => w.id === template.equippedWeaponId);
-    // Full loadout (primary + sidearm/melee/throwables); primary always included.
-    const inventoryIds = Array.from(new Set([
-      ...(template.equippedWeaponId ? [template.equippedWeaponId] : []),
-      ...(template.inventoryWeaponIds ?? []),
-    ])).filter(id => allWeapons.some(w => w.id === id));
-    const char: Character = {
-      id,
-      name: spawnName,
-      type: 'npc',
-      race: 'human',
-      level: 1,
-      xp: 0,
-      special: { ...template.special },
-      maxHp: template.maxHp,
-      currentHp: template.maxHp,
-      armorClass: template.armorClass,
-      tempAC: 0,
-      maxAP: template.maxAP,
-      currentAP: template.maxAP,
-      position: 'standing',
-      sequence: template.special.perception * 2,
-      skills: { ...template.skills },
-      taggedSkills: [],
-      unspentSkillPoints: 0,
-      perks: [],
-      radiationResistance: template.radiationResistance,
-      gasResistance: template.gasResistance,
-      electricityResistance: template.electricityResistance,
-      naturalProtection: template.naturalProtection ? { ...template.naturalProtection } : undefined,
-      equippedWeaponId: template.equippedWeaponId,
-      inventoryWeaponIds: inventoryIds.length > 0 ? inventoryIds : undefined,
-      equippedBodyArmorId: template.equippedBodyArmorId,
-      equippedHelmetId: template.equippedHelmetId,
-      // Full magazines for every carried weapon that uses ammo.
-      weaponAmmoStates: inventoryIds
-        .map(wid => allWeapons.find(w => w.id === wid))
-        .filter((w): w is NonNullable<typeof w> => !!w && w.magazineSize > 0)
-        .map(w => ({ weaponId: w.id, currentAmmo: w.magazineSize, conditionBoxes: 0 })),
-      injuries: [],
-      isKnockedOut: false,
-      knockOutRoundsLeft: 0,
-      conditions: [],
-    };
+    const char = spawnBestiaryTemplate(template, allWeapons, spawnName, genId());
     addCharacter(char);
     Alert.alert('Spawned!', `${spawnName} added to Characters.`);
   };

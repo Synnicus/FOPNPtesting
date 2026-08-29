@@ -116,6 +116,8 @@ export interface Weapon {
   weight: number;
   minStr: number;
   rangeNormal: number;
+  /** Explicit delivery when category/skill do not imply melee vs ranged. */
+  attackDelivery?: 'melee' | 'ranged';
   knockdownChance: number;
   mods: string[];
   isCustom: boolean;
@@ -229,6 +231,21 @@ export const EMPTY_NATURAL_PROTECTION: NaturalProtection = {
   drNormal: 0, drLaser: 0, drFire: 0, drPlasma: 0, drExplosion: 0,
 };
 
+export interface BestiaryAttack {
+  weaponId: string;
+  /** Printed attack chance from the manual. */
+  hitChance: number;
+  /** Printed rider such as poison, radiation, or knockdown. */
+  notes?: string;
+}
+
+export interface ManualDerivedStats {
+  armorClass: number;
+  maxAP: number;
+  sequence: number;
+  criticalChance?: number;
+}
+
 // ─── Character ────────────────────────────────────────────────────────────────
 export interface Character {
   id: string;
@@ -260,6 +277,8 @@ export interface Character {
   currentAP: number;
   position: PositionType;
   sequence: number;
+  /** Printed NPC values that take precedence over SPECIAL-derived base values. */
+  manualDerivedStats?: ManualDerivedStats;
 
   // Skills
   skills: CharacterSkills;
@@ -272,6 +291,7 @@ export interface Character {
   // Elemental resistances (base, before armor)
   radiationResistance: number;
   gasResistance: number;
+  gasResistanceSecondary?: number;
   electricityResistance: number;
   /** Base poison resistance. Legacy saves are normalized to zero. */
   poisonResistance?: number;
@@ -287,6 +307,12 @@ export interface Character {
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;
   weaponAmmoStates: WeaponAmmoState[];
+  /** Printed creature attacks, kept separate from carried/held equipment. */
+  naturalAttacks?: BestiaryAttack[];
+  /** Source template for a spawned manual bestiary creature. */
+  bestiaryTemplateId?: string;
+  /** XP awarded for defeating this manual bestiary creature. */
+  xpValue?: number;
 
   // Status
   injuries: Injury[];
@@ -316,10 +342,14 @@ export interface BestiaryTemplate {
   maxHp: number;
   armorClass: number;
   maxAP: number;
+  sequence: number;
+  xpValue?: number;
+  criticalChance?: number;
 
   skills: CharacterSkills;
 
   equippedWeaponId?: string;
+  naturalAttacks?: BestiaryAttack[];
   /** Carried weapons incl. the equipped one — sidearms / melee / throwables. */
   inventoryWeaponIds?: string[];
   equippedBodyArmorId?: string;
@@ -327,6 +357,8 @@ export interface BestiaryTemplate {
 
   radiationResistance: number;
   gasResistance: number;
+  /** Second number in the manual's printed GR X/Y rating. */
+  gasResistanceSecondary?: number;
   electricityResistance: number;
   /** Base poison resistance. Legacy templates are normalized to zero. */
   poisonResistance?: number;

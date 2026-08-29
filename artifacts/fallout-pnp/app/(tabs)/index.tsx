@@ -22,7 +22,7 @@ import {
 } from '@/data/condition';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
-import { isMeleeWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
+import { isMeleeWeapon, isRangedWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
@@ -59,6 +59,7 @@ function resolveCombatSheet(character: Character, allArmor: Parameters<typeof re
     raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
     nightPersonPeriod: character.nightPersonPeriod,
     racialNaturalArmorClass: race?.naturalACBonus,
+    manualDerivedStats: character.manualDerivedStats,
     tempAC: includeTempAC ? character.tempAC : 0,
     radiationResistance: character.radiationResistance,
     gasResistance: character.gasResistance,
@@ -158,10 +159,10 @@ function combinedProtectionFor(
     + ((helmet?.[dtField] as number) ?? 0)
     + ((natural?.[dtField as keyof NaturalProtection] as number) ?? 0)
     + ((shield?.[dtField] as number) ?? 0);
-  const dr = Math.min(90, ((bodyArmor?.[drField] as number) ?? 0)
+  const dr = ((bodyArmor?.[drField] as number) ?? 0)
     + ((helmet?.[drField] as number) ?? 0)
     + ((natural?.[drField as keyof NaturalProtection] as number) ?? 0)
-    + ((shield?.[drField] as number) ?? 0));
+    + ((shield?.[drField] as number) ?? 0);
   return { dt, dr };
 }
 
@@ -786,6 +787,9 @@ export default function CombatScreen() {
         ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
         : allWeapons.find(w => w.id === 'unarmed') ?? null)
     : null;
+  const naturalAttackWeapons = (attacker?.naturalAttacks ?? [])
+    .map(attack => allWeapons.find(candidate => candidate.id === attack.weaponId))
+    .filter((candidate): candidate is Weapon => !!candidate);
   const bodyArmor = defenderSheet?.bodyArmor ?? null;
   const helmet = defenderSheet?.helmet ?? null;
 
@@ -800,8 +804,13 @@ export default function CombatScreen() {
   const offhandWeapon = dualWielding
     ? (activeWeapon?.id === leftWeapon!.id ? rightWeapon : leftWeapon)
     : null;
+  const attackCandidates = Array.from(new Map(
+    [leftWeapon, rightWeapon, ...naturalAttackWeapons]
+      .filter((candidate): candidate is Weapon => !!candidate)
+      .map(candidate => [candidate.id, candidate]),
+  ).values());
   // Every rule below consumes this one authoritative attack-session weapon.
-  const weapon = resolveAttackWeapon(activeWeapon, attackWeaponId, [leftWeapon, rightWeapon]);
+  const weapon = resolveAttackWeapon(activeWeapon, attackWeaponId, attackCandidates);
   const heldWeapons: Weapon[] = dualWielding
     ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
     : (weapon ? [weapon] : []);
@@ -834,9 +843,9 @@ export default function CombatScreen() {
     return { ac, prot };
   };
   const defenderShield = shieldFor(defender);
-  const isRanged = weapon ? RANGED_SKILLS.has(weapon.skill) : true;
+  const isRanged = weapon ? isRangedWeapon(weapon) || RANGED_SKILLS.has(weapon.skill) : true;
   const isMelee = weapon ? isMeleeWeapon(weapon) : false;
-  const isUnarmed = weapon ? weapon.skill === 'unarmed' : false;
+  const isUnarmed = weapon ? weapon.skill === 'unarmed' && !isRanged : false;
   // Special techniques apply to the Unarmed weapon category (including
   // knuckles/power fists), but never to bestiary "natural" attacks.
   const canUseSpecialUnarmed = weapon?.category === 'unarmed';
@@ -874,9 +883,17 @@ export default function CombatScreen() {
   const targetedBodyPart = TARGETED_OPTIONS[effTargetedIdx].bodyPart;
   const isAimed = targetedBodyPart !== null && !specialUnarmedAttack;
   const effectiveAttackerSkills = attackerSheet?.effectiveSkills ?? null;
-  const baseSkill = (effectiveAttackerSkills && weapon)
-    ? effectiveAttackerSkills[weapon.skill] ?? 0
+  const manualNaturalAttack = weapon
+    ? attacker?.naturalAttacks?.find(attack => attack.weaponId === weapon.id)
+    : undefined;
+  const manualSkillDelta = manualNaturalAttack && attacker && effectiveAttackerSkills
+    ? (effectiveAttackerSkills.unarmed ?? attacker.skills.unarmed) - attacker.skills.unarmed
     : 0;
+  const baseSkill = manualNaturalAttack
+    ? Math.max(0, manualNaturalAttack.hitChance + manualSkillDelta)
+    : (effectiveAttackerSkills && weapon)
+      ? effectiveAttackerSkills[weapon.skill] ?? 0
+      : 0;
 
   // Perk bonuses
   const perkBonuses = computePerkBonuses(attacker, weapon, isRanged);
@@ -1150,10 +1167,10 @@ export default function CombatScreen() {
   // If equipment changes and the selected session weapon is no longer held,
   // return to the character's active weapon.
   useEffect(() => {
-    if (attackWeaponId && attackWeaponId !== leftWeapon?.id && attackWeaponId !== rightWeapon?.id) {
+    if (attackWeaponId && !attackCandidates.some(candidate => candidate.id === attackWeaponId)) {
       setAttackWeaponId(null);
     }
-  }, [attackWeaponId, leftWeapon?.id, rightWeapon?.id]);
+  }, [attackWeaponId, attackCandidates]);
 
   useEffect(() => {
     if (!canUseSpecialUnarmed) {
@@ -1321,15 +1338,17 @@ export default function CombatScreen() {
   const calculateDamage = useCallback(() => {
     if (!weapon || shotResults.length === 0) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    // Combined DT/DR from armor + defender natural protection (DT adds, DR sums capped at 90%)
+    // Combined DT/DR from armor + defender natural protection.
     const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
     // Ammo: ignoresDT bypasses DT; drMod adjusts the target's DR (negative = AP).
     const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
     const ammoDrMod = loadedAmmo?.drMod ?? 0;
     const baseDT = ammoIgnoresDT ? 0 : Math.max(0, prot.dt - perkBonuses.ignoreDT);
     // Defender DR: armor/natural + ammo modifier + defender perks (Toughness…)
-    // + active chem effects (e.g. Voodoo +20% DR). Capped at 90%.
-    const baseDR = Math.max(0, Math.min(90,
+    // + active chem effects (e.g. Voodoo +20% DR). Manual creature entries can
+    // print DR above the normal 90% character cap.
+    const damageResistanceCap = defender?.manualDerivedStats ? 100 : 90;
+    const baseDR = Math.max(0, Math.min(damageResistanceCap,
       prot.dr + ammoDrMod + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
     // Optional manual base-damage override (replaces the rolled dice total).
     const overrideVal = damageOverride.trim() === '' ? null : Math.max(0, parseInt(damageOverride, 10) || 0);
@@ -1341,7 +1360,7 @@ export default function CombatScreen() {
     const raceMeleeBonus = isMeleeOrUnarmed ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
     const hthPerkBonus = isMeleeOrUnarmed ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
     const traitMeleeBonus = isMeleeOrUnarmed && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
-    const meleeDmgBonus = isMeleeOrUnarmed
+    const meleeDmgBonus = isMeleeOrUnarmed && !manualNaturalAttack
       ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
       : 0;
 
@@ -1411,6 +1430,7 @@ export default function CombatScreen() {
         criticalMultiplier: critMult,
         damageThreshold: dt,
         damageResistance: dr,
+        damageResistanceCap,
       });
       const rawBaseDmg = resolvedDamage.baseDamage;
       const afterDT = resolvedDamage.afterDamageThreshold;
@@ -1419,7 +1439,7 @@ export default function CombatScreen() {
       return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes, manualBaseDamage: overrideVal };
     });
     setShotDamages(damages); setDamageApplied(false);
-  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, attackerSheet, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, specialUnarmedAttack, traitEffects]);
+  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, manualNaturalAttack, attacker, attackerSheet, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, specialUnarmedAttack, traitEffects]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
 
@@ -1962,6 +1982,7 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{attacker.name}</Text>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 1 }}>{weapon ? weapon.name : 'No weapon'}</Text>
                     {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Skill: {baseSkill}%{perkBonuses.toHit !== 0 ? ` (${perkBonuses.toHit >= 0 ? '+' : ''}${perkBonuses.toHit}% perks)` : ''}</Text>}
+                    {!!manualNaturalAttack?.notes && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{manualNaturalAttack.notes}</Text>}
                     {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Range: {effectiveRange} sq{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
                     </Text>}
@@ -2113,6 +2134,28 @@ export default function CombatScreen() {
                     >
                       <Text style={{ textAlign: 'center', fontSize: 10, fontFamily: 'Inter_700Bold', color: selected ? colors.primaryForeground : colors.mutedForeground, letterSpacing: 1 }}>{option.label}</Text>
                       <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{option.value.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {canRoll && naturalAttackWeapons.length > 1 && (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>NATURAL ATTACK</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {naturalAttackWeapons.map(option => {
+                  const selected = weapon?.id === option.id;
+                  const attack = attacker?.naturalAttacks?.find(candidate => candidate.weaponId === option.id);
+                  return (
+                    <TouchableOpacity
+                      key={option.id}
+                      onPress={() => selectAttackWeapon(option.id)}
+                      style={{ minWidth: '47%', flexGrow: 1, paddingHorizontal: 10, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
+                    >
+                      <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{option.name}</Text>
+                      <Text style={{ textAlign: 'center', fontSize: 9, fontFamily: 'Inter_400Regular', color: selected ? colors.primaryForeground + 'cc' : colors.mutedForeground }}>{attack?.hitChance}% · {option.apSingle} AP · {option.damageDieCount}d{option.damageDie}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -2637,7 +2680,7 @@ export default function CombatScreen() {
                 const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
                 const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
                 const burstDT = ammoIgnoresDT ? 0 : Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
-                const burstDR = Math.max(0, Math.min(90, burstProt.dr + (loadedAmmo?.drMod ?? 0) + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
+                const burstDR = Math.max(0, Math.min(defender?.manualDerivedStats ? 100 : 90, burstProt.dr + (loadedAmmo?.drMod ?? 0) + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
                 const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
                 const hthPerkBonus = isMelee ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
                 const traitMeleeBonus = isMelee && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;

@@ -34,6 +34,7 @@ function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], in
     raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
     nightPersonPeriod: c.nightPersonPeriod,
     racialNaturalArmorClass: race?.naturalACBonus,
+    manualDerivedStats: c.manualDerivedStats,
     tempAC: includeTempAC ? c.tempAC : 0,
     radiationResistance: c.radiationResistance,
     gasResistance: c.gasResistance,
@@ -97,10 +98,11 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     typeof character.poisonResistance === 'number'
       ? character
       : { ...character, poisonResistance: 0 };
-  const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate =>
-    typeof template.poisonResistance === 'number'
-      ? template
-      : { ...template, poisonResistance: 0 };
+  const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => ({
+    ...template,
+    poisonResistance: template.poisonResistance ?? 0,
+    sequence: template.sequence ?? template.special.perception * 2,
+  });
 
   return {
     ...parsed,

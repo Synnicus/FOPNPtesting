@@ -31,3 +31,21 @@ test('physical initial damage is multiplied before DT and DR are applied', () =>
     },
   );
 });
+
+test('manual creature damage can preserve printed DR above the normal 90% cap', () => {
+  assert.deepEqual(
+    resolveDamagePipeline({
+      initialDiceDamage: 100,
+      flatDamageBonus: 0,
+      criticalMultiplier: 1,
+      damageThreshold: 0,
+      damageResistance: 95,
+      damageResistanceCap: 100,
+    }),
+    {
+      baseDamage: 100,
+      afterDamageThreshold: 100,
+      finalDamage: 5,
+    },
+  );
+});

@@ -110,7 +110,10 @@ export const CRITICAL_FAILURE_TABLE: CritFailTableEntry[] = [
 ];
 
 /** Base critical chance for a character: Luck + More Criticals ranks ×5. */
-export function baseCritChance(char: Pick<Character, 'special' | 'perks'>): number {
+export function baseCritChance(char: Pick<Character, 'special' | 'perks' | 'manualDerivedStats'>): number {
+  if (char.manualDerivedStats?.criticalChance !== undefined) {
+    return char.manualDerivedStats.criticalChance;
+  }
   const luck = char.special?.luck ?? 5;
   const moreCrits = (char.perks ?? []).find((p) => p.perkId === 'more_criticals');
   return luck + (moreCrits ? moreCrits.rank * 5 : 0);

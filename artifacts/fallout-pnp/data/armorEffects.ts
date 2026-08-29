@@ -2,7 +2,7 @@
  * Pure armor-effect aggregation and sheet resolver.  It deliberately has no
  * React, storage, or catalogue dependency: callers provide the armor list.
  */
-import type { Armor, ArmorEffects, CharacterSkills, SPECIALStats } from '../context/types.ts';
+import type { Armor, ArmorEffects, CharacterSkills, ManualDerivedStats, SPECIALStats } from '../context/types.ts';
 import {
   applyImmediateTraitSpecial,
   applyNightPersonSpecial,
@@ -109,6 +109,7 @@ export interface ArmorResolverInput {
   raceBounds?: { min: SPECIALStats; max: SPECIALStats };
   nightPersonPeriod?: 'day' | 'night';
   racialNaturalArmorClass?: number;
+  manualDerivedStats?: ManualDerivedStats;
   tempAC?: number;
   radiationResistance?: number;
   gasResistance?: number;
@@ -207,16 +208,34 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
 
   const armorAC = numeric(bodyArmor?.acBonus) + numeric(helmet?.acBonus);
   const sequencePerk = perkBonus(input.perks, 'earlier_sequence') * 2;
+  const manual = input.manualDerivedStats;
+  const baseAP = calculateMaxActionPoints(input.special.agility, input.traits);
+  const baseAC = calculateNaturalArmorClass(input.special.agility, input.traits, input.racialNaturalArmorClass);
+  const baseSequence = calculateSequence(input.special.perception, input.traits);
+  const maxAP = manual
+    ? manual.maxAP + calculateMaxActionPoints(effectiveSpecial.agility, input.traits) - baseAP
+      + perkBonus(input.perks, 'action_boy_girl') + apMod
+    : calculateMaxActionPoints(effectiveSpecial.agility, input.traits)
+      + perkBonus(input.perks, 'action_boy_girl') + apMod;
+  const armorClass = manual
+    ? manual.armorClass + calculateNaturalArmorClass(effectiveSpecial.agility, input.traits, input.racialNaturalArmorClass)
+      - baseAC + armorAC + numeric(input.tempAC) + acMod
+    : calculateNaturalArmorClass(effectiveSpecial.agility, input.traits, input.racialNaturalArmorClass)
+      + armorAC + numeric(input.tempAC) + acMod;
+  const sequence = manual
+    ? manual.sequence + calculateSequence(effectiveSpecial.perception, input.traits) - baseSequence
+      + sequencePerk + sequenceMod
+    : calculateSequence(effectiveSpecial.perception, input.traits, sequencePerk) + sequenceMod;
   return {
     bodyArmor,
     helmet,
     armorEffects,
     effectiveSpecial,
     effectiveSkills,
-    maxAP: Math.max(1, calculateMaxActionPoints(effectiveSpecial.agility, input.traits) + perkBonus(input.perks, 'action_boy_girl') + apMod),
-    armorClass: Math.max(0, calculateNaturalArmorClass(effectiveSpecial.agility, input.traits, input.racialNaturalArmorClass) + armorAC + numeric(input.tempAC) + acMod),
-    sequence: Math.max(0, calculateSequence(effectiveSpecial.perception, input.traits, sequencePerk) + sequenceMod),
-    criticalChance: Math.max(0, Math.floor(effectiveSpecial.luck / 2)),
+    maxAP: Math.max(1, maxAP),
+    armorClass: Math.max(0, armorClass),
+    sequence: Math.max(0, sequence),
+    criticalChance: Math.max(0, manual?.criticalChance ?? Math.floor(effectiveSpecial.luck / 2)),
     meleeDamage: Math.max(1, effectiveSpecial.strength - 5),
     carryWeight: calculateCarryWeight(effectiveSpecial.strength, input.traits),
     gasResistance: clamp(numeric(input.gasResistance) + armorEffects.gasResistance, 0, 100),
