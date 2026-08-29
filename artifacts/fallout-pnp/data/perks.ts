@@ -1,4 +1,7 @@
 import { Character, RaceType, SPECIALStats, SkillType } from '@/context/types';
+import { calcBaseSkills } from './derived';
+import { computePerkStatBonuses } from './effects';
+import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './effectiveRules';
 
 export type PerkCategory = 'combat' | 'defense' | 'utility' | 'social' | 'survival' | 'racial';
 
@@ -23,6 +26,8 @@ export interface PerkCombatEffect {
   damageResistBonus?: number;
   // AP economy
   attackAPDiscount?: number;
+  /** Permanent maximum AP gained per rank (Action Boy/Girl). */
+  maxAPBonus?: number;
   // Defensive
   armorClassBonus?: number;
   sequenceBonus?: number;
@@ -90,7 +95,7 @@ export const PERKS: Perk[] = [
     description: 'Each rank gives you one additional Action Point per combat turn.',
     minLevel: 12, maxRanks: 2, minAGI: 5,
     requirements: { level: 12, stats: { agility: 5 } },
-    combatEffect: { attackAPDiscount: -1, combatNote: '+1 max AP per rank' },
+    combatEffect: { maxAPBonus: 1, combatNote: '+1 max AP per rank' },
   },
   {
     id: 'adrenaline_rush', name: 'Adrenaline Rush', category: 'combat',
@@ -1041,12 +1046,28 @@ const SKILL_LABELS_SHORT: Record<SkillType, string> = {
   pilot: 'Pilot',
 };
 
-// Tagged skills receive a +20 bonus at display/check time (skills are stored
-// WITHOUT it). This returns the effective skill value used for requirement checks.
-function effectiveSkill(char: Character, skill: SkillType): number {
-  const base = char.skills[skill] ?? 0;
-  const tagged = char.taggedSkills?.includes(skill) ? 20 : 0;
-  return base + tagged;
+// Perk requirements use permanent trait and Gain-X values. Temporary chem,
+// condition, and Night Person modifiers cannot be used to qualify for a perk.
+function effectiveRequirementValues(char: Character): {
+  special: SPECIALStats;
+  skills: Character['skills'];
+} {
+  const special = applyImmediateTraitSpecial(char.special, char.traits);
+  const perkStats = computePerkStatBonuses(char);
+  for (const key of Object.keys(special) as (keyof SPECIALStats)[]) {
+    special[key] += perkStats[key] ?? 0;
+  }
+  const skills = calculateRebasedEffectiveSkills<Character['skills']>({
+    savedSkills: char.skills,
+    savedBaseSkills: calcBaseSkills(char.special),
+    effectiveBaseSkills: calcBaseSkills(special),
+    options: {
+      traits: char.traits,
+      taggedSkills: char.taggedSkills,
+      includeTagBonus: true,
+    },
+  });
+  return { special, skills };
 }
 
 /**
@@ -1060,6 +1081,7 @@ export function canTakePerk(
   currentRanks: number,
 ): { allowed: boolean; reasons: string[] } {
   const reasons: string[] = [];
+  const requirementValues = effectiveRequirementValues(char);
 
   // Robots never gain perks.
   if (ROBOTS_NO_PERKS && char.race === 'robot') {
@@ -1100,7 +1122,7 @@ export function canTakePerk(
 
   (Object.keys(stats) as (keyof SPECIALStats)[]).forEach(key => {
     const req = stats[key];
-    if (req !== undefined && char.special[key] < req) {
+    if (req !== undefined && requirementValues.special[key] < req) {
       reasons.push(`Requires ${SPECIAL_LABELS[key]} ${req}`);
     }
   });
@@ -1115,14 +1137,14 @@ export function canTakePerk(
 
   if (skillEntries.length > 0) {
     if (perk.requirements?.skillsAny) {
-      const anyMet = skillEntries.some(e => effectiveSkill(char, e.skill) >= e.value);
+      const anyMet = skillEntries.some(e => requirementValues.skills[e.skill] >= e.value);
       if (!anyMet) {
         const label = skillEntries.map(e => `${SKILL_LABELS_SHORT[e.skill]} ${e.value}%`).join(' OR ');
         reasons.push(`Requires ${label}`);
       }
     } else {
       skillEntries.forEach(e => {
-        if (effectiveSkill(char, e.skill) < e.value) {
+        if (requirementValues.skills[e.skill] < e.value) {
           reasons.push(`Requires ${SKILL_LABELS_SHORT[e.skill]} ${e.value}%`);
         }
       });

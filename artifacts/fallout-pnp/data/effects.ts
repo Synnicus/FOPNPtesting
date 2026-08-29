@@ -1,7 +1,15 @@
 import type { ActiveEffect, Character, SPECIALStats } from '@/context/types';
 import type { Chem, ChemStage } from './chems';
 import { getChem } from './chems';
-import { applyTemporaryDerivedDeltas, computeConditionModifiers, computeTemporaryDerivedDeltas } from './conditions';
+import { computeConditionModifiers } from './conditions';
+import {
+  applyImmediateTraitSpecial,
+  applyNightPersonSpecial,
+  calculateMaxActionPoints,
+  replaceStoredNaturalArmorClass,
+  calculateSequence,
+} from './effectiveRules';
+import { getRaceById } from './races';
 
 // ─── Effects framework — Fallout PnP 2.0 ──────────────────────────────────────
 // Merges chems (data/chems.ts) into the character's ActiveEffect[] and provides
@@ -185,6 +193,18 @@ export function computePerkStatBonuses(
   return out;
 }
 
+/** Permanent max-AP bonuses represented by structured combat perk records. */
+export function computePerkMaxAPBonus(
+  char: Pick<Character, 'perks'>,
+): number {
+  // Keep this local and data-driven without importing the full perk catalogue:
+  // Action Boy/Girl is the only current structured max-AP perk.
+  return (char.perks ?? []).reduce(
+    (total, perk) => total + (perk.perkId === 'action_boy_girl' ? perk.rank : 0),
+    0,
+  );
+}
+
 export interface EffectiveSpecial {
   /** Final stat values: base + perk bonuses + chem mods (min 1, NO upper cap —
    *  chems may temporarily push a stat past racial limits). */
@@ -205,18 +225,31 @@ export interface EffectiveSpecial {
  * by ending (the delta disappears from this computation).
  */
 export function effectiveSpecial(
-  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions'>,
+  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'traits' | 'race' | 'nightPersonPeriod'>,
 ): EffectiveSpecial {
   const perkBonus = computePerkStatBonuses(char);
   const chem = computeEffectModifiers(char).statMods;
   const conditionDelta = computeConditionModifiers(char).statMods;
-  const stats = { ...char.special };
+  // Immediate traits are applied before permanent Gain-X perks. Night Person
+  // is then bounded to the selected race before conditions and chems (which
+  // intentionally remain uncapped) are layered on top.
+  const withTraits = applyImmediateTraitSpecial(char.special, char.traits);
+  const withPerks = { ...withTraits };
+  for (const key of SPECIAL_KEYS) withPerks[key] += perkBonus[key] ?? 0;
+  const race = getRaceById(char.race);
+  const stats = applyNightPersonSpecial(
+    withPerks,
+    char.traits,
+    (char.traits ?? []).some(t => t.trim().toLowerCase().replace(/[-\s]+/g, '_') === 'night_person')
+      ? (char.nightPersonPeriod ?? 'day')
+      : undefined,
+    race ? { min: race.specialMin, max: race.specialMax } : undefined,
+  );
   const chemDelta: Partial<SPECIALStats> = {};
   let hasChemMods = false;
   for (const key of SPECIAL_KEYS) {
-    const withPerks = stats[key] + (perkBonus[key] ?? 0);
     const delta = chem[key] ?? 0;
-    stats[key] = Math.max(1, withPerks + delta + (conditionDelta[key] ?? 0));
+    stats[key] = Math.max(1, stats[key] + delta + (conditionDelta[key] ?? 0));
     if (delta !== 0) { chemDelta[key] = delta; hasChemMods = true; }
   }
   return { stats, chemDelta, conditionDelta, hasChemMods };
@@ -230,19 +263,29 @@ export interface EffectiveDerivedStats {
 
 /** Stored derived values adjusted by temporary SPECIAL and explicit effects. */
 export function effectiveDerivedStats(
-  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'maxAP' | 'armorClass' | 'sequence'>,
+  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'traits' | 'race' | 'nightPersonPeriod' | 'maxAP' | 'armorClass' | 'sequence'>,
 ): EffectiveDerivedStats {
-  const perkBonus = computePerkStatBonuses(char);
-  const storedSpecial = { ...char.special };
-  for (const key of SPECIAL_KEYS) storedSpecial[key] += perkBonus[key] ?? 0;
   const workingSpecial = effectiveSpecial(char).stats;
-  const temporary = computeTemporaryDerivedDeltas(storedSpecial, workingSpecial);
   const explicit = computeEffectModifiers(char);
-  return applyTemporaryDerivedDeltas(
-    char,
-    temporary,
-    { maxAP: explicit.apMod, armorClass: explicit.acMod, sequence: explicit.sequenceMod },
+  const race = getRaceById(char.race);
+  // armorClass is persisted including armor/racial AC. Replace only the
+  // natural agility portion so Kamikaze preserves those other sources.
+  const perkBonus = computePerkStatBonuses(char);
+  const storedPermanentAgility = char.special.agility + (perkBonus.agility ?? 0);
+  const armorClass = replaceStoredNaturalArmorClass(
+    char.armorClass,
+    storedPermanentAgility,
+    workingSpecial.agility,
+    char.traits,
+    race?.naturalACBonus ?? 0,
   );
+  const storedPermanentPerception = char.special.perception + (perkBonus.perception ?? 0);
+  const perkDerivedSequence = char.sequence - storedPermanentPerception * 2;
+  return {
+    maxAP: Math.max(1, calculateMaxActionPoints(workingSpecial.agility, char.traits) + computePerkMaxAPBonus(char) + explicit.apMod),
+    armorClass: Math.max(0, armorClass + explicit.acMod),
+    sequence: Math.max(0, calculateSequence(workingSpecial.perception, char.traits, perkDerivedSequence) + explicit.sequenceMod),
+  };
 }
 
 /** Re-export so callers can resolve a chem from an effect in one import. */

@@ -25,7 +25,7 @@ import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
-import { CHEMS, getChem } from '@/data/chems';
+import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveDerivedStats, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus } from '@/data/derived';
@@ -33,6 +33,11 @@ import { applyProtection } from '@/data/armor';
 import { resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import { computeConditionModifiers } from '@/data/conditions';
+import {
+  calculateRebasedEffectiveSkills,
+  fastShotAppliesToSkill,
+} from '@/data/effectiveRules';
+import { calcBaseSkills } from '@/data/derived';
 import {
   SPECIAL_UNARMED_ATTACKS,
   SpecialUnarmedGroup,
@@ -813,7 +818,10 @@ export default function CombatScreen() {
   const positionBonus = isRanged ? POSITION_OPTIONS[posIdxFromChar].bonus : 0;
   // Gate targeting on the weapon: apTargeted === null means the weapon cannot
   // make targeted shots (e.g. thrown explosives, flamethrowers).
-  const weaponCanTarget = (!weapon || weapon.apTargeted !== null) && !specialUnarmedAttack;
+  const traitEffects = attacker ? computeTraitEffects(attacker) : {};
+  const fastShotApplies = fastShotAppliesToSkill(weapon?.skill)
+    && !!traitEffects.cannotTargetedShot;
+  const weaponCanTarget = (!weapon || weapon.apTargeted !== null) && !specialUnarmedAttack && !fastShotApplies;
   let effTargetedIdx = weaponCanTarget ? targetedIdx : 0;
   // Sniper scope forces an aimed shot: if no body part is targeted, default to Torso.
   if (modEffects.forcesAimed && weaponCanTarget && effTargetedIdx === 0) effTargetedIdx = 1;
@@ -822,16 +830,22 @@ export default function CombatScreen() {
   const targetedPenalty = specialUnarmedAttack ? 0 : (modEffects.negatesAimedPenalty ? 0 : rawTargetedPenalty);
   const targetedBodyPart = TARGETED_OPTIONS[effTargetedIdx].bodyPart;
   const isAimed = targetedBodyPart !== null && !specialUnarmedAttack;
-  // Include tagged skill +20 bonus in base skill
-  const rawBaseSkill = (attacker && weapon) ? (attacker.skills as any)[weapon.skill] ?? 0 : 0;
-  const isTaggedSkill = weapon ? (attacker?.taggedSkills ?? []).includes(weapon.skill as any) : false;
-  const baseSkill = rawBaseSkill + (isTaggedSkill ? 20 : 0);
+  // Saved purchases are rebased against working SPECIAL; tags and trait skill
+  // modifiers are applied exactly once here.
+  const effectiveAttackerSkills = attacker
+    ? calculateRebasedEffectiveSkills<Character['skills']>({
+        savedSkills: attacker.skills,
+        savedBaseSkills: calcBaseSkills(attacker.special),
+        effectiveBaseSkills: calcBaseSkills(effectiveSpecial(attacker).stats),
+        options: { traits: attacker.traits, perks: attacker.perks, conditions: attacker.conditions, taggedSkills: attacker.taggedSkills, includeTagBonus: true },
+      })
+    : null;
+  const baseSkill = (effectiveAttackerSkills && weapon)
+    ? effectiveAttackerSkills[weapon.skill] ?? 0
+    : 0;
 
   // Perk bonuses
   const perkBonuses = computePerkBonuses(attacker, weapon, isRanged);
-
-  // Trait effects (One Hander to-hit swing, etc.)
-  const traitEffects = attacker ? computeTraitEffects(attacker) : {};
 
   // Effective magazine size after mods (extended/drum magazines).
   const effectiveMagazine = weapon ? Math.round(weapon.magazineSize * (modEffects.magazineMult ?? 1)) : 0;
@@ -863,8 +877,8 @@ export default function CombatScreen() {
         specialUnarmedAttack,
         attacker.level,
         attackerEffSpecial ?? attacker.special,
-        attacker.skills,
-        attacker.taggedSkills ?? [],
+        effectiveAttackerSkills ?? attacker.skills,
+        [],
       )
     : null;
   // Defender-side perk bonuses (Dodger AC, Toughness DR, …) + chem AC mods.
@@ -894,23 +908,19 @@ export default function CombatScreen() {
   //  subtract the "lost" base-AC when the defender is crouching/prone.
   const defenderPos = defender?.position ?? 'standing';
   // AGI baked into the stored armorClass = base + permanent Gain Agility perks.
-  const defenderStoredAgi = defender?.special
-    ? defender.special.agility + (computePerkStatBonuses(defender).agility ?? 0)
-    : 0;
-  // Working AGI: injuries override, then chem statMods apply (may exceed 10).
-  const defenderTemporaryAgiDelta = defender?.special
-    ? (effectiveSpecial(defender).chemDelta.agility ?? 0) + (effectiveSpecial(defender).conditionDelta.agility ?? 0)
-    : 0;
-  const defenderBaseAgi = Math.max(0, (defenderInjury?.effectiveAgility ?? defenderStoredAgi) + defenderTemporaryAgiDelta);
-  let defenderPositionalAgiAC = defenderBaseAgi;
-  if (defenderPos === 'crouching') defenderPositionalAgiAC = Math.min(defenderBaseAgi, 3);
-  else if (defenderPos === 'prone') defenderPositionalAgiAC = Math.min(defenderBaseAgi, 1);
-  // AC delta vs the stored armorClass (which baked in defenderStoredAgi).
-  // Negative when a chem AGI boost exceeds positional loss (i.e. AC goes UP).
-  const defenderAgiAcDelta = defenderStoredAgi - defenderPositionalAgiAC;
+  const defenderEffectiveAgi = defenderEffSpecial?.agility ?? 0;
+  const injuredAgi = defenderInjury?.effectiveAgility;
+  const defenderBaseAgi = Math.max(0, injuredAgi ?? defenderEffectiveAgi);
+  const defenderKamikaze = !!defender && (defender.traits ?? []).includes('kamikaze');
+  const uprightNaturalAgiAC = defenderKamikaze ? 0 : defenderBaseAgi;
+  let defenderPositionalAgiAC = uprightNaturalAgiAC;
+  if (defenderPos === 'crouching') defenderPositionalAgiAC = Math.min(uprightNaturalAgiAC, 3);
+  else if (defenderPos === 'prone') defenderPositionalAgiAC = Math.min(uprightNaturalAgiAC, 1);
+  const defenderAgiAcDelta = uprightNaturalAgiAC - defenderPositionalAgiAC;
+  const defenderEffectiveAC = defender ? effectiveDerivedStats(defender).armorClass : 0;
   const defenderAC = defender
-    ? Math.max(0, defender.armorClass + (defender.tempAC ?? 0) - defenderAgiAcDelta
-        + defenderPerkDef.ac + (defenderEffectMods?.acMod ?? 0) + defenderShield.ac)
+    ? Math.max(0, defenderEffectiveAC + (defender.tempAC ?? 0) - defenderAgiAcDelta
+        + defenderPerkDef.ac + defenderShield.ac)
     : 0;
   const defenderACAffectsHit = specialUnarmedAttack?.armorClassPiercing ? 0 : defenderAC;
 
@@ -971,6 +981,7 @@ export default function CombatScreen() {
       - strReqPenalty
       + ammoToHitAdjust
       + oneHanderToHit
+      + (traitEffects.toHitBonus ?? 0)
     ));
 
   // Double shot: single shot, range −3
@@ -980,7 +991,8 @@ export default function CombatScreen() {
   useEffect(() => {
     if (weapon && !weaponCanBurst && isBurst) setIsBurst(false);
     if (weapon && !weaponCanTarget && targetedIdx !== 0) setTargetedIdx(0);
-  }, [weapon?.id, weaponCanBurst, weaponCanTarget]);
+    if (fastShotApplies && targetedIdx !== 0) setTargetedIdx(0);
+  }, [weapon?.id, weaponCanBurst, weaponCanTarget, fastShotApplies]);
   const effectiveBurstShots = doubleShotActive ? 1 : (isBurst && weaponCanBurst ? burstShots : 1);
   const burstPenalties = Array.from({ length: effectiveBurstShots }, (_, i) => i === 0 ? 0 : -i * 10);
   const shotChances = burstPenalties.map(p => computeCtH(p));
@@ -994,7 +1006,7 @@ export default function CombatScreen() {
     : 0;
   const aimCritBonus = isAimed && targetedBodyPart ? TARGETED_CRIT_BONUS[targetedBodyPart] : 0;
   const specialCritBonus = specialUnarmedAttack?.critBonus ?? 0;
-  const totalCritChance = attackerBaseCrit + aimCritBonus + perkBonuses.critChance + specialCritBonus;
+  const totalCritChance = attackerBaseCrit + aimCritBonus + perkBonuses.critChance + (traitEffects.critChanceBonus ?? 0) + specialCritBonus;
 
   // Perks: Sniper (ranged) / Slayer (melee+unarmed) — on a successful hit, also
   // roll 1d10; if <= Luck the hit is critical. Whether that perk applies here:
@@ -1030,7 +1042,7 @@ export default function CombatScreen() {
     : (weapon.apTargeted === undefined ? AP_COSTS.ATTACK_AIMED : weapon.apTargeted); // null = cannot target
   const wBurst = weapon === null ? AP_COSTS.ATTACK_BURST
     : (weapon.apBurst === undefined ? AP_COSTS.ATTACK_BURST : weapon.apBurst); // null = no burst
-  const canTarget = wTargeted !== null && !specialUnarmedAttack;
+  const canTarget = wTargeted !== null && !specialUnarmedAttack && !fastShotApplies;
   const canBurst = wBurst !== null && !!weapon && !specialUnarmedAttack && weapon.burstLimit > 1;
 
   const baseAPCost = specialUnarmedAttack
@@ -1042,7 +1054,8 @@ export default function CombatScreen() {
         : (isAimed && canTarget)
           ? (wTargeted as number)
           : wSingle;
-  const effectiveAPCost = Math.max(1, baseAPCost - perkBonuses.apDiscount - (isBurst ? perkBonuses.burstApDiscount : 0));
+  const traitAPDelta = (traitEffects.attackAPPenalty ?? 0) - (fastShotApplies ? (traitEffects.attackAPDiscount ?? 0) : 0);
+  const effectiveAPCost = Math.max(1, baseAPCost + traitAPDelta - perkBonuses.apDiscount - (isBurst ? perkBonuses.burstApDiscount : 0));
   const attackerHasAP = (attacker?.currentAP ?? 0) >= effectiveAPCost;
 
   // Weapon-usability warnings from injuries (manual):
@@ -1336,6 +1349,10 @@ export default function CombatScreen() {
           critMult = critMult * 1.5;
           notes.push('Better Criticals: ×1.5');
         }
+        if (traitEffects.critDamageMultiplier && traitEffects.critDamageMultiplier !== 1) {
+          critMult *= traitEffects.critDamageMultiplier;
+          notes.push(`Heavy Handed: critical damage ×${traitEffects.critDamageMultiplier}`);
+        }
       }
 
       const dieCount = doubleShotActive ? weapon.damageDieCount * 2 : weapon.damageDieCount;
@@ -1371,11 +1388,12 @@ export default function CombatScreen() {
       });
       const rawBaseDmg = resolvedDamage.baseDamage;
       const afterDT = resolvedDamage.afterDamageThreshold;
-      const finalDmg = resolvedDamage.finalDamage;
+      const finalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
+      if (traitEffects.damageMultiplier && traitEffects.damageMultiplier !== 1) notes.push(`Finesse: post-DR damage ×${traitEffects.damageMultiplier}`);
       return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes, manualBaseDamage: overrideVal };
     });
     setShotDamages(damages); setDamageApplied(false);
-  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, attackerEffSpecial, specialUnarmedAttack]);
+  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, attackerEffSpecial, specialUnarmedAttack, traitEffects]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
 
@@ -1441,6 +1459,22 @@ export default function CombatScreen() {
     setShowChemPicker(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [attacker, spendAP, applyChem]);
+
+  const handleTakeAlcohol = useCallback(() => {
+    if (!attacker) return;
+    if (!spendAP(attacker.id, CHEM_AP_COST)) {
+      notify('Not Enough AP', `Taking alcohol needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      return;
+    }
+    updateCharacter({
+      ...attacker,
+      conditions: (attacker.conditions ?? []).includes('drunk')
+        ? (attacker.conditions ?? [])
+        : [...(attacker.conditions ?? []), 'drunk'],
+    });
+    setShowChemPicker(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [attacker, spendAP, updateCharacter]);
 
   // Set the loaded ammo type. Changing ammo is FREE (GM bookkeeping) — the AP
   // cost of loading is handled by the RELOAD action, not by picking a type.
@@ -2314,6 +2348,7 @@ export default function CombatScreen() {
               {positionBonus !== 0 && <FormulaLine label={`Position (${POSITION_OPTIONS[posIdxFromChar].label})`} value={`+${positionBonus}%`} color="#4a8c3f" />}
               {targetedPenalty !== 0 && <FormulaLine label={`Targeted (${TARGETED_OPTIONS[targetedIdx].label})`} value={`−${targetedPenalty}%`} color={colors.destructive} />}
               {perkBonuses.toHit !== 0 && <FormulaLine label="Perk to-hit bonus" value={`+${perkBonuses.toHit}%`} color="#4a8c3f" />}
+              {(traitEffects.toHitBonus ?? 0) !== 0 && <FormulaLine label="Trait to-hit bonus" value={`+${traitEffects.toHitBonus}%`} color="#4a8c3f" />}
               {strReqPenalty > 0 && <FormulaLine label={`STR req penalty (STR ${attackerStr}/${effectiveMinStr})`} value={`−${strReqPenalty}%`} color={colors.destructive} />}
               {isBurst && effectiveBurstShots > 1 && <FormulaLine label="Burst penalties" value={burstPenalties.slice(1).map(p => `${p}%`).join(', ')} color={colors.destructive} />}
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
@@ -2324,6 +2359,11 @@ export default function CombatScreen() {
               {luckPerkApplies && (
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary }}>
                   {sniperApplies ? 'Sniper' : 'Slayer'}: on a hit, also crit if 1d10 ≤ Luck ({attackerLuck})
+                </Text>
+              )}
+              {traitEffects.critCrippleMultiplier && traitEffects.critCrippleMultiplier !== 1 && (
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  Heavy Handed: critical cripple/knockout chance is 30% lower (manual adjudication; no random roll is added).
                 </Text>
               )}
               {(cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked || attackerKO || specialTechniqueUnavailable) && (
@@ -2444,6 +2484,39 @@ export default function CombatScreen() {
                   </View>
                 </View>
                 )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {attacker && ((attacker.traits ?? []).includes('night_person') || hasPerk(attacker, 'drunken_master')) && (
+          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CONDITIONAL TRAITS & PERKS</Text>
+            {(attacker.traits ?? []).includes('night_person') && (
+              <View style={{ gap: 5 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>NIGHT PERSON — persist current period</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(['day', 'night'] as const).map(period => (
+                    <TouchableOpacity key={period} accessibilityRole="button" accessibilityLabel={`Night Person ${period}`} onPress={() => updateCharacter({ ...attacker, nightPersonPeriod: period })}
+                      style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6, backgroundColor: (attacker.nightPersonPeriod ?? 'day') === period ? colors.primary : colors.secondary, borderWidth: 1, borderColor: (attacker.nightPersonPeriod ?? 'day') === period ? colors.primary : colors.border }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (attacker.nightPersonPeriod ?? 'day') === period ? colors.primaryForeground : colors.foreground }}>{period.toUpperCase()}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+            {hasPerk(attacker, 'drunken_master') && (
+              <View style={{ gap: 5 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>DRUNKEN MASTER</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={(attacker.conditions ?? []).includes('drunk') ? 'Set Drunken Master sober' : 'Set Drunken Master drunk'} onPress={() => updateCharacter({
+                  ...attacker,
+                  conditions: (attacker.conditions ?? []).includes('drunk')
+                    ? (attacker.conditions ?? []).filter(id => id !== 'drunk')
+                    : [...(attacker.conditions ?? []), 'drunk'],
+                })} style={{ paddingVertical: 8, alignItems: 'center', borderRadius: 6, backgroundColor: (attacker.conditions ?? []).includes('drunk') ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (attacker.conditions ?? []).includes('drunk') ? colors.primaryForeground : colors.foreground }}>{(attacker.conditions ?? []).includes('drunk') ? 'DRUNK — SET SOBER' : 'SOBER — SET DRUNK'}</Text>
+                </TouchableOpacity>
+                {(attacker.conditions ?? []).includes('drunk') && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>+20 Unarmed active</Text>}
               </View>
             )}
           </View>
@@ -2844,7 +2917,7 @@ export default function CombatScreen() {
         visible={showChemPicker}
         title="TAKE CHEMS"
         subtitle={`${CHEM_AP_COST} AP — applied to ${attacker?.name ?? 'attacker'} on selection`}
-        options={CHEMS.map(chem => {
+        options={[...CHEMS.map(chem => {
           const s = chem.stages[0];
           const bits: string[] = [];
           if (s) {
@@ -2862,8 +2935,14 @@ export default function CombatScreen() {
             sublabel: bits.length ? bits.join(' · ') : (s?.durationText ?? chem.description.slice(0, 80)),
             note: chem.isMultiStage ? 'Multi-stage — progress later stages from the Effects tab' : undefined,
           };
-        })}
-        onSelect={handleTakeChem}
+        }), ...ALCOHOL_CONSUMABLES.map(alcohol => ({
+          key: alcohol.id,
+          label: alcohol.name,
+          sublabel: alcohol.description,
+          section: 'ALCOHOL',
+          note: 'Activates Drunk only; no universal duration or stat effects.',
+        }))]}
+        onSelect={(id) => id === 'alcohol' ? handleTakeAlcohol() : handleTakeChem(id)}
         onClose={() => setShowChemPicker(false)}
       />
       {/* ─── Special Unarmed Attacks (manual pp. 18–19) ─── */}

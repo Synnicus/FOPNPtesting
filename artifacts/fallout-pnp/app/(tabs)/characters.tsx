@@ -19,8 +19,7 @@ import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
   calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
-  calcCriticalChance, calcHealingRate, calcCarryWeight, calcMeleeDamageBonus,
-  calcSkillPointsPerLevel, xpForLevel, levelForXP,
+  calcCriticalChance, calcMeleeDamageBonus, xpForLevel, levelForXP,
   computePerkDerivedBonuses, brutishHulkExtraHP,
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
@@ -30,6 +29,8 @@ import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, effectiveDerivedStats, effectiveSpecial, computePerkStatBonuses, computeEffectModifiers } from '@/data/effects';
+import { ALCOHOL_CONSUMABLES } from '@/data/chems';
+import { applyImmediateTraitSpecial, calculateCarryWeight, calculateHealingRate, calculateRadiationResistance, calculateRebasedEffectiveSkills, calculateSkillPointsPerLevel as calculateRuleSkillPointsPerLevel, calculateTagSkillRules, calculatePerkCadence } from '@/data/effectiveRules';
 import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import {
@@ -45,13 +46,6 @@ import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, res
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
 const LEGACY_TRAIT_PERK_IDS = new Set(['finesse', 'fast_metabolism', 'chem_resistant', 'glowing_one']);
 
-// Perk points available given a race's perksPerLevels cadence (default 3)
-function perkPointsForRaceLevel(level: number, race: RaceType): number {
-  const raceRef = getRaceById(race);
-  const per = raceRef?.perksPerLevels ?? 3;
-  return Math.floor(level / per);
-}
-
 const DAMAGE_TYPES: DamageType[] = ['normal', 'laser', 'fire', 'plasma', 'explosion'];
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -60,6 +54,13 @@ const DEFAULT_SPECIAL: SPECIALStats = { strength: 5, perception: 5, endurance: 5
 const SPECIAL_KEYS: (keyof SPECIALStats)[] = ['strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck'];
 const SPECIAL_SHORT: Record<keyof SPECIALStats, string> = { strength: 'STR', perception: 'PER', endurance: 'END', charisma: 'CHA', intelligence: 'INT', agility: 'AGI', luck: 'LCK' };
 const ALL_SKILLS: SkillType[] = [...COMBAT_SKILLS, ...SUPPORT_SKILLS];
+
+/** Permanent advancement INT: immediate traits and Gain-X only, never chems,
+ * conditions, or Night Person. */
+function permanentIntelligence(char: Pick<Character, 'special' | 'traits' | 'perks'>): number {
+  const special = applyImmediateTraitSpecial(char.special, char.traits);
+  return special.intelligence + (computePerkStatBonuses(char).intelligence ?? 0);
+}
 
 function makeDefaultCharacter(): Character {
   const special = { ...DEFAULT_SPECIAL };
@@ -71,7 +72,7 @@ function makeDefaultCharacter(): Character {
     maxAP: calcMaxAP(special), currentAP: calcMaxAP(special),
     position: 'standing', sequence: calcSequence(special),
     skills: { ...baseSkills },
-    taggedSkills: [], unspentSkillPoints: calcSkillPointsPerLevel(special),
+    taggedSkills: [], unspentSkillPoints: calculateRuleSkillPointsPerLevel(special.intelligence),
     perks: [],
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
     equippedWeaponId: undefined, equippedBodyArmorId: undefined, equippedHelmetId: undefined,
@@ -337,6 +338,28 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // ─── Derived computations ────────────────────────────────────────────────────
   const race = getRaceById(char.race) ?? RACES[0];
   const baseSkills = useMemo(() => calcBaseSkills(char.special), [char.special]);
+  // Purchases are stored against saved SPECIAL.  Rebase them for display only;
+  // traits/perks must never be written back into char.skills.
+  const permanentSpecial = useMemo(() => {
+    const withTraits = applyImmediateTraitSpecial(char.special, char.traits);
+    const perkStats = computePerkStatBonuses(char);
+    for (const key of SPECIAL_KEYS) withTraits[key] += perkStats[key] ?? 0;
+    return withTraits;
+  }, [char.special, char.traits, char.perks]);
+  const effectiveSkillBase = useMemo(() => calcBaseSkills(effectiveSpecial(char).stats), [char]);
+  const tagRules = useMemo(() => calculateTagSkillRules(char.traits), [char.traits]);
+  const effectiveSkills = useMemo(() => calculateRebasedEffectiveSkills<CharacterSkills>({
+    savedSkills: char.skills,
+    savedBaseSkills: baseSkills,
+    effectiveBaseSkills: effectiveSkillBase,
+    options: {
+      traits: char.traits,
+      perks: char.perks,
+      conditions: char.conditions,
+      includeTagBonus: true,
+      taggedSkills: [...char.taggedSkills, ...tagRules.freeTagSkills],
+    },
+  }), [char.skills, baseSkills, effectiveSkillBase, char.traits, char.perks, char.conditions, char.taggedSkills, tagRules.freeTagSkills]);
   const lockedTagCount = useMemo(
     () => ALL_SKILLS.filter(sk => !canChangeSkillTag(char.skills[sk], baseSkills[sk])).length,
     [char.skills, baseSkills],
@@ -350,15 +373,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     // Derived stats use base SPECIAL + permanent Gain-X perks (NOT chem mods —
     // chems are temporary and applied at display/combat time instead).
     const perkStat = computePerkStatBonuses(updatedChar);
-    const specialFx = { ...updatedChar.special };
-    for (const k of SPECIAL_KEYS) specialFx[k] += perkStat[k] ?? 0;
+    const perkSpecial = { ...updatedChar.special };
+    for (const k of SPECIAL_KEYS) perkSpecial[k] += perkStat[k] ?? 0;
+    const hpSpecial = applyImmediateTraitSpecial(perkSpecial, updatedChar.traits);
     const pdb = computePerkDerivedBonuses(updatedChar.perks, updatedChar.level);
-    const maxHp = calcMaxHP(specialFx, updatedChar.level, raceRef.bonusHPPerLevel ?? 0)
+    const maxHp = calcMaxHP(hpSpecial, updatedChar.level, raceRef.bonusHPPerLevel ?? 0)
       + pdb.maxHP
-      + (pdb.doubleHPPerLevel ? brutishHulkExtraHP(specialFx, pdb.doubleHPLevels, raceRef.bonusHPPerLevel ?? 0) : 0);
-    const maxAP = calcMaxAP(specialFx);
-    const armorClass = calcBaseAC(specialFx) + armorACBonus + raceRef.naturalACBonus;
-    const sequence = calcSequence(specialFx) + pdb.sequence;
+      + (pdb.doubleHPPerLevel ? brutishHulkExtraHP(hpSpecial, pdb.doubleHPLevels, raceRef.bonusHPPerLevel ?? 0) : 0);
+    // These stored baselines intentionally exclude traits. The effective rules
+    // layer adds trait and temporary changes without baking them into storage.
+    const maxAP = calcMaxAP(perkSpecial);
+    const armorClass = calcBaseAC(perkSpecial) + armorACBonus + raceRef.naturalACBonus;
+    const sequence = calcSequence(perkSpecial) + pdb.sequence;
     const radRes = Math.max(updatedChar.radiationResistance, raceRef.naturalDR);
     const gasRes = Math.max(updatedChar.gasResistance, raceRef.naturalGasDR);
     const elecRes = Math.min(100, Math.max(updatedChar.electricityResistance, raceRef.naturalElecDR));
@@ -384,8 +410,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       for (const sk of ALL_SKILLS) {
         skills[sk] = rebaseSkillValue(prev.skills[sk], oldBase[sk], newBase[sk]);
       }
-      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
-      const newTotal = calcSkillPointsPerLevel(newSpecial) * prev.level;
+      const oldTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * prev.level;
+      const newTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence({ ...prev, special: newSpecial }), prev.traits) * prev.level;
       const unspentSkillPoints = reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal);
       return recomputeDerived({ ...prev, special: newSpecial, skills, unspentSkillPoints });
     });
@@ -407,8 +433,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       for (const sk of ALL_SKILLS) {
         skills[sk] = rebaseSkillValue(prev.skills[sk], oldBase[sk], newBase[sk]);
       }
-      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
-      const newTotal = calcSkillPointsPerLevel(special) * prev.level;
+      const oldTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * prev.level;
+      const newTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence({ ...prev, special }), prev.traits) * prev.level;
       const unspentSkillPoints = reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal);
       // Reset elemental resistances to the new race's natural defaults
       const radiationResistance = raceRef.naturalDR;
@@ -428,8 +454,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     setChar(prev => {
       const clamped = Math.max(1, Math.min(99, newLevel));
       if (clamped === prev.level) return prev;
-      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
-      const newTotal = calcSkillPointsPerLevel(prev.special) * clamped;
+      const oldTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * prev.level;
+      const newTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * clamped;
       const unspentSkillPoints = reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal);
       return recomputeDerived({
         ...prev, level: clamped, xp: xpForLevel(clamped), unspentSkillPoints,
@@ -442,8 +468,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     setChar(prev => {
       const xp = Math.max(0, Math.min(999999999, Math.floor(newXP) || 0));
       const newLevel = levelForXP(xp);
-      const oldTotal = calcSkillPointsPerLevel(prev.special) * prev.level;
-      const newTotal = calcSkillPointsPerLevel(prev.special) * newLevel;
+      const oldTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * prev.level;
+      const newTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * newLevel;
       const unspentSkillPoints = newLevel !== prev.level
         ? reconcileUnspentSkillPoints(prev.unspentSkillPoints, oldTotal, newTotal)
         : prev.unspentSkillPoints;
@@ -467,12 +493,13 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const specialRemaining = specialPoolTotal - specialSum;
 
   // Perk point tracking (race-specific cadence)
-  const perkPointsAvailable = perkPointsForRaceLevel(char.level, char.race);
+  const perkCadence = calculatePerkCadence(race.perksPerLevels ?? 3, char.traits);
+  const perkPointsAvailable = Math.floor(char.level / perkCadence);
   const perkPointsUsed = calcUsedPerkPoints(char.perks);
   const perkPointsRemaining = perkPointsAvailable - perkPointsUsed;
 
   // Skill points: unspentSkillPoints from char
-  const skillPointsTotal = calcSkillPointsPerLevel(char.special) * char.level;
+  const skillPointsTotal = calculateRuleSkillPointsPerLevel(permanentSpecial.intelligence, char.traits) * char.level;
 
   // Skill update: tagged skills cost 1 point for +2; untagged cost 1 point for +1.
   // Decrement is symmetric: tagged -2 refunds 1 point, untagged -1 refunds 1 point.
@@ -480,7 +507,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const adjustSkill = useCallback((sk: SkillType, delta: 1 | -1) => {
     setChar(prev => {
       const base = calcBaseSkills(prev.special)[sk];
-      const isTagged = prev.taggedSkills.includes(sk);
+      const isTagged = prev.taggedSkills.includes(sk) || calculateTagSkillRules(prev.traits).freeTagSkills.includes(sk);
       const result = applySkillPointOperation({
         currentValue: prev.skills[sk],
         baseValue: base,
@@ -507,8 +534,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return prev;
       }
-      const isTagged = prev.taggedSkills.includes(sk);
-      if (!isTagged && prev.taggedSkills.length >= 3) {
+      const rules = calculateTagSkillRules(prev.traits);
+      const freeTag = rules.freeTagSkills.includes(sk);
+      const isTagged = prev.taggedSkills.includes(sk) || freeTag;
+      if (freeTag) return prev;
+      const selectableTags = prev.taggedSkills.filter(tag => !rules.freeTagSkills.includes(tag));
+      if (!isTagged && selectableTags.length >= rules.selectableCapacity) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return prev;
       }
@@ -555,19 +586,36 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const toggleTrait = useCallback((traitId: string) => {
     setChar(prev => {
       const current = prev.traits ?? [];
+      let traits: string[];
       if (current.includes(traitId)) {
-        return { ...prev, traits: current.filter(t => t !== traitId) };
+        traits = current.filter(t => t !== traitId);
+      } else {
+        const trait = getTraitById(traitId);
+        if (!trait) return prev;
+        const { allowed } = canTakeTrait(prev, trait);
+        if (!allowed) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return prev;
+        }
+        traits = [...current, traitId];
       }
-      const trait = getTraitById(traitId);
-      if (!trait) return prev;
-      const { allowed } = canTakeTrait(prev, trait);
-      if (!allowed) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        return prev;
-      }
-      return { ...prev, traits: [...current, traitId] };
+      const oldTotal = calculateRuleSkillPointsPerLevel(
+        permanentIntelligence(prev),
+        current,
+      ) * prev.level;
+      const next = { ...prev, traits };
+      const newTotal = calculateRuleSkillPointsPerLevel(
+        permanentIntelligence(next),
+        traits,
+      ) * prev.level;
+      const unspentSkillPoints = reconcileUnspentSkillPoints(
+        prev.unspentSkillPoints,
+        oldTotal,
+        newTotal,
+      );
+      return recomputeDerived({ ...next, unspentSkillPoints });
     });
-  }, []);
+  }, [recomputeDerived]);
 
   // ─── Effects (chems) helpers ──────────────────────────────────────────────
   const addChemEffect = useCallback((chemId: string) => {
@@ -1035,11 +1083,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   return [
                     ['Max HP', char.maxHp], ['Max AP', effDerived.maxAP], ['AC', effDerived.armorClass],
                     ['Sequence', effDerived.sequence], ['Crit%', calcCriticalChance(sFx)],
-                    ['Heal/day', calcHealingRate(sFx) + pdb.healingRate], ['Carry', `${calcCarryWeight(sFx) + pdb.carryWeight}lb`],
+                    ['Heal/day', calculateHealingRate(sFx.endurance, char.traits, 0, pdb.healingRate)], ['Carry', `${calculateCarryWeight(sFx.strength, char.traits) + pdb.carryWeight}lb`],
                     ['Melee dmg', calcMeleeDamageBonus(sFx)
                       + 2 * (char.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0)
                       + (computeTraitEffects(char).meleeDamageBonus ?? 0)],
-                    ['SP/lvl', calcSkillPointsPerLevel(sFx)],
+                    ['Rad resist', `${calculateRadiationResistance(char.radiationResistance, char.traits, computeEffectModifiers(char).radResistMod)}%`],
+                    ['SP/lvl', calculateRuleSkillPointsPerLevel(permanentSpecial.intelligence, char.traits)],
                   ] as [string, string | number][];
                 })().map(([l, v]) => (
                   <View key={l} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
@@ -1081,7 +1130,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'stretch' }}>
                   <View style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border, justifyContent: 'center' }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>SP/LVL</Text>
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{calcSkillPointsPerLevel(char.special)}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{calculateRuleSkillPointsPerLevel(permanentSpecial.intelligence, char.traits)}</Text>
                   </View>
                   {/* GM: add/remove skill points manually */}
                   <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
@@ -1107,7 +1156,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   </View>
                 </View>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>GM customization only — manually grant or remove skill points. Accepts negatives.</Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Choose up to 3 tags before spending skill points. Tagged skills get a free +20% bonus shown in orange. Each press costs 1 skill point: +2% for tagged skills, +1% for untagged. Hold for 2s to auto-repeat.</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Choose up to {tagRules.selectableCapacity} tags before spending skill points. Tagged skills get a free +20% bonus shown in orange. Each press costs 1 skill point: +2% for tagged skills, +1% for untagged. Hold for 2s to auto-repeat.</Text>
                 {lockedTagCount > 0 && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{lockedTagCount} skill tag{lockedTagCount === 1 ? ' is' : 's are'} locked until that skill’s purchased points are refunded.</Text>}
               </View>
 
@@ -1118,27 +1167,28 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     const base = baseSkills[sk];
                     const total = char.skills[sk];
                     const offset = total - base;
-                    const isTagged = char.taggedSkills.includes(sk);
+                    const freeTag = tagRules.freeTagSkills.includes(sk);
+                    const isTagged = char.taggedSkills.includes(sk) || freeTag;
                     const tagLocked = !canChangeSkillTag(total, base);
-                    const displayTotal = total + (isTagged ? 20 : 0);
+                    const displayTotal = effectiveSkills[sk];
                     return (
                       <View key={sk} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
                         <TouchableOpacity
                           accessibilityRole="checkbox"
-                          accessibilityState={{ checked: isTagged, disabled: tagLocked }}
-                          disabled={tagLocked}
+                          accessibilityState={{ checked: isTagged, disabled: tagLocked || freeTag }}
+                          disabled={tagLocked || freeTag}
                           onPress={() => toggleTag(sk)}
                           style={{
                             width: 28,
                             height: 28,
                             borderRadius: 4,
                             borderWidth: 2,
-                            borderColor: tagLocked ? colors.mutedForeground + '55' : isTagged ? colors.primary : colors.border,
+                            borderColor: tagLocked || freeTag ? colors.mutedForeground + '55' : isTagged ? colors.primary : colors.border,
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: tagLocked ? colors.secondary : isTagged ? colors.primary + '33' : 'transparent',
-                            opacity: tagLocked ? 0.4 : 1,
-                            pointerEvents: tagLocked ? 'none' : 'auto',
+                            backgroundColor: tagLocked || freeTag ? colors.secondary : isTagged ? colors.primary + '33' : 'transparent',
+                            opacity: tagLocked || freeTag ? 0.6 : 1,
+                            pointerEvents: tagLocked || freeTag ? 'none' : 'auto',
                           }}
                         >
                           {isTagged && <Feather name="tag" size={12} color={colors.primary} />}
@@ -1146,7 +1196,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: 13, fontFamily: 'Inter_500Medium', color: isTagged ? colors.primary : colors.foreground }} numberOfLines={1}>{SKILL_LABELS[sk]}</Text>
                           <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                            Base {base}{offset > 0 ? ` +${offset} pts` : ''}{isTagged ? ' +20 tagged' : ''}
+                            Base {base}{offset > 0 ? ` +${offset} pts` : ''}{freeTag ? ' +20 Ham Fisted (locked)' : isTagged ? ' +20 tagged' : ''}
                           </Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1593,28 +1643,70 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               })()}
 
               <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16, marginTop: 10, gap: 8 }}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>WITHDRAWAL & RECOVERY</Text>
+                {(char.traits ?? []).includes('night_person') && (
+                  <View style={{ gap: 6, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>NIGHT PERSON</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Choose the current period. Day applies −1 PER/INT; Night applies +1 PER/INT within racial bounds.</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {(['day', 'night'] as const).map(period => {
+                        const selected = (char.nightPersonPeriod ?? 'day') === period;
+                        return (
+                          <TouchableOpacity
+                            key={period}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Night Person ${period}`}
+                            onPress={() => setChar(c => ({ ...c, nightPersonPeriod: period }))}
+                            style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 6, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
+                          >
+                            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primaryForeground : colors.foreground }}>{period.toUpperCase()}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>CONDITIONS</Text>
                 {CONDITION_DEFINITIONS.map(condition => {
                   const active = (char.conditions ?? []).includes(condition.id);
                   return (
                     <TouchableOpacity
                       key={condition.id}
-                      onPress={() => setChar(c => ({
-                        ...c,
-                        conditions: active
-                          ? (c.conditions ?? []).filter(id => id !== condition.id)
-                          : [...(c.conditions ?? []), condition.id],
-                      }))}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${condition.name}: ${active ? 'active; tap to remove' : 'inactive; tap to activate'}`}
+                      onPress={() => setChar(c => {
+                        const currentlyActive = (c.conditions ?? []).includes(condition.id);
+                        return {
+                          ...c,
+                          conditions: currentlyActive
+                            ? (c.conditions ?? []).filter(id => id !== condition.id)
+                            : [...(c.conditions ?? []), condition.id],
+                        };
+                      })}
                       style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: active ? colors.destructive + '88' : colors.border, backgroundColor: active ? colors.destructive + '14' : colors.secondary, gap: 3 }}
                     >
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.foreground }}>{condition.name}</Text>
-                        <Feather name={active ? 'check-circle' : 'circle'} size={18} color={active ? colors.destructive : colors.mutedForeground} />
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.mutedForeground }}>{active ? 'ACTIVE — REMOVE' : 'SET ACTIVE'}</Text>
                       </View>
                       <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{condition.description}</Text>
                     </TouchableOpacity>
                   );
                 })}
+                <View style={{ marginTop: 4, gap: 6 }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>ALCOHOL</Text>
+                  {ALCOHOL_CONSUMABLES.map(alcohol => (
+                    <TouchableOpacity key={alcohol.id} onPress={() => setChar(c => ({
+                      ...c,
+                      conditions: (c.conditions ?? []).includes(alcohol.conditionId)
+                        ? c.conditions
+                        : [...(c.conditions ?? []), alcohol.conditionId],
+                    }))} style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{alcohol.name}</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{alcohol.description}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Alcohol activates Drunk only; use the Drunk condition toggle above to remove it.</Text>
+                </View>
               </View>
 
               {/* ── ACTIVE CHEM EFFECTS ── */}
@@ -1864,6 +1956,10 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
           </Text>
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
             HP {character.currentHp}/{character.maxHp} · AC {effDerived.armorClass + character.tempAC} · AP {Math.min(character.currentAP, effDerived.maxAP)}/{effDerived.maxAP} · SEQ {effDerived.sequence}
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+            Carry {calculateCarryWeight(effSpecial.stats.strength, character.traits) + computePerkDerivedBonuses(character.perks, character.level).carryWeight} lb
+            {(character.traits ?? []).includes('night_person') ? ` · Night Person ${(character.nightPersonPeriod ?? 'day').toUpperCase()}` : ''}
           </Text>
         </View>
         <View style={{ gap: 6 }}>

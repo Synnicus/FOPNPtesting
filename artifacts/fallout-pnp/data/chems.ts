@@ -57,6 +57,54 @@ export interface Chem {
   isMultiStage: boolean;
 }
 
+/**
+ * Alcohol is mentioned by the manual as the trigger for Drunken Master, but the
+ * manual does not provide an alcohol item table, dose duration, or penalties.
+ * Keep it separate from Chem so consuming it cannot accidentally apply a
+ * fabricated ChemStage.
+ */
+export interface AlcoholConsumable {
+  id: string;
+  name: string;
+  description: string;
+  conditionId: 'drunk';
+  /** Alcohol intoxication is started and ended explicitly by a player or GM. */
+  application: 'user-or-gm-controlled';
+}
+
+/**
+ * The only alcohol consumable identified mechanically by Fallout PnP 2.0 is
+ * alcohol itself ("under the influence of alcohol" in Drunken Master). The
+ * manual mentions cheap beer only in generic setting-writing prose, not as an
+ * equipment entry, so unsupported video-game alcohol brands are not added.
+ */
+export const ALCOHOL_CONSUMABLES: readonly AlcoholConsumable[] = [
+  {
+    id: 'alcohol',
+    name: 'Alcohol',
+    description:
+      'An alcoholic drink. The manual defines being under the influence of alcohol, but gives no universal penalties or duration; the player or GM controls the Drunk condition.',
+    conditionId: 'drunk',
+    application: 'user-or-gm-controlled',
+  },
+] as const;
+
+export const ALCOHOL_CONSUMABLES_BY_ID: Readonly<Record<string, AlcoholConsumable>> =
+  ALCOHOL_CONSUMABLES.reduce(
+    (acc, consumable) => {
+      acc[consumable.id] = consumable;
+      return acc;
+    },
+    {} as Record<string, AlcoholConsumable>,
+  );
+
+export function getAlcoholConsumable(
+  id: string | undefined,
+): AlcoholConsumable | undefined {
+  if (!id) return undefined;
+  return ALCOHOL_CONSUMABLES_BY_ID[id];
+}
+
 export const CHEMS: Chem[] = [
   {
     id: 'jet',

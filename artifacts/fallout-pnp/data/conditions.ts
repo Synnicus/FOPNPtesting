@@ -4,6 +4,7 @@ export const CONDITION_IDS = {
   minorWithdrawal: 'minorWithdrawal',
   majorWithdrawal: 'majorWithdrawal',
   addictionRecovery: 'addictionRecovery',
+  drunk: 'drunk',
 } as const;
 
 export type ConditionId = typeof CONDITION_IDS[keyof typeof CONDITION_IDS];
@@ -14,6 +15,8 @@ export interface ConditionDefinition {
   description: string;
   statMods: Partial<SPECIALStats>;
   blocksHealing: boolean;
+  /** Present for conditions whose activation and removal are not automated. */
+  control?: 'user-or-gm';
 }
 
 export const CONDITION_DEFINITIONS: readonly ConditionDefinition[] = [
@@ -37,6 +40,15 @@ export const CONDITION_DEFINITIONS: readonly ConditionDefinition[] = [
     description: '−1 Endurance.',
     statMods: { endurance: -1 },
     blocksHealing: false,
+  },
+  {
+    id: CONDITION_IDS.drunk,
+    name: 'Drunk',
+    description:
+      'Under the influence of alcohol. The manual gives no universal stat modifiers or duration; this condition is controlled explicitly by the player or GM.',
+    statMods: {},
+    blocksHealing: false,
+    control: 'user-or-gm',
   },
 ] as const;
 

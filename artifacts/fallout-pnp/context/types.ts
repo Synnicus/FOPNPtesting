@@ -218,6 +218,9 @@ export interface Character {
   portraitOffset?: { x: number; y: number };
   /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
   traits?: string[];
+  /** Night Person's explicitly selected period. Older saves leave this unset;
+   * its effective value is day only when Night Person is selected. */
+  nightPersonPeriod?: 'day' | 'night';
 
   // SPECIAL
   special: SPECIALStats;
