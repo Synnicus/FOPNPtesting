@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applySkillPointOperation,
+  canChangeSkillTag,
   canChangeSkillTags,
   rebaseSkillValue,
   reconcileUnspentSkillPoints,
@@ -119,6 +120,13 @@ test('tag changes are locked after tagged or untagged allocations to conserve po
   assert.deepEqual(normalRefund, { skillValue: 40, unspentSkillPoints: 1, changed: true });
   assert.equal(canChangeSkillTags([normalRefund.skillValue], [40]), true);
   assert.equal(canChangeSkillTags([40, 55], [40, 55]), true);
+});
+
+test('tag changes lock only the skill whose purchased offset would be revalued', () => {
+  assert.equal(canChangeSkillTag(42, 40), false);
+  assert.equal(canChangeSkillTag(35, 35), true);
+  assert.equal(canChangeSkillTag(34, 35), true);
+  assert.equal(canChangeSkillTags([42, 35], [40, 35]), false);
 });
 
 test('a race-induced base increase preserves a tagged purchase and its lock', () => {

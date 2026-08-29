@@ -6,7 +6,8 @@ import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseAC, calcBaseSkills, calcMaxAP, calcMaxHP, calcSequence } from '@/data/derived';
 import { clampConditionBoxes, CONDITION_BOXES_MAX } from '@/data/condition';
 import { computeModEffects } from '@/data/mods';
-import { computeEffectModifiers } from '@/data/effects';
+import { computeEffectModifiers, effectiveDerivedStats } from '@/data/effects';
+import { resolveHpChange } from '@/data/conditions';
 
 // Effective max AP for a character: derived max plus active chem apMod
 // (Jet grants +2 AP, etc.). Floor 1 so a crashing chem never zeroes AP.
@@ -19,9 +20,12 @@ function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>
 }
 
 function charMaxAP(c: Character): number {
-  const base = c.maxAP ?? calcMaxAP(c.special);
-  const apMod = computeEffectModifiers(c).apMod;
-  return Math.max(1, base + apMod);
+  return effectiveDerivedStats({
+    ...c,
+    maxAP: c.maxAP ?? calcMaxAP(c.special),
+    armorClass: c.armorClass ?? calcBaseAC(c.special),
+    sequence: c.sequence ?? calcSequence(c.special),
+  }).maxAP;
 }
 
 /** Effective magazine size after mod magazineMult (extended/drum mags etc.). */
@@ -198,15 +202,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const healCharacter = useCallback((characterId: string, amount: number) => {
-    setState(s => ({
-      ...s,
-      characters: s.characters.map(c => c.id === characterId
-        ? { ...c, currentHp: Math.min(c.maxHp, c.currentHp + amount) }
-        : c),
-      initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
-        ? { ...e, currentHp: Math.min(e.maxHp, e.currentHp + amount) }
-        : e),
-    }));
+    setState(s => {
+      const char = s.characters.find(c => c.id === characterId);
+      if (!char) return s;
+      const nextHp = resolveHpChange(char, Math.max(0, amount));
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === characterId ? { ...c, currentHp: nextHp } : c),
+        initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
+          ? { ...e, currentHp: Math.min(e.maxHp, nextHp) }
+          : e),
+      };
+    });
   }, []);
 
   const spendAP = useCallback((characterId: string, amount: number): boolean => {
@@ -229,15 +236,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const restoreAP = useCallback((characterId: string, amount?: number) => {
-    setState(s => ({
-      ...s,
-      characters: s.characters.map(c => c.id === characterId
-        ? { ...c, currentAP: amount !== undefined ? Math.min(c.maxAP, c.currentAP + amount) : c.maxAP }
-        : c),
-      initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
-        ? { ...e, currentAP: amount !== undefined ? Math.min(e.maxAP, e.currentAP + amount) : e.maxAP }
-        : e),
-    }));
+    setState(s => {
+      const char = s.characters.find(c => c.id === characterId);
+      if (!char) return s;
+      const maxAP = charMaxAP(char);
+      const currentAP = amount !== undefined ? Math.min(maxAP, char.currentAP + amount) : maxAP;
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === characterId ? { ...c, currentAP } : c),
+        initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
+          ? { ...e, maxAP, currentAP: amount !== undefined ? Math.min(maxAP, e.currentAP + amount) : maxAP }
+          : e),
+      };
+    });
   }, []);
 
   // Knock a character unconscious for N of their own turns. 0 rounds wakes them.
@@ -411,8 +422,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (c.id !== characterId) return c;
         const hpMod = effect.hpMod ?? 0;
         let currentHp = c.currentHp;
-        if (hpMod > 0) currentHp = Math.min(c.maxHp, c.currentHp + hpMod);
-        else if (hpMod < 0) currentHp = Math.max(0, c.currentHp + hpMod);
+        currentHp = resolveHpChange(c, hpMod);
         // Immediate AP boost/drain (Jet +2 AP, crash −AP) applies right away.
         const apMod = effect.apMod ?? 0;
         const withEffect = { ...c, currentHp, effects: [...(c.effects ?? []), effect] };
@@ -425,8 +435,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (e.characterId !== characterId) return e;
         const hpMod = effect.hpMod ?? 0;
         let currentHp = e.currentHp;
-        if (hpMod > 0) currentHp = Math.min(e.maxHp, e.currentHp + hpMod);
-        else if (hpMod < 0) currentHp = Math.max(0, e.currentHp + hpMod);
+        const char = s.characters.find(c => c.id === characterId);
+        currentHp = char ? Math.min(e.maxHp, resolveHpChange({ ...char, currentHp: e.currentHp, maxHp: e.maxHp }, hpMod)) : currentHp;
         // Keep entry AP in sync with the character (Jet +AP, crash −AP).
         const apMod = effect.apMod ?? 0;
         const maxAP = Math.max(1, e.maxAP + apMod);

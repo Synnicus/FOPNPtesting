@@ -26,12 +26,13 @@ import { isMeleeWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
 import { CHEMS, getChem } from '@/data/chems';
-import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
+import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveDerivedStats, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
-import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
+import { calcMeleeDamageBonus } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
+import { computeConditionModifiers } from '@/data/conditions';
 import {
   SPECIAL_UNARMED_ATTACKS,
   SpecialUnarmedGroup,
@@ -40,6 +41,10 @@ import {
   formatRequirements as formatSpecialUnarmedRequirements,
   getSpecialUnarmedAttack,
 } from '@/data/specialUnarmedAttacks';
+
+function combatSequence(character: Character): number {
+  return effectiveDerivedStats(character).sequence;
+}
 
 // ─── Dice helpers ─────────────────────────────────────────────────────────────
 function rollD10() { return Math.floor(Math.random() * 10) + 1; }
@@ -849,6 +854,10 @@ export default function CombatScreen() {
   const attackerEffSpecial = (attacker && attacker.special)
     ? effectiveSpecial(attacker).stats
     : null;
+  const defenderEffSpecial = (defender && defender.special)
+    ? effectiveSpecial(defender).stats
+    : null;
+  const attackerEffDerived = attacker?.special ? effectiveDerivedStats(attacker) : null;
   const specialUnarmedEligibility = attacker && specialUnarmedAttack
     ? evaluateEligibility(
         specialUnarmedAttack,
@@ -889,8 +898,10 @@ export default function CombatScreen() {
     ? defender.special.agility + (computePerkStatBonuses(defender).agility ?? 0)
     : 0;
   // Working AGI: injuries override, then chem statMods apply (may exceed 10).
-  const defenderChemAgiDelta = defender?.special ? (effectiveSpecial(defender).chemDelta.agility ?? 0) : 0;
-  const defenderBaseAgi = Math.max(0, (defenderInjury?.effectiveAgility ?? defenderStoredAgi) + defenderChemAgiDelta);
+  const defenderTemporaryAgiDelta = defender?.special
+    ? (effectiveSpecial(defender).chemDelta.agility ?? 0) + (effectiveSpecial(defender).conditionDelta.agility ?? 0)
+    : 0;
+  const defenderBaseAgi = Math.max(0, (defenderInjury?.effectiveAgility ?? defenderStoredAgi) + defenderTemporaryAgiDelta);
   let defenderPositionalAgiAC = defenderBaseAgi;
   if (defenderPos === 'crouching') defenderPositionalAgiAC = Math.min(defenderBaseAgi, 3);
   else if (defenderPos === 'prone') defenderPositionalAgiAC = Math.min(defenderBaseAgi, 1);
@@ -1764,7 +1775,7 @@ export default function CombatScreen() {
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
-                    const seq = (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod;
+                    const seq = combatSequence(c);
                     rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
                   });
                   setInitRolls(rolls);
@@ -1778,7 +1789,7 @@ export default function CombatScreen() {
                     <CharacterAvatar portrait={c.portrait} name={c.name} size={32} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{c.name}</Text>
-                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>SEQ {(c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod} · HP {c.currentHp}/{c.maxHp} · AP {c.maxAP}</Text>
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>SEQ {combatSequence(c)} · HP {c.currentHp}/{c.maxHp} · AP {c.maxAP}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.max(0, (prev[c.id] ?? 10) - 1) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
@@ -1786,7 +1797,7 @@ export default function CombatScreen() {
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.min(50, (prev[c.id] ?? 10) + 1) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                     <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => {
-                      const seq = (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod;
+                      const seq = combatSequence(c);
                       const roll = Math.floor(Math.random() * 10) + 1;
                       setInitRolls(prev => ({ ...prev, [c.id]: roll + seq }));
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1805,11 +1816,11 @@ export default function CombatScreen() {
                       characterId: c.id,
                       name: c.name,
                       initiative: initRolls[c.id] ?? 10,
-                      sequence: (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod,
+                      sequence: combatSequence(c),
                       maxHp: c.maxHp,
                       currentHp: c.currentHp,
-                      maxAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
-                      currentAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
+                      maxAP: effectiveDerivedStats(c).maxAP,
+                      currentAP: effectiveDerivedStats(c).maxAP,
                       armorClass: c.armorClass,
                       tempAC: 0,
                       position: c.position,
@@ -1889,7 +1900,7 @@ export default function CombatScreen() {
                     </Text>}
                     {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
-                    {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {attacker.currentAP}/{attacker.maxAP} · {attackerPos}</Text>}
+                    {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {Math.min(attacker.currentAP, attackerEffDerived?.maxAP ?? attacker.maxAP)}/{attackerEffDerived?.maxAP ?? attacker.maxAP} · {attackerPos}</Text>}
                     {/* Ammo display: count + loaded ammo type (shorthand) */}
                     {weapon && weapon.magazineSize > 0 && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
@@ -1923,6 +1934,11 @@ export default function CombatScreen() {
                     {(attacker.effects ?? []).filter(e => e.isActive).map(e => (
                       <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
                         ⚗ {e.name}{describeEffectMods(e) ? ` — ${describeEffectMods(e)}` : ''}
+                      </Text>
+                    ))}
+                    {computeConditionModifiers(attacker).active.map(condition => (
+                      <Text key={condition.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
+                        ⚠ {condition.name} — {condition.description}
                       </Text>
                     ))}
                   </View>
@@ -1964,6 +1980,11 @@ export default function CombatScreen() {
                     {(defender.effects ?? []).filter(e => e.isActive).map(e => (
                       <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
                         ⚗ {e.name}{describeEffectMods(e) ? ` — ${describeEffectMods(e)}` : ''}
+                      </Text>
+                    ))}
+                    {computeConditionModifiers(defender).active.map(condition => (
+                      <Text key={condition.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
+                        ⚠ {condition.name} — {condition.description}
                       </Text>
                     ))}
                   </View>
@@ -2086,7 +2107,7 @@ export default function CombatScreen() {
               {showApActions && (
                 <View style={{ gap: 8 }}>
                   <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                    {attacker.name} · Position: {(attacker.position ?? 'standing').toUpperCase()} · AP {attacker.currentAP}/{attacker.maxAP}
+                    {attacker.name} · Position: {(attacker.position ?? 'standing').toUpperCase()} · AP {Math.min(attacker.currentAP, attackerEffDerived?.maxAP ?? attacker.maxAP)}/{attackerEffDerived?.maxAP ?? attacker.maxAP}
                   </Text>
                   {/* Movement */}
                   <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -2750,8 +2771,8 @@ export default function CombatScreen() {
                 {isMeleeOrUnarmed && defender?.special && totalDamage > 0 && (
                   <KnockdownCard
                     damage={totalDamage}
-                    defenderStr={defender.special.strength}
-                    defenderEnd={defender.special.endurance}
+                    defenderStr={defenderEffSpecial?.strength ?? defender.special.strength}
+                    defenderEnd={defenderEffSpecial?.endurance ?? defender.special.endurance}
                     onProne={() => { setPosition(defender.id, 'prone'); }}
                   />
                 )}
@@ -2788,12 +2809,12 @@ export default function CombatScreen() {
           id: `init-${c.id}-${genId()}`,
           characterId: c.id,
           name: c.name,
-          initiative: ((c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod) + Math.floor(Math.random() * 10) + 1,
-          sequence: (c.sequence ?? c.special.perception * 2) + computeEffectModifiers(c).sequenceMod,
+          initiative: combatSequence(c) + Math.floor(Math.random() * 10) + 1,
+          sequence: combatSequence(c),
           maxHp: c.maxHp,
           currentHp: c.currentHp,
-          maxAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
-          currentAP: Math.max(1, c.maxAP + computeEffectModifiers(c).apMod),
+          maxAP: effectiveDerivedStats(c).maxAP,
+          currentAP: effectiveDerivedStats(c).maxAP,
           armorClass: c.armorClass,
           tempAC: 0,
           position: c.position,

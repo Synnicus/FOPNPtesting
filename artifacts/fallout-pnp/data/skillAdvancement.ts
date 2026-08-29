@@ -12,13 +12,14 @@ export interface SkillPointOperationResult {
   changed: boolean;
 }
 
-/**
- * Tags are chosen before spending skill points. Changing a tag after an
- * allocation would revalue an already-purchased skill offset (+1 per point
- * versus +2 per point) and can create or destroy skill points on refund.
- */
+/** A tag is locked only when that specific skill has a purchased offset. */
+export function canChangeSkillTag(currentValue: number, baseValue: number): boolean {
+  return currentValue <= baseValue;
+}
+
+/** Legacy aggregate helper retained for callers that need an all-skills check. */
 export function canChangeSkillTags(currentValues: readonly number[], baseValues: readonly number[]): boolean {
-  return currentValues.every((value, index) => value <= (baseValues[index] ?? value));
+  return currentValues.every((value, index) => canChangeSkillTag(value, baseValues[index] ?? value));
 }
 
 /** Preserve the purchased offset when a SPECIAL or race change moves a skill's base. */

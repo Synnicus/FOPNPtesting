@@ -1,6 +1,7 @@
 import type { ActiveEffect, Character, SPECIALStats } from '@/context/types';
 import type { Chem, ChemStage } from './chems';
 import { getChem } from './chems';
+import { applyTemporaryDerivedDeltas, computeConditionModifiers, computeTemporaryDerivedDeltas } from './conditions';
 
 // ─── Effects framework — Fallout PnP 2.0 ──────────────────────────────────────
 // Merges chems (data/chems.ts) into the character's ActiveEffect[] and provides
@@ -191,6 +192,8 @@ export interface EffectiveSpecial {
   /** Per-stat delta contributed by ACTIVE CHEM EFFECTS only (0 = untouched).
    *  Positive values should render green in the UI. */
   chemDelta: Partial<SPECIALStats>;
+  /** Per-stat delta contributed by withdrawal/recovery conditions. */
+  conditionDelta: Partial<SPECIALStats>;
   /** True when any chem is currently modifying any stat. */
   hasChemMods: boolean;
 }
@@ -202,20 +205,44 @@ export interface EffectiveSpecial {
  * by ending (the delta disappears from this computation).
  */
 export function effectiveSpecial(
-  char: Pick<Character, 'special' | 'perks' | 'effects'>,
+  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions'>,
 ): EffectiveSpecial {
   const perkBonus = computePerkStatBonuses(char);
   const chem = computeEffectModifiers(char).statMods;
+  const conditionDelta = computeConditionModifiers(char).statMods;
   const stats = { ...char.special };
   const chemDelta: Partial<SPECIALStats> = {};
   let hasChemMods = false;
   for (const key of SPECIAL_KEYS) {
     const withPerks = stats[key] + (perkBonus[key] ?? 0);
     const delta = chem[key] ?? 0;
-    stats[key] = Math.max(1, withPerks + delta);
+    stats[key] = Math.max(1, withPerks + delta + (conditionDelta[key] ?? 0));
     if (delta !== 0) { chemDelta[key] = delta; hasChemMods = true; }
   }
-  return { stats, chemDelta, hasChemMods };
+  return { stats, chemDelta, conditionDelta, hasChemMods };
+}
+
+export interface EffectiveDerivedStats {
+  maxAP: number;
+  armorClass: number;
+  sequence: number;
+}
+
+/** Stored derived values adjusted by temporary SPECIAL and explicit effects. */
+export function effectiveDerivedStats(
+  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'maxAP' | 'armorClass' | 'sequence'>,
+): EffectiveDerivedStats {
+  const perkBonus = computePerkStatBonuses(char);
+  const storedSpecial = { ...char.special };
+  for (const key of SPECIAL_KEYS) storedSpecial[key] += perkBonus[key] ?? 0;
+  const workingSpecial = effectiveSpecial(char).stats;
+  const temporary = computeTemporaryDerivedDeltas(storedSpecial, workingSpecial);
+  const explicit = computeEffectModifiers(char);
+  return applyTemporaryDerivedDeltas(
+    char,
+    temporary,
+    { maxAP: explicit.apMod, armorClass: explicit.acMod, sequence: explicit.sequenceMod },
+  );
 }
 
 /** Re-export so callers can resolve a chem from an effect in one import. */

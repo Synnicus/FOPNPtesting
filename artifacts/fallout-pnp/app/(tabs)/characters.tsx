@@ -29,15 +29,17 @@ import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } f
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
-import { makeChemEffect, progressChemEffect, chemHasNextStage, effectiveSpecial, computePerkStatBonuses, computeEffectModifiers } from '@/data/effects';
+import { makeChemEffect, progressChemEffect, chemHasNextStage, effectiveDerivedStats, effectiveSpecial, computePerkStatBonuses, computeEffectModifiers } from '@/data/effects';
 import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import {
   applySkillPointOperation,
-  canChangeSkillTags,
+  canChangeSkillTag,
   rebaseSkillValue,
   reconcileUnspentSkillPoints,
 } from '@/data/skillAdvancement';
+import { refundPerk } from '@/data/perkRefund';
+import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -306,6 +308,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   // Perks tab: only-show-available toggle
   const [onlyAvailablePerks, setOnlyAvailablePerks] = useState(false);
+  const [perkRefundId, setPerkRefundId] = useState<string | null>(null);
 
   // Skill points GM adjustment input
   const [skillPointsInput, setSkillPointsInput] = useState('');
@@ -313,7 +316,6 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // Injury form
   const [addingInjury, setAddingInjury] = useState(false);
   const [injLocation, setInjLocation] = useState<Injury['location']>('torso');
-  const [injSeverity, setInjSeverity] = useState<Injury['severity']>('crippled');
   const [injDesc, setInjDesc] = useState('');
 
   useEffect(() => {
@@ -335,11 +337,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // ─── Derived computations ────────────────────────────────────────────────────
   const race = getRaceById(char.race) ?? RACES[0];
   const baseSkills = useMemo(() => calcBaseSkills(char.special), [char.special]);
-  const tagChangesLocked = useMemo(
-    () => !canChangeSkillTags(
-      ALL_SKILLS.map(sk => char.skills[sk]),
-      ALL_SKILLS.map(sk => baseSkills[sk]),
-    ),
+  const lockedTagCount = useMemo(
+    () => ALL_SKILLS.filter(sk => !canChangeSkillTag(char.skills[sk], baseSkills[sk])).length,
     [char.skills, baseSkills],
   );
 
@@ -504,10 +503,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const toggleTag = useCallback((sk: SkillType) => {
     setChar(prev => {
       const baseSkills = calcBaseSkills(prev.special);
-      if (!canChangeSkillTags(
-        ALL_SKILLS.map(skill => prev.skills[skill]),
-        ALL_SKILLS.map(skill => baseSkills[skill]),
-      )) {
+      if (!canChangeSkillTag(prev.skills[sk], baseSkills[sk])) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return prev;
       }
@@ -538,12 +534,16 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         }
         if (!existing) return recomputeDerived({ ...prev, perks: [...prev.perks, { perkId, rank: 1, takenAtLevel: prev.level }] });
         return recomputeDerived({ ...prev, perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p) });
-      } else {
-        // At max rank — tapping removes entirely.
-        return recomputeDerived({ ...prev, perks: prev.perks.filter(p => p.perkId !== perkId) });
       }
+      return prev;
     });
   }, [perkPointsRemaining, recomputeDerived]);
+
+  const confirmPerkRefund = useCallback(() => {
+    if (!perkRefundId) return;
+    setChar(prev => recomputeDerived({ ...prev, perks: refundPerk(prev.perks, perkRefundId).perks }));
+    setPerkRefundId(null);
+  }, [perkRefundId, recomputeDerived]);
 
   const pickPortrait = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -741,7 +741,6 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects'];
   const INJURY_LOCATIONS: Injury['location'][] = ['head', 'eyes', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
-  const INJURY_SEVERITIES: Injury['severity'][] = ['minor', 'crippled', 'broken'];
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -920,9 +919,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, currentHp: Math.max(0, c.currentHp - 1) }))}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
                   <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.foreground, flex: 1, textAlign: 'center' }}>{char.currentHp} / {char.maxHp}</Text>
-                  <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, currentHp: Math.min(c.maxHp, c.currentHp + 1) }))}><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
+                  <TouchableOpacity
+                    disabled={isHealingBlocked(char)}
+                    style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', opacity: isHealingBlocked(char) ? 0.35 : 1 }}
+                    onPress={() => setChar(c => ({ ...c, currentHp: resolveHpChange(c, 1) }))}
+                  >
+                    <Feather name="plus" size={14} color={colors.foreground} />
+                  </TouchableOpacity>
                 </View>
                 <HPBar current={char.currentHp} max={char.maxHp} height={6} showText={false} />
+                {isHealingBlocked(char) && (
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, textAlign: 'center' }}>HEALING BLOCKED BY WITHDRAWAL</Text>
+                )}
               </View>
 
               {/* Resistances */}
@@ -1021,13 +1029,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               {/* Derived stats preview (includes Gain-X + numeric perk bonuses) */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {(() => {
-                  const perkStat = computePerkStatBonuses(char);
-                  const sFx = { ...char.special };
-                  for (const k of SPECIAL_KEYS) sFx[k] += perkStat[k] ?? 0;
+                  const sFx = effectiveSpecial(char).stats;
+                  const effDerived = effectiveDerivedStats(char);
                   const pdb = computePerkDerivedBonuses(char.perks, char.level);
                   return [
-                    ['Max HP', char.maxHp], ['Max AP', char.maxAP], ['AC', char.armorClass],
-                    ['Sequence', char.sequence], ['Crit%', calcCriticalChance(sFx)],
+                    ['Max HP', char.maxHp], ['Max AP', effDerived.maxAP], ['AC', effDerived.armorClass],
+                    ['Sequence', effDerived.sequence], ['Crit%', calcCriticalChance(sFx)],
                     ['Heal/day', calcHealingRate(sFx) + pdb.healingRate], ['Carry', `${calcCarryWeight(sFx) + pdb.carryWeight}lb`],
                     ['Melee dmg', calcMeleeDamageBonus(sFx)
                       + 2 * (char.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0)
@@ -1091,7 +1098,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       onPress={() => {
                         const delta = parseInt(skillPointsInput, 10);
                         if (!Number.isFinite(delta) || delta === 0) return;
-                        setChar(c => ({ ...c, unspentSkillPoints: Math.max(0, Math.min(9999, c.unspentSkillPoints + delta)) }));
+                        setChar(c => ({ ...c, unspentSkillPoints: Math.max(-9999, Math.min(9999, c.unspentSkillPoints + delta)) }));
                         setSkillPointsInput('');
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }}>
@@ -1101,7 +1108,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 </View>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>GM customization only — manually grant or remove skill points. Accepts negatives.</Text>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Choose up to 3 tags before spending skill points. Tagged skills get a free +20% bonus shown in orange. Each press costs 1 skill point: +2% for tagged skills, +1% for untagged. Hold for 2s to auto-repeat.</Text>
-                {tagChangesLocked && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Refund all purchased skill points before changing tags.</Text>}
+                {lockedTagCount > 0 && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{lockedTagCount} skill tag{lockedTagCount === 1 ? ' is' : 's are'} locked until that skill’s purchased points are refunded.</Text>}
               </View>
 
               {(['combat', 'support'] as const).map(group => (
@@ -1112,25 +1119,26 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     const total = char.skills[sk];
                     const offset = total - base;
                     const isTagged = char.taggedSkills.includes(sk);
+                    const tagLocked = !canChangeSkillTag(total, base);
                     const displayTotal = total + (isTagged ? 20 : 0);
                     return (
                       <View key={sk} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
                         <TouchableOpacity
                           accessibilityRole="checkbox"
-                          accessibilityState={{ checked: isTagged, disabled: tagChangesLocked }}
-                          disabled={tagChangesLocked}
+                          accessibilityState={{ checked: isTagged, disabled: tagLocked }}
+                          disabled={tagLocked}
                           onPress={() => toggleTag(sk)}
                           style={{
                             width: 28,
                             height: 28,
                             borderRadius: 4,
                             borderWidth: 2,
-                            borderColor: tagChangesLocked ? colors.mutedForeground + '55' : isTagged ? colors.primary : colors.border,
+                            borderColor: tagLocked ? colors.mutedForeground + '55' : isTagged ? colors.primary : colors.border,
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: tagChangesLocked ? colors.secondary : isTagged ? colors.primary + '33' : 'transparent',
-                            opacity: tagChangesLocked ? 0.4 : 1,
-                            pointerEvents: tagChangesLocked ? 'none' : 'auto',
+                            backgroundColor: tagLocked ? colors.secondary : isTagged ? colors.primary + '33' : 'transparent',
+                            opacity: tagLocked ? 0.4 : 1,
+                            pointerEvents: tagLocked ? 'none' : 'auto',
                           }}
                         >
                           {isTagged && <Feather name="tag" size={12} color={colors.primary} />}
@@ -1172,7 +1180,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           {activeTab === 3 && (
             <>
               <PointCounter label="PERK POINTS REMAINING" remaining={perkPointsRemaining} total={perkPointsAvailable} warn />
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>1 perk point per 3 levels. Each rank costs 1 point. Tap a perk to add/increase rank; tap at max rank to remove.</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Each rank costs 1 perk point. Adding ranks and refunding a perk are separate actions; refunding removes every rank and returns every point spent on that perk.</Text>
 
               {/* Only-show-available toggle */}
               <TouchableOpacity
@@ -1197,12 +1205,14 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                           <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{perk.name} <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Rank {cp.rank}/{perk.maxRanks}</Text></Text>
                           {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>⚔ {perk.combatEffect.combatNote}</Text>}
                         </View>
-                        <TouchableOpacity onPress={() => togglePerk(cp.perkId)} style={{ padding: 4 }}>
-                          {cp.rank < perk.maxRanks
-                            ? <Feather name="plus-circle" size={18} color={perkPointsRemaining > 0 ? colors.primary : colors.mutedForeground} />
-                            : <Feather name="x-circle" size={18} color={colors.destructive} />
-                          }
-                        </TouchableOpacity>
+                         {cp.rank < perk.maxRanks && (
+                           <TouchableOpacity onPress={() => togglePerk(cp.perkId)} style={{ padding: 4 }}>
+                             <Feather name="plus-circle" size={18} color={perkPointsRemaining > 0 ? colors.primary : colors.mutedForeground} />
+                           </TouchableOpacity>
+                         )}
+                         <TouchableOpacity onPress={() => setPerkRefundId(cp.perkId)} style={{ padding: 4 }}>
+                           <Feather name="rotate-ccw" size={18} color={colors.destructive} />
+                         </TouchableOpacity>
                       </View>
                     );
                   })}
@@ -1236,14 +1246,14 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   // A perk is interactive if you can add/upgrade it (allowed + points)
                   // or if it's owned at max rank (tap to remove).
                   const canAddOrUpgrade = allowed && !noPoints;
-                  const disabled = !canAddOrUpgrade && !atMax;
+                   const disabled = !canAddOrUpgrade && !atMax;
                   const reasonText = reasons.filter(r => !r.startsWith('Already at max')).join(' · ');
                   return (
                     <TouchableOpacity
                       key={perk.id}
                       disabled={disabled}
                       style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: existing ? colors.primary + '88' : colors.border, backgroundColor: existing ? colors.primary + '11' : colors.secondary, opacity: disabled ? 0.45 : 1, gap: 4 }}
-                      onPress={() => togglePerk(perk.id)}>
+                       onPress={() => atMax ? setPerkRefundId(perk.id) : togglePerk(perk.id)}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: existing ? colors.primary : colors.foreground, flex: 1 }}>{perk.name}</Text>
                         <View style={{ gap: 2, alignItems: 'flex-end' }}>
@@ -1508,16 +1518,6 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       ))}
                     </View>
                   </View>
-                  <View>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>SEVERITY</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {INJURY_SEVERITIES.map(sev => (
-                        <TouchableOpacity key={sev} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: injSeverity === sev ? colors.destructive : colors.background, borderWidth: 1, borderColor: injSeverity === sev ? colors.destructive : colors.border }} onPress={() => setInjSeverity(sev)}>
-                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: injSeverity === sev ? '#fff' : colors.foreground }}>{sev.toUpperCase()}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
                   <TextInput style={{ backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 13 }} placeholder="Description (optional)" placeholderTextColor={colors.mutedForeground} value={injDesc} onChangeText={setInjDesc} />
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }} onPress={() => { setAddingInjury(false); setInjDesc(''); }}>
@@ -1525,8 +1525,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     </TouchableOpacity>
                     <TouchableOpacity style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={() => {
                       const inj: Injury = {
-                        id: genId(), location: injLocation, severity: injSeverity,
-                        description: injDesc || `${injSeverity} ${injLocation}`,
+                        id: genId(), location: injLocation, severity: 'crippled',
+                        description: injDesc || `crippled ${injLocation}`,
                         toHitPenalty: injLocation === 'eyes' ? 40 : injLocation === 'rightArm' || injLocation === 'leftArm' ? 20 : 0,
                         skillPenalty: {}, movementPenalty: (injLocation === 'leftLeg' || injLocation === 'rightLeg') ? 1 : 0,
                         isActive: true, source: 'manual',
@@ -1592,6 +1592,31 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 );
               })()}
 
+              <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16, marginTop: 10, gap: 8 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>WITHDRAWAL & RECOVERY</Text>
+                {CONDITION_DEFINITIONS.map(condition => {
+                  const active = (char.conditions ?? []).includes(condition.id);
+                  return (
+                    <TouchableOpacity
+                      key={condition.id}
+                      onPress={() => setChar(c => ({
+                        ...c,
+                        conditions: active
+                          ? (c.conditions ?? []).filter(id => id !== condition.id)
+                          : [...(c.conditions ?? []), condition.id],
+                      }))}
+                      style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: active ? colors.destructive + '88' : colors.border, backgroundColor: active ? colors.destructive + '14' : colors.secondary, gap: 3 }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.foreground }}>{condition.name}</Text>
+                        <Feather name={active ? 'check-circle' : 'circle'} size={18} color={active ? colors.destructive : colors.mutedForeground} />
+                      </View>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{condition.description}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
               {/* ── ACTIVE CHEM EFFECTS ── */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>CHEM EFFECTS</Text>
@@ -1653,6 +1678,19 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             </>
           )}
         </ScrollView>
+
+        <ConfirmModal
+          visible={perkRefundId !== null}
+          title="REFUND PERK?"
+          message={(() => {
+            const owned = char.perks.find(p => p.perkId === perkRefundId);
+            const perk = perkRefundId ? getPerkById(perkRefundId) : undefined;
+            return `Remove all ${owned?.rank ?? 0} rank${(owned?.rank ?? 0) === 1 ? '' : 's'} of ${perk?.name ?? 'this perk'} and refund ${(owned?.rank ?? 0)} perk point${(owned?.rank ?? 0) === 1 ? '' : 's'}?`;
+          })()}
+          confirmLabel="REFUND ALL"
+          onCancel={() => setPerkRefundId(null)}
+          onConfirm={confirmPerkRefund}
+        />
 
         {/* Equipment selection modals */}
         {/* Hand picker: only weapons already in inventory (or 2-handed with sling for crippled arms).
@@ -1798,6 +1836,8 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
   const injuryEffects = computeInjuryEffects(character);
   const activeEffects = (character.effects ?? []).filter(e => e.isActive);
   const effSpecial = effectiveSpecial(character);
+  const effDerived = effectiveDerivedStats(character);
+  const conditionModifiers = computeConditionModifiers(character);
   const SPECIAL_ROW: [keyof typeof effSpecial.stats, string][] = [
     ['strength', 'STR'], ['perception', 'PER'], ['endurance', 'END'], ['charisma', 'CHA'],
     ['intelligence', 'INT'], ['agility', 'AGI'], ['luck', 'LCK'],
@@ -1823,7 +1863,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
             Lv {character.level} {character.race} · {weapon?.name ?? 'No weapon'}
           </Text>
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-            HP {character.currentHp}/{character.maxHp} · AC {character.armorClass + character.tempAC} · AP {character.currentAP}/{character.maxAP} · SEQ {character.sequence ?? character.special.perception * 2}
+            HP {character.currentHp}/{character.maxHp} · AC {effDerived.armorClass + character.tempAC} · AP {Math.min(character.currentAP, effDerived.maxAP)}/{effDerived.maxAP} · SEQ {effDerived.sequence}
           </Text>
         </View>
         <View style={{ gap: 6 }}>
@@ -1853,7 +1893,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
       {/* SPECIAL row — chem-boosted stats render green (may exceed racial max) */}
       <View style={{ flexDirection: 'row', gap: 4 }}>
         {SPECIAL_ROW.map(([key, label]) => {
-          const delta = effSpecial.chemDelta[key] ?? 0;
+          const delta = (effSpecial.chemDelta[key] ?? 0) + (effSpecial.conditionDelta[key] ?? 0);
           const color = delta > 0 ? '#4a8c3f' : delta < 0 ? colors.destructive : colors.foreground;
           return (
             <View key={key} style={{ flex: 1, alignItems: 'center', paddingVertical: 4, borderRadius: 4, backgroundColor: colors.secondary, borderWidth: 1, borderColor: delta !== 0 ? color + '88' : colors.border }}>
@@ -1863,6 +1903,15 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
           );
         })}
       </View>
+      {conditionModifiers.active.length > 0 && (
+        <View style={{ backgroundColor: colors.destructive + '14', borderRadius: 8, borderWidth: 1, borderColor: colors.destructive + '44', padding: 8, gap: 2 }}>
+          {conditionModifiers.active.map(condition => (
+            <Text key={condition.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+              {condition.name} — {condition.description}
+            </Text>
+          ))}
+        </View>
+      )}
       {/* Active chem effects — shown like injuries, in green */}
       {activeEffects.length > 0 && (
         <View style={{ backgroundColor: '#4a8c3f14', borderRadius: 8, borderWidth: 1, borderColor: '#4a8c3f44', padding: 8, gap: 2 }}>
@@ -1898,7 +1947,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
 export default function CharactersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, allWeapons } = useApp();
+  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, healCharacter, allWeapons } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -1918,13 +1967,18 @@ export default function CharactersScreen() {
   };
 
   const resetHp = (c: Character) => {
+    if (isHealingBlocked(c)) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    healCharacter(c.id, c.maxHp);
     updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const resetAllHp = () => {
     characters.forEach(c => {
-      if (c.currentHp !== c.maxHp || c.isKnockedOut) {
+      if (!isHealingBlocked(c) && (c.currentHp !== c.maxHp || c.isKnockedOut)) {
         updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
       }
     });
