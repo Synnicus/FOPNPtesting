@@ -3,11 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
-import { calcBaseAC, calcBaseSkills, calcMaxAP, calcMaxHP, calcSequence } from '@/data/derived';
+import { calcBaseSkills, calcMaxHP } from '@/data/derived';
 import { clampConditionBoxes, CONDITION_BOXES_MAX } from '@/data/condition';
 import { computeModEffects } from '@/data/mods';
-import { computeEffectModifiers, effectiveDerivedStats } from '@/data/effects';
 import { resolveHpChange } from '@/data/conditions';
+import { getRaceById } from '@/data/races';
+import { resolveArmorAwareSheet } from '@/data/armorEffects';
+import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
 
 // Effective max AP for a character: derived max plus active chem apMod
 // (Jet grants +2 AP, etc.). Floor 1 so a crashing chem never zeroes AP.
@@ -19,13 +21,32 @@ function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>
   return { ...c, knockOutRoundsLeft: left, isKnockedOut: left > 0 };
 }
 
-function charMaxAP(c: Character): number {
-  return effectiveDerivedStats({
-    ...c,
-    maxAP: c.maxAP ?? calcMaxAP(c.special),
-    armorClass: c.armorClass ?? calcBaseAC(c.special),
-    sequence: c.sequence ?? calcSequence(c.special),
-  }).maxAP;
+function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], includeTempAC = false) {
+  const race = getRaceById(c.race);
+  return resolveArmorAwareSheet({
+    special: c.special,
+    skills: c.skills,
+    taggedSkills: c.taggedSkills,
+    traits: c.traits,
+    perks: c.perks,
+    conditions: c.conditions,
+    effects: c.effects,
+    raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
+    nightPersonPeriod: c.nightPersonPeriod,
+    racialNaturalArmorClass: race?.naturalACBonus,
+    tempAC: includeTempAC ? c.tempAC : 0,
+    radiationResistance: c.radiationResistance,
+    gasResistance: c.gasResistance,
+    poisonResistance: c.poisonResistance,
+    electricityResistance: c.electricityResistance,
+    equippedBodyArmorId: c.equippedBodyArmorId,
+    equippedHelmetId: c.equippedHelmetId,
+    allArmor,
+  });
+}
+
+function charMaxAP(c: Character, allArmor: readonly Armor[]): number {
+  return resolveCharacterArmorSheet(c, allArmor).maxAP;
 }
 
 /** Effective magazine size after mod magazineMult (extended/drum mags etc.). */
@@ -65,6 +86,32 @@ function migrateConditionSemantics(parsed: AppState): AppState {
     })),
   });
   return { ...parsed, characters: (parsed.characters ?? []).map(migrate), conditionSemanticsV2: true };
+}
+
+/** Add only newly introduced zero/default fields to persisted/imported data. */
+function normalizeArmorEffectsData(parsed: AppState): AppState {
+  const normalizeArmor = (armor: Armor): Armor => armor.effects
+    ? armor
+    : { ...armor, effects: { special: {}, skills: {} } };
+  const normalizeCharacter = (character: Character): Character =>
+    typeof character.poisonResistance === 'number'
+      ? character
+      : { ...character, poisonResistance: 0 };
+  const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate =>
+    typeof template.poisonResistance === 'number'
+      ? template
+      : { ...template, poisonResistance: 0 };
+
+  return {
+    ...parsed,
+    characters: (parsed.characters ?? []).map(normalizeCharacter),
+    customArmor: (parsed.customArmor ?? []).map(normalizeArmor),
+    customBestiaryTemplates: (parsed.customBestiaryTemplates ?? []).map(normalizeTemplate),
+  };
+}
+
+function normalizePersistedState(parsed: AppState): AppState {
+  return normalizeArmorEffectsData(migrateConditionSemantics(parsed));
 }
 
 interface AppContextValue extends AppState {
@@ -148,7 +195,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.getItem(STORAGE_KEY).then(raw => {
       if (raw) {
         try {
-          const parsed = migrateConditionSemantics(JSON.parse(raw) as AppState);
+          const parsed = normalizePersistedState(JSON.parse(raw) as AppState);
           setState({ ...defaultState, ...parsed });
         } catch (_) {}
       }
@@ -168,7 +215,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateCharacter = useCallback((char: Character) => {
-    setState(s => ({ ...s, characters: s.characters.map(c => c.id === char.id ? char : c) }));
+    setState(s => {
+      const sheet = resolveCharacterArmorSheet(char, [...BUILT_IN_ARMOR, ...s.customArmor]);
+      const normalized = { ...char, currentAP: Math.min(char.currentAP, sheet.maxAP) };
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === char.id ? normalized : c),
+        initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry =>
+          entry.characterId === char.id ? syncInitiativeEntrySheet(entry, sheet) : entry
+        )),
+      };
+    });
   }, []);
 
   const deleteCharacter = useCallback((id: string) => {
@@ -239,7 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => {
       const char = s.characters.find(c => c.id === characterId);
       if (!char) return s;
-      const maxAP = charMaxAP(char);
+      const maxAP = charMaxAP(char, [...BUILT_IN_ARMOR, ...s.customArmor]);
       const currentAP = amount !== undefined ? Math.min(maxAP, char.currentAP + amount) : maxAP;
       return {
         ...s,
@@ -427,7 +484,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const apMod = effect.apMod ?? 0;
         const withEffect = { ...c, currentHp, effects: [...(c.effects ?? []), effect] };
         const currentAP = apMod !== 0
-          ? Math.max(0, Math.min(charMaxAP(withEffect), c.currentAP + apMod))
+          ? Math.max(0, Math.min(charMaxAP(withEffect, [...BUILT_IN_ARMOR, ...s.customArmor]), c.currentAP + apMod))
           : c.currentAP;
         return { ...withEffect, currentAP };
       }),
@@ -439,7 +496,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         currentHp = char ? Math.min(e.maxHp, resolveHpChange({ ...char, currentHp: e.currentHp, maxHp: e.maxHp }, hpMod)) : currentHp;
         // Keep entry AP in sync with the character (Jet +AP, crash −AP).
         const apMod = effect.apMod ?? 0;
-        const maxAP = Math.max(1, e.maxAP + apMod);
+        const sourceCharacter = s.characters.find(c => c.id === characterId);
+        const maxAP = sourceCharacter
+          ? charMaxAP({ ...sourceCharacter, effects: [...(sourceCharacter.effects ?? []), effect] }, [...BUILT_IN_ARMOR, ...s.customArmor])
+          : Math.max(1, e.maxAP + apMod);
         const currentAP = apMod !== 0
           ? Math.max(0, Math.min(maxAP, e.currentAP + apMod))
           : e.currentAP;
@@ -510,9 +570,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Initiative / Rounds ─────────────────────────────────────────────────────
 
   const startCombat = useCallback((entries: InitiativeEntry[]) => {
-    const sorted = [...entries].sort((a, b) =>
-      b.initiative !== a.initiative ? b.initiative - a.initiative : b.sequence - a.sequence
-    );
+    const sorted = sortInitiativeEntries(entries);
     setState(s => ({
       ...s,
       initiativeEntries: sorted.map((e, i) => ({ ...e, isActive: i === 0, hasActed: false })),
@@ -525,9 +583,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const endCombat = useCallback(() => {
     setState(s => ({
       ...s,
-      // Reset every character to full AP (derived max) and clear temp AC.
+      // Reset every character to its armor-aware full AP and clear temp AC.
       characters: s.characters.map(c => {
-        const maxAP = c.maxAP ?? calcMaxAP(c.special);
+        const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]);
         return { ...c, currentAP: maxAP, tempAC: 0 };
       }),
       initiativeEntries: [],
@@ -539,9 +597,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addInitiativeEntry = useCallback((entry: InitiativeEntry) => {
     setState(s => {
-      const entries = [...s.initiativeEntries, entry].sort((a, b) =>
-        b.initiative !== a.initiative ? b.initiative - a.initiative : b.sequence - a.sequence
-      );
+      const entries = sortInitiativeEntries([...s.initiativeEntries, entry]);
       return { ...s, initiativeEntries: entries };
     });
   }, []);
@@ -601,7 +657,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ...(i === 0 ? { currentAP: firstKO ? 0 : e.maxAP, tempAC: 0 } : {}),
         }));
         if (firstChar0) {
-          chars = chars.map(c => c.id === firstChar0 ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c), tempAC: 0 } : c);
+          chars = chars.map(c => c.id === firstChar0 ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 } : c);
         }
         return { ...s, initiativeEntries: entries, characters: chars, currentRound: round, activeEntryId: entries[0].id };
       }
@@ -622,7 +678,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }));
       const nextActive = entries[nextIdx];
       if (nextActive?.characterId) {
-        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c), tempAC: 0 } : c);
+        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 } : c);
       }
       return { ...s, initiativeEntries: entries, characters: chars, activeEntryId: nextActive?.id ?? null };
     });
@@ -639,7 +695,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const chars = s.characters.map(c => {
         let out = c.id === prevActiveChar ? koTick(c) : c;
         if (out.id === firstChar) {
-          out = { ...out, currentAP: out.isKnockedOut ? 0 : charMaxAP(out), tempAC: 0 };
+          out = { ...out, currentAP: out.isKnockedOut ? 0 : charMaxAP(out, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 };
         }
         return out;
       });
@@ -680,19 +736,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, customWeapons: s.customWeapons.filter(w => w.id !== id) }));
   }, []);
   const addCustomArmor = useCallback((a: Armor) => {
-    setState(s => ({ ...s, customArmor: [...s.customArmor, a] }));
+    setState(s => ({
+      ...s,
+      customArmor: [...s.customArmor, a.effects ? a : { ...a, effects: { special: {}, skills: {} } }],
+    }));
   }, []);
   const updateCustomArmor = useCallback((a: Armor) => {
-    setState(s => ({ ...s, customArmor: s.customArmor.map(x => x.id === a.id ? a : x) }));
+    setState(s => {
+      const normalizedArmor = a.effects ? a : { ...a, effects: { special: {}, skills: {} } };
+      const customArmor = s.customArmor.map(x => x.id === a.id ? normalizedArmor : x);
+      const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
+      const characters = s.characters.map(character => {
+        const maxAP = charMaxAP(character, allArmor);
+        return { ...character, currentAP: Math.min(character.currentAP, maxAP) };
+      });
+      return {
+        ...s,
+        customArmor,
+        characters,
+        initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
+          const character = characters.find(candidate => candidate.id === entry.characterId);
+          if (!character) return entry;
+          const sheet = resolveCharacterArmorSheet(character, allArmor);
+          return syncInitiativeEntrySheet(entry, sheet);
+        })),
+      };
+    });
   }, []);
   const deleteCustomArmor = useCallback((id: string) => {
-    setState(s => ({ ...s, customArmor: s.customArmor.filter(a => a.id !== id) }));
+    setState(s => {
+      const customArmor = s.customArmor.filter(a => a.id !== id);
+      const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
+      const characters = s.characters.map(character => {
+        const maxAP = charMaxAP(character, allArmor);
+        return { ...character, currentAP: Math.min(character.currentAP, maxAP) };
+      });
+      return {
+        ...s,
+        customArmor,
+        characters,
+        initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
+          const character = characters.find(candidate => candidate.id === entry.characterId);
+          if (!character) return entry;
+          const sheet = resolveCharacterArmorSheet(character, allArmor);
+          return syncInitiativeEntrySheet(entry, sheet);
+        })),
+      };
+    });
   }, []);
 
   // ─── Custom Bestiary ─────────────────────────────────────────────────────────
 
   const addCustomBestiaryTemplate = useCallback((t: BestiaryTemplate) => {
-    setState(s => ({ ...s, customBestiaryTemplates: [...s.customBestiaryTemplates, { ...t, isCustom: true }] }));
+    setState(s => ({
+      ...s,
+      customBestiaryTemplates: [...s.customBestiaryTemplates, {
+        ...t,
+        isCustom: true,
+        poisonResistance: t.poisonResistance ?? 0,
+      }],
+    }));
   }, []);
   const removeCustomBestiaryTemplate = useCallback((id: string) => {
     setState(s => ({ ...s, customBestiaryTemplates: s.customBestiaryTemplates.filter(t => t.id !== id) }));
@@ -705,7 +808,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const parsed = JSON.parse(json) as AppState;
       if (!Array.isArray(parsed.characters)) return false;
-      setState({ ...defaultState, ...migrateConditionSemantics(parsed) });
+      setState({ ...defaultState, ...normalizePersistedState(parsed) });
       return true;
     } catch (_) { return false; }
   }, []);

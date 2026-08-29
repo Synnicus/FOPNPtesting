@@ -1,4 +1,4 @@
-import { Character, CharacterSkills, SPECIALStats } from '@/context/types';
+import type { Character, CharacterSkills, SPECIALStats } from '@/context/types';
 
 // ─── Derived Stat Formulas ────────────────────────────────────────────────────
 

@@ -57,6 +57,22 @@ export interface CharacterSkills {
   pilot: number;
 }
 
+/** Numeric modifiers supplied by worn armor. Omitted keys are always zero. */
+export interface ArmorEffects {
+  special?: Partial<SPECIALStats>;
+  skills?: Partial<CharacterSkills>;
+  gasResistance?: number;
+  poisonResistance?: number;
+  radiationResistance?: number;
+  electricityResistance?: number;
+}
+
+/** Safe compatibility default for armor created before armor effects existed. */
+export const EMPTY_ARMOR_EFFECTS: ArmorEffects = {
+  special: {},
+  skills: {},
+};
+
 export const DEFAULT_SKILLS: CharacterSkills = {
   smallGuns: 0, bigGuns: 0, energyWeapons: 0, meleeWeapons: 0, unarmed: 0, throwing: 0,
   firstAid: 0, doctor: 0, sneak: 0, lockpick: 0, steal: 0, traps: 0,
@@ -135,6 +151,16 @@ export interface Armor {
   acBonus: number;
   weight: number;
   isCustom: boolean;
+  /** Worn modifiers; absent on legacy/custom armor means no effect. */
+  effects?: ArmorEffects;
+  /** The suit includes its own helmet; a separately selected helmet is ignored. */
+  integratedHelmet?: boolean;
+  /** A separately selected helmet cannot be worn with this body armor. */
+  prohibitsHelmet?: boolean;
+  /** Helmet can only be worn with one of these body armor ids. */
+  compatibleBodyArmorIds?: string[];
+  /** This armor's optics negate darkness/light penalties. */
+  ignoresLightPenalties?: boolean;
 }
 
 // ─── Character Perk ───────────────────────────────────────────────────────────
@@ -247,6 +273,8 @@ export interface Character {
   radiationResistance: number;
   gasResistance: number;
   electricityResistance: number;
+  /** Base poison resistance. Legacy saves are normalized to zero. */
+  poisonResistance?: number;
 
   // Equipment
   equippedWeaponId?: string;
@@ -300,6 +328,8 @@ export interface BestiaryTemplate {
   radiationResistance: number;
   gasResistance: number;
   electricityResistance: number;
+  /** Base poison resistance. Legacy templates are normalized to zero. */
+  poisonResistance?: number;
 
   // Built-in natural DT/DR for creatures that don't rely on armor
   naturalProtection?: NaturalProtection;

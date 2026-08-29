@@ -14,13 +14,40 @@ import { AMMO_TYPES } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
 import { CONDITION_BOXES_MAX, clampConditionBoxes, conditionLabel, conditionToHitPenalty, isWeaponJammed } from '@/data/condition';
-import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES } from '@/context/types';
+import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills } from '@/context/types';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
 const SKILL_LABELS: Record<string, string> = {
   smallGuns: 'Small Guns', bigGuns: 'Big Guns', energyWeapons: 'Energy Weapons',
   meleeWeapons: 'Melee Weapons', unarmed: 'Unarmed', throwing: 'Throwing', natural: 'Natural',
+};
+
+const ARMOR_SPECIAL_FIELDS: { key: keyof SPECIALStats; label: string }[] = [
+  { key: 'strength', label: 'Strength' }, { key: 'perception', label: 'Perception' },
+  { key: 'endurance', label: 'Endurance' }, { key: 'charisma', label: 'Charisma' },
+  { key: 'intelligence', label: 'Intelligence' }, { key: 'agility', label: 'Agility' },
+  { key: 'luck', label: 'Luck' },
+];
+const ARMOR_SKILL_FIELDS: { key: keyof CharacterSkills; label: string }[] = [
+  { key: 'smallGuns', label: 'Small Guns' }, { key: 'bigGuns', label: 'Big Guns' },
+  { key: 'energyWeapons', label: 'Energy Weapons' }, { key: 'meleeWeapons', label: 'Melee Weapons' },
+  { key: 'unarmed', label: 'Unarmed' }, { key: 'throwing', label: 'Throwing' },
+  { key: 'firstAid', label: 'First Aid' }, { key: 'doctor', label: 'Doctor' },
+  { key: 'sneak', label: 'Sneak' }, { key: 'lockpick', label: 'Lockpick' },
+  { key: 'steal', label: 'Steal' }, { key: 'traps', label: 'Traps' },
+  { key: 'science', label: 'Science' }, { key: 'repair', label: 'Repair' },
+  { key: 'speech', label: 'Speech' }, { key: 'barter', label: 'Barter' },
+  { key: 'gambling', label: 'Gambling' }, { key: 'outdoorsman', label: 'Outdoorsman' },
+  { key: 'pilot', label: 'Pilot' },
+];
+const EMPTY_ARMOR_SPECIAL: Record<keyof SPECIALStats, number> = {
+  strength: 0, perception: 0, endurance: 0, charisma: 0, intelligence: 0, agility: 0, luck: 0,
+};
+const EMPTY_ARMOR_SKILLS: Record<keyof CharacterSkills, number> = {
+  smallGuns: 0, bigGuns: 0, energyWeapons: 0, meleeWeapons: 0, unarmed: 0, throwing: 0,
+  firstAid: 0, doctor: 0, sneak: 0, lockpick: 0, steal: 0, traps: 0, science: 0, repair: 0,
+  speech: 0, barter: 0, gambling: 0, outdoorsman: 0, pilot: 0,
 };
 
 // Categories that behave like a "gun" (use ammo types + gun-style mods).
@@ -424,7 +451,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   const colors = useColors();
   const [name, setName] = useState('');
   const [slot, setSlot] = useState<'body' | 'helmet'>('body');
-  const [tab, setTab] = useState<'dt' | 'dr'>('dt');
+  const [tab, setTab] = useState<'dt' | 'dr' | 'effects'>('dt');
   // DT fields
   const [dtNormal, setDtNormal] = useState(0);
   const [dtLaser, setDtLaser] = useState(0);
@@ -438,6 +465,12 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   const [drPlasma, setDrPlasma] = useState(0);
   const [drExplosion, setDrExplosion] = useState(0);
   const [acBonus, setAcBonus] = useState(0);
+  const [specialEffects, setSpecialEffects] = useState<Record<keyof SPECIALStats, number>>({ ...EMPTY_ARMOR_SPECIAL });
+  const [skillEffects, setSkillEffects] = useState<Record<keyof CharacterSkills, number>>({ ...EMPTY_ARMOR_SKILLS });
+  const [gasResistance, setGasResistance] = useState(0);
+  const [poisonResistance, setPoisonResistance] = useState(0);
+  const [radiationResistance, setRadiationResistance] = useState(0);
+  const [electricityResistance, setElectricityResistance] = useState(0);
   const [showPresets, setShowPresets] = useState(false);
 
   const isEditing = !!editArmor;
@@ -448,6 +481,12 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
     setDtNormal(a.dtNormal); setDtLaser(a.dtLaser); setDtFire(a.dtFire); setDtPlasma(a.dtPlasma); setDtExplosion(a.dtExplosion);
     setDrNormal(a.drNormal); setDrLaser(a.drLaser); setDrFire(a.drFire); setDrPlasma(a.drPlasma); setDrExplosion(a.drExplosion);
     setAcBonus(a.acBonus);
+    setSpecialEffects({ ...EMPTY_ARMOR_SPECIAL, ...(a.effects?.special ?? {}) });
+    setSkillEffects({ ...EMPTY_ARMOR_SKILLS, ...(a.effects?.skills ?? {}) });
+    setGasResistance(a.effects?.gasResistance ?? 0);
+    setPoisonResistance(a.effects?.poisonResistance ?? 0);
+    setRadiationResistance(a.effects?.radiationResistance ?? 0);
+    setElectricityResistance(a.effects?.electricityResistance ?? 0);
   };
 
   React.useEffect(() => {
@@ -461,6 +500,9 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
       setDtNormal(0); setDtLaser(0); setDtFire(0); setDtPlasma(0); setDtExplosion(0);
       setDrNormal(0); setDrLaser(0); setDrFire(0); setDrPlasma(0); setDrExplosion(0);
       setAcBonus(0);
+      setSpecialEffects({ ...EMPTY_ARMOR_SPECIAL });
+      setSkillEffects({ ...EMPTY_ARMOR_SKILLS });
+      setGasResistance(0); setPoisonResistance(0); setRadiationResistance(0); setElectricityResistance(0);
     }
   }, [visible, editArmor]);
 
@@ -474,11 +516,21 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   const handleSave = () => {
     if (!isValid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const nonZeroSpecial = Object.fromEntries(Object.entries(specialEffects).filter(([, value]) => value !== 0)) as Partial<SPECIALStats>;
+    const nonZeroSkills = Object.fromEntries(Object.entries(skillEffects).filter(([, value]) => value !== 0)) as Partial<CharacterSkills>;
     onSave({
       id: isEditing ? editArmor!.id : genId(), name: name.trim(), slot,
       dtNormal, dtLaser, dtFire, dtPlasma, dtExplosion,
       drNormal, drLaser, drFire, drPlasma, drExplosion,
       acBonus, weight: 0, isCustom: true,
+      effects: {
+        special: nonZeroSpecial,
+        skills: nonZeroSkills,
+        ...(gasResistance !== 0 ? { gasResistance } : {}),
+        ...(poisonResistance !== 0 ? { poisonResistance } : {}),
+        ...(radiationResistance !== 0 ? { radiationResistance } : {}),
+        ...(electricityResistance !== 0 ? { electricityResistance } : {}),
+      },
     });
     onClose();
   };
@@ -488,7 +540,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
       <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, flex: 1 }}>{label}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => set(Math.max(min, val - 1))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
-        <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 36, textAlign: 'center' }}>{val}{tab === 'dr' ? '%' : ''}</Text>
+        <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 36, textAlign: 'center' }}>{tab === 'effects' && val > 0 ? '+' : ''}{val}{tab === 'dr' ? '%' : ''}</Text>
         <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => set(Math.min(max, val + 1))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
       </View>
     </View>
@@ -542,9 +594,9 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
           </View>
 
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            {(['dt', 'dr'] as const).map(t => (
+            {(['dt', 'dr', 'effects'] as const).map(t => (
               <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: tab === t ? colors.primary : 'transparent' }} onPress={() => setTab(t)}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: tab === t ? colors.primary : colors.mutedForeground, letterSpacing: 1 }}>{t === 'dt' ? 'DT (FLAT)' : 'DR (% RESIST)'}</Text>
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: tab === t ? colors.primary : colors.mutedForeground, letterSpacing: 1 }}>{t === 'dt' ? 'DT (FLAT)' : t === 'dr' ? 'DR (% RESIST)' : 'EFFECTS'}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -586,6 +638,29 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
                 {drData.map(({ label, val, set }) => (
                   <NumStepper key={label} label={label} val={val} min={0} max={90} set={set} />
                 ))}
+              </>
+            )}
+            {tab === 'effects' && (
+              <>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  Worn modifiers. Positive and negative values are applied while this armor is equipped.
+                </Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginTop: 4 }}>SPECIAL</Text>
+                {ARMOR_SPECIAL_FIELDS.map(({ key, label }) => (
+                  <NumStepper key={key} label={label} val={specialEffects[key]} min={-10} max={10}
+                    set={value => setSpecialEffects(current => ({ ...current, [key]: value }))} />
+                ))}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginTop: 8 }}>SKILLS</Text>
+                {ARMOR_SKILL_FIELDS.map(({ key, label }) => (
+                  <NumStepper key={key} label={label} val={skillEffects[key]} min={-100} max={100}
+                    set={value => setSkillEffects(current => ({ ...current, [key]: value }))} />
+                ))}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginTop: 8 }}>RESISTANCES</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Gas, poison, radiation, and electricity resistance modifiers.</Text>
+                <NumStepper label="Gas Resistance" val={gasResistance} min={-100} max={100} set={setGasResistance} />
+                <NumStepper label="Poison Resistance" val={poisonResistance} min={-100} max={100} set={setPoisonResistance} />
+                <NumStepper label="Radiation Resistance" val={radiationResistance} min={-100} max={100} set={setRadiationResistance} />
+                <NumStepper label="Electricity Resistance" val={electricityResistance} min={-100} max={100} set={setElectricityResistance} />
               </>
             )}
           </ScrollView>
@@ -685,6 +760,14 @@ function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?
   const dtTypes: (keyof Armor)[] = ['dtNormal', 'dtLaser', 'dtFire', 'dtPlasma', 'dtExplosion'];
   const drTypes: (keyof Armor)[] = ['drNormal', 'drLaser', 'drFire', 'drPlasma', 'drExplosion'];
   const typeLabels = ['N', 'L', 'F', 'P', 'E'];
+  const effectSummary = [
+    ...ARMOR_SPECIAL_FIELDS.map(({ key, label }) => ({ label, value: armor.effects?.special?.[key] ?? 0 })),
+    ...ARMOR_SKILL_FIELDS.map(({ key, label }) => ({ label, value: armor.effects?.skills?.[key] ?? 0 })),
+    { label: 'Gas Resistance', value: armor.effects?.gasResistance ?? 0 },
+    { label: 'Poison Resistance', value: armor.effects?.poisonResistance ?? 0 },
+    { label: 'Radiation Resistance', value: armor.effects?.radiationResistance ?? 0 },
+    { label: 'Electricity Resistance', value: armor.effects?.electricityResistance ?? 0 },
+  ].filter(effect => effect.value !== 0);
   return (
     <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -715,6 +798,17 @@ function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No protection values</Text>
         )}
       </View>
+      {effectSummary.length > 0 && (
+        <View style={{ flexDirection: 'row', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+          {effectSummary.map(({ label, value }) => (
+            <View key={label} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.primary + '1c', borderRadius: 4, borderWidth: 1, borderColor: colors.primary + '55' }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                {label} {value > 0 ? '+' : ''}{value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }

@@ -10,16 +10,16 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import {
-  Character, CharacterSkills, CharacterPerk, CharacterType, RaceType,
-  SkillType, SPECIALStats, Injury, NaturalProtection, DamageType, ActiveEffect, Weapon,
-  DEFAULT_SKILLS, COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
+  Character, CharacterType, RaceType,
+  SkillType, SPECIALStats, Injury, NaturalProtection, DamageType, Weapon, Armor,
+  COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
   DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
 } from '@/context/types';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
   calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
-  calcCriticalChance, calcMeleeDamageBonus, xpForLevel, levelForXP,
+  xpForLevel, levelForXP,
   computePerkDerivedBonuses, brutishHulkExtraHP,
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
@@ -28,9 +28,9 @@ import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } f
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
-import { makeChemEffect, progressChemEffect, chemHasNextStage, effectiveDerivedStats, effectiveSpecial, computePerkStatBonuses, computeEffectModifiers } from '@/data/effects';
+import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
 import { ALCOHOL_CONSUMABLES } from '@/data/chems';
-import { applyImmediateTraitSpecial, calculateCarryWeight, calculateHealingRate, calculateRadiationResistance, calculateRebasedEffectiveSkills, calculateSkillPointsPerLevel as calculateRuleSkillPointsPerLevel, calculateTagSkillRules, calculatePerkCadence } from '@/data/effectiveRules';
+import { applyImmediateTraitSpecial, calculateHealingRate, calculateSkillPointsPerLevel as calculateRuleSkillPointsPerLevel, calculateTagSkillRules, calculatePerkCadence } from '@/data/effectiveRules';
 import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import {
@@ -41,6 +41,7 @@ import {
 } from '@/data/skillAdvancement';
 import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
+import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -346,20 +347,21 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     for (const key of SPECIAL_KEYS) withTraits[key] += perkStats[key] ?? 0;
     return withTraits;
   }, [char.special, char.traits, char.perks]);
-  const effectiveSkillBase = useMemo(() => calcBaseSkills(effectiveSpecial(char).stats), [char]);
   const tagRules = useMemo(() => calculateTagSkillRules(char.traits), [char.traits]);
-  const effectiveSkills = useMemo(() => calculateRebasedEffectiveSkills<CharacterSkills>({
-    savedSkills: char.skills,
-    savedBaseSkills: baseSkills,
-    effectiveBaseSkills: effectiveSkillBase,
-    options: {
-      traits: char.traits,
-      perks: char.perks,
-      conditions: char.conditions,
-      includeTagBonus: true,
-      taggedSkills: [...char.taggedSkills, ...tagRules.freeTagSkills],
-    },
-  }), [char.skills, baseSkills, effectiveSkillBase, char.traits, char.perks, char.conditions, char.taggedSkills, tagRules.freeTagSkills]);
+  const armorSheet = useMemo(() => resolveArmorAwareSheet({
+    special: char.special, skills: char.skills,
+    taggedSkills: [...char.taggedSkills, ...tagRules.freeTagSkills],
+    traits: char.traits, perks: char.perks, conditions: char.conditions, effects: char.effects,
+    raceBounds: { min: race.specialMin, max: race.specialMax },
+    racialNaturalArmorClass: race.naturalACBonus,
+    nightPersonPeriod: char.nightPersonPeriod,
+    tempAC: char.tempAC,
+    radiationResistance: char.radiationResistance, gasResistance: char.gasResistance,
+    poisonResistance: char.poisonResistance, electricityResistance: char.electricityResistance,
+    equippedBodyArmorId: char.equippedBodyArmorId, equippedHelmetId: char.equippedHelmetId,
+    allArmor,
+  }), [char, allArmor, race, tagRules.freeTagSkills]);
+  const effectiveSkills = armorSheet.effectiveSkills;
   const lockedTagCount = useMemo(
     () => ALL_SKILLS.filter(sk => !canChangeSkillTag(char.skills[sk], baseSkills[sk])).length,
     [char.skills, baseSkills],
@@ -367,9 +369,6 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   const recomputeDerived = useCallback((updatedChar: Character): Character => {
     const raceRef = getRaceById(updatedChar.race) ?? RACES[0];
-    const bodyArmor = allArmor.find(a => a.id === updatedChar.equippedBodyArmorId);
-    const helmet = allArmor.find(a => a.id === updatedChar.equippedHelmetId);
-    const armorACBonus = (bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0);
     // Derived stats use base SPECIAL + permanent Gain-X perks (NOT chem mods —
     // chems are temporary and applied at display/combat time instead).
     const perkStat = computePerkStatBonuses(updatedChar);
@@ -383,7 +382,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     // These stored baselines intentionally exclude traits. The effective rules
     // layer adds trait and temporary changes without baking them into storage.
     const maxAP = calcMaxAP(perkSpecial);
-    const armorClass = calcBaseAC(perkSpecial) + armorACBonus + raceRef.naturalACBonus;
+    const armorClass = calcBaseAC(perkSpecial) + raceRef.naturalACBonus;
     const sequence = calcSequence(perkSpecial) + pdb.sequence;
     const radRes = Math.max(updatedChar.radiationResistance, raceRef.naturalDR);
     const gasRes = Math.max(updatedChar.gasResistance, raceRef.naturalGasDR);
@@ -391,10 +390,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     return {
       ...updatedChar,
       maxHp, currentHp: Math.min(updatedChar.currentHp, maxHp),
-      maxAP, currentAP: Math.min(updatedChar.currentAP, maxAP),
+      maxAP, currentAP: updatedChar.currentAP,
       armorClass, sequence, radiationResistance: radRes, gasResistance: gasRes, electricityResistance: elecRes,
     };
-  }, [allArmor]);
+  }, []);
 
   const setSPECIAL = useCallback((key: keyof SPECIALStats, value: number) => {
     setChar(prev => {
@@ -558,7 +557,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       if (!existing || existing.rank < perk.maxRanks) {
         // Adding a new perk or increasing rank — verify eligibility + points.
         const currentRanks = existing?.rank ?? 0;
-        const { allowed } = canTakePerk(prev, perk, currentRanks);
+        const bodyArmor = allArmor.find(armor => armor.id === prev.equippedBodyArmorId && armor.slot === 'body');
+        const helmet = allArmor.find(armor => armor.id === prev.equippedHelmetId && armor.slot === 'helmet');
+        const { allowed } = canTakePerk(prev, perk, currentRanks, aggregateArmorEffects(bodyArmor, helmet));
         if (!allowed || perkPointsRemaining <= 0) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           return prev;
@@ -568,7 +569,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       }
       return prev;
     });
-  }, [perkPointsRemaining, recomputeDerived]);
+  }, [perkPointsRemaining, recomputeDerived, allArmor]);
 
   const confirmPerkRefund = useCallback(() => {
     if (!perkRefundId) return;
@@ -985,17 +986,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               <View style={{ gap: 8 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>ELEMENTAL RESISTANCES</Text>
                 {[
-                  { label: 'Radiation', val: char.radiationResistance, key: 'radiationResistance' as const, natural: race.naturalDR },
-                  { label: 'Gas', val: char.gasResistance, key: 'gasResistance' as const, natural: race.naturalGasDR },
-                  { label: 'Electricity', val: char.electricityResistance, key: 'electricityResistance' as const, natural: race.naturalElecDR },
-                ].map(({ label, val, key, natural }) => (
+                  { label: 'Radiation', val: char.radiationResistance, resolved: armorSheet.radiationResistance, key: 'radiationResistance' as const, natural: race.naturalDR },
+                  { label: 'Gas', val: char.gasResistance, resolved: armorSheet.gasResistance, key: 'gasResistance' as const, natural: race.naturalGasDR },
+                  { label: 'Poison', val: char.poisonResistance ?? 0, resolved: armorSheet.poisonResistance, key: 'poisonResistance' as const, natural: 0 },
+                  { label: 'Electricity', val: char.electricityResistance, resolved: armorSheet.electricityResistance, key: 'electricityResistance' as const, natural: race.naturalElecDR },
+                ].map(({ label, val, resolved, key, natural }) => (
                   <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: colors.foreground }}>{label}{natural !== 0 ? ` (base ${natural}% from race)` : ''}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.max(natural, val - 5) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
-                      <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: val >= 50 ? '#4a8c3f' : colors.foreground, minWidth: 45, textAlign: 'center' }}>{val}%</Text>
+                       <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: resolved >= 50 ? '#4a8c3f' : colors.foreground, minWidth: 45, textAlign: 'center' }}>{resolved}%</Text>
                       <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(100, val + 5) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                   </View>
@@ -1077,17 +1079,19 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               {/* Derived stats preview (includes Gain-X + numeric perk bonuses) */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {(() => {
-                  const sFx = effectiveSpecial(char).stats;
-                  const effDerived = effectiveDerivedStats(char);
+                  const sFx = armorSheet.effectiveSpecial;
                   const pdb = computePerkDerivedBonuses(char.perks, char.level);
                   return [
-                    ['Max HP', char.maxHp], ['Max AP', effDerived.maxAP], ['AC', effDerived.armorClass],
-                    ['Sequence', effDerived.sequence], ['Crit%', calcCriticalChance(sFx)],
-                    ['Heal/day', calculateHealingRate(sFx.endurance, char.traits, 0, pdb.healingRate)], ['Carry', `${calculateCarryWeight(sFx.strength, char.traits) + pdb.carryWeight}lb`],
-                    ['Melee dmg', calcMeleeDamageBonus(sFx)
+                    ['Max HP', char.maxHp], ['Max AP', armorSheet.maxAP], ['AC', armorSheet.armorClass],
+                    ['Sequence', armorSheet.sequence], ['Crit%', armorSheet.criticalChance],
+                    ['Heal/day', calculateHealingRate(sFx.endurance, char.traits, 0, pdb.healingRate)], ['Carry', `${armorSheet.carryWeight + pdb.carryWeight}lb`],
+                    ['Melee dmg', armorSheet.meleeDamage
                       + 2 * (char.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0)
                       + (computeTraitEffects(char).meleeDamageBonus ?? 0)],
-                    ['Rad resist', `${calculateRadiationResistance(char.radiationResistance, char.traits, computeEffectModifiers(char).radResistMod)}%`],
+                    ['Gas resist', `${armorSheet.gasResistance}%`],
+                    ['Poison resist', `${armorSheet.poisonResistance}%`],
+                    ['Rad resist', `${armorSheet.radiationResistance}%`],
+                    ['Elec resist', `${armorSheet.electricityResistance}%`],
                     ['SP/lvl', calculateRuleSkillPointsPerLevel(permanentSpecial.intelligence, char.traits)],
                   ] as [string, string | number][];
                 })().map(([l, v]) => (
@@ -1112,7 +1116,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setSPECIAL(k, val - 1)}><Feather name="minus" size={16} color={colors.foreground} /></TouchableOpacity>
-                        <Text style={{ fontSize: 26, fontFamily: 'Inter_700Bold', color: val >= 8 ? colors.primary : colors.foreground, width: 40, textAlign: 'center' }}>{val}</Text>
+                        <Text style={{ fontSize: 26, fontFamily: 'Inter_700Bold', color: armorSheet.effectiveSpecial[k] >= 8 ? colors.primary : colors.foreground, width: 40, textAlign: 'center' }}>{armorSheet.effectiveSpecial[k]}</Text>
                         <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 6, borderWidth: 1, borderColor: specialRemaining <= 0 ? colors.mutedForeground : colors.border, alignItems: 'center', justifyContent: 'center', opacity: specialRemaining <= 0 ? 0.4 : 1 }} onPress={() => setSPECIAL(k, val + 1)} disabled={specialRemaining <= 0}><Feather name="plus" size={16} color={colors.foreground} /></TouchableOpacity>
                       </View>
                     </View>
@@ -1281,7 +1285,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     if (!onlyAvailablePerks) return true;
                     const existing = char.perks.find(p => p.perkId === perk.id);
                     if (existing) return true; // always show owned perks
-                    const { allowed } = canTakePerk(char, perk, 0);
+                    const { allowed } = canTakePerk(char, perk, 0, armorSheet.armorEffects);
                     return allowed && perkPointsRemaining > 0;
                   });
                   return (
@@ -1290,7 +1294,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 {visiblePerks.map(perk => {
                   const existing = char.perks.find(p => p.perkId === perk.id);
                   const currentRanks = existing?.rank ?? 0;
-                  const { allowed, reasons } = canTakePerk(char, perk, currentRanks);
+                  const { allowed, reasons } = canTakePerk(char, perk, currentRanks, armorSheet.armorEffects);
                   const atMax = existing && currentRanks >= perk.maxRanks;
                   const noPoints = !existing && perkPointsRemaining <= 0;
                   // A perk is interactive if you can add/upgrade it (allowed + points)
@@ -1400,8 +1404,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                             <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: w ? colors.foreground : colors.mutedForeground, marginTop: 4 }} numberOfLines={2}>{w?.name ?? 'None'}</Text>
                             {w && getWeaponHands(w) === 2 && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, marginTop: 2 }}>2-HANDED</Text>}
                             {w && (
-                              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2, color: effectiveSpecial(char).stats.strength >= w.minStr ? '#4a8c3f' : colors.destructive }}>
-                                STR REQ {effectiveSpecial(char).stats.strength}/{w.minStr}
+                              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2, color: armorSheet.effectiveSpecial.strength >= w.minStr ? '#4a8c3f' : colors.destructive }}>
+                                STR REQ {armorSheet.effectiveSpecial.strength}/{w.minStr}
                               </Text>
                             )}
                           </TouchableOpacity>
@@ -1456,8 +1460,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   helmet, natural/racial protection, shield mods on held weapons,
                   and defensive perks. */}
               {(() => {
-                const body = allArmor.find(a => a.id === char.equippedBodyArmorId) ?? null;
-                const helm = allArmor.find(a => a.id === char.equippedHelmetId) ?? null;
+                const body = armorSheet.bodyArmor ?? null;
+                const helm = armorSheet.helmet ?? null;
                 const natural = char.naturalProtection ?? race.naturalProtection ?? null;
 
                 // ── Shield contributions from held weapons ─────────────────────
@@ -1511,8 +1515,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   { key: 'Fire', label: 'FIRE' }, { key: 'Plasma', label: 'PLASMA' },
                   { key: 'Explosion', label: 'EXPL' },
                 ];
-                const totalAC = char.armorClass + perkAC + shieldAC;
-                const acParts = [`AGI-based ${char.special.agility <= 0 ? 0 : Math.min(char.special.agility, 99)}`];
+                const totalAC = armorSheet.armorClass + perkAC + shieldAC;
+                const acParts = [`AGI-based ${armorSheet.effectiveSpecial.agility <= 0 ? 0 : Math.min(armorSheet.effectiveSpecial.agility, 99)}`];
                 if (body?.acBonus) acParts.push(`+${body.acBonus} armor`);
                 if (helm?.acBonus) acParts.push(`+${helm.acBonus} helmet`);
                 if (race.naturalACBonus > 0) acParts.push(`+${race.naturalACBonus} racial`);
@@ -1538,6 +1542,32 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                         );
                       })}
                     </View>
+                    {armorSheet.armorEffects.sources.some(source => (
+                      Object.values(source.effects.special ?? {}).some(Boolean)
+                      || Object.values(source.effects.skills ?? {}).some(Boolean)
+                      || !!source.effects.gasResistance
+                      || !!source.effects.poisonResistance
+                      || !!source.effects.radiationResistance
+                      || !!source.effects.electricityResistance
+                    )) && (
+                      <View style={{ gap: 2 }}>
+                        {armorSheet.armorEffects.sources.map(source => {
+                          const effects = [
+                            ...Object.entries(source.effects.special ?? {}).map(([key, value]) => `${SPECIAL_SHORT[key as keyof SPECIALStats]} ${Number(value) >= 0 ? '+' : ''}${value}`),
+                            ...Object.entries(source.effects.skills ?? {}).map(([key, value]) => `${SKILL_LABELS[key as SkillType]} ${Number(value) >= 0 ? '+' : ''}${value}%`),
+                            ...(['gasResistance', 'poisonResistance', 'radiationResistance', 'electricityResistance'] as const)
+                              .filter(key => source.effects[key])
+                              .map(key => `${key.replace('Resistance', '')} ${source.effects[key]! >= 0 ? '+' : ''}${source.effects[key]}%`),
+                          ];
+                          return effects.length > 0 ? <Text key={source.armorId} style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                            {source.slot === 'body' ? 'Body' : 'Helmet'} — {source.armorName}: {effects.join(' · ')}
+                          </Text> : null;
+                        })}
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                          Elemental resistance is capped at 100% (Gas {armorSheet.gasResistance}% · Poison {armorSheet.poisonResistance}% · Rad {armorSheet.radiationResistance}% · Elec {armorSheet.electricityResistance}%).
+                        </Text>
+                      </View>
+                    )}
                     <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
                       Sources: equipment{hasShield ? ` + shield (${shieldWeaponNames.join(', ')})` : ''} + natural/racial protection{perkAC > 0 || perkDR > 0 ? ' + perks' : ''}. DR capped at 90%. Situational perk bonuses (e.g. HP &lt; 50%) apply in combat only.
                     </Text>
@@ -1827,13 +1857,13 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         <SelectionModal
           visible={showBodyPick} onClose={() => setShowBodyPick(false)} title="SELECT BODY ARMOR"
           items={allArmor.filter(a => a.slot === 'body')} keyFn={a => a.id}
-          onSelect={a => setChar(c => recomputeDerived({ ...c, equippedBodyArmorId: a?.id ?? undefined }))}
+          onSelect={a => setChar(c => ({ ...c, equippedBodyArmorId: a?.id ?? undefined }))}
           renderItem={a => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{a.name}</Text>}
         />
         <SelectionModal
           visible={showHelmetPick} onClose={() => setShowHelmetPick(false)} title="SELECT HELMET"
           items={allArmor.filter(a => a.slot === 'helmet')} keyFn={a => a.id}
-          onSelect={a => setChar(c => recomputeDerived({ ...c, equippedHelmetId: a?.id ?? undefined }))}
+          onSelect={a => setChar(c => ({ ...c, equippedHelmetId: a?.id ?? undefined }))}
           renderItem={a => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{a.name}</Text>}
         />
 
@@ -1917,20 +1947,32 @@ function PremadePickerModal({ visible, onClose, onPick }: {
 }
 
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, allWeapons }: {
+function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, allWeapons, allArmor }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
   onBio: () => void; onToggleStorage: () => void; onResetHp: () => void;
   allWeapons: { id: string; name: string }[];
+  allArmor: Armor[];
 }) {
   const colors = useColors();
   const weapon = allWeapons.find(w => w.id === character.equippedWeaponId);
   const activeInjuries = (character.injuries ?? []).filter(i => i.isActive);
   const injuryEffects = computeInjuryEffects(character);
   const activeEffects = (character.effects ?? []).filter(e => e.isActive);
-  const effSpecial = effectiveSpecial(character);
-  const effDerived = effectiveDerivedStats(character);
+  const race = getRaceById(character.race) ?? RACES[0];
+  const tagRules = calculateTagSkillRules(character.traits);
+  const armorSheet = resolveArmorAwareSheet({
+    special: character.special, skills: character.skills,
+    taggedSkills: [...character.taggedSkills, ...tagRules.freeTagSkills],
+    traits: character.traits, perks: character.perks, conditions: character.conditions, effects: character.effects,
+    raceBounds: { min: race.specialMin, max: race.specialMax }, racialNaturalArmorClass: race.naturalACBonus,
+    nightPersonPeriod: character.nightPersonPeriod, tempAC: character.tempAC,
+    radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
+    poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,
+    equippedBodyArmorId: character.equippedBodyArmorId, equippedHelmetId: character.equippedHelmetId, allArmor,
+  });
+  const effSpecial = armorSheet.effectiveSpecial;
   const conditionModifiers = computeConditionModifiers(character);
-  const SPECIAL_ROW: [keyof typeof effSpecial.stats, string][] = [
+  const SPECIAL_ROW: [keyof typeof effSpecial, string][] = [
     ['strength', 'STR'], ['perception', 'PER'], ['endurance', 'END'], ['charisma', 'CHA'],
     ['intelligence', 'INT'], ['agility', 'AGI'], ['luck', 'LCK'],
   ];
@@ -1955,10 +1997,10 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
             Lv {character.level} {character.race} · {weapon?.name ?? 'No weapon'}
           </Text>
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-            HP {character.currentHp}/{character.maxHp} · AC {effDerived.armorClass + character.tempAC} · AP {Math.min(character.currentAP, effDerived.maxAP)}/{effDerived.maxAP} · SEQ {effDerived.sequence}
+            HP {character.currentHp}/{character.maxHp} · AC {armorSheet.armorClass} · AP {Math.min(character.currentAP, armorSheet.maxAP)}/{armorSheet.maxAP} · SEQ {armorSheet.sequence}
           </Text>
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-            Carry {calculateCarryWeight(effSpecial.stats.strength, character.traits) + computePerkDerivedBonuses(character.perks, character.level).carryWeight} lb
+            Carry {armorSheet.carryWeight + computePerkDerivedBonuses(character.perks, character.level).carryWeight} lb
             {(character.traits ?? []).includes('night_person') ? ` · Night Person ${(character.nightPersonPeriod ?? 'day').toUpperCase()}` : ''}
           </Text>
         </View>
@@ -1989,12 +2031,12 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
       {/* SPECIAL row — chem-boosted stats render green (may exceed racial max) */}
       <View style={{ flexDirection: 'row', gap: 4 }}>
         {SPECIAL_ROW.map(([key, label]) => {
-          const delta = (effSpecial.chemDelta[key] ?? 0) + (effSpecial.conditionDelta[key] ?? 0);
+          const delta = effSpecial[key] - character.special[key];
           const color = delta > 0 ? '#4a8c3f' : delta < 0 ? colors.destructive : colors.foreground;
           return (
             <View key={key} style={{ flex: 1, alignItems: 'center', paddingVertical: 4, borderRadius: 4, backgroundColor: colors.secondary, borderWidth: 1, borderColor: delta !== 0 ? color + '88' : colors.border }}>
               <Text style={{ fontSize: 8, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{label}</Text>
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color }}>{effSpecial.stats[key]}</Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color }}>{effSpecial[key]}</Text>
             </View>
           );
         })}
@@ -2043,7 +2085,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
 export default function CharactersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, healCharacter, allWeapons } = useApp();
+  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, healCharacter, allWeapons, allArmor } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -2142,6 +2184,7 @@ export default function CharactersScreen() {
             <CharacterCard
               character={item}
               allWeapons={allWeapons}
+              allArmor={allArmor}
               onEdit={() => { setEditingChar(item); setShowForm(true); }}
               onBio={() => setBioChar(item)}
               onToggleStorage={() => toggleStorage(item)}
@@ -2164,6 +2207,7 @@ export default function CharactersScreen() {
                   key={item.id}
                   character={item}
                   allWeapons={allWeapons}
+                  allArmor={allArmor}
                   onEdit={() => { setEditingChar(item); setShowForm(true); }}
                   onBio={() => setBioChar(item)}
                   onToggleStorage={() => toggleStorage(item)}

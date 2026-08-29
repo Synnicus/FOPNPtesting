@@ -26,18 +26,17 @@ import { isMeleeWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
-import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveDerivedStats, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
+import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
-import { calcMeleeDamageBonus } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import { computeConditionModifiers } from '@/data/conditions';
 import {
-  calculateRebasedEffectiveSkills,
   fastShotAppliesToSkill,
 } from '@/data/effectiveRules';
-import { calcBaseSkills } from '@/data/derived';
+import { resolveArmorAwareSheet } from '@/data/armorEffects';
+import type { ResolvedArmorSheet } from '@/data/armorEffects';
 import {
   SPECIAL_UNARMED_ATTACKS,
   SpecialUnarmedGroup,
@@ -47,8 +46,47 @@ import {
   getSpecialUnarmedAttack,
 } from '@/data/specialUnarmedAttacks';
 
-function combatSequence(character: Character): number {
-  return effectiveDerivedStats(character).sequence;
+function resolveCombatSheet(character: Character, allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'], includeTempAC = true): ResolvedArmorSheet {
+  const race = getRaceById(character.race);
+  return resolveArmorAwareSheet({
+    special: character.special,
+    skills: character.skills,
+    taggedSkills: character.taggedSkills,
+    traits: character.traits,
+    perks: character.perks,
+    conditions: character.conditions,
+    effects: character.effects,
+    raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
+    nightPersonPeriod: character.nightPersonPeriod,
+    racialNaturalArmorClass: race?.naturalACBonus,
+    tempAC: includeTempAC ? character.tempAC : 0,
+    radiationResistance: character.radiationResistance,
+    gasResistance: character.gasResistance,
+    poisonResistance: character.poisonResistance,
+    electricityResistance: character.electricityResistance,
+    equippedBodyArmorId: character.equippedBodyArmorId,
+    equippedHelmetId: character.equippedHelmetId,
+    allArmor,
+  });
+}
+
+function armorEffectsSummary(sheet: ResolvedArmorSheet): string | null {
+  const sources = sheet.armorEffects.sources.flatMap(source => {
+    const special = Object.entries(source.effects.special ?? {}).map(([stat, value]) => `${stat.slice(0, 3).toUpperCase()} ${Number(value) >= 0 ? '+' : ''}${value}`);
+    const skills = Object.entries(source.effects.skills ?? {}).map(([skill, value]) => `${skill} ${Number(value) >= 0 ? '+' : ''}${value}`);
+    const resistances = [
+      ['Gas', source.effects.gasResistance],
+      ['Poison', source.effects.poisonResistance],
+      ['Rad', source.effects.radiationResistance],
+      ['Elec', source.effects.electricityResistance],
+    ].filter(([, value]) => value).map(([name, value]) => `${name} ${Number(value) >= 0 ? '+' : ''}${value}%`);
+    const effects = [...special, ...skills, ...resistances];
+    return effects.length
+      ? [`${source.slot === 'body' ? 'Body' : 'Helmet'}: ${source.armorName} (${effects.join(', ')})`]
+      : [];
+  });
+  if (!sources.length) return null;
+  return `Armor effects — ${sources.join(' · ')}. Resist G/P/R/E ${sheet.gasResistance}/${sheet.poisonResistance}/${sheet.radiationResistance}/${sheet.electricityResistance}%`;
 }
 
 // ─── Dice helpers ─────────────────────────────────────────────────────────────
@@ -406,9 +444,9 @@ function FormulaLine({ label, value, color }: { label: string; value: string; co
 }
 
 // ─── Character Picker Modal ───────────────────────────────────────────────────
-function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons }: {
+function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor }: {
   visible: boolean; onClose: () => void; onSelect: (id: string) => void;
-  title: string; characters: Character[]; allWeapons: Weapon[];
+  title: string; characters: Character[]; allWeapons: Weapon[]; allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'];
 }) {
   const colors = useColors();
   return (
@@ -428,13 +466,14 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
             <FlatList data={characters} keyExtractor={c => c.id} renderItem={({ item: c }) => {
               const weapon = allWeapons.find(w => w.id === c.equippedWeaponId);
               const ammoState = c.weaponAmmoStates?.find(a => a.weaponId === c.equippedWeaponId);
+               const sheet = resolveCombatSheet(c, allArmor);
               return (
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { onSelect(c.id); onClose(); }}>
                   <CharacterAvatar portrait={c.portrait} name={c.name} size={40} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-                      AC {c.armorClass + (c.tempAC ?? 0)} · HP {c.currentHp}/{c.maxHp} · AP {c.currentAP ?? c.maxAP}/{c.maxAP}
+                       AC {sheet.armorClass} · HP {c.currentHp}/{c.maxHp} · AP {c.currentAP ?? sheet.maxAP}/{sheet.maxAP}
                       {weapon ? ` · ${weapon.name}` : ''}
                       {weapon && weapon.magazineSize > 0 ? ` [${ammoState?.currentAmmo ?? weapon.magazineSize}/${weapon.magazineSize}]` : ''}
                     </Text>
@@ -736,6 +775,10 @@ export default function CombatScreen() {
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
   const defender = characters.find(c => c.id === defenderId) ?? null;
+  // This is the authoritative combat sheet: equipped armor is resolved before
+  // skills, SPECIAL-derived values, AC, and elemental resistances are consumed.
+  const attackerSheet = attacker ? resolveCombatSheet(attacker, allArmor) : null;
+  const defenderSheet = defender ? resolveCombatSheet(defender, allArmor) : null;
   // Empty hands still make a normal Unarmed attack. Treat them as the built-in
   // Fists and Feet profile without mutating the character's carried inventory.
   const activeWeapon = attacker
@@ -743,8 +786,8 @@ export default function CombatScreen() {
         ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
         : allWeapons.find(w => w.id === 'unarmed') ?? null)
     : null;
-  const bodyArmor = defender?.equippedBodyArmorId ? allArmor.find(a => a.id === defender.equippedBodyArmorId) ?? null : null;
-  const helmet = defender?.equippedHelmetId ? allArmor.find(a => a.id === defender.equippedHelmetId) ?? null : null;
+  const bodyArmor = defenderSheet?.bodyArmor ?? null;
+  const helmet = defenderSheet?.helmet ?? null;
 
   // ── Dual-wield state (two DIFFERENT 1H weapons, one per hand) ──────────────
   // Absent hand ids fall back to "equipped weapon in the right hand".
@@ -830,16 +873,7 @@ export default function CombatScreen() {
   const targetedPenalty = specialUnarmedAttack ? 0 : (modEffects.negatesAimedPenalty ? 0 : rawTargetedPenalty);
   const targetedBodyPart = TARGETED_OPTIONS[effTargetedIdx].bodyPart;
   const isAimed = targetedBodyPart !== null && !specialUnarmedAttack;
-  // Saved purchases are rebased against working SPECIAL; tags and trait skill
-  // modifiers are applied exactly once here.
-  const effectiveAttackerSkills = attacker
-    ? calculateRebasedEffectiveSkills<Character['skills']>({
-        savedSkills: attacker.skills,
-        savedBaseSkills: calcBaseSkills(attacker.special),
-        effectiveBaseSkills: calcBaseSkills(effectiveSpecial(attacker).stats),
-        options: { traits: attacker.traits, perks: attacker.perks, conditions: attacker.conditions, taggedSkills: attacker.taggedSkills, includeTagBonus: true },
-      })
-    : null;
+  const effectiveAttackerSkills = attackerSheet?.effectiveSkills ?? null;
   const baseSkill = (effectiveAttackerSkills && weapon)
     ? effectiveAttackerSkills[weapon.skill] ?? 0
     : 0;
@@ -861,17 +895,9 @@ export default function CombatScreen() {
   const attackActionLabel = specialUnarmedAttack?.name.toUpperCase() ?? attackVerb;
 
   // Active-effect (chem) modifiers on attacker & defender (data/effects.ts).
-  const attackerEffectMods = attacker ? computeEffectModifiers(attacker) : null;
   const defenderEffectMods = defender ? computeEffectModifiers(defender) : null;
-  // Attacker SPECIAL after chem statMods (drives melee dmg / crit luck below).
-  // Chems may push stats PAST racial limits — no upper cap, floor 1.
-  const attackerEffSpecial = (attacker && attacker.special)
-    ? effectiveSpecial(attacker).stats
-    : null;
-  const defenderEffSpecial = (defender && defender.special)
-    ? effectiveSpecial(defender).stats
-    : null;
-  const attackerEffDerived = attacker?.special ? effectiveDerivedStats(attacker) : null;
+  const attackerEffSpecial = attackerSheet?.effectiveSpecial ?? null;
+  const defenderEffSpecial = defenderSheet?.effectiveSpecial ?? null;
   const specialUnarmedEligibility = attacker && specialUnarmedAttack
     ? evaluateEligibility(
         specialUnarmedAttack,
@@ -917,9 +943,9 @@ export default function CombatScreen() {
   if (defenderPos === 'crouching') defenderPositionalAgiAC = Math.min(uprightNaturalAgiAC, 3);
   else if (defenderPos === 'prone') defenderPositionalAgiAC = Math.min(uprightNaturalAgiAC, 1);
   const defenderAgiAcDelta = uprightNaturalAgiAC - defenderPositionalAgiAC;
-  const defenderEffectiveAC = defender ? effectiveDerivedStats(defender).armorClass : 0;
+  const defenderEffectiveAC = defenderSheet?.armorClass ?? 0;
   const defenderAC = defender
-    ? Math.max(0, defenderEffectiveAC + (defender.tempAC ?? 0) - defenderAgiAcDelta
+    ? Math.max(0, defenderEffectiveAC - defenderAgiAcDelta
         + defenderPerkDef.ac + defenderShield.ac)
     : 0;
   const defenderACAffectsHit = specialUnarmedAttack?.armorClassPiercing ? 0 : defenderAC;
@@ -928,8 +954,8 @@ export default function CombatScreen() {
   const blindDarknessPenalty = attackerInjury?.blind ? TOTAL_DARKNESS_PENALTY : 0;
   const rawLightPenalty = Math.max(lightPenalty, blindDarknessPenalty);
 
-  // Light penalty after Night Vision perk; a night sight mod ignores light entirely.
-  const effectiveLightPenalty = modEffects.ignoresLightPenalty
+  // Light penalty after Night Vision perk; a night sight or armor optics ignores it entirely.
+  const effectiveLightPenalty = modEffects.ignoresLightPenalty || attackerSheet?.ignoresLightPenalties
     ? 0
     : Math.max(0, Math.round(rawLightPenalty * (1 - perkBonuses.lightReduction / 100)));
 
@@ -1316,7 +1342,7 @@ export default function CombatScreen() {
     const hthPerkBonus = isMeleeOrUnarmed ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
     const traitMeleeBonus = isMeleeOrUnarmed && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
     const meleeDmgBonus = isMeleeOrUnarmed
-      ? Math.max(0, (attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
+      ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
       : 0;
 
     const damages = shotResults.map((shot, i) => {
@@ -1393,7 +1419,7 @@ export default function CombatScreen() {
       return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes, manualBaseDamage: overrideVal };
     });
     setShotDamages(damages); setDamageApplied(false);
-  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, attackerEffSpecial, specialUnarmedAttack, traitEffects]);
+  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, attacker, attackerSheet, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, specialUnarmedAttack, traitEffects]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
 
@@ -1713,8 +1739,8 @@ export default function CombatScreen() {
         const rawBase = rolls.reduce((a, b) => a + b, 0) + weapon.damageBonus;
         const half = Math.max(1, Math.floor(rawBase / 2));
         // Attacker's own armor applies per normal damage rules.
-        const selfBodyArmor = attacker.equippedBodyArmorId ? allArmor.find(a => a.id === attacker.equippedBodyArmorId) ?? null : null;
-        const selfHelmet = attacker.equippedHelmetId ? allArmor.find(a => a.id === attacker.equippedHelmetId) ?? null : null;
+        const selfBodyArmor = attackerSheet?.bodyArmor ?? null;
+        const selfHelmet = attackerSheet?.helmet ?? null;
         const selfNatural = attacker.naturalProtection ?? getRaceById(attacker.race)?.naturalProtection ?? null;
         const sp = combinedProtectionFor(weapon.damageType, selfBodyArmor as any, selfHelmet as any, selfNatural, shieldFor(attacker).prot);
         const finalSelf = applyProtection(half, sp.dt, sp.dr);
@@ -1741,7 +1767,7 @@ export default function CombatScreen() {
     }
     setCritFailNotes(notes);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-  }, [attacker, weapon, currentAmmo, allArmor, spendAmmo, jamWeapon, spendAP, applyDamage, setPosition, setWeaponCondition]);
+  }, [attacker, attackerSheet, weapon, currentAmmo, spendAmmo, jamWeapon, spendAP, applyDamage, setPosition, setWeaponCondition]);
 
   // Display-level DT/DR (before calculateDamage is called) — armor + natural protection
   const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot) : { dt: 0, dr: 0 };
@@ -1809,7 +1835,7 @@ export default function CombatScreen() {
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
-                    const seq = combatSequence(c);
+                    const seq = resolveCombatSheet(c, allArmor).sequence;
                     rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
                   });
                   setInitRolls(rolls);
@@ -1818,12 +1844,14 @@ export default function CombatScreen() {
                   <Feather name="refresh-cw" size={14} color={colors.primaryForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL ALL (1d10 + SEQ)</Text>
                 </TouchableOpacity>
-                {activeCharacters.filter(c => c.currentHp > 0).map(c => (
+                {activeCharacters.filter(c => c.currentHp > 0).map(c => {
+                  const sheet = resolveCombatSheet(c, allArmor);
+                  return (
                   <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <CharacterAvatar portrait={c.portrait} name={c.name} size={32} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{c.name}</Text>
-                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>SEQ {combatSequence(c)} · HP {c.currentHp}/{c.maxHp} · AP {c.maxAP}</Text>
+                       <Text style={{ fontSize: 10, color: colors.mutedForeground }}>SEQ {sheet.sequence} · HP {c.currentHp}/{c.maxHp} · AP {sheet.maxAP}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.max(0, (prev[c.id] ?? 10) - 1) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
@@ -1831,7 +1859,7 @@ export default function CombatScreen() {
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.min(50, (prev[c.id] ?? 10) + 1) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                     <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => {
-                      const seq = combatSequence(c);
+                       const seq = sheet.sequence;
                       const roll = Math.floor(Math.random() * 10) + 1;
                       setInitRolls(prev => ({ ...prev, [c.id]: roll + seq }));
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1839,28 +1867,33 @@ export default function CombatScreen() {
                       <Feather name="refresh-cw" size={12} color={colors.foreground} />
                     </TouchableOpacity>
                   </View>
-                ))}
+                  );
+                })}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TouchableOpacity style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowInitSetup(false)}>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: '#4a8c3f', flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
-                    const entries: InitiativeEntry[] = activeCharacters.filter(c => c.currentHp > 0).map(c => ({
+                    const entries: InitiativeEntry[] = activeCharacters.filter(c => c.currentHp > 0).map(c => {
+                      // temp AC is turn-specific and starts separately at zero.
+                      const sheet = resolveCombatSheet(c, allArmor, false);
+                      return ({
                       id: `init-${c.id}`,
                       characterId: c.id,
                       name: c.name,
                       initiative: initRolls[c.id] ?? 10,
-                      sequence: combatSequence(c),
+                      sequence: sheet.sequence,
                       maxHp: c.maxHp,
                       currentHp: c.currentHp,
-                      maxAP: effectiveDerivedStats(c).maxAP,
-                      currentAP: effectiveDerivedStats(c).maxAP,
-                      armorClass: c.armorClass,
+                      maxAP: sheet.maxAP,
+                      currentAP: sheet.maxAP,
+                      armorClass: sheet.armorClass,
                       tempAC: 0,
                       position: c.position,
                       isActive: false,
                       hasActed: false,
-                    }));
+                    });
+                    });
                     if (entries.length > 0) { startCombat(entries); setShowInitSetup(false); setInitRolls({}); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
                   }}>
                     <Feather name="play" size={14} color="#fff" />
@@ -1934,7 +1967,8 @@ export default function CombatScreen() {
                     </Text>}
                     {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
-                    {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {Math.min(attacker.currentAP, attackerEffDerived?.maxAP ?? attacker.maxAP)}/{attackerEffDerived?.maxAP ?? attacker.maxAP} · {attackerPos}</Text>}
+                    {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP} · {attackerPos}</Text>}
+                    {attackerSheet && armorEffectsSummary(attackerSheet) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }} numberOfLines={3}>🛡 {armorEffectsSummary(attackerSheet)}</Text>}
                     {/* Ammo display: count + loaded ammo type (shorthand) */}
                     {weapon && weapon.magazineSize > 0 && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
@@ -2004,8 +2038,9 @@ export default function CombatScreen() {
                     {defenderNatural && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>incl. natural protection</Text>}
                     {(defenderShield.ac > 0 || defenderShield.prot) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>🛡 incl. shield{defenderShield.ac > 0 ? ` (+${defenderShield.ac} AC)` : ''}</Text>}
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${defender.currentAP}/${defender.maxAP}` : ''}
+                      Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${Math.min(defender.currentAP, defenderSheet?.maxAP ?? defender.maxAP)}/${defenderSheet?.maxAP ?? defender.maxAP}` : ''}
                     </Text>
+                    {defenderSheet && armorEffectsSummary(defenderSheet) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }} numberOfLines={3}>🛡 {armorEffectsSummary(defenderSheet)}</Text>}
                     {defender.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
@@ -2141,7 +2176,7 @@ export default function CombatScreen() {
               {showApActions && (
                 <View style={{ gap: 8 }}>
                   <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                    {attacker.name} · Position: {(attacker.position ?? 'standing').toUpperCase()} · AP {Math.min(attacker.currentAP, attackerEffDerived?.maxAP ?? attacker.maxAP)}/{attackerEffDerived?.maxAP ?? attacker.maxAP}
+                    {attacker.name} · Position: {(attacker.position ?? 'standing').toUpperCase()} · AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP}
                   </Text>
                   {/* Movement */}
                   <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -2607,7 +2642,7 @@ export default function CombatScreen() {
                 const hthPerkBonus = isMelee ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
                 const traitMeleeBonus = isMelee && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
                 const meleeDmgBonus = isMelee
-                  ? Math.max(0, (attackerEffSpecial ? calcMeleeDamageBonus(attackerEffSpecial) : 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
+                  ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
                   : 0;
                 const perHit = Array.from({ length: streamlinedHits }, () => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
@@ -2873,29 +2908,31 @@ export default function CombatScreen() {
 
       </ScrollView>
 
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} />
-      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} />
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} />
+      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} />
       <CharacterPickerModal visible={showAddCombatantPicker} onClose={() => setShowAddCombatantPicker(false)} onSelect={(id) => {
         const c = characters.find(ch => ch.id === id);
         if (!c) return;
+        // Snapshot resolved permanent armor AC; temp AC remains its own entry field.
+        const sheet = resolveCombatSheet(c, allArmor, false);
         addInitiativeEntry({
           id: `init-${c.id}-${genId()}`,
           characterId: c.id,
           name: c.name,
-          initiative: combatSequence(c) + Math.floor(Math.random() * 10) + 1,
-          sequence: combatSequence(c),
+          initiative: sheet.sequence + Math.floor(Math.random() * 10) + 1,
+          sequence: sheet.sequence,
           maxHp: c.maxHp,
           currentHp: c.currentHp,
-          maxAP: effectiveDerivedStats(c).maxAP,
-          currentAP: effectiveDerivedStats(c).maxAP,
-          armorClass: c.armorClass,
+          maxAP: sheet.maxAP,
+          currentAP: sheet.maxAP,
+          armorClass: sheet.armorClass,
           tempAC: 0,
           position: c.position,
           isActive: false,
           hasActed: false,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} />
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
       <CriticalHitModal
         visible={showCritModal}

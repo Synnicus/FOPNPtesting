@@ -6,3 +6,4 @@
 - [Fallout PnP Web Quirks](fallout-pnp-web-quirks.md) — Alert.alert is a no-op on RN-web (use notify/window.confirm); AP charged on picker selection, never on open
 - [Fallout PnP Special Unarmed](fallout-pnp-special-unarmed.md) — techniques use effective tagged Unarmed; piercing ignores AC only; printed pp. 18–19 are authoritative
 - [Fallout PnP Attack Sessions](fallout-pnp-attack-sessions.md) — resolve attacks from a local selected held weapon; do not mutate persistent active equipment for off-hand attacks
+- [Fallout PnP Helmet Gas Ratings](fallout-pnp-helmet-gas-ratings.md) — `GR 100/10` and `100/20` map to +100 Gas only; the second number is intentionally unmodeled

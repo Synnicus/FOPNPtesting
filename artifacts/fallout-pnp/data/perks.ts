@@ -1,4 +1,4 @@
-import { Character, RaceType, SPECIALStats, SkillType } from '@/context/types';
+import { Character, CharacterSkills, RaceType, SPECIALStats, SkillType } from '@/context/types';
 import { calcBaseSkills } from './derived';
 import { computePerkStatBonuses } from './effects';
 import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './effectiveRules';
@@ -1046,9 +1046,12 @@ const SKILL_LABELS_SHORT: Record<SkillType, string> = {
   pilot: 'Pilot',
 };
 
-// Perk requirements use permanent trait and Gain-X values. Temporary chem,
-// condition, and Night Person modifiers cannot be used to qualify for a perk.
-function effectiveRequirementValues(char: Character): {
+// Perk requirements use permanent trait, Gain-X, and worn-armor values.
+// Temporary chem, condition, and Night Person modifiers cannot qualify.
+function effectiveRequirementValues(
+  char: Character,
+  armorModifiers?: { special?: Partial<SPECIALStats>; skills?: Partial<CharacterSkills> },
+): {
   special: SPECIALStats;
   skills: Character['skills'];
 } {
@@ -1056,6 +1059,7 @@ function effectiveRequirementValues(char: Character): {
   const perkStats = computePerkStatBonuses(char);
   for (const key of Object.keys(special) as (keyof SPECIALStats)[]) {
     special[key] += perkStats[key] ?? 0;
+    special[key] += armorModifiers?.special?.[key] ?? 0;
   }
   const skills = calculateRebasedEffectiveSkills<Character['skills']>({
     savedSkills: char.skills,
@@ -1067,6 +1071,9 @@ function effectiveRequirementValues(char: Character): {
       includeTagBonus: true,
     },
   });
+  for (const key of Object.keys(skills) as SkillType[]) {
+    skills[key] += armorModifiers?.skills?.[key] ?? 0;
+  }
   return { special, skills };
 }
 
@@ -1079,9 +1086,10 @@ export function canTakePerk(
   char: Character,
   perk: Perk,
   currentRanks: number,
+  armorModifiers?: { special?: Partial<SPECIALStats>; skills?: Partial<CharacterSkills> },
 ): { allowed: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const requirementValues = effectiveRequirementValues(char);
+  const requirementValues = effectiveRequirementValues(char, armorModifiers);
 
   // Robots never gain perks.
   if (ROBOTS_NO_PERKS && char.race === 'robot') {
