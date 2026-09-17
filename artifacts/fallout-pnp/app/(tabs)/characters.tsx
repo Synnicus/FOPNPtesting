@@ -356,7 +356,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     traits: char.traits, perks: char.perks, conditions: char.conditions, effects: char.effects,
     raceBounds: { min: race.specialMin, max: race.specialMax },
     racialNaturalArmorClass: race.naturalACBonus,
+    naturalArmorClass: char.naturalProtection?.armorClass,
     manualDerivedStats: char.manualDerivedStats,
+    usesDerivedArmorClass: char.usesDerivedArmorClass,
     nightPersonPeriod: char.nightPersonPeriod,
     tempAC: char.tempAC,
     radiationResistance: char.radiationResistance, gasResistance: char.gasResistance,
@@ -398,7 +400,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         manualDerivedStats: { ...updatedChar.manualDerivedStats, baseMaxHp },
         maxHp,
         currentHp: Math.min(updatedChar.currentHp, maxHp),
-        armorClass: updatedChar.manualDerivedStats.armorClass,
+        armorClass: updatedChar.usesDerivedArmorClass
+          ? calcBaseAC(perkSpecial) + raceRef.naturalACBonus + (updatedChar.naturalProtection?.armorClass ?? 0)
+          : updatedChar.manualDerivedStats.armorClass,
         maxAP: updatedChar.manualDerivedStats.maxAP,
         sequence: updatedChar.manualDerivedStats.sequence,
         currentAP: Math.min(updatedChar.currentAP, updatedChar.manualDerivedStats.maxAP),
@@ -410,7 +414,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     // These stored baselines intentionally exclude traits. The effective rules
     // layer adds trait and temporary changes without baking them into storage.
     const maxAP = calcMaxAP(perkSpecial);
-    const armorClass = calcBaseAC(perkSpecial) + raceRef.naturalACBonus;
+    const armorClass = calcBaseAC(perkSpecial) + raceRef.naturalACBonus + (updatedChar.naturalProtection?.armorClass ?? 0);
     const sequence = calcSequence(perkSpecial) + pdb.sequence;
     const radRes = Math.max(updatedChar.radiationResistance, raceRef.naturalDR);
     const gasRes = Math.max(updatedChar.gasResistance, raceRef.naturalGasDR);
@@ -1047,15 +1051,24 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 ))}
               </View>
 
-              {/* Natural Protection (DT/DR) — collapsible */}
+              {/* Natural Protection (AC/DT/DR) — collapsible */}
               <View style={{ gap: 8 }}>
                 <TouchableOpacity onPress={() => setShowNaturalProt(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>NATURAL PROTECTION (DT/DR)</Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>NATURAL PROTECTION (AC/DT/DR)</Text>
                   <Feather name={showNaturalProt ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
                 {showNaturalProt && (
                   <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 10 }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Built-in armor from hide/plating. finalDmg = max(0,(base−DT)×(1−DR/100)). Applies in addition to worn armor.</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Built-in defense from training, hide, or plating. Natural AC stacks with Agility, race, perks, and worn armor. DT/DR applies in addition to worn armor.</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground, flex: 1 }}>Natural AC bonus</Text>
+                      <TextInput
+                        style={{ width: 72, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center' }}
+                        keyboardType="number-pad"
+                        value={String(char.naturalProtection?.armorClass ?? 0)}
+                        onChangeText={t => setNaturalProtectionField('armorClass', parseInt(t.replace(/[^0-9]/g, ''), 10) || 0)}
+                      />
+                    </View>
                     {DAMAGE_TYPES.map(dt => {
                       const dtKey = ('dt' + dt.charAt(0).toUpperCase() + dt.slice(1)) as keyof NaturalProtection;
                       const drKey = ('dr' + dt.charAt(0).toUpperCase() + dt.slice(1)) as keyof NaturalProtection;
@@ -1563,14 +1576,19 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   { key: 'Fire', label: 'FIRE' }, { key: 'Plasma', label: 'PLASMA' },
                   { key: 'Explosion', label: 'EXPL' },
                 ];
-                 const bodyAC = body?.acBonus ?? 0;
-                 const helmetAC = helm?.acBonus ?? 0;
-                 const totalAC = armorSheet.armorClassWithoutEquipment + bodyAC + helmetAC + perkAC + shieldAC;
-                 const acParts = [`base/resolved ${armorSheet.armorClassWithoutEquipment}`];
-                 if (bodyAC) acParts.push(`+${bodyAC} armor`);
-                 if (helmetAC) acParts.push(`+${helmetAC} helmet`);
-                if (race.naturalACBonus > 0) acParts.push(`+${race.naturalACBonus} racial`);
-                if (perkAC > 0) acParts.push(`+${perkAC} perks`);
+                const ac = armorSheet.armorClassBreakdown;
+                const totalAC = armorSheet.armorClass + shieldAC;
+                const acParts = [`AGI ${ac.agility}`];
+                if (ac.racial) acParts.push(`${ac.racial >= 0 ? '+' : ''}${ac.racial} racial`);
+                if (ac.trait) acParts.push(`${ac.trait >= 0 ? '+' : ''}${ac.trait} trait`);
+                if (ac.natural) acParts.push(`${ac.natural >= 0 ? '+' : ''}${ac.natural} natural`);
+                if (ac.manual) acParts.push(`${ac.manual >= 0 ? '+' : ''}${ac.manual} printed`);
+                if (ac.bodyArmor) acParts.push(`+${ac.bodyArmor} body armor`);
+                if (ac.helmet) acParts.push(`+${ac.helmet} helmet`);
+                if (ac.perks) acParts.push(`+${ac.perks} perks`);
+                if (ac.temporary) acParts.push(`${ac.temporary >= 0 ? '+' : ''}${ac.temporary} temporary`);
+                if (ac.effects) acParts.push(`${ac.effects >= 0 ? '+' : ''}${ac.effects} effects`);
+                if (ac.minimum) acParts.push(`+${ac.minimum} minimum`);
                 if (shieldAC > 0) acParts.push(`+${shieldAC} shield`);
                 return (
                   <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
@@ -2015,7 +2033,9 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
     taggedSkills: [...character.taggedSkills, ...tagRules.freeTagSkills],
     traits: character.traits, perks: character.perks, conditions: character.conditions, effects: character.effects,
     raceBounds: { min: race.specialMin, max: race.specialMax }, racialNaturalArmorClass: race.naturalACBonus,
+    naturalArmorClass: character.naturalProtection?.armorClass,
     manualDerivedStats: character.manualDerivedStats,
+    usesDerivedArmorClass: character.usesDerivedArmorClass,
     nightPersonPeriod: character.nightPersonPeriod, tempAC: character.tempAC,
     radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
     poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,

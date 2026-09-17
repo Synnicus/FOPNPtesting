@@ -62,7 +62,9 @@ function resolveCombatSheet(character: Character, allArmor: Parameters<typeof re
     raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
     nightPersonPeriod: character.nightPersonPeriod,
     racialNaturalArmorClass: race?.naturalACBonus,
+    naturalArmorClass: character.naturalProtection?.armorClass,
     manualDerivedStats: character.manualDerivedStats,
+    usesDerivedArmorClass: character.usesDerivedArmorClass,
     tempAC: includeTempAC ? character.tempAC : 0,
     radiationResistance: character.radiationResistance,
     gasResistance: character.gasResistance,
@@ -293,7 +295,12 @@ function computeDefensivePerkBonuses(char: Character | null, dmgType?: DamageTyp
     // Generic HP<50% conditional defensive perks only apply when actually below half.
     const conditional = /HP\s*<\s*50%/i.test(fx.combatNote ?? '');
     if (conditional && !lowHp50) continue;
-    if (fx.armorClassBonus) { out.ac += fx.armorClassBonus * rank; out.notes.push(`${perk.name}: +${fx.armorClassBonus * rank} AC`); }
+    // Unconditional AC perks are already part of the shared armor sheet.
+    // Only situational AC belongs in this combat-only adjustment.
+    if (conditional && fx.armorClassBonus) {
+      out.ac += fx.armorClassBonus * rank;
+      out.notes.push(`${perk.name}: +${fx.armorClassBonus * rank} AC`);
+    }
     if (fx.damageResistBonus) { out.dr += fx.damageResistBonus * rank; out.notes.push(`${perk.name}: +${fx.damageResistBonus * rank}% DR`); }
     // Manual-specific defensive perks without structured fields:
     if (perk.id === 'die_hard' && lowHp20) { out.dr += 10; out.notes.push('Die Hard: +10% DR (HP < 20%)'); }

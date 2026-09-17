@@ -77,6 +77,41 @@ test('resolved AC exposes body and helmet bonuses separately for cumulative summ
   assert.equal(result.armorClass, result.armorClassWithoutEquipment + (body.acBonus ?? 0) + (helmet.acBonus ?? 0));
 });
 
+test('derived NPC AC exposes every cumulative source including natural AC and perks', () => {
+  const result = resolveArmorAwareSheet({
+    special,
+    skills,
+    perks: [{ perkId: 'dodger', rank: 2 }, { perkId: 'tough_hide', rank: 1 }],
+    manualDerivedStats: { armorClass: 35, maxAP: 8, sequence: 12 },
+    usesDerivedArmorClass: true,
+    naturalArmorClass: 4,
+    equippedBodyArmorId: 'brotherhood_power_armor',
+    equippedHelmetId: 'power_helmet',
+    allArmor: BUILT_IN_ARMOR,
+  });
+
+  assert.equal(result.armorClass, 75);
+  assert.deepEqual(result.armorClassBreakdown, {
+    agility: 5, racial: 0, trait: 0, natural: 4, manual: 0,
+    bodyArmor: 28, helmet: 13, temporary: 0, effects: 0, perks: 25, minimum: 0,
+  });
+});
+
+test('AC breakdown attributes the zero-floor adjustment', () => {
+  const result = resolveArmorAwareSheet({
+    special,
+    skills,
+    effects: [{ acMod: -10 }],
+    allArmor: [],
+  });
+  assert.equal(result.armorClass, 0);
+  assert.equal(
+    Object.values(result.armorClassBreakdown).reduce((total, value) => total + value, 0),
+    result.armorClass,
+  );
+  assert.equal(result.armorClassBreakdown.minimum, 5);
+});
+
 test('condition, chem, and armor SPECIAL layers compose without changing saved SPECIAL', () => {
   const withdrawal = resolveArmorAwareSheet({
     special,
@@ -216,11 +251,11 @@ test('manual pp.105–109 armor catalogue has exact numeric protection values', 
   for (const row of rows) assert.deepEqual(armor(row[0]).effects ?? {}, effects[row[0]] ?? {}, `${row[0]} effects`);
 });
 
-test('integrated, prohibited, and suit-required helmets are validated and armor optics are exposed', () => {
+test('compatible, prohibited, and suit-required helmets are validated and armor optics are exposed', () => {
   const power = resolveArmorAwareSheet({
     special, skills, equippedBodyArmorId: 'adv_power_armor', equippedHelmetId: 'power_helmet', allArmor: BUILT_IN_ARMOR,
   });
-  assert.equal(power.helmet, undefined, 'integrated suit rejects selected helmet');
+  assert.equal(power.helmet?.id, 'power_helmet', 'compatible power armor accepts selected helmet');
   assert.equal(power.ignoresLightPenalties, true);
   const invalidHelmet = resolveArmorAwareSheet({
     special, skills, equippedBodyArmorId: 'leather_armor', equippedHelmetId: 'environmental_helmet', allArmor: BUILT_IN_ARMOR,

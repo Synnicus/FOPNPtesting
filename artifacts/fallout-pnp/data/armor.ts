@@ -64,13 +64,13 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'combat_armor', name: 'Combat Armor', slot: 'body',
     dtNormal: 5, dtLaser: 8, dtFire: 4, dtPlasma: 4, dtExplosion: 6,
     drNormal: 40, drLaser: 60, drFire: 30, drPlasma: 50, drExplosion: 40,
-    acBonus: 20, weight: 20, isCustom: false, integratedHelmet: true, effects: { radiationResistance: 20 },
+    acBonus: 20, weight: 20, isCustom: false, effects: { radiationResistance: 20 },
   },
   {
     id: 'combat_armor_mk2', name: 'Combat Armor Mk II', slot: 'body',
     dtNormal: 6, dtLaser: 6, dtFire: 5, dtPlasma: 5, dtExplosion: 9,
     drNormal: 40, drLaser: 65, drFire: 35, drPlasma: 50, drExplosion: 45,
-    acBonus: 25, weight: 20, isCustom: false, integratedHelmet: true, effects: { radiationResistance: 20 },
+    acBonus: 25, weight: 20, isCustom: false, effects: { radiationResistance: 20 },
   },
   {
     // Manual "Tesla Armor" (p.106): W35 AC15 N4/20 L19/90 F4/10 P10/80 E4/20
@@ -167,7 +167,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'brotherhood_combat_armor', name: 'Brotherhood Combat Armor', slot: 'body',
     dtNormal: 8, dtLaser: 8, dtFire: 7, dtPlasma: 7, dtExplosion: 8,
     drNormal: 40, drLaser: 70, drFire: 50, drPlasma: 60, drExplosion: 40,
-    acBonus: 20, weight: 25, isCustom: false, integratedHelmet: true, effects: { radiationResistance: 20 },
+    acBonus: 20, weight: 25, isCustom: false, effects: { radiationResistance: 20 },
   },
   {
     // Radiation Suit (p.107): W20 AC15 N4/30 L0/30 F10/60 P0/20 E4/40 (100% RR, 100/100 GR; no helmet)
@@ -183,7 +183,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 5, dtLaser: 5, dtFire: 4, dtPlasma: 5, dtExplosion: 6,
     drNormal: 40, drLaser: 55, drFire: 40, drPlasma: 55, drExplosion: 40,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 18, weight: 30, isCustom: false, integratedHelmet: true, effects: { gasResistance: 100, radiationResistance: 60, poisonResistance: 50, skills: { sneak: -50, doctor: -10, lockpick: -10, steal: -10, repair: -10, firstAid: -5, science: -5 } },
+    acBonus: 18, weight: 30, isCustom: false, effects: { gasResistance: 100, radiationResistance: 60, poisonResistance: 50, skills: { sneak: -50, doctor: -10, lockpick: -10, steal: -10, repair: -10, firstAid: -5, science: -5 } },
   },
   {
     // Brotherhood Environmental Armor MK II (p.107): W35 AC20 N6/40 L6/60 F5/42 P6/60 E9/45
@@ -191,7 +191,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 6, dtLaser: 6, dtFire: 5, dtPlasma: 6, dtExplosion: 9,
     drNormal: 40, drLaser: 60, drFire: 42, drPlasma: 60, drExplosion: 45,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 20, weight: 35, isCustom: false, integratedHelmet: true, effects: { special: { perception: -1 }, gasResistance: 100, radiationResistance: 90, poisonResistance: 75, skills: { sneak: -50, doctor: -11, lockpick: -11, repair: -10, steal: -10, firstAid: -7, science: -5, pilot: -2 } },
+    acBonus: 20, weight: 35, isCustom: false, effects: { special: { perception: -1 }, gasResistance: 100, radiationResistance: 90, poisonResistance: 75, skills: { sneak: -50, doctor: -11, lockpick: -11, repair: -10, steal: -10, firstAid: -7, science: -5, pilot: -2 } },
   },
   {
     // Pseudo-Chitin Armor (p.107): W20 AC30 N10/50 L4/20 F10/60 P4/20 E5/50 (no helmet)
@@ -206,7 +206,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 13, dtLaser: 16, dtFire: 13, dtPlasma: 16, dtExplosion: 20,
     drNormal: 50, drLaser: 70, drFire: 60, drPlasma: 70, drExplosion: 60,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 28, weight: 42, isCustom: false, integratedHelmet: true, effects: { special: { strength: 3, perception: -1 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
+    acBonus: 28, weight: 42, isCustom: false, effects: { special: { strength: 3, perception: -1 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
     // Brotherhood Advanced Power Armor (p.108): W50 AC35 N18/55 L17/75 F15/65 P17/75 E20/65
@@ -214,7 +214,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 18, dtLaser: 17, dtFire: 15, dtPlasma: 17, dtExplosion: 20,
     drNormal: 55, drLaser: 75, drFire: 65, drPlasma: 75, drExplosion: 65,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 35, weight: 50, isCustom: false, integratedHelmet: true, ignoresLightPenalties: true, effects: { special: { strength: 4, perception: -2 }, gasResistance: 100, poisonResistance: 20, radiationResistance: 60, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
+    acBonus: 35, weight: 50, isCustom: false, ignoresLightPenalties: true, effects: { special: { strength: 4, perception: -2 }, gasResistance: 100, poisonResistance: 20, radiationResistance: 60, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
     // Power Armor (p.107): W35 AC25 N12/40 L18/80 F12/60 P10/40 E20/50
@@ -222,7 +222,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 12, dtLaser: 18, dtFire: 12, dtPlasma: 10, dtExplosion: 20,
     drNormal: 40, drLaser: 80, drFire: 60, drPlasma: 40, drExplosion: 50,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 25, weight: 35, isCustom: false, integratedHelmet: true, effects: { special: { strength: 3 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
+    acBonus: 25, weight: 35, isCustom: false, effects: { special: { strength: 3 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
     // Hardened Power Armor (p.107): W50 AC25 N13/50 L19/90 F14/70 P13/50 E20/60
@@ -230,7 +230,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 13, dtLaser: 19, dtFire: 14, dtPlasma: 13, dtExplosion: 20,
     drNormal: 50, drLaser: 90, drFire: 70, drPlasma: 50, drExplosion: 60,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 25, weight: 50, isCustom: false, integratedHelmet: true, effects: { special: { strength: 3 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
+    acBonus: 25, weight: 50, isCustom: false, effects: { special: { strength: 3 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
     // Advanced Power Armor (p.108): W30 AC30 N15/55 L19/90 F16/70 P15/60 E20/65
@@ -238,7 +238,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     dtNormal: 15, dtLaser: 19, dtFire: 16, dtPlasma: 15, dtExplosion: 20,
     drNormal: 55, drLaser: 90, drFire: 70, drPlasma: 60, drExplosion: 65,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
-    acBonus: 30, weight: 30, isCustom: false, integratedHelmet: true, ignoresLightPenalties: true, effects: { special: { strength: 4 }, gasResistance: 100, poisonResistance: 20, radiationResistance: 60, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
+    acBonus: 30, weight: 30, isCustom: false, ignoresLightPenalties: true, effects: { special: { strength: 4 }, gasResistance: 100, poisonResistance: 20, radiationResistance: 60, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
     // Advanced Power Armor MK II (p.108): W50 AC35 N18/60 L19/90 F16/70 P18/60 E20/70
@@ -247,7 +247,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     drNormal: 60, drLaser: 90, drFire: 70, drPlasma: 60, drExplosion: 70,
     gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 35, weight: 50, isCustom: false,
-    integratedHelmet: true, ignoresLightPenalties: true,
+    ignoresLightPenalties: true,
     effects: { special: { strength: 4 }, gasResistance: 100, poisonResistance: 40, radiationResistance: 75, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   // ─── HELMETS ─────────────────────────────────────────────────────────────────

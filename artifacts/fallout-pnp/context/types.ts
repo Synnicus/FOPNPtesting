@@ -231,11 +231,14 @@ export interface ActiveEffect {
 
 export type AreaEffectKind = 'fire' | 'acid';
 export interface NaturalProtection {
+  /** Editable natural Armor Class bonus, separate from Agility and racial AC. */
+  armorClass?: number;
   dtNormal: number; dtLaser: number; dtFire: number; dtPlasma: number; dtExplosion: number;
   drNormal: number; drLaser: number; drFire: number; drPlasma: number; drExplosion: number;
 }
 
 export const EMPTY_NATURAL_PROTECTION: NaturalProtection = {
+  armorClass: 0,
   dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0,
   drNormal: 0, drLaser: 0, drFire: 0, drPlasma: 0, drExplosion: 0,
 };
@@ -310,6 +313,8 @@ export interface Character {
   /** Printed NPC values that take precedence over SPECIAL-derived base values. */
 
   manualDerivedStats?: ManualDerivedStats;
+  /** Bestiary humanoids derive AC like PCs while retaining other printed derived stats. */
+  usesDerivedArmorClass?: boolean;
 
   // Skills
 
@@ -411,6 +416,8 @@ export interface BestiaryTemplate {
   special: SPECIALStats;
   maxHp: number;
   armorClass: number;
+  /** Derive AC from Agility, natural AC, equipment, and effects instead of printed AC. */
+  usesDerivedArmorClass?: boolean;
   maxAP: number;
   sequence: number;
   xpValue?: number;

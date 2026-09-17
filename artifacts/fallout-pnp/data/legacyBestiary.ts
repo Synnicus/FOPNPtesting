@@ -23,7 +23,7 @@ const natural = (
  * that preceded the manual creature catalog. Sequence is the historical
  * perception value multiplied by two.
  */
-export const RESTORED_BESTIARY: BestiaryTemplate[] = [
+const RESTORED_BESTIARY_ENTRIES: BestiaryTemplate[] = [
   {
     id: 'raider_scavenger', name: 'Raider Scavenger', category: 'human',
     description: 'A desperate wasteland raider scraping by on what they can steal.',
@@ -84,7 +84,7 @@ export const RESTORED_BESTIARY: BestiaryTemplate[] = [
     special: { strength: 6, perception: 7, endurance: 6, charisma: 3, intelligence: 6, agility: 6, luck: 4 },
     maxHp: 65, armorClass: 30, maxAP: 9, sequence: 14,
     skills: { ...defaultSkills(), smallGuns: 80, energyWeapons: 75, meleeWeapons: 55, science: 60, repair: 55 },
-    equippedWeaponId: 'plasma_rifle', inventoryWeaponIds: ['plasma_rifle', 'plasma_pistol', 'combat_knife', 'plasma_grenade'], equippedBodyArmorId: 'adv_power_armor', equippedHelmetId: 'adv_power_helmet',
+    equippedWeaponId: 'plasma_rifle', inventoryWeaponIds: ['plasma_rifle', 'plasma_pistol', 'combat_knife', 'plasma_grenade'], equippedBodyArmorId: 'adv_power_armor', equippedHelmetId: 'power_helmet',
     radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
   },
 
@@ -207,3 +207,11 @@ export const RESTORED_BESTIARY: BestiaryTemplate[] = [
     radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
   },
 ];
+
+/** Legacy humans, ghouls, and super mutants calculate AC from visible sources.
+ * Robots retain their historical printed AC as a chassis/creature statistic. */
+export const RESTORED_BESTIARY: BestiaryTemplate[] = RESTORED_BESTIARY_ENTRIES.map(template => (
+  template.category === 'robot'
+    ? template
+    : { ...template, armorClass: 0, usesDerivedArmorClass: true }
+));

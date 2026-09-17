@@ -10,6 +10,7 @@ import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
+import { RESTORED_BESTIARY } from '@/data/bestiary';
 
 // Effective max AP for a character: derived max plus active chem apMod
 // (Jet grants +2 AP, etc.). Floor 1 so a crashing chem never zeroes AP.
@@ -61,7 +62,9 @@ function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], in
     raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
     nightPersonPeriod: c.nightPersonPeriod,
     racialNaturalArmorClass: race?.naturalACBonus,
+    naturalArmorClass: c.naturalProtection?.armorClass,
     manualDerivedStats: c.manualDerivedStats,
+    usesDerivedArmorClass: c.usesDerivedArmorClass,
     tempAC: includeTempAC ? c.tempAC : 0,
     radiationResistance: c.radiationResistance,
     gasResistance: c.gasResistance,
@@ -166,6 +169,15 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
       && (normalized.perks ?? []).some(perk => perk.perkId === 'break_the_rules')
     ) {
       normalized = { ...normalized, breakTheRulesPending: true };
+    }
+    // Existing spawned bestiary saves predate the explicit derived-AC policy.
+    // Use durable template identity so edited/renamed humanoids migrate safely
+    // without changing a coincidentally similar custom NPC.
+    if (normalized.type === 'npc' && normalized.usesDerivedArmorClass === undefined) {
+      const template = RESTORED_BESTIARY.find(candidate => (
+        candidate.usesDerivedArmorClass && candidate.id === normalized.bestiaryTemplateId
+      ));
+      if (template) normalized = { ...normalized, usesDerivedArmorClass: true };
     }
     return normalized;
   };

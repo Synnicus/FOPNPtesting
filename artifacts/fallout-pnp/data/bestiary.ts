@@ -393,6 +393,7 @@ export function spawnBestiaryTemplate(
     maxHp: template.maxHp,
     currentHp: template.maxHp,
     armorClass: template.armorClass,
+    usesDerivedArmorClass: template.usesDerivedArmorClass,
     tempAC: 0,
     maxAP: template.maxAP,
     currentAP: template.maxAP,

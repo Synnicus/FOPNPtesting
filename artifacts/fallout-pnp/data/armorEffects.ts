@@ -109,7 +109,9 @@ export interface ArmorResolverInput {
   raceBounds?: { min: SPECIALStats; max: SPECIALStats };
   nightPersonPeriod?: 'day' | 'night';
   racialNaturalArmorClass?: number;
+  naturalArmorClass?: number;
   manualDerivedStats?: ManualDerivedStats;
+  usesDerivedArmorClass?: boolean;
   tempAC?: number;
   radiationResistance?: number;
   gasResistance?: number;
@@ -130,6 +132,19 @@ export interface ResolvedArmorSheet {
   armorClass: number;
   /** Resolved AC before body/helmet AC, used for transparent equipment summaries. */
   armorClassWithoutEquipment: number;
+  armorClassBreakdown: {
+    agility: number;
+    racial: number;
+    trait: number;
+    natural: number;
+    manual: number;
+    bodyArmor: number;
+    helmet: number;
+    temporary: number;
+    effects: number;
+    perks: number;
+    minimum: number;
+  };
   sequence: number;
   criticalChance: number;
   meleeDamage: number;
@@ -147,6 +162,14 @@ function hasTrait(traits: readonly string[] | undefined, trait: string): boolean
 
 function perkBonus(perks: ArmorResolverInput['perks'], id: string): number {
   return (perks ?? []).reduce((total, perk) => total + (perk.perkId === id ? numeric(perk.rank ?? 1) : 0), 0);
+}
+
+function armorClassPerkBonus(perks: ArmorResolverInput['perks']): number {
+  // Static, unconditional AC perks. Situational bonuses remain combat actions.
+  const bonuses: Record<string, number> = { dodger: 5, tough_hide: 15, cyborg_systems: 5 };
+  return (perks ?? []).reduce((total, owned) => {
+    return total + numeric(bonuses[owned.perkId]) * numeric(owned.rank ?? 1);
+  }, 0);
 }
 
 /** Resolves sheet values from stored character data; it never writes to it. */
@@ -208,7 +231,9 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     effectiveSkills[key] = Math.max(0, effectiveSkills[key] + (armorEffects.skills[key] ?? 0));
   }
 
-  const armorAC = numeric(bodyArmor?.acBonus) + numeric(helmet?.acBonus);
+  const bodyArmorAC = numeric(bodyArmor?.acBonus);
+  const helmetAC = numeric(helmet?.acBonus);
+  const armorAC = bodyArmorAC + helmetAC;
   const sequencePerk = perkBonus(input.perks, 'earlier_sequence') * 2;
   const manual = input.manualDerivedStats;
   const baseAP = calculateMaxActionPoints(input.special.agility, input.traits);
@@ -219,11 +244,17 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
       + perkBonus(input.perks, 'action_boy_girl') + apMod
     : calculateMaxActionPoints(effectiveSpecial.agility, input.traits)
       + perkBonus(input.perks, 'action_boy_girl') + apMod;
-  const armorClass = manual
-    ? manual.armorClass + calculateNaturalArmorClass(effectiveSpecial.agility, input.traits, input.racialNaturalArmorClass)
-      - baseAC + armorAC + numeric(input.tempAC) + acMod
-    : calculateNaturalArmorClass(effectiveSpecial.agility, input.traits, input.racialNaturalArmorClass)
-      + armorAC + numeric(input.tempAC) + acMod;
+  const effectiveNaturalAC = calculateNaturalArmorClass(effectiveSpecial.agility, input.traits, input.racialNaturalArmorClass);
+  const manualAC = manual && !input.usesDerivedArmorClass ? manual.armorClass - baseAC : 0;
+  const naturalAC = numeric(input.naturalArmorClass);
+  const temporaryAC = numeric(input.tempAC);
+  const perkAC = armorClassPerkBonus(input.perks);
+  const rawArmorClass = effectiveNaturalAC + manualAC + naturalAC + armorAC + temporaryAC + acMod + perkAC;
+  const minimumACAdjustment = Math.max(0, -rawArmorClass);
+  const armorClass = rawArmorClass + minimumACAdjustment;
+  const agilityAC = hasTrait(input.traits, 'kamikaze') ? 0 : effectiveSpecial.agility;
+  const racialAC = numeric(input.racialNaturalArmorClass);
+  const traitAC = effectiveNaturalAC - agilityAC - racialAC;
   const sequence = manual
     ? manual.sequence + calculateSequence(effectiveSpecial.perception, input.traits) - baseSequence
       + sequencePerk + sequenceMod
@@ -237,6 +268,19 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     maxAP: Math.max(1, maxAP),
     armorClass: Math.max(0, armorClass),
     armorClassWithoutEquipment: Math.max(0, armorClass - armorAC),
+    armorClassBreakdown: {
+      agility: agilityAC,
+      racial: racialAC,
+      trait: traitAC,
+      natural: naturalAC,
+      manual: manualAC,
+      bodyArmor: bodyArmorAC,
+      helmet: helmetAC,
+      temporary: temporaryAC,
+      effects: acMod,
+      perks: perkAC,
+      minimum: minimumACAdjustment,
+    },
     sequence: Math.max(0, sequence),
     criticalChance: Math.max(0, manual?.criticalChance ?? Math.floor(effectiveSpecial.luck / 2)),
     meleeDamage: Math.max(1, effectiveSpecial.strength - 5),

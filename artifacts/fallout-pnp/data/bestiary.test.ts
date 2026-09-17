@@ -4,8 +4,10 @@ import { resolveArmorAwareSheet } from './armorEffects.ts';
 import {
   MANUAL_BESTIARY as BUILT_IN_BESTIARY,
   EXPECTED_MANUAL_BESTIARY_IDS,
+  RESTORED_BESTIARY,
   spawnBestiaryTemplate,
 } from './bestiary.ts';
+import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS, isMeleeWeapon, isRangedWeapon } from './weapons.ts';
 import { baseCritChance } from './criticals.ts';
 
@@ -180,7 +182,7 @@ test('spawning preserves every printed catalog value and natural attack', () => 
     const character = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, template.name, `spawn-${template.id}`);
     assert.equal(character.maxHp, template.maxHp, `${template.name} HP`);
     assert.equal(character.currentHp, template.maxHp, `${template.name} current HP`);
-    assert.equal(character.armorClass, template.armorClass, `${template.name} AC`);
+    assert.equal(character.armorClass, template.armorClass, `${template.name} stored AC`);
     assert.equal(character.maxAP, template.maxAP, `${template.name} AP`);
     assert.equal(character.currentAP, template.maxAP, `${template.name} current AP`);
     assert.equal(character.sequence, template.sequence, `${template.name} Sequence`);
@@ -216,6 +218,40 @@ test('spawning preserves every printed catalog value and natural attack', () => 
     assert.equal(sheet.criticalChance, template.criticalChance, `${template.name} resolved critical chance`);
     assert.deepEqual(sheet.effectiveSkills, template.skills, `${template.name} resolved skills`);
   }
+});
+
+test('restored humanoids derive AC while printed creatures retain manual AC', () => {
+  const paladinTemplate = RESTORED_BESTIARY.find(template => template.id === 'brotherhood_paladin');
+  assert.ok(paladinTemplate);
+  const paladin = spawnBestiaryTemplate(paladinTemplate, BUILT_IN_WEAPONS, paladinTemplate.name, 'paladin');
+  const paladinSheet = resolveArmorAwareSheet({
+    special: paladin.special,
+    skills: paladin.skills,
+    manualDerivedStats: paladin.manualDerivedStats,
+    usesDerivedArmorClass: paladin.usesDerivedArmorClass,
+    naturalArmorClass: paladin.naturalProtection?.armorClass,
+    equippedBodyArmorId: paladin.equippedBodyArmorId,
+    equippedHelmetId: paladin.equippedHelmetId,
+    allArmor: BUILT_IN_ARMOR,
+  });
+  assert.equal(paladinTemplate.armorClass, 0);
+  assert.equal(paladinSheet.armorClass, 46);
+  assert.deepEqual(
+    [paladinSheet.armorClassBreakdown.agility, paladinSheet.armorClassBreakdown.bodyArmor, paladinSheet.armorClassBreakdown.helmet],
+    [5, 28, 13],
+  );
+
+  const creatureTemplate = BUILT_IN_BESTIARY.find(template => template.id === 'brahmin');
+  assert.ok(creatureTemplate);
+  const creature = spawnBestiaryTemplate(creatureTemplate, BUILT_IN_WEAPONS, creatureTemplate.name, 'creature');
+  const creatureSheet = resolveArmorAwareSheet({
+    special: creature.special,
+    skills: creature.skills,
+    manualDerivedStats: creature.manualDerivedStats,
+    usesDerivedArmorClass: creature.usesDerivedArmorClass,
+    allArmor: BUILT_IN_ARMOR,
+  });
+  assert.equal(creatureSheet.armorClass, creatureTemplate.armorClass);
 });
 
 test('combat critical chance uses printed creature CC instead of synthetic Luck', () => {
