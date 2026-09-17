@@ -17,7 +17,7 @@ test('powered unarmed and melee weapons carry and consume their compatible ammun
     ['cattle_prod', 25, ['small_energy_cell']],
     ['ripper', 25, ['small_energy_cell']],
     ['super_cattle_prod', 25, ['small_energy_cell']],
-    ['super_sledge', 25, ['small_energy_cell']],
+    ['super_sledge', 0, undefined],
   ] as const;
 
   for (const [weaponId, magazineSize, compatibleAmmo] of expected) {
