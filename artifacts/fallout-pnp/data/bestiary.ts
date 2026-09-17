@@ -296,7 +296,10 @@ export const MANUAL_BESTIARY: BestiaryTemplate[] = [
     hp: 70, sequence: 10, ap: 10, xp: 800, criticalChance: 9, ac: 25,
     protection: natural([4, 0, 4, 0, 4], [40, 0, 40, 0, 40]),
     poison: 80, radiation: 60, gas: [0, 40],
-    attacks: [{ weaponId: 'deathclaw_claw', hitChance: 90 }],
+    attacks: [
+      { weaponId: 'deathclaw_claw', hitChance: 90 },
+      { weaponId: 'deathclaw_bite', hitChance: 80 },
+    ],
   }),
   manualTemplate({
     id: 'spitting_plant', name: 'Spitting Plant',

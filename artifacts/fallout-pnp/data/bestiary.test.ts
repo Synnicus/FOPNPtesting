@@ -224,3 +224,15 @@ test('combat critical chance uses printed creature CC instead of synthetic Luck'
   assert.equal(baseCritChance(brahmin), 2);
   assert.equal(baseCritChance(deathclaw), 9);
 });
+
+test('Deathclaw spawns with both claw and bite equipped', () => {
+  const deathclaw = spawnBestiaryTemplate(byId('deathclaw'), BUILT_IN_WEAPONS, 'Deathclaw', 'dual-deathclaw');
+  assert.equal(deathclaw.equippedWeaponId, 'deathclaw_claw');
+  assert.equal(deathclaw.rightHandWeaponId, 'deathclaw_claw');
+  assert.equal(deathclaw.leftHandWeaponId, 'deathclaw_bite');
+  assert.deepEqual(deathclaw.inventoryWeaponIds, ['deathclaw_claw', 'deathclaw_bite']);
+  assert.deepEqual(deathclaw.naturalAttacks?.map(attack => attack.weaponId), [
+    'deathclaw_claw',
+    'deathclaw_bite',
+  ]);
+});
