@@ -384,6 +384,12 @@ export interface Character {
   isKnockedOut: boolean;
 
   knockOutRoundsLeft: number;
+  /** Timed combat skill actions remove Agility and unused-AP AC until this
+   * combatant's next own turn begins. */
+  combatDefenseSuppressed?: boolean;
+  /** A Heal Fallen success grants no AP through this combat round; the normal
+   * turn-start refresh is permitted only in the following round. */
+  revivedNoAPUntilRound?: number;
   /** Fire/acid and similar hazards tick at the end of this combatant's turn. */
 
   conditions: string[];

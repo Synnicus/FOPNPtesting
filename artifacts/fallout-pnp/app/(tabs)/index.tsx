@@ -6,7 +6,6 @@ import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType } from '@/context/types';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -49,10 +48,12 @@ import {
 } from '@/data/specialUnarmedAttacks';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from '@/data/areaEffects';
+import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
+import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
 function resolveCombatSheet(character: Character, allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'], includeTempAC = true): ResolvedArmorSheet {
   const race = getRaceById(character.race);
-  return resolveArmorAwareSheet({
+  const sheet = resolveArmorAwareSheet({
     special: character.special,
     skills: character.skills,
     taggedSkills: character.taggedSkills,
@@ -75,6 +76,12 @@ function resolveCombatSheet(character: Character, allArmor: Parameters<typeof re
     equippedHelmetId: character.equippedHelmetId,
     allArmor,
   });
+  // During a timed or underfunded combat skill, only the AC printed on worn
+  // armor remains. This shared helper deliberately excludes AGI, perks, and
+  // unused AP so defender attack math and combat cards consume the same value.
+  return character.combatDefenseSuppressed
+    ? { ...sheet, armorClass: armorOnlyArmorClass([sheet.bodyArmor?.acBonus ?? 0, sheet.helmet?.acBonus ?? 0]) }
+    : sheet;
 }
 
 function armorEffectsSummary(sheet: ResolvedArmorSheet): string | null {
@@ -232,6 +239,7 @@ function notify(title: string, message?: string) {
   else Alert.alert(title, message);
 }
 
+type CombatSkillKey = HealFallenSkill;
 function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRanged: boolean): PerkBonus {
   const result: PerkBonus = {
     toHit: 0, damage: 0, critChance: 0, critDamageMult: 1.0,
@@ -712,10 +720,12 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
-    initiativeEntries, currentRound, combatActive, activeEntryId,
+  const app = useApp();
+  const { characters, allWeapons, allArmor, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+    initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
-  } = useApp();
+    startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
+  } = app;
 
   // Round tracker
   const [showRoundTracker, setShowRoundTracker] = useState(false);
@@ -793,6 +803,8 @@ export default function CombatScreen() {
   const [showAmmoPicker, setShowAmmoPicker] = useState(false);
   const [showWeaponPicker, setShowWeaponPicker] = useState(false);
   const [showSpecialUnarmedPicker, setShowSpecialUnarmedPicker] = useState(false);
+  const [showCombatSkill, setShowCombatSkill] = useState(false);
+  const [completionHealActionId, setCompletionHealActionId] = useState<string | null>(null);
   const [specialUnarmedAttackId, setSpecialUnarmedAttackId] = useState<string | null>(null);
   // Whether the currently open ammo/weapon picker should charge AP on selection.
   const [weaponPickerFree, setWeaponPickerFree] = useState(false);
@@ -822,6 +834,15 @@ export default function CombatScreen() {
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
   const defender = characters.find(c => c.id === defenderId) ?? null;
+  const completionHealAction = completionHealActionId
+    ? (pendingCombatSkillActions ?? []).find(action => action.id === completionHealActionId && action.kind === 'healFallen') ?? null
+    : null;
+  const completionHealActor = completionHealAction
+    ? characters.find(character => character.id === completionHealAction.actorId) ?? null
+    : null;
+  const completionHealTarget = completionHealAction?.targetId
+    ? characters.find(character => character.id === completionHealAction.targetId) ?? null
+    : null;
   // This is the authoritative combat sheet: equipped armor is resolved before
   // skills, SPECIAL-derived values, AC, and elemental resistances are consumed.
   const attackerSheet = attacker ? resolveCombatSheet(attacker, allArmor) : null;
@@ -914,6 +935,28 @@ export default function CombatScreen() {
   // Injury effects (manual): attacker & defender.
   const attackerInjury = attacker ? computeInjuryEffects(attacker) : null;
   const defenderInjury = defender ? computeInjuryEffects(defender) : null;
+  // Armor-aware sheets already include tag, trait, condition, and active-effect
+  // skill changes. Explicit Injury.skillPenalty values are applied here as the
+  // final combat-facing adjustment.
+  const combatSkillValues: Partial<Record<SkillType, number>> = attacker && attackerSheet
+    ? (['firstAid', 'doctor', 'science', 'repair'] as CombatSkillKey[]).reduce<Partial<Record<SkillType, number>>>((values, skill) => {
+        const injuryDelta = (attacker.injuries ?? [])
+          .filter(injury => injury.isActive)
+          .reduce((sum, injury) => sum + (injury.skillPenalty[skill] ?? 0), 0);
+        values[skill] = Math.max(0, (attackerSheet.effectiveSkills[skill] ?? 0) + injuryDelta);
+        return values;
+      }, {})
+    : {};
+  const completionHealSheet = completionHealActor ? resolveCombatSheet(completionHealActor, allArmor) : null;
+  const completionHealSkillValues: Partial<Record<SkillType, number>> = completionHealActor && completionHealSheet
+    ? HEAL_FALLEN_SKILLS.reduce<Partial<Record<SkillType, number>>>((values, skill) => {
+        const injuryDelta = (completionHealActor.injuries ?? [])
+          .filter(injury => injury.isActive)
+          .reduce((sum, injury) => sum + (injury.skillPenalty[skill] ?? 0), 0);
+        values[skill] = Math.max(0, (completionHealSheet.effectiveSkills[skill] ?? 0) + injuryDelta);
+        return values;
+      }, {})
+    : {};
 
   // Attacker position drives the ranged To-Hit bonus (gun skills only, per manual).
   const attackerPos = attacker?.position ?? 'standing';
@@ -1014,8 +1057,10 @@ export default function CombatScreen() {
   const defenderAgiAcDelta = uprightNaturalAgiAC - defenderPositionalAgiAC;
   const defenderEffectiveAC = defenderSheet?.armorClass ?? 0;
   const defenderAC = defender
-    ? Math.max(0, defenderEffectiveAC - defenderAgiAcDelta
-        + defenderPerkDef.ac + defenderShield.ac)
+    ? defender.combatDefenseSuppressed
+      ? defenderEffectiveAC
+      : Math.max(0, defenderEffectiveAC - defenderAgiAcDelta
+          + defenderPerkDef.ac + defenderShield.ac)
     : 0;
   const defenderACAffectsHit = specialUnarmedAttack?.armorClassPiercing ? 0 : defenderAC;
 
@@ -1125,7 +1170,7 @@ export default function CombatScreen() {
   const hasBetterCriticals = !!attacker && hasPerk(attacker, 'better_criticals');
 
   // Shot results
-   const resolvedShotChances = physicalHitConfirmed ? shotChances.slice(0, 1) : shotChances;
+  const resolvedShotChances = physicalHitConfirmed ? shotChances.slice(0, 1) : shotChances;
   const shotResults: ShotResult[] = resolvedShotChances.map((cth, i) => {
     const roll = rollTotal;
     const hit = physicalHitConfirmed ? i === 0 : roll !== null && roll <= cth;
@@ -1302,8 +1347,7 @@ export default function CombatScreen() {
     setShotDamages(null); setDamageApplied(false);
     setPrimaryIsCrit(false); setAimedCritPart(null); setAimedCritApplied(false); setAimedCritNotes([]);
     setShowCritModal(false); setCritTableEntry(null); setCritEffectNotes([]);
-    setIsCritFail(false); setShowCritFailModal(false); setCritFailEntry(null); setCritFailNotes([]);
-    setManualCritFailConfirmed(false);
+    setIsCritFail(false); setManualCritFailConfirmed(false); setShowCritFailModal(false); setCritFailEntry(null); setCritFailNotes([]);
     setApSpent(false);
     const roll = percentileRoll(t, u);
 
@@ -1388,7 +1432,6 @@ export default function CombatScreen() {
       notify('Empty Magazine', 'No ammo remaining. Reload first!');
       return;
     }
-
     const confirmsHit = outcome === 'hit';
     Haptics.notificationAsync(
       confirmsHit
@@ -1752,6 +1795,62 @@ export default function CombatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, weapon, spendAP, reloadWeapon]);
 
+  const handleCombatSkillResolution = useCallback((request: CombatSkillRequest) => {
+    if (request.action === 'completeHealFallen') {
+      if (!request.actionId || !request.method) return;
+      completeHealFallen({
+        actionId: request.actionId,
+        resolution: { method: request.method, roll: request.roll },
+      });
+      setCompletionHealActionId(null);
+    } else if (!combatActive) {
+      notify('Start Combat First', 'Combat-skill AP and timing can only be recorded while tracked combat is active.');
+      return;
+    } else if (!attacker) {
+      return;
+    } else if (request.action === 'general') {
+      startTimedSkillAction({
+        actorId: attacker.id,
+        label: request.label ?? 'GM skill action',
+        apCost: request.ap,
+        durationRounds: request.rounds,
+        confirmSpendAllRemaining: request.spendAllRemaining,
+      });
+    } else {
+      if (!defender || !request.skill) return;
+      resolveHealFallen({
+        actorId: attacker.id,
+        targetId: defender.id,
+        skill: request.skill,
+        resolution: request.method ? { method: request.method, roll: request.roll } : undefined,
+        confirmSpendAllRemaining: request.spendAllRemaining,
+      });
+    }
+    setShowCombatSkill(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [attacker, defender, combatActive, startTimedSkillAction, resolveHealFallen, completeHealFallen]);
+
+  const handleCancelCombatSkillAction = useCallback((action: TimedCombatSkillAction) => {
+    const actorName = characters.find(character => character.id === action.actorId)?.name ?? 'this combatant';
+    const message = `Cancel ${action.label} for ${actorName}? ${action.spentAP} AP already spent will not be refunded.`;
+    const cancel = () => {
+      cancelCombatSkillAction(action.id);
+      if (completionHealActionId === action.id) {
+        setCompletionHealActionId(null);
+        setShowCombatSkill(false);
+      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) cancel();
+    } else {
+      Alert.alert('Cancel Pending Skill?', message, [
+        { text: 'Keep Action', style: 'cancel' },
+        { text: 'Cancel — no refund', style: 'destructive', onPress: cancel },
+      ]);
+    }
+  }, [characters, cancelCombatSkillAction, completionHealActionId]);
+
   // Setting up a tripod costs ALL remaining AP for the round (success or fail).
   const handleSetupTripod = useCallback(() => {
     if (!attacker || attacker.currentAP < 1) return;
@@ -2015,6 +2114,57 @@ export default function CombatScreen() {
               </View>
             </View>
 
+            {combatSkillReceipt && (
+              <View style={{ padding: 9, gap: 2, borderRadius: colors.radius, borderWidth: 1, borderColor: combatSkillReceipt.status === 'rejected' ? colors.destructive : colors.primary, backgroundColor: colors.secondary }}>
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: combatSkillReceipt.status === 'rejected' ? colors.destructive : colors.primary, letterSpacing: 1 }}>
+                  {combatSkillReceipt.kind === 'healFallen' ? 'HEAL FALLEN' : 'GM SKILL'} · {combatSkillReceipt.status.toUpperCase()}
+                </Text>
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  {combatSkillReceipt.reason
+                    ?? `${combatSkillReceipt.spentAP} AP spent${combatSkillReceipt.status === 'pending' && combatSkillReceipt.completesOnRound ? ` · resolves at the actor’s turn in round ${combatSkillReceipt.completesOnRound}` : ''}${combatSkillReceipt.success === true ? ' · revival successful' : combatSkillReceipt.success === false ? ' · no revival' : ''}`}
+                </Text>
+              </View>
+            )}
+            {(pendingCombatSkillActions ?? []).map(action => {
+              const actor = characters.find(character => character.id === action.actorId);
+              const target = action.targetId ? characters.find(character => character.id === action.targetId) : null;
+              const readyToResolve = action.kind === 'healFallen' && action.readyToResolve;
+              return (
+                <View key={action.id} style={{ padding: 9, gap: 2, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '12' }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>
+                    {readyToResolve ? 'HEAL FALLEN READY TO RESOLVE' : action.kind === 'healFallen' ? 'HEAL FALLEN IN PROGRESS' : 'GM SKILL IN PROGRESS'}
+                  </Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                    {readyToResolve
+                      ? `${actor?.name ?? 'Unknown actor'} → ${target?.name ?? 'unknown target'} · choose one final outcome now; no additional AP is spent.`
+                      : `${actor?.name ?? 'Unknown actor'}${target ? ` → ${target.name}` : ''} · ${action.label} · ends at ${actor?.name ?? 'actor'}’s turn in round ${action.completesOnRound}.`}
+                  </Text>
+                  {characters.find(character => character.id === action.actorId)?.combatDefenseSuppressed && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>Armor-only AC until the actor’s next turn begins.</Text>}
+                  {readyToResolve && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>The AP cost and armor-only period are complete.</Text>}
+                  {readyToResolve && (
+                    target?.isKnockedOut ? (
+                      <TouchableOpacity
+                        testID={`resolve-pending-heal-fallen-${action.id}`}
+                        onPress={() => { setCompletionHealActionId(action.id); setShowCombatSkill(true); }}
+                        style={{ marginTop: 5, paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.destructive }}
+                      >
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructiveForeground }}>RESOLVE HEAL FALLEN · 0 AP</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={{ marginTop: 4, fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>Target is no longer unconscious; this pending action cannot resolve.</Text>
+                    )
+                  )}
+                  {action.kind === 'healFallen' && action.readyToResolve && <TouchableOpacity
+                    testID={`cancel-pending-combat-skill-${action.id}`}
+                    onPress={() => handleCancelCombatSkillAction(action)}
+                    style={{ marginTop: 5, paddingVertical: 7, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive }}
+                  >
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>CANCEL ACTION · NO AP REFUND</Text>
+                  </TouchableOpacity>}
+                </View>
+              );
+            })}
+
             {/* Setup modal inline */}
             {showInitSetup && !combatActive && (
               <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 10 }}>
@@ -2107,6 +2257,16 @@ export default function CombatScreen() {
                     {entryChar?.isKnockedOut && (
                       <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
                         Unconscious for {entryChar.knockOutRoundsLeft} rounds · Prone
+                      </Text>
+                    )}
+                    {entryChar?.combatDefenseSuppressed && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
+                        Armor-only AC · restores at this character’s next turn
+                      </Text>
+                    )}
+                    {!entryChar?.isKnockedOut && entryChar?.revivedNoAPUntilRound === currentRound && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                        Revived at 1 HP · no AP until next round · Prone
                       </Text>
                     )}
                     {(entryChar?.areaEffects ?? []).map(effect => (
@@ -2270,8 +2430,9 @@ export default function CombatScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{defender.name}</Text>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, marginTop: 1 }}>
-                      AC: {defenderAC}{defender.tempAC > 0 ? ` (+${defender.tempAC} temp)` : ''}{defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}
+                      AC: {defenderAC}{!defender.combatDefenseSuppressed && defender.tempAC > 0 ? ` (+${defender.tempAC} temp)` : ''}{!defender.combatDefenseSuppressed && defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}
                     </Text>
+                    {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={2}>
                       {defenderProtSummary}
                     </Text>
@@ -2509,10 +2670,12 @@ export default function CombatScreen() {
                       { key: 'take_chems', label: 'TAKE CHEMS', cost: CHEM_AP_COST, onPress: () => setShowChemPicker(true) },
                       { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => { setWeaponPickerFree(false); setShowWeaponPicker(true); } },
                       { key: 'grab_use_item', label: 'GRAB / USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => handleGenericApAction(AP_COSTS.USE_ITEM, 'Grab / Use Item') },
-                      { key: 'use_skill', label: 'USE SKILL', cost: AP_COSTS.USE_SKILL, onPress: () => handleGenericApAction(AP_COSTS.USE_SKILL, 'Use Skill') },
+                      { key: 'use_skill', label: 'USE SKILL', cost: AP_COSTS.USE_SKILL, costText: 'GM AP', onPress: () => { setCompletionHealActionId(null); setShowCombatSkill(true); } },
                       { key: 'lay_mine', label: 'LAY MINE', cost: AP_COSTS.LAYING_MINE, onPress: handleLayMine },
-                    ] as { key: string; label: string; cost: number; onPress: () => void }[]).map(action => {
-                      const disabled = attacker.currentAP < action.cost;
+                    ] as { key: string; label: string; cost: number; costText?: string; onPress: () => void }[]).map(action => {
+                      // Timing is GM-selected in the combat-skill sheet, so it
+                      // must remain available for an underfunded skill action.
+                      const disabled = action.key === 'use_skill' ? attacker.currentAP < 1 : attacker.currentAP < action.cost;
                       return (
                         <TouchableOpacity
                           key={action.key}
@@ -2521,7 +2684,7 @@ export default function CombatScreen() {
                           onPress={action.onPress}
                         >
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{action.label}</Text>
-                          <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{action.cost} AP</Text>
+                          <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{action.costText ?? `${action.cost} AP`}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -2870,9 +3033,9 @@ export default function CombatScreen() {
               <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>{attackActionLabel}{attackResolved ? ' AGAIN' : ''}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
               onPress={confirmPhysicalHit}
-               disabled={!canRoll || attackBlocked || isBurst}
+              disabled={!canRoll || attackBlocked || isBurst}
             >
               <Feather name="check-circle" size={16} color={physicalHitConfirmed ? '#4a8c3f' : colors.primary} />
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? '#4a8c3f' : colors.primary }}>
@@ -3242,6 +3405,17 @@ export default function CombatScreen() {
 
       <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} />
       <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} />
+      <CombatSkillModal
+        visible={showCombatSkill}
+        actor={completionHealAction ? completionHealActor : attacker}
+        target={completionHealAction ? completionHealTarget : defender}
+        effectiveSkills={completionHealAction ? completionHealSkillValues : combatSkillValues}
+        currentRound={currentRound}
+        canStart={combatActive}
+        completionAction={completionHealAction}
+        onClose={() => { setShowCombatSkill(false); setCompletionHealActionId(null); }}
+        onResolve={handleCombatSkillResolution}
+      />
       <AreaAttackModal
         visible={showAreaAttack}
         combatants={initiativeEntries.flatMap(entry => {
@@ -3717,6 +3891,338 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
               </TouchableOpacity>
             </ScrollView>
           )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface CombatSkillRequest {
+  action: 'general' | 'healFallen' | 'completeHealFallen';
+  actionId?: string;
+  label?: string;
+  skill?: CombatSkillKey;
+  method?: CombatSkillResolutionMethod;
+  roll?: number;
+  ap: number;
+  rounds: number;
+  spendAllRemaining?: boolean;
+}
+
+type CombatSkillOutcome = 'success' | 'failure';
+
+/**
+ * The combat-skill state reducer owns the effect of a submitted request.  This
+ * sheet deliberately owns only the GM-facing selection, timing, and roll UI so
+ * all AP/AC/round effects remain atomic in shared combat state.
+ */
+function CombatSkillModal({ visible, actor, target, effectiveSkills, currentRound, canStart, completionAction, onClose, onResolve }: {
+  visible: boolean;
+  actor: Character | null;
+  target: Character | null;
+  effectiveSkills: Partial<Record<SkillType, number>>;
+  currentRound: number;
+  canStart: boolean;
+  completionAction?: TimedCombatSkillAction | null;
+  onClose: () => void;
+  onResolve: (request: CombatSkillRequest) => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const [selectedSkill, setSelectedSkill] = useState<CombatSkillKey>('firstAid');
+  const [ap, setAp] = useState(3);
+  const [rounds, setRounds] = useState(1);
+  const [generalLabel, setGeneralLabel] = useState('GM skill action');
+  const [outcome, setOutcome] = useState<CombatSkillOutcome | null>(null);
+  const [roll, setRoll] = useState<number | null>(null);
+  const [confirmAllRemaining, setConfirmAllRemaining] = useState(false);
+
+  const isCompletion = !!completionAction;
+  const isRobot = target?.race === 'robot';
+  const isUnconscious = !!target?.isKnockedOut;
+  const backendSkillOptions = target ? getHealFallenSkillOptions(target) : [];
+  const skillOptions: { key: CombatSkillKey; label: string; targetLabel: string; reminder?: string; valid: boolean }[] = HEAL_FALLEN_SKILLS.map(key => {
+    const option = backendSkillOptions.find(candidate => candidate.skill === key);
+    return {
+      key,
+      label: key === 'firstAid' ? 'FIRST AID' : key.toUpperCase(),
+      targetLabel: key === 'firstAid' || key === 'doctor' ? 'Living targets' : 'Robot targets',
+      reminder: option?.reminder ? `Reminder only: ${option.reminder}` : undefined,
+      valid: option?.allowed ?? false,
+    };
+  });
+  const selected = skillOptions.find(option => option.key === selectedSkill) ?? skillOptions[0];
+  const effectiveValue = Math.max(0, effectiveSkills[selectedSkill] ?? 0);
+  const requestedAP = Math.max(1, ap);
+  const underfunded = !!actor && requestedAP > actor.currentAP;
+  const completionRound = currentRound + Math.max(rounds - 1, underfunded ? 1 : 0);
+  const healFallenUnderfunded = !!actor && actor.currentAP < HEAL_FALLEN_AP_COST;
+  const delayedHealStart = !isCompletion && isUnconscious && healFallenUnderfunded;
+  const canResolveOutcome = isCompletion || canStart;
+  useEffect(() => {
+    if (visible && completionAction?.skill) {
+      setSelectedSkill(completionAction.skill);
+      setOutcome(null);
+      setRoll(null);
+    }
+  }, [visible, completionAction?.id, completionAction?.skill]);
+  const resolveSkill = (nextOutcome: CombatSkillOutcome, method: CombatSkillResolutionMethod, nextRoll?: number) => {
+    if (!selected.valid || delayedHealStart || outcome || !canResolveOutcome || (isCompletion && completionAction?.skill !== selectedSkill)) return;
+    setOutcome(nextOutcome);
+    setRoll(nextRoll ?? null);
+    if (!actor || !target) return;
+    onResolve({
+      action: isCompletion ? 'completeHealFallen' : 'healFallen',
+      actionId: completionAction?.id,
+      skill: selectedSkill,
+      method,
+      roll: nextRoll,
+      ap: isCompletion ? 0 : HEAL_FALLEN_AP_COST,
+      rounds: 1,
+    });
+  };
+  const rollSkill = () => {
+    const result = Math.floor(Math.random() * 100) + 1;
+    resolveSkill(result <= effectiveValue ? 'success' : 'failure', 'roll', result);
+  };
+  const submitGeneralSkill = () => {
+    if (!actor || !generalLabel.trim()) return;
+    const request: CombatSkillRequest = {
+      action: 'general',
+      label: generalLabel,
+      ap: requestedAP,
+      rounds: Math.max(1, rounds),
+    };
+    if (!underfunded) {
+      onResolve(request);
+      return;
+    }
+    const message = `${generalLabel} needs ${requestedAP} AP, but ${actor.name} has ${actor.currentAP}. Spend all remaining AP? Only equipped-armor AC applies until their next turn.`;
+    const confirm = () => onResolve({ ...request, spendAllRemaining: true });
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) confirm();
+    } else {
+      Alert.alert('Underfunded GM Skill', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: `Spend all ${actor.currentAP} AP`, style: 'destructive', onPress: confirm },
+      ]);
+    }
+  };
+  const submitHealFallen = () => {
+    if (!actor || !target || !selected.valid || !delayedHealStart || !canStart) return;
+    onResolve({
+      action: 'healFallen',
+      skill: selectedSkill,
+      ap: actor.currentAP,
+      rounds: 1,
+      spendAllRemaining: true,
+    });
+  };
+  const resetForSelection = (key: CombatSkillKey) => {
+    setSelectedSkill(key);
+    setOutcome(null);
+    setRoll(null);
+    setConfirmAllRemaining(false);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background + 'ee', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '88%', paddingBottom: Math.max(insets.bottom, 12) }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.7 }}>{isCompletion ? 'RESOLVE HEAL FALLEN' : 'COMBAT SKILL'}</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
+                {actor?.name ?? 'Select an actor'} → {target?.name ?? 'select a target'}
+              </Text>
+            </View>
+            <TouchableOpacity testID="close-combat-skill" onPress={onClose} style={{ padding: 6 }}>
+              <Feather name="x" size={20} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }} showsVerticalScrollIndicator={false}>
+            {!target ? (
+              <View style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive, backgroundColor: colors.secondary }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>Select a defender to choose a Heal Fallen target. GM-timed skills can still be started below.</Text>
+              </View>
+            ) : (
+              <>
+                <View style={{ padding: 10, gap: 3, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>TARGET TYPE</Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>
+                    {target.name} · {isRobot ? 'ROBOT' : 'LIVING'}
+                    {isUnconscious ? ' · UNCONSCIOUS' : ''}
+                  </Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                    Muted choices cannot affect this target type.
+                  </Text>
+                </View>
+
+                <View style={{ gap: 7 }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CHOOSE A SKILL</Text>
+                  {isCompletion && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>The pending action is bound to {completionAction?.skill === 'firstAid' ? 'First Aid' : completionAction?.skill?.toUpperCase()}; its skill cannot be changed.</Text>}
+                  {skillOptions.map(option => {
+                    const chosen = option.key === selectedSkill;
+                    const selectable = option.valid && (!isCompletion || option.key === completionAction?.skill);
+                    return (
+                      <TouchableOpacity
+                        key={option.key}
+                        testID={`combat-skill-${option.key}`}
+                        disabled={!selectable}
+                        onPress={() => resetForSelection(option.key)}
+                        style={{
+                          padding: 11, borderRadius: colors.radius, borderWidth: 1,
+                          borderColor: chosen && selectable ? colors.primary : colors.border,
+                          backgroundColor: chosen && selectable ? colors.primary + '18' : colors.secondary,
+                          opacity: selectable ? 1 : 0.38,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                          <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_700Bold', color: chosen && selectable ? colors.primary : colors.foreground }}>{option.label}</Text>
+                          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: chosen && selectable ? colors.primary : colors.mutedForeground }}>{Math.max(0, effectiveSkills[option.key] ?? 0)}%</Text>
+                        </View>
+                        <Text style={{ marginTop: 2, fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{option.targetLabel}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {isUnconscious && (
+                  <View style={{ gap: 7, padding: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive, backgroundColor: colors.destructive + '12' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>HEAL FALLEN</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>On success: restore exactly 1 HP and remove unconsciousness. An underfunded action revives them at the healer’s next own turn (round {currentRound + 1}).</Text>
+                      </View>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{HEAL_FALLEN_AP_COST} AP</Text>
+                    </View>
+                    {delayedHealStart && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
+                      Armor-only AC applies through the delayed action — Agility and unused-AP AC do not apply.
+                    </Text>}
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+                      GM prerequisite: {actor?.name ?? 'the healer'} must be in an adjacent hex to {target.name} before resolving Heal Fallen.
+                    </Text>
+                    {delayedHealStart && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
+                        Only {actor.currentAP} AP remain. Confirm below to spend all remaining AP instead.
+                      </Text>
+                    )}
+                    {!isCompletion && !canStart && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
+                        Start tracked combat first. Heal Fallen AP and timing are only recorded in an active combat round.
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {isUnconscious && !delayedHealStart && (
+                <View style={{ padding: 11, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>EFFECTIVE VALUE</Text>
+                    <Text testID="combat-skill-effective-value" style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: selected.valid ? colors.primary : colors.mutedForeground }}>{effectiveValue}%</Text>
+                  </View>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                    Includes tags, active effects, equipped armor, and active injury modifiers.
+                  </Text>
+                  {!!selected.reminder && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{selected.reminder}</Text>}
+                  <View style={{ flexDirection: 'row', gap: 7 }}>
+                    <TouchableOpacity testID="combat-skill-roll-d100" disabled={!selected.valid || !!outcome || !canResolveOutcome} onPress={rollSkill} style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: selected.valid && !outcome && canResolveOutcome ? colors.primary : colors.border, opacity: selected.valid && !outcome && canResolveOutcome ? 1 : 0.5 }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected.valid && !outcome && canResolveOutcome ? colors.primaryForeground : colors.mutedForeground }}>{isCompletion ? 'ROLL d100 · RESOLVE' : `ROLL d100 · ${HEAL_FALLEN_AP_COST} AP`}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity testID="combat-skill-auto-success" disabled={!selected.valid || !!outcome || !canResolveOutcome} onPress={() => resolveSkill('success', 'automaticSuccess')} style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, opacity: selected.valid && !outcome && canResolveOutcome ? 1 : 0.4 }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>AUTOMATIC SUCCESS</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity testID="combat-skill-auto-failure" disabled={!selected.valid || !!outcome || !canResolveOutcome} onPress={() => resolveSkill('failure', 'automaticFailure')} style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive, opacity: selected.valid && !outcome && canResolveOutcome ? 1 : 0.4 }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>AUTOMATIC FAILURE</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {outcome && (
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: outcome === 'success' ? colors.primary : colors.destructive }}>
+                      {roll ? `Rolled ${roll}: ` : 'GM ruling: '}{outcome === 'success' ? 'SUCCESS' : 'FAILURE'}
+                    </Text>
+                  )}
+                </View>
+                )}
+
+                {delayedHealStart && (
+                  <>
+                    {!confirmAllRemaining ? (
+                      <TouchableOpacity
+                        testID="resolve-heal-fallen"
+                        disabled={!selected.valid || !actor || actor.currentAP < 1 || !canStart}
+                        onPress={() => setConfirmAllRemaining(true)}
+                        style={{ paddingVertical: 12, alignItems: 'center', borderRadius: colors.radius, backgroundColor: selected.valid && actor && actor.currentAP > 0 && canStart ? colors.destructive : colors.border, opacity: selected.valid && actor && actor.currentAP > 0 && canStart ? 1 : 0.5 }}
+                      >
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: selected.valid && actor && actor.currentAP > 0 && canStart ? colors.destructiveForeground : colors.mutedForeground }}>
+                          REVIEW ALL {actor?.currentAP ?? 0} AP — START HEAL FALLEN
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={{ padding: 11, gap: 8, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive, backgroundColor: colors.secondary }}>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Spend all {actor?.currentAP ?? 0} remaining AP?</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>This action spends all remaining AP, leaves only equipped-armor AC, and applies a successful revival at the healer’s next own turn.</Text>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity onPress={() => setConfirmAllRemaining(false)} style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+                            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity testID="confirm-heal-fallen-all-ap" onPress={submitHealFallen} style={{ flex: 2, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.destructive }}>
+                            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructiveForeground }}>SPEND ALL & START</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {!isCompletion && <>
+            <View style={{ gap: 8 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>GM TIMING</Text>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Set the AP spent now and the action’s duration. Long or underfunded actions use armor-only AC until the actor’s next turn.</Text>
+              {!canStart && !isCompletion && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>Start tracked combat first to record AP spending and round duration.</Text>}
+              <TextInput
+                value={generalLabel}
+                onChangeText={setGeneralLabel}
+                placeholder="GM action label"
+                placeholderTextColor={colors.mutedForeground}
+                style={{ paddingHorizontal: 10, paddingVertical: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 12, backgroundColor: colors.background }}
+              />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[
+                  { label: 'AP NOW', value: requestedAP, decrement: () => setAp(value => Math.max(1, value - 1)), increment: () => setAp(value => Math.min(30, value + 1)) },
+                  { label: 'ROUNDS', value: rounds, decrement: () => setRounds(value => Math.max(1, value - 1)), increment: () => setRounds(value => Math.min(20, value + 1)) },
+                ].map(control => (
+                  <View key={control.label} style={{ flex: 1, padding: 9, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, textAlign: 'center', letterSpacing: 1 }}>{control.label}</Text>
+                    <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <TouchableOpacity onPress={control.decrement} style={{ padding: 4 }}><Feather name="minus" size={15} color={colors.foreground} /></TouchableOpacity>
+                      <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary }}>{control.value}</Text>
+                      <TouchableOpacity onPress={control.increment} style={{ padding: 4 }}><Feather name="plus" size={15} color={colors.foreground} /></TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              {underfunded && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Underfunded: {actor?.currentAP ?? 0}/{requestedAP} AP. Confirm spending all remaining AP; armor-only AC warning applies.</Text>}
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+                {completionRound > currentRound
+                  ? `Action completes at ${actor?.name ?? 'the actor'}’s turn in round ${completionRound}; defense restores then.`
+                  : 'This action resolves immediately in the current round; no armor-only defense penalty applies.'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              testID="resolve-combat-skill"
+              disabled={!generalLabel.trim() || !actor || actor.currentAP < 1 || !canStart}
+              onPress={submitGeneralSkill}
+              style={{ paddingVertical: 12, alignItems: 'center', borderRadius: colors.radius, backgroundColor: generalLabel.trim() && actor && actor.currentAP > 0 && canStart ? colors.primary : colors.border, opacity: generalLabel.trim() && actor && actor.currentAP > 0 && canStart ? 1 : 0.5 }}
+            >
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: generalLabel.trim() && actor && actor.currentAP > 0 && canStart ? colors.primaryForeground : colors.mutedForeground }}>
+                START GM SKILL · {requestedAP} AP / {rounds} ROUND{rounds === 1 ? '' : 'S'}
+              </Text>
+            </TouchableOpacity>
+            </>}
+          </ScrollView>
         </View>
       </View>
     </Modal>

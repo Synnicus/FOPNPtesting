@@ -11,6 +11,24 @@ import { getRaceById } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
 import { RESTORED_BESTIARY } from '@/data/bestiary';
+import { AP_COSTS } from '@/data/apCosts';
+import {
+  advanceCombatSkillTurn,
+  advanceKnockoutTimer,
+  applyHealFallenOutcome,
+  armorOnlyArmorClass,
+  canUseHealFallenSkill,
+  cancelPendingActionsForRemovedCharacters,
+  isHealFallenTarget,
+  isRevivedAPRestricted,
+  planTimedSkillAP,
+  resolveCombatSkillOutcome,
+  type CombatSkillReceipt,
+  type CompleteHealFallenRequest,
+  type HealFallenRequest,
+  type TimedCombatSkillAction,
+  type TimedSkillActionRequest,
+} from '@/data/combatSkills';
 
 // Effective max AP for a character: derived max plus active chem apMod
 // (Jet grants +2 AP, etc.). Floor 1 so a crashing chem never zeroes AP.
@@ -20,10 +38,8 @@ import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
-function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
-  if (!c.isKnockedOut) return c;
-  const left = Math.max(0, (c.knockOutRoundsLeft ?? 0) - 1);
-  return { ...c, knockOutRoundsLeft: left, isKnockedOut: left > 0 };
+function koTick<T extends { currentHp: number; isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
+  return advanceKnockoutTimer(c);
 }
 
 function statusTick(c: Character, allArmor: Armor[]): { character: Character; damage: number } {
@@ -44,15 +60,20 @@ function statusTick(c: Character, allArmor: Armor[]): { character: Character; da
     const advanced = advanceAreaEffect(effect);
     return advanced ? [advanced] : [];
   });
+  const currentHp = Math.max(0, knocked.currentHp - damage);
   return {
-    character: { ...knocked, currentHp: Math.max(0, knocked.currentHp - damage), areaEffects },
+    character: {
+      ...knocked, currentHp, areaEffects,
+      // A character reduced to zero by an end-turn hazard remains unconscious.
+      ...(currentHp <= 0 ? { isKnockedOut: true } : {}),
+    },
     damage,
   };
 }
 
 function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], includeTempAC = false) {
   const race = getRaceById(c.race);
-  return resolveArmorAwareSheet({
+  const sheet = resolveArmorAwareSheet({
     special: c.special,
     skills: c.skills,
     taggedSkills: c.taggedSkills,
@@ -75,10 +96,58 @@ function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], in
     equippedHelmetId: c.equippedHelmetId,
     allArmor,
   });
+  // The manual removes every AC source except worn armor while a GM-timed
+  // skill is underway. This intentionally excludes Agility, unused AP, perks,
+  // and temporary AC.
+  return c.combatDefenseSuppressed
+    ? { ...sheet, armorClass: armorOnlyArmorClass([sheet.bodyArmor?.acBonus ?? 0, sheet.helmet?.acBonus ?? 0]) }
+    : sheet;
 }
 
 function charMaxAP(c: Character, allArmor: readonly Armor[]): number {
   return resolveCharacterArmorSheet(c, allArmor).maxAP;
+}
+
+function effectiveCombatSkillValue(c: Character, skill: keyof Character['skills'], allArmor: readonly Armor[]): number {
+  const sheetValue = resolveCharacterArmorSheet(c, allArmor).effectiveSkills[skill];
+  const injuryPenalty = (c.injuries ?? []).filter(injury => injury.isActive)
+    .reduce((total, injury) => total + (injury.skillPenalty[skill] ?? 0), 0);
+  return Math.max(0, sheetValue + injuryPenalty);
+}
+
+/** Mirror live character state into linked initiative entries after an atomic
+ * combat-skill transaction or turn transition. */
+function syncCombatSkillInitiative(
+  entries: InitiativeEntry[],
+  characters: Character[],
+  allArmor: readonly Armor[],
+): InitiativeEntry[] {
+  return entries.map(entry => {
+    const character = entry.characterId ? characters.find(candidate => candidate.id === entry.characterId) : undefined;
+    if (!character) return entry;
+    const sheet = resolveCharacterArmorSheet(character, allArmor);
+    return {
+      ...entry,
+      currentAP: character.currentAP,
+      maxAP: sheet.maxAP,
+      currentHp: character.currentHp,
+      maxHp: character.maxHp,
+      armorClass: sheet.armorClass,
+      tempAC: character.tempAC,
+      position: character.position,
+    };
+  });
+}
+
+/** Remove actions whose actor or target disappeared, then release any affected
+ * actor whose remaining action list no longer needs the defense penalty. */
+function cancelActionsForCharacterIds(
+  characters: Character[],
+  pendingActions: TimedCombatSkillAction[],
+  removedCharacterIds: ReadonlySet<string>,
+): { characters: Character[]; pendingActions: TimedCombatSkillAction[] } {
+  const result = cancelPendingActionsForRemovedCharacters(characters, pendingActions, removedCharacterIds);
+  return { characters: result.combatants, pendingActions: result.pendingActions };
 }
 
 /** Effective magazine size after mod magazineMult (extended/drum mags etc.). */
@@ -102,6 +171,10 @@ interface AppState {
   activeEntryId: string | null;
   /** Ephemeral receipt for the last atomic AoE transaction. */
   areaAttackReceipt?: { requestId: string; results: AreaResolution[] };
+  /** Pending actions resolve only at the start of their actor's own turn. */
+  pendingCombatSkillActions: TimedCombatSkillAction[];
+  /** Ephemeral receipt for the latest timed skill or Heal Fallen transaction. */
+  combatSkillReceipt?: CombatSkillReceipt;
   /** true once weapon conditionBoxes use the manual's FILLED 0–10 semantics
    *  (legacy saves stored 0–5 "remaining boxes"). */
   conditionSemanticsV2?: boolean;
@@ -123,10 +196,12 @@ function migrateConditionSemantics(parsed: AppState): AppState {
 }
 
 function reconcileInitiativeCharacters(parsed: AppState): AppState {
+  const currentRound = parsed.currentRound ?? 1;
   const characters = (parsed.characters ?? []).map(character => ({
     ...character,
     // Migrate finite fire/acid saves from the earlier implementation to the
     // manual lifecycle: both persist until their explicit removal action.
+    currentAP: isRevivedAPRestricted(character, currentRound) ? 0 : character.currentAP,
     areaEffects: (character.areaEffects ?? []).map(effect =>
       effect.kind === 'fire' || effect.kind === 'acid'
         ? { ...effect, persistent: true, roundsLeft: undefined, removeAfterTick: false }
@@ -143,7 +218,7 @@ function reconcileInitiativeCharacters(parsed: AppState): AppState {
         currentHp: character.currentHp,
         maxHp: character.maxHp,
         position: character.position,
-        currentAP: character.isKnockedOut ? 0 : entry.currentAP,
+        currentAP: character.isKnockedOut || isRevivedAPRestricted(character, currentRound) ? 0 : entry.currentAP,
       };
     }),
   };
@@ -222,6 +297,14 @@ interface AppContextValue extends AppState {
   healCharacter: (characterId: string, amount: number) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
+  /** Start a GM-timed combat skill. See TimedSkillActionRequest for AP/round timing. */
+  startTimedSkillAction: (request: TimedSkillActionRequest) => string;
+  /** Atomically spends AP, resolves or queues a Heal Fallen action, and syncs initiative. */
+  resolveHealFallen: (request: HealFallenRequest) => string;
+  /** Resolve a ready delayed Heal Fallen action without spending more AP. */
+  completeHealFallen: (request: CompleteHealFallenRequest) => string;
+  /** Cancel a ready delayed Heal Fallen action; AP already spent are never refunded. */
+  cancelCombatSkillAction: (actionId: string) => string;
   setPosition: (characterId: string, position: PositionType) => void;
   setKnockedOut: (characterId: string, rounds: number) => void;
   applyAreaAttack: (attack: AreaAttack, characterIds: string[]) => string;
@@ -281,6 +364,7 @@ const defaultState: AppState = {
   currentRound: 1,
   combatActive: false,
   activeEntryId: null,
+  pendingCombatSkillActions: [],
 };
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -330,11 +414,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteCharacter = useCallback((id: string) => {
-    setState(s => ({
-      ...s,
-      characters: s.characters.filter(c => c.id !== id),
-      initiativeEntries: s.initiativeEntries.filter(e => e.characterId !== id),
-    }));
+    setState(s => {
+      const canceled = cancelActionsForCharacterIds(
+        s.characters.filter(c => c.id !== id),
+        s.pendingCombatSkillActions,
+        new Set([id]),
+      );
+      return {
+        ...s,
+        characters: canceled.characters,
+        initiativeEntries: syncCombatSkillInitiative(
+          s.initiativeEntries.filter(e => e.characterId !== id),
+          canceled.characters,
+          [...BUILT_IN_ARMOR, ...s.customArmor],
+        ),
+        pendingCombatSkillActions: canceled.pendingActions,
+      };
+    });
   }, []);
 
   const cloneCharacter = useCallback((id: string) => {
@@ -414,7 +510,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({
       ...s,
       characters: s.characters.map(c => c.id === characterId
-        ? setUnconsciousness(c, rounds)
+        ? { ...c, isKnockedOut: rounds > 0, knockOutRoundsLeft: Math.max(0, rounds) }
         : c),
     }));
   }, []);
@@ -690,7 +786,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Reset every character to its armor-aware full AP and clear temp AC.
       characters: s.characters.map(c => {
         const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]);
-        return { ...clearUnconsciousness(c), currentAP: maxAP, tempAC: 0 };
+        return { ...c, currentAP: maxAP, tempAC: 0 };
       }),
       initiativeEntries: [],
       currentRound: 1,
@@ -707,13 +803,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const removeInitiativeEntry = useCallback((id: string) => {
-    setState(s => ({
-      ...s,
-      initiativeEntries: s.initiativeEntries.filter(e => e.id !== id),
-      activeEntryId: s.activeEntryId === id
-        ? (s.initiativeEntries.find(e => e.id !== id)?.id ?? null)
-        : s.activeEntryId,
-    }));
+    setState(s => {
+      const removed = s.initiativeEntries.find(entry => entry.id === id);
+      const canceled = removed?.characterId
+        ? cancelActionsForCharacterIds(s.characters, s.pendingCombatSkillActions, new Set([removed.characterId]))
+        : { characters: s.characters, pendingActions: s.pendingCombatSkillActions };
+      const entries = s.initiativeEntries.filter(entry => entry.id !== id);
+      return {
+        ...s,
+        characters: canceled.characters,
+        initiativeEntries: syncCombatSkillInitiative(entries, canceled.characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        pendingCombatSkillActions: canceled.pendingActions,
+        activeEntryId: s.activeEntryId === id ? (entries[0]?.id ?? null) : s.activeEntryId,
+      };
+    });
   }, []);
 
   const updateInitiativeEntry = useCallback((entry: InitiativeEntry) => {
@@ -792,6 +895,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => {
       if (s.initiativeEntries.length === 0) return s;
       const firstChar = s.initiativeEntries[0]?.characterId;
+      const round = s.currentRound + 1;
       const prevActiveChar = s.initiativeEntries.find(e => e.id === s.activeEntryId)?.characterId;
       // Skipping ahead ends the previously active combatant's turn — consume a
       // KO turn for them unconditionally (even if they are also first in
@@ -983,11 +1087,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteCharacter = useCallback((id: string) => {
-    setState(s => ({
-      ...s,
-      characters: s.characters.filter(c => c.id !== id),
-      initiativeEntries: s.initiativeEntries.filter(e => e.characterId !== id),
-    }));
+    setState(s => {
+      const canceled = cancelActionsForCharacterIds(
+        s.characters.filter(c => c.id !== id),
+        s.pendingCombatSkillActions,
+        new Set([id]),
+      );
+      return {
+        ...s,
+        characters: canceled.characters,
+        initiativeEntries: syncCombatSkillInitiative(
+          s.initiativeEntries.filter(e => e.characterId !== id),
+          canceled.characters,
+          [...BUILT_IN_ARMOR, ...s.customArmor],
+        ),
+        pendingCombatSkillActions: canceled.pendingActions,
+      };
+    });
   }, []);
 
   const cloneCharacter = useCallback((id: string) => {
@@ -1050,6 +1166,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => {
       const char = s.characters.find(c => c.id === characterId);
       if (!char) return s;
+      if (isRevivedAPRestricted(char, s.currentRound)) return s;
       const maxAP = charMaxAP(char, [...BUILT_IN_ARMOR, ...s.customArmor]);
       const currentAP = amount !== undefined ? Math.min(maxAP, char.currentAP + amount) : maxAP;
       return {
@@ -1062,12 +1179,157 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const startTimedSkillAction = useCallback((request: TimedSkillActionRequest): string => {
+    const requestId = genId();
+    setState(s => {
+      const actor = s.characters.find(c => c.id === request.actorId);
+      const reject = (reason: string) => ({ ...s, combatSkillReceipt: { requestId, kind: 'general' as const, status: 'rejected' as const, actorId: request.actorId, spentAP: 0, reason } });
+      if (!actor) return reject('The acting character was not found.');
+      if (!s.combatActive || !s.initiativeEntries.some(entry => entry.characterId === actor.id)) return reject('Timed skills require an active, tracked combatant.');
+      if (s.pendingCombatSkillActions.some(action => action.actorId === actor.id)) return reject('This combatant already has a pending skill action.');
+      if (!request.label.trim()) return reject('Enter a label for the timed skill action.');
+      const plan = planTimedSkillAP({ availableAP: actor.currentAP, apCost: request.apCost, durationRounds: request.durationRounds, confirmSpendAllRemaining: request.confirmSpendAllRemaining });
+      if (!plan.valid) return reject(plan.reason ?? 'This skill action cannot begin.');
+      const completesOnRound = s.currentRound + plan.completionRoundOffset;
+      const action: TimedCombatSkillAction = { id: requestId, kind: 'general', actorId: actor.id, label: request.label.trim(), startedRound: s.currentRound, completesOnRound, apCost: request.apCost, spentAP: plan.spentAP, armorOnlyAC: plan.armorOnlyAC };
+      const updated = { ...actor, currentAP: actor.currentAP - plan.spentAP, combatDefenseSuppressed: plan.armorOnlyAC || actor.combatDefenseSuppressed };
+      const characters = s.characters.map(c => c.id === actor.id ? updated : c);
+      return {
+        ...s, characters,
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        pendingCombatSkillActions: plan.completionRoundOffset ? [...s.pendingCombatSkillActions, action] : s.pendingCombatSkillActions,
+        combatSkillReceipt: { requestId, kind: 'general', status: plan.completionRoundOffset ? 'pending' : 'completed', actorId: actor.id, spentAP: plan.spentAP, completesOnRound },
+      };
+    });
+    return requestId;
+  }, []);
+
+  const resolveHealFallen = useCallback((request: HealFallenRequest): string => {
+    const requestId = genId();
+    setState(s => {
+      const actor = s.characters.find(c => c.id === request.actorId);
+      const target = s.characters.find(c => c.id === request.targetId);
+      const reject = (reason: string) => ({ ...s, combatSkillReceipt: { requestId, kind: 'healFallen' as const, status: 'rejected' as const, actorId: request.actorId, targetId: request.targetId, spentAP: 0, reason } });
+      if (!actor || !target) return reject('The healer or unconscious target was not found.');
+      if (actor.isKnockedOut) return reject('An unconscious healer cannot use Heal Fallen.');
+      if (s.pendingCombatSkillActions.some(action => action.actorId === actor.id)) return reject('This combatant already has a pending skill action.');
+      if (!isHealFallenTarget(target)) return reject('Heal Fallen can only be used on an unconscious target.');
+      if (!canUseHealFallenSkill(target, request.skill)) return reject(target.race === 'robot' ? 'Robots require Science or Repair for Heal Fallen.' : 'Living targets require First Aid or Doctor for Heal Fallen.');
+      const plan = planTimedSkillAP({ availableAP: actor.currentAP, apCost: AP_COSTS.HEAL_FALLEN, durationRounds: 1, confirmSpendAllRemaining: request.confirmSpendAllRemaining });
+      if (!plan.valid) return reject(plan.reason ?? 'Heal Fallen cannot begin.');
+      if (plan.completionRoundOffset > 0 && request.resolution) {
+        return reject('Underfunded Heal Fallen resolves at the healer’s next own turn; do not supply an outcome yet.');
+      }
+      if (plan.completionRoundOffset > 0 && (!s.combatActive || !s.initiativeEntries.some(entry => entry.characterId === actor.id))) {
+        return reject('Delayed Heal Fallen requires an active, tracked combatant.');
+      }
+      const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
+      const resolution = request.resolution
+        ? resolveCombatSkillOutcome(request.resolution, effectiveCombatSkillValue(actor, request.skill, allArmor))
+        : undefined;
+      if (request.resolution && !resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
+      if (!plan.completionRoundOffset && !resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
+      const completesOnRound = s.currentRound + plan.completionRoundOffset;
+      const action: TimedCombatSkillAction = { id: requestId, kind: 'healFallen', actorId: actor.id, targetId: target.id, skill: request.skill, label: 'Heal Fallen', startedRound: s.currentRound, completesOnRound, apCost: AP_COSTS.HEAL_FALLEN, spentAP: plan.spentAP, armorOnlyAC: plan.armorOnlyAC, resolution: resolution ?? undefined };
+      const updated = { ...actor, currentAP: actor.currentAP - plan.spentAP, combatDefenseSuppressed: plan.armorOnlyAC || actor.combatDefenseSuppressed };
+      let characters = s.characters.map(c => c.id === actor.id ? updated : c);
+      if (!plan.completionRoundOffset && resolution?.success) {
+        characters = applyHealFallenOutcome(characters, target.id, true, s.currentRound).combatants;
+      }
+      return {
+        ...s, characters,
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, allArmor),
+        pendingCombatSkillActions: plan.completionRoundOffset ? [...s.pendingCombatSkillActions, action] : s.pendingCombatSkillActions,
+        combatSkillReceipt: { requestId, kind: 'healFallen', status: plan.completionRoundOffset ? 'pending' : 'completed', actorId: actor.id, targetId: target.id, spentAP: plan.spentAP, completesOnRound, success: plan.completionRoundOffset ? undefined : resolution?.success },
+      };
+    });
+    return requestId;
+  }, []);
+
+  const completeHealFallen = useCallback((request: CompleteHealFallenRequest): string => {
+    const requestId = genId();
+    setState(s => {
+      const action = s.pendingCombatSkillActions.find(candidate =>
+        candidate.id === request.actionId && candidate.kind === 'healFallen' && candidate.readyToResolve,
+      );
+      const reject = (reason: string) => ({
+        ...s,
+        combatSkillReceipt: { requestId, kind: 'healFallen' as const, status: 'rejected' as const, actorId: action?.actorId ?? '', targetId: action?.targetId, spentAP: 0, reason },
+      });
+      if (!action || !action.targetId || !action.skill) return reject('That Heal Fallen action is not ready to resolve.');
+      const actor = s.characters.find(c => c.id === action.actorId);
+      const target = s.characters.find(c => c.id === action.targetId);
+      const finishWithoutHealing = (reason: string) => ({
+        ...s,
+        pendingCombatSkillActions: s.pendingCombatSkillActions.filter(candidate => candidate.id !== action.id),
+        combatSkillReceipt: { requestId, kind: 'healFallen' as const, status: 'completed' as const, actorId: action.actorId, targetId: action.targetId, spentAP: 0, completesOnRound: action.completesOnRound, success: false, reason },
+      });
+      if (!actor || actor.isKnockedOut) return finishWithoutHealing('The healer cannot complete Heal Fallen while unconscious or absent.');
+      if (!target || !target.isKnockedOut) return finishWithoutHealing('Heal Fallen cannot affect a missing or conscious target.');
+      const resolution = resolveCombatSkillOutcome(
+        request.resolution,
+        effectiveCombatSkillValue(actor, action.skill, [...BUILT_IN_ARMOR, ...s.customArmor]),
+      );
+      if (!resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
+      const outcome = applyHealFallenOutcome(s.characters, target.id, resolution.success, s.currentRound);
+      const characters = outcome.combatants;
+      return {
+        ...s,
+        characters,
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        pendingCombatSkillActions: s.pendingCombatSkillActions.filter(candidate => candidate.id !== action.id),
+        combatSkillReceipt: { requestId, kind: 'healFallen', status: 'completed', actorId: actor.id, targetId: target.id, spentAP: 0, completesOnRound: action.completesOnRound, success: resolution.success },
+      };
+    });
+    return requestId;
+  }, []);
+
+  const cancelCombatSkillAction = useCallback((actionId: string): string => {
+    const requestId = genId();
+    setState(s => {
+      const action = s.pendingCombatSkillActions.find(candidate =>
+        candidate.id === actionId && candidate.kind === 'healFallen' && candidate.readyToResolve,
+      );
+      if (!action) {
+        return {
+          ...s,
+          combatSkillReceipt: {
+            requestId, kind: 'healFallen', status: 'rejected', actorId: '', spentAP: 0,
+            reason: 'Only a ready Heal Fallen action can be cancelled.',
+          },
+        };
+      }
+      const pendingCombatSkillActions = s.pendingCombatSkillActions.filter(candidate => candidate.id !== action.id);
+      const characters = s.characters.map(character => character.id === action.actorId
+        && !pendingCombatSkillActions.some(candidate =>
+          candidate.actorId === character.id && candidate.armorOnlyAC && !candidate.readyToResolve,
+        )
+        ? { ...character, combatDefenseSuppressed: false, tempAC: 0 }
+        : character);
+      return {
+        ...s,
+        characters,
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        pendingCombatSkillActions,
+        combatSkillReceipt: {
+          requestId, kind: 'healFallen', status: 'completed', actorId: action.actorId,
+          targetId: action.targetId, spentAP: 0, completesOnRound: action.completesOnRound,
+          success: false, reason: 'Heal Fallen was cancelled; spent AP are not refunded.',
+        },
+      };
+    });
+    return requestId;
+  }, []);
+
   // Knock a character unconscious for N of their own turns. 0 rounds wakes them.
   const setKnockedOut = useCallback((characterId: string, rounds: number) => {
     setState(s => ({
       ...s,
       characters: s.characters.map(c => c.id === characterId
-        ? { ...setUnconsciousness(c, rounds), ...(rounds > 0 ? { position: 'prone' as const, currentAP: 0 } : {}) }
+        ? {
+          ...setUnconsciousness(c, rounds),
+          ...(rounds > 0 ? { position: 'prone' as const, currentAP: 0, revivedNoAPUntilRound: undefined } : {}),
+        }
         : c),
       initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
         ? { ...e, ...(rounds > 0 ? { position: 'prone' as const, currentAP: 0 } : {}) }
@@ -1467,12 +1729,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Reset every character to full AP (derived max) and clear temp AC.
       characters: s.characters.map(c => {
         const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]);
-        return { ...clearUnconsciousness(c), currentAP: maxAP, tempAC: 0 };
+        return {
+          ...clearUnconsciousness(c),
+          currentAP: maxAP,
+          tempAC: 0,
+          combatDefenseSuppressed: false,
+          revivedNoAPUntilRound: undefined,
+        };
       }),
       initiativeEntries: [],
       currentRound: 1,
       combatActive: false,
       activeEntryId: null,
+      pendingCombatSkillActions: [],
     }));
   }, []);
 
@@ -1484,13 +1753,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const removeInitiativeEntry = useCallback((id: string) => {
-    setState(s => ({
-      ...s,
-      initiativeEntries: s.initiativeEntries.filter(e => e.id !== id),
-      activeEntryId: s.activeEntryId === id
-        ? (s.initiativeEntries.find(e => e.id !== id)?.id ?? null)
-        : s.activeEntryId,
-    }));
+    setState(s => {
+      const removed = s.initiativeEntries.find(entry => entry.id === id);
+      const canceled = removed?.characterId
+        ? cancelActionsForCharacterIds(s.characters, s.pendingCombatSkillActions, new Set([removed.characterId]))
+        : { characters: s.characters, pendingActions: s.pendingCombatSkillActions };
+      const entries = s.initiativeEntries.filter(entry => entry.id !== id);
+      return {
+        ...s,
+        characters: canceled.characters,
+        initiativeEntries: syncCombatSkillInitiative(entries, canceled.characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        pendingCombatSkillActions: canceled.pendingActions,
+        activeEntryId: s.activeEntryId === id ? (entries[0]?.id ?? null) : s.activeEntryId,
+      };
+    });
   }, []);
 
   const updateInitiativeEntry = useCallback((entry: InitiativeEntry) => {
@@ -1509,10 +1785,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (s.initiativeEntries.length === 0) return s;
       const activeIdx = s.initiativeEntries.findIndex(e => e.id === s.activeEntryId);
       const currentActive = s.initiativeEntries[activeIdx];
+      const activeDefenseSuppressed = !!s.characters.find(c => c.id === currentActive?.characterId)?.combatDefenseSuppressed;
       // Convert unspent AP to tempAC for the current entry
       let entries = s.initiativeEntries.map(e => {
         if (e.id === currentActive?.id) {
-          return { ...e, hasActed: true, tempAC: e.tempAC + e.currentAP, currentAP: 0 };
+          return { ...e, hasActed: true, tempAC: activeDefenseSuppressed ? 0 : e.tempAC + e.currentAP, currentAP: 0 };
         }
         return e;
       });
@@ -1520,7 +1797,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // knocked out, consume one KO turn NOW (their skipped turn is over).
       let chars = s.characters.map(c => {
         if (c.id === currentActive?.characterId) {
-          return statusTick({ ...c, tempAC: c.tempAC + c.currentAP, currentAP: 0 }, [...BUILT_IN_ARMOR, ...s.customArmor]).character;
+          return statusTick({
+            ...c,
+            tempAC: c.combatDefenseSuppressed ? 0 : c.tempAC + c.currentAP,
+            currentAP: 0,
+          }, [...BUILT_IN_ARMOR, ...s.customArmor]).character;
         }
         return c;
       });
@@ -1534,17 +1815,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (entries.every(e => e.hasActed)) {
         const round = s.currentRound + 1;
         const firstChar0 = entries[0]?.characterId;
+        const advancement = firstChar0
+          ? advanceCombatSkillTurn(chars, s.pendingCombatSkillActions, firstChar0, round)
+          : { combatants: chars, pendingActions: s.pendingCombatSkillActions, completed: [] };
+        chars = advancement.combatants as Character[];
         // Turn start: KO'd combatants get no AP (they can't act this turn).
         const firstKO = !!chars.find(c => c.id === firstChar0)?.isKnockedOut;
         entries = entries.map((e, i) => ({
           ...e, hasActed: false, isActive: i === 0,
           // Only the new active combatant replenishes AP and loses tempAC
-          ...(i === 0 ? { currentAP: firstKO ? 0 : e.maxAP, tempAC: 0 } : {}),
+          ...(i === 0 ? {
+            currentAP: firstKO || isRevivedAPRestricted(chars.find(c => c.id === firstChar0) ?? { revivedNoAPUntilRound: -1 }, round) ? 0 : e.maxAP,
+            tempAC: 0,
+          } : {}),
         }));
         if (firstChar0) {
-          chars = chars.map(c => c.id === firstChar0 ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 } : c);
+          chars = chars.map(c => c.id === firstChar0 ? {
+            ...c,
+            currentAP: c.isKnockedOut || isRevivedAPRestricted(c, round) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]),
+            tempAC: 0,
+            ...(isRevivedAPRestricted(c, round) ? {} : { revivedNoAPUntilRound: undefined }),
+          } : c);
         }
-        return { ...s, initiativeEntries: entries, characters: chars, currentRound: round, activeEntryId: entries[0].id };
+        const completed = advancement.completed;
+        const lastCompleted = completed[completed.length - 1];
+        return {
+          ...s,
+          initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor]),
+          characters: chars, currentRound: round, activeEntryId: entries[0].id,
+          pendingCombatSkillActions: advancement.pendingActions,
+          combatSkillReceipt: lastCompleted ? {
+            requestId: lastCompleted.id, kind: lastCompleted.kind, status: 'completed',
+            actorId: lastCompleted.actorId, targetId: lastCompleted.targetId,
+            spentAP: lastCompleted.spentAP, completesOnRound: lastCompleted.completesOnRound,
+            success: lastCompleted.completionSuccess ?? lastCompleted.resolution?.success,
+            reason: lastCompleted.completionReason,
+          } : s.combatSkillReceipt,
+        };
       }
       // Find next unacted entry
       let nextIdx = (activeIdx + 1) % entries.length;
@@ -1555,17 +1862,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       // Turn start: KO'd combatants get no AP (they can't act this turn) —
       // mirrored on both the initiative entry and the character.
-      const nextKO = !!chars.find(c => c.id === entries[nextIdx]?.characterId)?.isKnockedOut;
+      const nextCharacterId = entries[nextIdx]?.characterId;
+      const advancement = nextCharacterId
+        ? advanceCombatSkillTurn(chars, s.pendingCombatSkillActions, nextCharacterId, s.currentRound)
+        : { combatants: chars, pendingActions: s.pendingCombatSkillActions, completed: [] };
+      chars = advancement.combatants as Character[];
+      const nextCharacter = chars.find(c => c.id === nextCharacterId);
+      const nextKO = !!nextCharacter?.isKnockedOut;
       entries = entries.map((e, i) => ({
         ...e,
         isActive: i === nextIdx,
-        ...(i === nextIdx ? { tempAC: 0, currentAP: nextKO ? 0 : e.maxAP } : {}),
+        ...(i === nextIdx ? {
+          tempAC: 0,
+          currentAP: nextKO || isRevivedAPRestricted(nextCharacter ?? { revivedNoAPUntilRound: -1 }, s.currentRound) ? 0 : e.maxAP,
+        } : {}),
       }));
       const nextActive = entries[nextIdx];
       if (nextActive?.characterId) {
-        chars = chars.map(c => c.id === nextActive.characterId ? { ...c, currentAP: c.isKnockedOut ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 } : c);
+        chars = chars.map(c => c.id === nextActive.characterId ? {
+          ...c,
+          currentAP: c.isKnockedOut || isRevivedAPRestricted(c, s.currentRound) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]),
+          tempAC: 0,
+          ...(isRevivedAPRestricted(c, s.currentRound) ? {} : { revivedNoAPUntilRound: undefined }),
+        } : c);
       }
-      return { ...s, initiativeEntries: entries, characters: chars, activeEntryId: nextActive?.id ?? null };
+      const completed = advancement.completed;
+      const lastCompleted = completed[completed.length - 1];
+      return {
+        ...s,
+        initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        characters: chars, activeEntryId: nextActive?.id ?? null,
+        pendingCombatSkillActions: advancement.pendingActions,
+        combatSkillReceipt: lastCompleted ? {
+          requestId: lastCompleted.id, kind: lastCompleted.kind, status: 'completed',
+          actorId: lastCompleted.actorId, targetId: lastCompleted.targetId,
+          spentAP: lastCompleted.spentAP, completesOnRound: lastCompleted.completesOnRound,
+          success: lastCompleted.completionSuccess ?? lastCompleted.resolution?.success,
+          reason: lastCompleted.completionReason,
+        } : s.combatSkillReceipt,
+      };
     });
   }, []);
 
@@ -1573,32 +1908,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => {
       if (s.initiativeEntries.length === 0) return s;
       const firstChar = s.initiativeEntries[0]?.characterId;
+      const round = s.currentRound + 1;
       // Skipping ahead completes every unacted turn so timed status counters
       // cannot be bypassed by ending the round early.
       const skippedCharacterIds = new Set(
         s.initiativeEntries.filter(entry => !entry.hasActed).map(entry => entry.characterId),
       );
-      const chars = s.characters.map(c => {
+      let chars = s.characters.map(c => {
         let out = skippedCharacterIds.has(c.id)
           ? statusTick(c, [...BUILT_IN_ARMOR, ...s.customArmor]).character
           : c;
         if (out.id === firstChar) {
-          out = { ...out, currentAP: out.isKnockedOut ? 0 : charMaxAP(out, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 };
+          out = { ...out, currentAP: out.isKnockedOut || isRevivedAPRestricted(out, round) ? 0 : charMaxAP(out, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 };
         }
         return out;
       });
+      const advancement = firstChar
+        ? advanceCombatSkillTurn(chars, s.pendingCombatSkillActions, firstChar, round)
+        : { combatants: chars, pendingActions: s.pendingCombatSkillActions, completed: [] };
+      chars = advancement.combatants as Character[];
+      if (firstChar) {
+        chars = chars.map(c => c.id === firstChar ? {
+          ...c,
+          currentAP: c.isKnockedOut || isRevivedAPRestricted(c, round) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]),
+          tempAC: 0,
+          ...(isRevivedAPRestricted(c, round) ? {} : { revivedNoAPUntilRound: undefined }),
+        } : c);
+      }
       // Only the new active (first) combatant replenishes AP / clears tempAC —
       // everyone else keeps their tempAC until their own turn starts. A still-
       // KO'd first combatant gets no AP (mirrored on entry and character).
-      const firstKO = !!chars.find(c => c.id === firstChar)?.isKnockedOut;
+      const firstCharacter = chars.find(c => c.id === firstChar);
+      const firstKO = !!firstCharacter?.isKnockedOut;
       const entries = s.initiativeEntries.map((e, i) => ({
         ...e, hasActed: false, isActive: i === 0,
-        ...(i === 0 ? { currentAP: firstKO ? 0 : e.maxAP, tempAC: 0 } : {}),
+        ...(i === 0 ? {
+          currentAP: firstKO || isRevivedAPRestricted(firstCharacter ?? { revivedNoAPUntilRound: -1 }, round) ? 0 : e.maxAP,
+          tempAC: 0,
+        } : {}),
       })).map(e => {
         const c = chars.find(char => char.id === e.characterId);
         return c ? { ...e, currentHp: c.currentHp, position: c.position } : e;
       });
-      return { ...s, initiativeEntries: entries, characters: chars, currentRound: s.currentRound + 1, activeEntryId: entries[0]?.id ?? null };
+      const completed = advancement.completed;
+      const lastCompleted = completed[completed.length - 1];
+      return {
+        ...s,
+        initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        characters: chars, currentRound: round, activeEntryId: entries[0]?.id ?? null,
+        pendingCombatSkillActions: advancement.pendingActions,
+        combatSkillReceipt: lastCompleted ? {
+          requestId: lastCompleted.id, kind: lastCompleted.kind, status: 'completed',
+          actorId: lastCompleted.actorId, targetId: lastCompleted.targetId,
+          spentAP: lastCompleted.spentAP, completesOnRound: lastCompleted.completesOnRound,
+          success: lastCompleted.completionSuccess ?? lastCompleted.resolution?.success,
+          reason: lastCompleted.completionReason,
+        } : s.combatSkillReceipt,
+      };
     });
   }, []);
 
@@ -1709,8 +2075,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{
       ...state,
       allWeapons, allArmor,
-      addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
-      applyDamage, healCharacter, spendAP, restoreAP, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
+       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
+       applyDamage, healCharacter, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,

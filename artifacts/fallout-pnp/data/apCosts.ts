@@ -35,6 +35,8 @@ export const AP_COSTS = {
   // ─── Skills ───────────────────────────────────────────────
   FIRST_AID: 3,
   DOCTOR: 5,
+  /** Healing an unconscious ally/foe in combat (manual physical p. 27). */
+  HEAL_FALLEN: 10,
   SNEAK: 0,           // ongoing
   USE_SKILL: 3,
 
@@ -60,6 +62,7 @@ export const AP_COST_LIST: APCostEntry[] = [
   { id: 'pick_up', name: 'Pick Up Item', description: 'Take item from ground', cost: AP_COSTS.PICK_UP_ITEM },
   { id: 'first_aid', name: 'First Aid', description: 'Use First Aid skill', cost: AP_COSTS.FIRST_AID },
   { id: 'doctor', name: 'Doctor', description: 'Use Doctor skill', cost: AP_COSTS.DOCTOR },
+  { id: 'heal_fallen', name: 'Heal Fallen', description: 'Heal an unconscious target to 1 HP (First Aid / Doctor; Science / Repair for robots)', cost: AP_COSTS.HEAL_FALLEN, isVariable: true },
   { id: 'use_skill', name: 'Use Skill', description: 'Use a non-combat skill', cost: AP_COSTS.USE_SKILL },
   { id: 'lay_mine', name: 'Lay Mine', description: 'Set a mine (Traps roll)', cost: AP_COSTS.LAYING_MINE },
   { id: 'setup_tripod', name: 'Set Up Tripod', description: 'Set up a tripod/artillery — takes ALL remaining AP this round, success or fail (Big Guns roll)', cost: AP_COSTS.SETUP_TRIPOD, isVariable: true },
