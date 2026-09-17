@@ -366,8 +366,10 @@ export function spawnBestiaryTemplate(
 ): Character {
   const naturalAttacks = template.naturalAttacks ?? [];
   const equippedWeaponId = template.equippedWeaponId ?? naturalAttacks[0]?.weaponId;
+  const secondaryNaturalWeaponId = naturalAttacks[1]?.weaponId;
   const inventoryIds = Array.from(new Set([
     ...(equippedWeaponId ? [equippedWeaponId] : []),
+    ...(secondaryNaturalWeaponId ? [secondaryNaturalWeaponId] : []),
     ...(template.inventoryWeaponIds ?? []),
   ]));
   for (const weaponId of new Set([...inventoryIds, ...naturalAttacks.map(attack => attack.weaponId)])) {
@@ -411,7 +413,8 @@ export function spawnBestiaryTemplate(
     naturalProtection: template.naturalProtection ? { ...template.naturalProtection } : undefined,
     equippedWeaponId,
     rightHandWeaponId: equippedWeaponId,
-    leftHandWeaponId: equippedWeapon?.hands === 2 ? equippedWeaponId : undefined,
+    leftHandWeaponId: secondaryNaturalWeaponId
+      ?? (equippedWeapon?.hands === 2 ? equippedWeaponId : undefined),
     inventoryWeaponIds: inventoryIds.length > 0 ? inventoryIds : undefined,
     equippedBodyArmorId: template.equippedBodyArmorId,
     equippedHelmetId: template.equippedHelmetId,
