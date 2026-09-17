@@ -8,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
@@ -108,7 +108,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
 }) {
   const colors = useColors();
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<string>('smallGuns');
+  const [category, setCategory] = useState<WeaponCategory>('smallGuns');
   const [damageType, setDamageType] = useState<DamageType>('normal');
   const [dieCount, setDieCount] = useState(1);
   const [dieSides, setDieSides] = useState(6);
@@ -173,7 +173,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const isValid = name.trim().length > 0 && dieCount > 0 && dieSides > 0;
 
   const modEffects = computeModEffects(selectedMods);
-  const gunLike = isGunCategory(category);
+  const ammoCompatibleCategory = weaponCategorySupportsAmmo(category);
 
   // Mods offered for the current category, plus any already-selected mods
   // (so editing an existing weapon never silently drops a mod).
@@ -199,14 +199,14 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSave({
       id: isEditing ? editWeapon!.id : genId(), name: name.trim(),
-      category: category as Weapon['category'],
+      category,
       damageType, damageDieCount: dieCount, damageDie: dieSides,
       damageBonus, skill: (category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
       burstLimit, isDoubleShot, magazineSize,
       weight: 0, minStr, rangeNormal, knockdownChance: 0,
       apSingle, apTargeted: canTarget ? apTargeted : null, apBurst: canBurst ? apBurst : null,
       hands,
-      compatibleAmmo: gunLike && compatibleAmmo.length > 0 ? compatibleAmmo : undefined,
+      compatibleAmmo: ammoCompatibleCategory && compatibleAmmo.length > 0 ? compatibleAmmo : undefined,
       mods: selectedMods, isCustom: true,
     });
     onClose();
@@ -305,7 +305,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
 
             {tab === 'advanced' && (
               <>
-                <NumStepper label="Magazine size (0 = melee/unlimited)" val={magazineSize} min={0} max={999} set={setMagazineSize} />
+                <NumStepper label="Magazine size (0 = unlimited / no ammo)" val={magazineSize} min={0} max={999} set={setMagazineSize} />
                 <NumStepper label="Burst limit (1 = single shot)" val={burstLimit} min={1} max={20} set={setBurstLimit} />
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Double-shot weapon</Text>
@@ -326,8 +326,8 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   ))}
                 </View>
 
-                {/* Compatible ammo (gun-like categories only) */}
-                {gunLike && (
+                {/* Compatible ammo for guns and powered melee/unarmed weapons */}
+                {ammoCompatibleCategory && (
                   <>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 6 }}>
                       COMPATIBLE AMMO {compatibleAmmo.length > 0 ? `(${compatibleAmmo.length})` : ''}
