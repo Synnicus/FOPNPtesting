@@ -16,3 +16,9 @@ description: Storage/data conventions in the combat calculator app
 Hands model: `leftHandWeaponId`/`rightHandWeaponId` are the truth for held weapons; `equippedWeaponId` = ACTIVE weapon (must be one of the held ones). Absent hands fall back to "equipped in right hand". Invariants enforced in `equipWeapon`: a 2H weapon fills both slots; a 1H weapon never occupies both slots (placing 1H clears the other hand if it holds a 2H or the same id). `setActiveWeapon` switches equipped between held weapons without touching hands. Dual-wield UI (offhand swap, per-gun reload chooser, offhand AP button) derives from left≠right.
 
 Shield weapon mods (house rule, data/mods.ts shield_t1..t4): mod fields acBonus/shieldDt/shieldDr aggregate via computeModEffects into acBonus + shieldProtection (Armor-like dtNormal/drNormal shape); applied at combat time only (defender AC + combinedProtectionFor's optional shield param), never baked into stored armorClass.
+
+Poison delivered by weapon mods, natural attacks, or structured poison ammunition creates a persistent `kind: other` ActiveEffect on a committed hit, including zero-damage hits. The effect is flavor-only and must not provide combat modifiers.
+
+**Why:** Most manual poisons resolve over hours; the app should track exposure visibly without automating delayed damage or penalties during combat.
+
+**How to apply:** Show poison alongside other effects on the Characters tab, include its type/source/manual description, and let users toggle or remove it like other ActiveEffects.

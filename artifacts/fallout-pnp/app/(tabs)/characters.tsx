@@ -1786,9 +1786,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 </View>
               </View>
 
-              {/* ── ACTIVE CHEM EFFECTS ── */}
+              {/* ── ACTIVE EFFECTS ── */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>CHEM EFFECTS</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>ACTIVE EFFECTS</Text>
                 <TouchableOpacity onPress={() => setShowChemPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
                   <Feather name="plus" size={13} color={colors.primary} />
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>ADD CHEM</Text>
@@ -1796,7 +1796,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               </View>
 
               {(char.effects ?? []).length === 0 ? (
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No active chem effects. Add a chem for out-of-combat use.</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No active effects. Add a chem for out-of-combat use.</Text>
               ) : (
                 (char.effects ?? []).map(effect => {
                   const chem = effect.chemId ? getChem(effect.chemId) : undefined;

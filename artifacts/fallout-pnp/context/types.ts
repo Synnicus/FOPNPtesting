@@ -202,6 +202,8 @@ export interface ActiveEffect {
   kind: 'chem' | 'other';
   /** Chem id from data/chems.ts when kind === 'chem'. */
   chemId?: string;
+  /** Flavor-only poison marker; poison effects never supply combat modifiers. */
+  poisonType?: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
   name: string;
   /** Current stage index for multi-stage chems (jet, voodoo, ...). */
   stage?: number;

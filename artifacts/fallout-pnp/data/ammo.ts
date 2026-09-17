@@ -1,3 +1,5 @@
+import type { PoisonSpec } from './mods.ts';
+
 // ─── Ammunition — Fallout PnP 2.0 manual "Ammunition for Guns" chapter ────────
 // Every entry is transcribed from the manual's ammo table (values, AC/DR
 // target modifiers, Ignores DT flag, Volume, and the ammo's own Dmg dice).
@@ -25,6 +27,8 @@ export interface AmmoType {
   /** Manual "Vol:" (rounds per unit of inventory volume). */
   volume: number;
   notes?: string;
+  /** Poison delivered on a successful hit. Display-only in combat. */
+  poison?: PoisonSpec;
 }
 
 export const AMMO_TYPES: AmmoType[] = [
@@ -71,7 +75,7 @@ export const AMMO_TYPES: AmmoType[] = [
   // ─── HN Needler ───────────────────────────────────────────────────
   { id: 'hn_needler', name: 'HN Needler (Normal)', value: 1500, acMod: 0, drMod: 0, dmgDieCount: 3, dmgDie: 10, dmgBonus: 0, volume: 10 },
   { id: 'hn_needler_ap', name: 'HN Needler AP (Normal)', value: 2000, acMod: 0, drMod: 0, ignoresDT: true, dmgDieCount: 2, dmgDie: 8, dmgBonus: 0, volume: 10 },
-  { id: 'hn_needler_poison', name: 'HN Needler Poison', value: 2300, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 10, notes: 'Poison Type G.' },
+  { id: 'hn_needler_poison', name: 'HN Needler Poison', value: 2300, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 10, notes: 'Poison Type G.', poison: { type: 'G', effectText: 'Type G — the worst poison. Death 5 minutes after exposure unless Antidote is administered.' } },
   { id: 'hn_needler_biotoxin', name: 'HN Needler Biotoxin', value: 4000, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 10, dmgBonus: 0, volume: 10, notes: '1d10 per round for 10 rounds.' },
 
   // ─── Rockets ──────────────────────────────────────────────────────
@@ -93,7 +97,7 @@ export const AMMO_TYPES: AmmoType[] = [
   // ─── Flamer fuel packs ────────────────────────────────────────────
   { id: 'flamer_fire_pack', name: 'Flamer Fire Pack (10 shots)', value: 2000, acMod: 0, drMod: -10, dmgDieCount: 3, dmgDie: 8, dmgBonus: 0, volume: 10, notes: 'Plus fire.' },
   { id: 'flamer_plasma_pack', name: 'Flamer Plasma Pack (10 Shots)', value: 3000, acMod: -10, drMod: -10, dmgDieCount: 5, dmgDie: 10, dmgBonus: 40, volume: 10 },
-  { id: 'flamer_poison_gas_pack', name: 'Flamer Poison Gas Pack', value: 5000, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 5, notes: 'Poison Type F to all non-protected critters in 4 hexes of stream.' },
+  { id: 'flamer_poison_gas_pack', name: 'Flamer Poison Gas Pack', value: 5000, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 5, notes: 'Poison Type F to all non-protected critters in 4 hexes of stream.', poison: { type: 'F', effectText: 'Type F — victim goes into shock ~1 hour after contact, coma 1d10 days; roll EN each day untreated or die.' } },
 
   // ─── Energy weapon cells ──────────────────────────────────────────
   { id: 'small_energy_cell', name: 'Small Energy Cell', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 20, notes: 'Recharges the weapon; no inherent damage dice.' },

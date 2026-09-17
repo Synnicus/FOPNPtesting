@@ -25,6 +25,7 @@ import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
+import { makePoisonedEffect, poisonExposuresForAttack } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
@@ -678,7 +679,7 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -935,6 +936,7 @@ export default function CombatScreen() {
     ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.ammoTypeId
     : undefined;
   const loadedAmmo: AmmoType | null = ammoTypeId ? (getAmmoById(ammoTypeId) ?? null) : null;
+  const attackPoisons = poisonExposuresForAttack(weapon, loadedAmmo);
   // Only the weapon's compatible ammo may be loaded.
   const compatibleAmmo: AmmoType[] = weapon?.compatibleAmmo
     ? weapon.compatibleAmmo.map(id => getAmmoById(id)).filter((a): a is AmmoType => !!a)
@@ -1442,6 +1444,14 @@ export default function CombatScreen() {
   }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, manualNaturalAttack, attacker, attackerSheet, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, specialUnarmedAttack, traitEffects]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
+  const hasPoisonExposure = attackPoisons.length > 0;
+
+  const applyPoisonExposure = useCallback(() => {
+    if (!defender || !weapon) return;
+    for (const poison of attackPoisons) {
+      addEffect(defender.id, makePoisonedEffect(poison, weapon.name));
+    }
+  }, [defender, weapon, attackPoisons, addEffect]);
 
   const handleSpendAP = useCallback(() => {
     if (!attacker) return;
@@ -1668,15 +1678,16 @@ export default function CombatScreen() {
   }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
 
   const handleApplyDamage = useCallback(() => {
-    if (!defender || totalDamage === 0) return;
+    if (!defender || (totalDamage === 0 && !hasPoisonExposure)) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    applyDamage(defender.id, totalDamage);
+    if (totalDamage > 0) applyDamage(defender.id, totalDamage);
+    if (hasPoisonExposure) applyPoisonExposure();
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
     if (primaryIsCrit && isAimed && aimedCritPart && !aimedCritApplied) {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, applyDamage, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
+  }, [defender, totalDamage, hasPoisonExposure, applyDamage, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).
@@ -2697,7 +2708,10 @@ export default function CombatScreen() {
                 });
                 const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
                 setStreamlinedDmgResult({ perHit, total: totalBurstDmg, dt: burstDT, dr: burstDR });
-                if (defender) applyDamage(defender.id, totalBurstDmg);
+                if (defender) {
+                  if (totalBurstDmg > 0) applyDamage(defender.id, totalBurstDmg);
+                  if (hasPoisonExposure) applyPoisonExposure();
+                }
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               }}>
                 <Feather name="zap" size={16} color={colors.primary} />
@@ -2929,14 +2943,14 @@ export default function CombatScreen() {
                 )}
 
                 {!damageApplied ? (
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 14, gap: 8, backgroundColor: totalDamage === 0 ? colors.secondary : colors.destructive, opacity: totalDamage === 0 ? 0.5 : 1 }} onPress={handleApplyDamage} disabled={totalDamage === 0}>
+                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 14, gap: 8, backgroundColor: totalDamage === 0 && !hasPoisonExposure ? colors.secondary : colors.destructive, opacity: totalDamage === 0 && !hasPoisonExposure ? 0.5 : 1 }} onPress={handleApplyDamage} disabled={totalDamage === 0 && !hasPoisonExposure}>
                     <Feather name="activity" size={16} color="#fff" />
-                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG → {defender?.name?.toUpperCase()}</Text>
+                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG{hasPoisonExposure ? ' + POISON' : ''} → {defender?.name?.toUpperCase()}</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, backgroundColor: '#4a8c3f22', borderColor: '#4a8c3f' }}>
                     <Feather name="check-circle" size={16} color="#4a8c3f" />
-                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>Damage applied to {defender?.name}</Text>
+                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{hasPoisonExposure ? ' and poison' : ''} applied to {defender?.name}</Text>
                   </View>
                 )}
 
