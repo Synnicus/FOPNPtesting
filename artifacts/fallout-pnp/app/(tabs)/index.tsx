@@ -1378,6 +1378,47 @@ export default function CombatScreen() {
     }
   }, [attackResolved, isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
 
+  const confirmManualCritical = useCallback((outcome: 'hit' | 'fail') => {
+    if (attackResolved || isBurst) return;
+    if (weaponBroken) {
+      notify('Weapon Broken', 'This weapon is jammed/broken and cannot attack until repaired.');
+      return;
+    }
+    if (!hasAmmo) {
+      notify('Empty Magazine', 'No ammo remaining. Reload first!');
+      return;
+    }
+
+    const confirmsHit = outcome === 'hit';
+    Haptics.notificationAsync(
+      confirmsHit
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Error,
+    );
+    setTensFace(null);
+    setUnitsFace(null);
+    setPhysicalHitConfirmed(confirmsHit);
+    setManualCritFailConfirmed(!confirmsHit);
+    setShotDamages(null);
+    setDamageApplied(false);
+    setPrimaryIsCrit(confirmsHit);
+    // Explicit critical-hit confirmation always uses the selectable table.
+    setAimedCritPart(null);
+    setAimedCritApplied(false);
+    setAimedCritNotes([]);
+    setShowCritModal(confirmsHit);
+    setCritTableEntry(null);
+    setCritEffectNotes([]);
+    setIsCritFail(!confirmsHit);
+    setShowCritFailModal(!confirmsHit);
+    setCritFailEntry(null);
+    setCritFailNotes([]);
+    setApSpent(false);
+    if (attacker && weapon && weapon.magazineSize > 0) {
+      spendAmmo(attacker.id, weapon.id, 1);
+    }
+  }, [attackResolved, isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
+
   const rollStreamlined = useCallback(() => {
     if (weaponBroken) {
       notify('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
@@ -2839,10 +2880,30 @@ export default function CombatScreen() {
                 {physicalHitConfirmed ? 'PHYSICAL HIT CONFIRMED' : 'CONFIRM PHYSICAL HIT'}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || attackResolved || isBurst) ? 0.5 : 1 }}
+              onPress={() => confirmManualCritical('hit')}
+              disabled={!canRoll || attackBlocked || attackResolved || isBurst}
+            >
+              <Feather name="zap" size={16} color={primaryIsCrit ? '#4a8c3f' : colors.primary} />
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: primaryIsCrit ? '#4a8c3f' : colors.primary }}>
+                {primaryIsCrit ? 'CRITICAL HIT CONFIRMED' : 'CONFIRM CRITICAL HIT'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: isCritFail ? colors.destructive : colors.border, opacity: (!canRoll || attackBlocked || attackResolved || isBurst) ? 0.5 : 1 }}
+              onPress={() => confirmManualCritical('fail')}
+              disabled={!canRoll || attackBlocked || attackResolved || isBurst}
+            >
+              <Feather name="alert-triangle" size={16} color={colors.destructive} />
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.destructive }}>
+                {isCritFail ? 'CRITICAL FAIL CONFIRMED' : 'CONFIRM CRITICAL FAIL'}
+              </Text>
+            </TouchableOpacity>
             <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
               {isBurst
-                ? 'Physical hit confirmation is available for single attacks only.'
-                : 'Use after a successful physical percentile roll. Records one normal hit and consumes this weapon’s ammo.'}
+                ? 'Manual outcome confirmation is available for single attacks only.'
+                : 'Use these after a physical percentile roll. Each records one attack and consumes this weapon’s ammo.'}
             </Text>
             {attackResolved && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
@@ -3011,8 +3072,8 @@ export default function CombatScreen() {
           </View>
         )}
 
-        {/* ─── Non-aimed Critical Hit summary ─── */}
-        {primaryIsCrit && !isAimed && (
+        {/* ─── Critical-table Hit summary ─── */}
+        {primaryIsCrit && !aimedCritPart && (
           <View style={{ backgroundColor: colors.primary + '22', borderRadius: colors.radius, padding: 12, borderWidth: 2, borderColor: colors.primary, gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Feather name="zap" size={18} color={colors.primary} />
