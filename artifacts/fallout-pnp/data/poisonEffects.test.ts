@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getAmmoById } from './ammo.ts';
-import { consolidatePoisonedEffects, makePoisonedEffect, mergePoisonedEffect, poisonEffectName, poisonExposuresForAttack } from './poisonEffects.ts';
+import { consolidatePoisonedEffects, makePoisonedEffect, mergePoisonedEffect, poisonEffectName, poisonExposuresForAttack, poisonHourlyDamage, resolvePoisonResistance } from './poisonEffects.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
 
 const weapon = (id: string) => {
@@ -35,7 +35,7 @@ test('poison effects are persistent flavor statuses with no combat modifiers', (
   assert.equal(effect.name, 'Poisoned with Type B X1');
   assert.equal(effect.poisonCount, 1);
   assert.equal(effect.isActive, true);
-  assert.match(effect.notes?.join(' ') ?? '', /Flavor only/);
+  assert.match(effect.notes?.join(' ') ?? '', /does not modify later combat/);
   assert.equal(effect.statMods, undefined);
   assert.equal(effect.hpMod, undefined);
   assert.equal(effect.apMod, undefined);
@@ -66,4 +66,36 @@ test('legacy duplicate poison effects consolidate when persisted data loads', ()
   assert.equal(consolidated.find(effect => effect.poisonType === 'D')?.poisonCount, 2);
   assert.equal(consolidated.find(effect => effect.poisonType === 'D')?.name, 'Poisoned with Type D X2');
   assert.equal(consolidated.find(effect => effect.poisonType === 'A')?.name, 'Poisoned with Type A X1');
+});
+
+test('poison bonus damage matches each manual hourly damage rate', () => {
+  assert.deepEqual(
+    (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map(poisonHourlyDamage),
+    [1, 2, 0, 4, 6, 0, 0],
+  );
+});
+
+test('poison resistance prevents both bonus damage and the poison status', () => {
+  const poison = { type: 'D' as const, effectText: 'Type D poison description.' };
+  assert.deepEqual(resolvePoisonResistance(poison, 40, 40), {
+    poison,
+    roll: 40,
+    resistance: 40,
+    applied: false,
+    bonusDamage: 0,
+  });
+  assert.deepEqual(resolvePoisonResistance(poison, 40, 41), {
+    poison,
+    roll: 41,
+    resistance: 40,
+    applied: true,
+    bonusDamage: 4,
+  });
+});
+
+test('poison resistance is clamped and 100 percent always resists', () => {
+  const poison = { type: 'A' as const, effectText: 'Type A poison description.' };
+  assert.equal(resolvePoisonResistance(poison, 100, 100).applied, false);
+  assert.equal(resolvePoisonResistance(poison, 500, 100).applied, false);
+  assert.equal(resolvePoisonResistance(poison, -20, 1).applied, true);
 });

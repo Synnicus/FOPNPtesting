@@ -17,8 +17,8 @@ Hands model: `leftHandWeaponId`/`rightHandWeaponId` are the truth for held weapo
 
 Shield weapon mods (house rule, data/mods.ts shield_t1..t4): mod fields acBonus/shieldDt/shieldDr aggregate via computeModEffects into acBonus + shieldProtection (Armor-like dtNormal/drNormal shape); applied at combat time only (defender AC + combinedProtectionFor's optional shield param), never baked into stored armorClass.
 
-Poison delivered by weapon mods, natural attacks, or structured poison ammunition creates a persistent `kind: other` ActiveEffect on a committed hit, including zero-damage hits. Repeated exposures consolidate by poison type and display an X-count. The effect is flavor-only and must not provide combat modifiers.
+Poison delivered by weapon mods, natural attacks, or structured poison ammunition rolls d100 against effective Poison Resistance on each hit; roll above resistance applies the status and one hour of listed poison damage (A=1, B=2, D=4, E=6; C/F/G=0). Repeated exposures consolidate by type and display an X-count. The persisted status itself provides no modifiers.
 
-**Why:** Most manual poisons resolve over hours; the app should track exposure visibly without automating delayed damage or penalties during combat.
+**Why:** Poison exposure must respect current resistance while preserving the manual's hourly rates without inventing periodic automation for non-damage effects.
 
-**How to apply:** Show one poison effect per type alongside other effects on the Characters tab, include its exposure count/type/source/manual description, and let users toggle or remove it like other ActiveEffects.
+**How to apply:** Roll separately per hit/type; resisted poison adds neither damage nor status. Successful poison damage bypasses DT/DR and does not increase knockdown. Show one counted effect per type.

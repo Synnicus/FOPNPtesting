@@ -27,7 +27,7 @@ export interface AmmoType {
   /** Manual "Vol:" (rounds per unit of inventory volume). */
   volume: number;
   notes?: string;
-  /** Poison delivered on a successful hit. Display-only in combat. */
+  /** Poison delivered on a successful hit after a poison-resistance roll. */
   poison?: PoisonSpec;
 }
 

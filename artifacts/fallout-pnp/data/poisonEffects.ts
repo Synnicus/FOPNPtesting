@@ -1,6 +1,36 @@
 import type { ActiveEffect, Weapon } from '../context/types.ts';
 import type { AmmoType } from './ammo.ts';
-import { computeModEffects, type PoisonSpec } from './mods.ts';
+import { computeModEffects, POISON_HOURLY_DAMAGE, type PoisonSpec, type PoisonType } from './mods.ts';
+
+export interface PoisonResistanceResult {
+  poison: PoisonSpec;
+  roll: number;
+  resistance: number;
+  applied: boolean;
+  bonusDamage: number;
+}
+
+/** Roll at or below resistance means the target resists this poison exposure. */
+export function resolvePoisonResistance(
+  poison: PoisonSpec,
+  resistance: number,
+  roll: number,
+): PoisonResistanceResult {
+  const clampedResistance = Math.max(0, Math.min(100, Math.trunc(resistance)));
+  const clampedRoll = Math.max(1, Math.min(100, Math.trunc(roll)));
+  const applied = clampedRoll > clampedResistance;
+  return {
+    poison,
+    roll: clampedRoll,
+    resistance: clampedResistance,
+    applied,
+    bonusDamage: applied ? POISON_HOURLY_DAMAGE[poison.type] : 0,
+  };
+}
+
+export function poisonHourlyDamage(type: PoisonType): number {
+  return POISON_HOURLY_DAMAGE[type];
+}
 
 /** Poison carried by a weapon coating/natural attack or its loaded ammunition. */
 export function poisonExposuresForAttack(
@@ -31,7 +61,7 @@ export function makePoisonedEffect(poison: PoisonSpec, weaponName: string): Acti
     notes: [
       `Source: ${weaponName}`,
       poison.effectText,
-      'Flavor only — this status does not modify combat automatically.',
+      'The persisted status does not modify later combat automatically.',
     ],
     isActive: true,
   };

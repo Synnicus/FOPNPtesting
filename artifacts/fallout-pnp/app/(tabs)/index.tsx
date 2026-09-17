@@ -24,7 +24,7 @@ import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
-import { makePoisonedEffect, poisonExposuresForAttack } from '@/data/poisonEffects';
+import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
@@ -180,6 +180,9 @@ interface ShotDamage {
   combinedDT: number; combinedDR: number; finalDmg: number; critMultiplier: number;
   meleeDmgBonus: number; afterDT: number; bypassArmor: boolean; critNotes: string[];
   manualBaseDamage: number | null;
+  physicalDmg: number;
+  poisonBonusDamage: number;
+  poisonResults: PoisonResistanceResult[];
 }
 
 // ─── Perk Bonuses Computed ────────────────────────────────────────────────────
@@ -775,7 +778,14 @@ export default function CombatScreen() {
   // Dual-gun reload chooser.
   const [showReloadPicker, setShowReloadPicker] = useState(false);
   // Inline result of the last streamlined-burst damage application.
-  const [streamlinedDmgResult, setStreamlinedDmgResult] = useState<{ perHit: number[]; total: number; dt: number; dr: number } | null>(null);
+  const [streamlinedDmgResult, setStreamlinedDmgResult] = useState<{
+    perHit: number[];
+    total: number;
+    dt: number;
+    dr: number;
+    poisonResults: PoisonResistanceResult[];
+    poisonBonusDamage: number;
+  } | null>(null);
 
   // Manual base-damage override ('' = use rolled dice). Recomputes DT/DR/crit.
   const [damageOverride, setDamageOverride] = useState('');
@@ -1448,22 +1458,35 @@ export default function CombatScreen() {
       });
       const rawBaseDmg = resolvedDamage.baseDamage;
       const afterDT = resolvedDamage.afterDamageThreshold;
-      const finalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
+      const physicalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
+      const poisonResistance = defenderSheet?.poisonResistance ?? 0;
+      const poisonResults = attackPoisons.map(poison =>
+        resolvePoisonResistance(poison, poisonResistance, Math.floor(Math.random() * 100) + 1));
+      const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
+      const finalDmg = physicalDmg + poisonBonusDamage;
       if (traitEffects.damageMultiplier && traitEffects.damageMultiplier !== 1) notes.push(`Finesse: post-DR damage ×${traitEffects.damageMultiplier}`);
-      return { shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr, finalDmg, critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor, critNotes: notes, manualBaseDamage: overrideVal };
+      return {
+        shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr,
+        finalDmg, physicalDmg, poisonBonusDamage, poisonResults,
+        critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor,
+        critNotes: notes, manualBaseDamage: overrideVal,
+      };
     });
     setShotDamages(damages); setDamageApplied(false);
-  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, manualNaturalAttack, attacker, attackerSheet, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, specialUnarmedAttack, traitEffects]);
+  }, [weapon, shotResults, bodyArmor, helmet, defenderNatural, isAimed, aimedCritPart, critTableEntry, hasBetterCriticals, doubleShotActive, isMeleeOrUnarmed, manualNaturalAttack, attacker, attackerSheet, perkBonuses, modBonuses, loadedAmmo, damageOverride, defenderPerkDef, defenderEffectMods, specialUnarmedAttack, traitEffects, defenderSheet, attackPoisons]);
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
-  const hasPoisonExposure = attackPoisons.length > 0;
+  const totalPhysicalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.physicalDmg ?? 0), 0) : 0;
+  const appliedPoisonResults = shotDamages?.flatMap(damage =>
+    damage?.poisonResults.filter(result => result.applied) ?? []) ?? [];
+  const hasAppliedPoison = appliedPoisonResults.length > 0;
 
-  const applyPoisonExposure = useCallback(() => {
+  const applyPoisonExposure = useCallback((results: PoisonResistanceResult[]) => {
     if (!defender || !weapon) return;
-    for (const poison of attackPoisons) {
-      addEffect(defender.id, makePoisonedEffect(poison, weapon.name));
+    for (const result of results) {
+      if (result.applied) addEffect(defender.id, makePoisonedEffect(result.poison, weapon.name));
     }
-  }, [defender, weapon, attackPoisons, addEffect]);
+  }, [defender, weapon, addEffect]);
 
   const handleSpendAP = useCallback(() => {
     if (!attacker) return;
@@ -1690,16 +1713,16 @@ export default function CombatScreen() {
   }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
 
   const handleApplyDamage = useCallback(() => {
-    if (!defender || (totalDamage === 0 && !hasPoisonExposure)) return;
+    if (!defender || (totalDamage === 0 && !hasAppliedPoison)) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     if (totalDamage > 0) applyDamage(defender.id, totalDamage);
-    if (hasPoisonExposure) applyPoisonExposure();
+    if (hasAppliedPoison) applyPoisonExposure(appliedPoisonResults);
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
     if (primaryIsCrit && isAimed && aimedCritPart && !aimedCritApplied) {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, hasPoisonExposure, applyDamage, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
+  }, [defender, totalDamage, hasAppliedPoison, appliedPoisonResults, applyDamage, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).
@@ -2761,19 +2784,25 @@ export default function CombatScreen() {
                 const meleeDmgBonus = isMelee
                   ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
                   : 0;
+                const poisonResults: PoisonResistanceResult[] = [];
                 const perHit = Array.from({ length: streamlinedHits }, () => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
                   const ammoRolls = loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
                     ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie)) : [];
                   const raw = rolls.reduce((a, b) => a + b, 0) + ammoRolls.reduce((a, b) => a + b, 0)
                     + (loadedAmmo?.dmgBonus ?? 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
-                  return applyProtection(raw, burstDT, burstDR);
+                  const physicalDamage = applyProtection(raw, burstDT, burstDR);
+                  const hitPoisonResults = attackPoisons.map(poison =>
+                    resolvePoisonResistance(poison, defenderSheet?.poisonResistance ?? 0, Math.floor(Math.random() * 100) + 1));
+                  poisonResults.push(...hitPoisonResults);
+                  return physicalDamage + hitPoisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
                 });
                 const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
-                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, dt: burstDT, dr: burstDR });
+                const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
+                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, dt: burstDT, dr: burstDR, poisonResults, poisonBonusDamage });
                 if (defender) {
                   if (totalBurstDmg > 0) applyDamage(defender.id, totalBurstDmg);
-                  if (hasPoisonExposure) applyPoisonExposure();
+                  applyPoisonExposure(poisonResults);
                 }
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               }}>
@@ -2787,6 +2816,14 @@ export default function CombatScreen() {
                 <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
                   Per hit (after DT {streamlinedDmgResult.dt}{streamlinedDmgResult.dr > 0 ? ` / DR ${streamlinedDmgResult.dr}%` : ''}): [{streamlinedDmgResult.perHit.join(', ')}]
                 </Text>
+                {streamlinedDmgResult.poisonResults.map((result, index) => (
+                  <Text key={`${result.poison.type}-${index}`} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
+                    Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
+                  </Text>
+                ))}
+                {streamlinedDmgResult.poisonBonusDamage > 0 && (
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Poison bonus (bypasses DT/DR): +{streamlinedDmgResult.poisonBonusDamage}</Text>
+                )}
                 <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.destructive }}>= {streamlinedDmgResult.total} total damage</Text>
               </View>
             )}
@@ -2985,7 +3022,15 @@ export default function CombatScreen() {
                     </Text>
                     {dmg.critNotes.length > 0 && dmg.critNotes.map((n, k) => <Text key={k} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary }}>⚡ {n}</Text>)}
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>− DT {dmg.combinedDT} → {dmg.afterDT}</Text>
-                    {dmg.combinedDR > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>× (1 − DR {dmg.combinedDR}%) → {dmg.finalDmg}</Text>}
+                    {dmg.combinedDR > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>× (1 − DR {dmg.combinedDR}%) → {dmg.physicalDmg}</Text>}
+                    {dmg.poisonResults.map(result => (
+                      <Text key={result.poison.type} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
+                        Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
+                      </Text>
+                    ))}
+                    {dmg.poisonBonusDamage > 0 && (
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Poison bonus bypasses DT/DR: {dmg.physicalDmg} + {dmg.poisonBonusDamage}</Text>
+                    )}
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: dmg.finalDmg > 0 ? colors.destructive : colors.mutedForeground }}>= {dmg.finalDmg} damage</Text>
                   </View>
                 ))}
@@ -2996,9 +3041,9 @@ export default function CombatScreen() {
                 </View>
 
                 {/* Knockdown check (melee) */}
-                {isMeleeOrUnarmed && defender?.special && totalDamage > 0 && (
+                {isMeleeOrUnarmed && defender?.special && totalPhysicalDamage > 0 && (
                   <KnockdownCard
-                    damage={totalDamage}
+                    damage={totalPhysicalDamage}
                     defenderStr={defenderEffSpecial?.strength ?? defender.special.strength}
                     defenderEnd={defenderEffSpecial?.endurance ?? defender.special.endurance}
                     onProne={() => { setPosition(defender.id, 'prone'); }}
@@ -3006,14 +3051,14 @@ export default function CombatScreen() {
                 )}
 
                 {!damageApplied ? (
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 14, gap: 8, backgroundColor: totalDamage === 0 && !hasPoisonExposure ? colors.secondary : colors.destructive, opacity: totalDamage === 0 && !hasPoisonExposure ? 0.5 : 1 }} onPress={handleApplyDamage} disabled={totalDamage === 0 && !hasPoisonExposure}>
+                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 14, gap: 8, backgroundColor: totalDamage === 0 && !hasAppliedPoison ? colors.secondary : colors.destructive, opacity: totalDamage === 0 && !hasAppliedPoison ? 0.5 : 1 }} onPress={handleApplyDamage} disabled={totalDamage === 0 && !hasAppliedPoison}>
                     <Feather name="activity" size={16} color="#fff" />
-                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG{hasPoisonExposure ? ' + POISON' : ''} → {defender?.name?.toUpperCase()}</Text>
+                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG{hasAppliedPoison ? ' + POISON' : ''} → {defender?.name?.toUpperCase()}</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, backgroundColor: '#4a8c3f22', borderColor: '#4a8c3f' }}>
                     <Feather name="check-circle" size={16} color="#4a8c3f" />
-                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{hasPoisonExposure ? ' and poison' : ''} applied to {defender?.name}</Text>
+                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{hasAppliedPoison ? ' and poison' : ''} applied to {defender?.name}</Text>
                   </View>
                 )}
 

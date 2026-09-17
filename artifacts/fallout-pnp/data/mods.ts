@@ -20,6 +20,17 @@ export interface PoisonSpec {
   effectText: string;
 }
 
+/** Immediate bonus damage mirrors one hour of the manual's listed poison damage. */
+export const POISON_HOURLY_DAMAGE: Record<PoisonType, number> = {
+  A: 1,
+  B: 2,
+  C: 0,
+  D: 4,
+  E: 6,
+  F: 0,
+  G: 0,
+};
+
 export interface WeaponModDef {
   id: string;
   name: string;
