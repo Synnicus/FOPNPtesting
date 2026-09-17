@@ -2027,9 +2027,10 @@ function PremadePickerModal({ visible, onClose, onPick }: {
 }
 
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, allWeapons, allArmor }: {
+function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
   onBio: () => void; onToggleStorage: () => void; onResetHp: () => void;
+  onMoveUp: () => void; onMoveDown: () => void; canMoveUp: boolean; canMoveDown: boolean;
   allWeapons: { id: string; name: string }[];
   allArmor: Armor[];
 }) {
@@ -2088,6 +2089,14 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
           </Text>
         </View>
         <View style={{ gap: 6 }}>
+          <View style={{ flexDirection: 'row' }}>
+            <TouchableOpacity onPress={onMoveUp} disabled={!canMoveUp} style={{ padding: 4, opacity: canMoveUp ? 1 : 0.25 }} accessibilityLabel="Move character up">
+              <Feather name="chevron-up" size={18} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onMoveDown} disabled={!canMoveDown} style={{ padding: 4, opacity: canMoveDown ? 1 : 0.25 }} accessibilityLabel="Move character down">
+              <Feather name="chevron-down" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity onPress={onResetHp} style={{ padding: 4 }}><Ionicons name="heart-circle" size={16} color={character.currentHp < character.maxHp ? colors.destructive : colors.mutedForeground} /></TouchableOpacity>
           <TouchableOpacity onPress={onBio} style={{ padding: 4 }}><Feather name="book-open" size={16} color={colors.primary} /></TouchableOpacity>
           <TouchableOpacity onPress={onToggleStorage} style={{ padding: 4 }}>
@@ -2168,7 +2177,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
 export default function CharactersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, healCharacter, allWeapons, allArmor } = useApp();
+  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter, allWeapons, allArmor } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -2220,6 +2229,33 @@ export default function CharactersScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
+  const renderCharacterCard = (item: Character, visibleCharacters: Character[]) => {
+    const index = visibleCharacters.findIndex(character => character.id === item.id);
+    const move = (target: Character | undefined) => {
+      if (!target) return;
+      moveCharacter(item.id, target.id);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+    return (
+      <CharacterCard
+        key={item.id}
+        character={item}
+        allWeapons={allWeapons}
+        allArmor={allArmor}
+        onEdit={() => { setEditingChar(item); setShowForm(true); }}
+        onBio={() => setBioChar(item)}
+        onToggleStorage={() => toggleStorage(item)}
+        onResetHp={() => resetHp(item)}
+        onDelete={() => setDeleteTarget(item)}
+        onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+        onMoveUp={() => move(visibleCharacters[index - 1])}
+        onMoveDown={() => move(visibleCharacters[index + 1])}
+        canMoveUp={index > 0}
+        canMoveDown={index >= 0 && index < visibleCharacters.length - 1}
+      />
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
       {/* Header */}
@@ -2263,19 +2299,7 @@ export default function CharactersScreen() {
           data={filtered}
           keyExtractor={c => c.id}
           contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: insets.bottom + 80 }}
-          renderItem={({ item }) => (
-            <CharacterCard
-              character={item}
-              allWeapons={allWeapons}
-              allArmor={allArmor}
-              onEdit={() => { setEditingChar(item); setShowForm(true); }}
-              onBio={() => setBioChar(item)}
-              onToggleStorage={() => toggleStorage(item)}
-              onResetHp={() => resetHp(item)}
-              onDelete={() => setDeleteTarget(item)}
-              onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-            />
-          )}
+          renderItem={({ item }) => renderCharacterCard(item, active)}
           ListFooterComponent={stored.length > 0 ? (
             <View style={{ marginTop: 18, gap: 10 }}>
               <TouchableOpacity onPress={() => setShowStorage(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 }}>
@@ -2285,20 +2309,7 @@ export default function CharactersScreen() {
                 </View>
                 <Feather name={showStorage ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
-              {showStorage && stored.map(item => (
-                <CharacterCard
-                  key={item.id}
-                  character={item}
-                  allWeapons={allWeapons}
-                  allArmor={allArmor}
-                  onEdit={() => { setEditingChar(item); setShowForm(true); }}
-                  onBio={() => setBioChar(item)}
-                  onToggleStorage={() => toggleStorage(item)}
-                  onResetHp={() => resetHp(item)}
-                  onDelete={() => setDeleteTarget(item)}
-                  onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                />
-              ))}
+              {showStorage && stored.map(item => renderCharacterCard(item, stored))}
             </View>
           ) : null}
         />

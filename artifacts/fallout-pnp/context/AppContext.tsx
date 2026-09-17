@@ -1160,6 +1160,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const moveCharacter = useCallback((characterId: string, targetCharacterId: string) => {
+    setState(s => {
+      const fromIndex = s.characters.findIndex(character => character.id === characterId);
+      const targetIndex = s.characters.findIndex(character => character.id === targetCharacterId);
+      if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return s;
+      if (!!s.characters[fromIndex].inStorage !== !!s.characters[targetIndex].inStorage) return s;
+      const characters = [...s.characters];
+      [characters[fromIndex], characters[targetIndex]] = [characters[targetIndex], characters[fromIndex]];
+      return { ...s, characters };
+    });
+  }, []);
+
   // ─── Combat Stats ────────────────────────────────────────────────────────────
 
   const applyDamage = useCallback((characterId: string, damage: number) => {
@@ -2129,7 +2141,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{
       ...state,
       allWeapons, allArmor,
-       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
+       addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
        applyDamage, healCharacter, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,
