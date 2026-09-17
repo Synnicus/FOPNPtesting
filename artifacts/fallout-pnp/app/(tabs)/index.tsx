@@ -2313,7 +2313,7 @@ export default function CombatScreen() {
                     {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Skill: {baseSkill}%{perkBonuses.toHit !== 0 ? ` (${perkBonuses.toHit >= 0 ? '+' : ''}${perkBonuses.toHit}% perks)` : ''}</Text>}
                     {!!manualNaturalAttack?.notes && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{manualNaturalAttack.notes}</Text>}
                     {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      Range: {effectiveRange} sq{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
+                      Range: {effectiveRange}{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
                     </Text>}
                     {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
