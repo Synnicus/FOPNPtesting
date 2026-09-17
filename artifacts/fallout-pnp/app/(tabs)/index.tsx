@@ -30,7 +30,7 @@ import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial,
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
-import { resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
+import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import { computeConditionModifiers } from '@/data/conditions';
 import {
@@ -268,37 +268,6 @@ function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRan
     if (perk.id === 'steady_arm' && fx.combatNote) { result.burstApDiscount += 1; result.notes.push(`${perk.name}: burst attacks −1 AP`); }
   }
   return result;
-}
-
-// Defender-side perk bonuses: AC (Dodger, Hit the Deck…) and DR (Toughness…).
-// Conditional "when HP < 50%" perks gate on the defender's current HP.
-function computeDefensivePerkBonuses(char: Character | null, dmgType?: DamageType): { ac: number; dr: number; notes: string[] } {
-  const out = { ac: 0, dr: 0, notes: [] as string[] };
-  if (!char || !char.perks) return out;
-  const lowHp50 = char.currentHp < char.maxHp / 2;
-  const lowHp20 = char.currentHp < char.maxHp * 0.2;
-  for (const cp of char.perks) {
-    const perk = getPerkById(cp.perkId);
-    const fx = perk?.combatEffect;
-    if (!perk || !fx) continue;
-    const rank = cp.rank;
-    // Generic HP<50% conditional defensive perks only apply when actually below half.
-    const conditional = /HP\s*<\s*50%/i.test(fx.combatNote ?? '');
-    if (conditional && !lowHp50) continue;
-    // Unconditional AC perks are already part of the shared armor sheet.
-    // Only situational AC belongs in this combat-only adjustment.
-    if (conditional && fx.armorClassBonus) {
-      out.ac += fx.armorClassBonus * rank;
-      out.notes.push(`${perk.name}: +${fx.armorClassBonus * rank} AC`);
-    }
-    if (fx.damageResistBonus) { out.dr += fx.damageResistBonus * rank; out.notes.push(`${perk.name}: +${fx.damageResistBonus * rank}% DR`); }
-    // Manual-specific defensive perks without structured fields:
-    if (perk.id === 'die_hard' && lowHp20) { out.dr += 10; out.notes.push('Die Hard: +10% DR (HP < 20%)'); }
-    if (perk.id === 'hide_of_scars' && dmgType !== 'fire') { out.dr += 15 * rank; out.notes.push(`Hide of Scars: +${15 * rank}% DR (not fire)`); }
-    if (perk.id === 'tough_hide') { out.dr += 10 * rank; out.notes.push(`Tough Hide: +${10 * rank}% DR`); }
-    if (perk.id === 'hit_the_deck' && dmgType === 'explosion') { out.dr += 50; out.notes.push('Hit the Deck!: +50% Explosive DR'); }
-  }
-  return out;
 }
 
 // ─── Generic option picker modal (weapons / chems / ammo) ────────────────────
@@ -1000,7 +969,7 @@ export default function CombatScreen() {
       )
     : null;
   // Defender-side perk bonuses (Dodger AC, Toughness DR, …) + chem AC mods.
-  const defenderPerkDef = computeDefensivePerkBonuses(defender, weapon?.damageType);
+  const defenderPerkDef = computeDefensivePerkBonuses(defender, weapon?.damageType, getPerkById);
 
   // Effective weapon range: base rangeNormal + mod range bonuses
   const effectiveRange = weapon ? weapon.rangeNormal + modBonuses.range : 0;

@@ -1,6 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveAttackWeapon, resolveDamagePipeline } from './attackResolution.ts';
+import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline } from './attackResolution.ts';
+import { resolveArmorAwareSheet } from './armorEffects.ts';
+
+const special = { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 };
+const skills = {
+  smallGuns: 25, bigGuns: 10, energyWeapons: 10, meleeWeapons: 20, unarmed: 20, throwing: 20,
+  firstAid: 20, doctor: 10, sneak: 20, lockpick: 20, steal: 15, traps: 20,
+  science: 20, repair: 15, speech: 25, barter: 20, gambling: 25, outdoorsman: 20, pilot: 20,
+};
+const perkDefinitions = {
+  dodger: { id: 'dodger', name: 'Dodger', combatEffect: { armorClassBonus: 5, combatNote: '+5 AC per rank' } },
+  tough_hide: { id: 'tough_hide', name: 'Tough Hide', combatEffect: { armorClassBonus: 15, combatNote: '+15 AC, +10% all resistances per rank' } },
+  cyborg_systems: { id: 'cyborg_systems', name: 'Cyborg Systems', combatEffect: { armorClassBonus: 5, damageResistBonus: 10, combatNote: '+10% DR, +5 AC per rank' } },
+  deathclaw_rampage: { id: 'deathclaw_rampage', name: 'Deathclaw Rampage', combatEffect: { armorClassBonus: 5, combatNote: '+6 melee dmg, +5 AC when HP < 50%' } },
+} as const;
+const getPerk = (id: string) => perkDefinitions[id as keyof typeof perkDefinitions];
+
+function resolvedCombatAc(perks: Array<{ perkId: string; rank: number }>, currentHp = 100, maxHp = 100): number {
+  const sheet = resolveArmorAwareSheet({ special, skills, perks, allArmor: [] });
+  return sheet.armorClass + computeDefensivePerkBonuses({ perks, currentHp, maxHp }, undefined, getPerk).ac;
+}
 
 test('an explicitly selected held weapon is authoritative for the attack session', () => {
   const primary = { id: 'primary', damageType: 'normal', damageDie: 6 };
@@ -48,4 +68,23 @@ test('manual creature damage can preserve printed DR above the normal 90% cap', 
       finalDamage: 5,
     },
   );
+});
+
+test('combat attack resolution counts one Dodger rank as exactly +5 AC', () => {
+  assert.equal(resolvedCombatAc([{ perkId: 'dodger', rank: 1 }]), 10);
+});
+
+test('combat attack resolution counts ranked static AC perks exactly once', () => {
+  assert.equal(resolvedCombatAc([{ perkId: 'dodger', rank: 2 }]), 15);
+  assert.equal(resolvedCombatAc([{ perkId: 'tough_hide', rank: 2 }]), 35);
+  assert.equal(resolvedCombatAc([{ perkId: 'cyborg_systems', rank: 2 }]), 15);
+});
+
+test('HP-conditional AC remains combat-only and activates strictly below half HP', () => {
+  const perks = [{ perkId: 'deathclaw_rampage', rank: 1 }];
+  const sheet = resolveArmorAwareSheet({ special, skills, perks, allArmor: [] });
+
+  assert.equal(sheet.armorClass, 5);
+  assert.equal(resolvedCombatAc(perks, 50, 100), 5);
+  assert.equal(resolvedCombatAc(perks, 49, 100), 10);
 });
