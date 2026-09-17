@@ -192,7 +192,7 @@ interface PerkBonus {
 }
 
 // Web-safe alert: RN's Alert.alert is a silent no-op on react-native-web.
-// Compact ammo label for the combatant card, e.g. "10mm JHP" from
+// Compact ammo label for combat controls, e.g. "10mm JHP" from
 // "10mm JHP (Jacketed Hollow Point)" — strips parentheticals, caps length.
 function shortAmmoName(name: string): string {
   const stripped = name.replace(/\s*\(.*?\)\s*/g, ' ').trim();
@@ -837,6 +837,26 @@ export default function CombatScreen() {
     ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
     : (weapon ? [weapon] : []);
   const reloadableHeldWeapons = heldWeapons.filter(w => w.magazineSize > 0);
+  const heldAmmoStatuses = [
+    { weapon: activeWeapon, role: 'PRIMARY' },
+    { weapon: offhandWeapon, role: 'OFF-HAND' },
+  ]
+    .filter((candidate): candidate is { weapon: Weapon; role: string } =>
+      !!candidate.weapon && candidate.weapon.magazineSize > 0)
+    .filter((candidate, index, candidates) =>
+      candidates.findIndex(other => other.weapon.id === candidate.weapon.id) === index)
+    .map(({ weapon: heldWeapon, role }) => {
+      const state = attacker?.weaponAmmoStates.find(candidate => candidate.weaponId === heldWeapon.id);
+      const effects = computeModEffects(heldWeapon);
+      const magazineSize = Math.round(heldWeapon.magazineSize * (effects.magazineMult ?? 1));
+      return {
+        weapon: heldWeapon,
+        role,
+        currentAmmo: state?.currentAmmo ?? magazineSize,
+        magazineSize,
+        ammo: resolveEquippedAmmoType(heldWeapon, state?.ammoTypeId),
+      };
+    });
   const allHeldMagazinesFull = reloadableHeldWeapons.every(w => {
     const fx = computeModEffects(w);
     const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
@@ -2310,29 +2330,12 @@ export default function CombatScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{attacker.name}</Text>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 1 }}>{weapon ? weapon.name : 'No weapon'}</Text>
-                    {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Skill: {baseSkill}%{perkBonuses.toHit !== 0 ? ` (${perkBonuses.toHit >= 0 ? '+' : ''}${perkBonuses.toHit}% perks)` : ''}</Text>}
                     {!!manualNaturalAttack?.notes && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{manualNaturalAttack.notes}</Text>}
                     {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Range: {effectiveRange}{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
                     </Text>}
-                    {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
                     {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP} · {attackerPos}</Text>}
-                    {/* Ammo display: count + equipped ammo type. Legacy weapon states
-                        without an explicit ammoTypeId use the weapon's first/default type. */}
-                    {weapon && weapon.magazineSize > 0 && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: hasAmmo ? colors.primary : colors.destructive }}>
-                          [{currentAmmo}/{weapon.magazineSize}]
-                        </Text>
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: loadedAmmo ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-                          {shortAmmoName(loadedAmmo?.name ?? compatibleAmmo[0]?.name ?? 'standard')}
-                        </Text>
-                        {conditionBoxes > 0 && (
-                          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>COND {conditionBoxes}/{CONDITION_BOXES_MAX}</Text>
-                        )}
-                      </View>
-                    )}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
                     ))}
@@ -2511,6 +2514,32 @@ export default function CombatScreen() {
                   </View>
                 )}
               </View>
+              {heldAmmoStatuses.length > 0 && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {heldAmmoStatuses.map(status => {
+                    const selected = weapon?.id === status.weapon.id;
+                    const hasLoadedAmmo = status.currentAmmo > 0;
+                    return (
+                      <View
+                        key={status.weapon.id}
+                        style={{ flex: 1, minWidth: 0, paddingHorizontal: 10, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
+                      >
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.mutedForeground, letterSpacing: 1 }} numberOfLines={1}>
+                          {status.role} · {status.weapon.name.toUpperCase()}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: hasLoadedAmmo ? colors.primary : colors.destructive }}>
+                            [{status.currentAmmo}/{status.magazineSize}]
+                          </Text>
+                          <Text style={{ flex: 1, fontSize: 10, fontFamily: 'Inter_600SemiBold', color: status.ammo ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
+                            {shortAmmoName(status.ammo?.name ?? 'standard')}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
               {/* Reload belongs below the attack-spend control(s). */}
               {reloadableHeldWeapons.length > 0 && (
                 <TouchableOpacity disabled={allHeldMagazinesFull} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, opacity: allHeldMagazinesFull ? 0.4 : 1 }} onPress={() => {
