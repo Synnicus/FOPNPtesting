@@ -1,0 +1,115 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { advanceAreaEffect, countdownStatus, formatAreaResolution, resolveAreaTarget } from './areaEffects.ts';
+
+const target = {
+  id: 't1', name: 'Target', endurance: 5,
+  gasInhaledResistance: 40, gasContactResistance: 10,
+  electricityResistance: 30, dt: 5, dr: 20,
+};
+
+test('protection is applied independently to each AoE target', () => {
+  const armored = resolveAreaTarget({ kind: 'explosion', rawDamage: 25 }, target);
+  const unarmored = resolveAreaTarget({ kind: 'explosion', rawDamage: 25 }, { ...target, id: 't2', dt: 0, dr: 0 });
+  assert.equal(armored.damage, 16);
+  assert.equal(unarmored.damage, 25);
+});
+
+test('inhaled and contact gas use gas resistance and report exposure', () => {
+  const inhaled = resolveAreaTarget({ kind: 'gasInhaled', rawDamage: 12 }, target, () => 20);
+  const contact = resolveAreaTarget({ kind: 'gasContact', rawDamage: 12 }, target, () => 80);
+  assert.equal(inhaled.damage, 0);
+  assert.equal(inhaled.resisted, true);
+  assert.equal(contact.damage, 12);
+  assert.match(contact.notes.join(' '), /Contact exposure/);
+});
+
+test('electricity checks resistance then Endurance and rolls unconscious duration', () => {
+  const dice = [8, 7];
+  const result = resolveAreaTarget(
+    { kind: 'electricity', rawDamage: 10 },
+    target,
+    () => 90,
+    () => dice.shift()!,
+  );
+  assert.equal(result.damage, 7);
+  assert.equal(result.enduranceRoll, 8);
+  assert.equal(result.unconsciousRounds, 7);
+});
+
+test('electricity resistance reduces damage but never skips the Endurance check', () => {
+  const result = resolveAreaTarget(
+    { kind: 'electricity', rawDamage: 20 },
+    { ...target, electricityResistance: 100 },
+    () => 1,
+    sides => sides === 10 ? 6 : 1,
+  );
+  assert.equal(result.damage, 0);
+  assert.equal(result.enduranceRoll, 6);
+  assert.ok(result.unconsciousRounds > 0);
+});
+
+test('negative electricity resistance amplifies damage', () => {
+  const result = resolveAreaTarget(
+    { kind: 'electricity', rawDamage: 20 },
+    { ...target, electricityResistance: -50 },
+    () => 1,
+    () => 4,
+  );
+  assert.equal(result.damage, 30);
+});
+
+test('electricity uses the supplied current effective Endurance', () => {
+  const boosted = resolveAreaTarget(
+    { kind: 'electricity', rawDamage: 10 },
+    { ...target, endurance: 7 },
+    () => 100,
+    () => 6,
+  );
+  assert.equal(boosted.enduranceRoll, 6);
+  assert.equal(boosted.unconsciousRounds, 0);
+  assert.match(boosted.notes.join(' '), /Endurance 7/);
+});
+
+test('fire and acid always create persistent manual 1d6 ongoing effects', () => {
+  const fire = resolveAreaTarget({ kind: 'flamethrower', rawDamage: 20, ongoingRounds: 0, gmAdjudicatedLanding: true }, target);
+  const acid = resolveAreaTarget({ kind: 'acid', rawDamage: 20, ongoingRounds: 0 }, target);
+  assert.deepEqual([fire.ongoing?.kind, fire.ongoing?.damageDie, fire.ongoing?.persistent], ['fire', 6, true]);
+  assert.deepEqual([acid.ongoing?.kind, acid.ongoing?.damageDie, acid.ongoing?.persistent], ['acid', 6, true]);
+  assert.match(fire.notes.join(' '), /chosen by GM/);
+});
+
+test('persistent acid survives round ticks until explicitly removed', () => {
+  const acid = {
+    id: 'acid', kind: 'acid' as const, name: 'Covered in Acid',
+    persistent: true, damageDieCount: 1, damageDie: 6, damageBonus: 0, damageType: 'fire' as const,
+  };
+  assert.equal(advanceAreaEffect(acid), acid);
+});
+
+test('fire marked after a full-turn extinguish action ends after its final tick', () => {
+  const fire = {
+    id: 'fire', kind: 'fire' as const, name: 'On Fire',
+    persistent: true, removeAfterTick: true,
+    damageDieCount: 1, damageDie: 6, damageBonus: 0, damageType: 'fire' as const,
+  };
+  assert.equal(advanceAreaEffect(fire), null);
+});
+
+test('summary includes damage, unconsciousness, and ongoing duration', () => {
+  const text = formatAreaResolution({
+    targetId: 't1', targetName: 'Target', damage: 9, resisted: false,
+    unconsciousRounds: 4,
+    ongoing: { kind: 'fire', persistent: true, damageDieCount: 1, damageDie: 6, damageBonus: 0, damageType: 'fire' },
+    notes: [],
+  });
+  assert.match(text, /9 damage/);
+  assert.match(text, /unconscious 4 rounds/);
+  assert.match(text, /fire \(1d6\/round until removed\)/);
+});
+
+test('unconscious and ongoing counters expire automatically without going negative', () => {
+  assert.deepEqual(countdownStatus(2, true), { roundsLeft: 1, isActive: true });
+  assert.deepEqual(countdownStatus(1, true), { roundsLeft: 0, isActive: false });
+  assert.deepEqual(countdownStatus(0, true), { roundsLeft: 0, isActive: false });
+});

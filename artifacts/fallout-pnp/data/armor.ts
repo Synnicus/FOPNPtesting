@@ -174,6 +174,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'radiation_suit', name: 'Radiation Suit', slot: 'body',
     dtNormal: 4, dtLaser: 0, dtFire: 10, dtPlasma: 0, dtExplosion: 4,
     drNormal: 30, drLaser: 30, drFire: 60, drPlasma: 20, drExplosion: 40,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 15, weight: 20, isCustom: false, prohibitsHelmet: true, effects: { radiationResistance: 100, gasResistance: 100, skills: { sneak: -30 } },
   },
   {
@@ -181,6 +182,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'brotherhood_env_armor', name: 'Brotherhood Environmental Armor', slot: 'body',
     dtNormal: 5, dtLaser: 5, dtFire: 4, dtPlasma: 5, dtExplosion: 6,
     drNormal: 40, drLaser: 55, drFire: 40, drPlasma: 55, drExplosion: 40,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 18, weight: 30, isCustom: false, integratedHelmet: true, effects: { gasResistance: 100, radiationResistance: 60, poisonResistance: 50, skills: { sneak: -50, doctor: -10, lockpick: -10, steal: -10, repair: -10, firstAid: -5, science: -5 } },
   },
   {
@@ -188,6 +190,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'brotherhood_env_armor_mk2', name: 'Brotherhood Environmental Armor Mk II', slot: 'body',
     dtNormal: 6, dtLaser: 6, dtFire: 5, dtPlasma: 6, dtExplosion: 9,
     drNormal: 40, drLaser: 60, drFire: 42, drPlasma: 60, drExplosion: 45,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 20, weight: 35, isCustom: false, integratedHelmet: true, effects: { special: { perception: -1 }, gasResistance: 100, radiationResistance: 90, poisonResistance: 75, skills: { sneak: -50, doctor: -11, lockpick: -11, repair: -10, steal: -10, firstAid: -7, science: -5, pilot: -2 } },
   },
   {
@@ -202,6 +205,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'brotherhood_power_armor', name: 'Brotherhood Power Armor', slot: 'body',
     dtNormal: 13, dtLaser: 16, dtFire: 13, dtPlasma: 16, dtExplosion: 20,
     drNormal: 50, drLaser: 70, drFire: 60, drPlasma: 70, drExplosion: 60,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 28, weight: 42, isCustom: false, integratedHelmet: true, effects: { special: { strength: 3, perception: -1 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
@@ -209,6 +213,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'brotherhood_adv_power_armor', name: 'Brotherhood Advanced Power Armor', slot: 'body',
     dtNormal: 18, dtLaser: 17, dtFire: 15, dtPlasma: 17, dtExplosion: 20,
     drNormal: 55, drLaser: 75, drFire: 65, drPlasma: 75, drExplosion: 65,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 35, weight: 50, isCustom: false, integratedHelmet: true, ignoresLightPenalties: true, effects: { special: { strength: 4, perception: -2 }, gasResistance: 100, poisonResistance: 20, radiationResistance: 60, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
@@ -216,6 +221,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'power_armor', name: 'Power Armor', slot: 'body',
     dtNormal: 12, dtLaser: 18, dtFire: 12, dtPlasma: 10, dtExplosion: 20,
     drNormal: 40, drLaser: 80, drFire: 60, drPlasma: 40, drExplosion: 50,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 25, weight: 35, isCustom: false, integratedHelmet: true, effects: { special: { strength: 3 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
@@ -223,6 +229,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'hardened_power_armor', name: 'Hardened Power Armor', slot: 'body',
     dtNormal: 13, dtLaser: 19, dtFire: 14, dtPlasma: 13, dtExplosion: 20,
     drNormal: 50, drLaser: 90, drFire: 70, drPlasma: 50, drExplosion: 60,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 25, weight: 50, isCustom: false, integratedHelmet: true, effects: { special: { strength: 3 }, gasResistance: 100, poisonResistance: 15, radiationResistance: 30, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
@@ -230,6 +237,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'adv_power_armor', name: 'Advanced Power Armor', slot: 'body',
     dtNormal: 15, dtLaser: 19, dtFire: 16, dtPlasma: 15, dtExplosion: 20,
     drNormal: 55, drLaser: 90, drFire: 70, drPlasma: 60, drExplosion: 65,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 30, weight: 30, isCustom: false, integratedHelmet: true, ignoresLightPenalties: true, effects: { special: { strength: 4 }, gasResistance: 100, poisonResistance: 20, radiationResistance: 60, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
   },
   {
@@ -237,6 +245,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'adv_power_armor_mk2', name: 'Advanced Power Armor Mk II', slot: 'body',
     dtNormal: 18, dtLaser: 19, dtFire: 16, dtPlasma: 18, dtExplosion: 20,
     drNormal: 60, drLaser: 90, drFire: 70, drPlasma: 60, drExplosion: 70,
+    gasResistanceInhaled: 100, gasResistanceContact: 100,
     acBonus: 35, weight: 50, isCustom: false,
     integratedHelmet: true, ignoresLightPenalties: true,
     effects: { special: { strength: 4 }, gasResistance: 100, poisonResistance: 40, radiationResistance: 75, skills: { sneak: -75, firstAid: -10, doctor: -10, lockpick: -10, steal: -10, science: -10, repair: -10 } },
@@ -272,6 +281,7 @@ export const BUILT_IN_ARMOR: Armor[] = [
     id: 'environmental_helmet', name: 'Environmental Helmet', slot: 'helmet',
     dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0,
     drNormal: 0, drLaser: 0, drFire: 0, drPlasma: 0, drExplosion: 0,
+    gasResistanceInhaled: 100, gasResistanceContact: 10,
     acBonus: 11, weight: 0, isCustom: false,
     compatibleBodyArmorIds: ['brotherhood_env_armor', 'brotherhood_env_armor_mk2'],
     effects: { gasResistance: 100 },

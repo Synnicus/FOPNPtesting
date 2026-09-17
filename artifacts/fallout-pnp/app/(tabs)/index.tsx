@@ -1,4 +1,3 @@
-import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert, FlatList, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
@@ -27,8 +26,9 @@ import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
 import { makePoisonedEffect, poisonExposuresForAttack } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
-import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers } from '@/data/effects';
+import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
+import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
@@ -46,6 +46,8 @@ import {
   formatRequirements as formatSpecialUnarmedRequirements,
   getSpecialUnarmedAttack,
 } from '@/data/specialUnarmedAttacks';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from '@/data/areaEffects';
 
 function resolveCombatSheet(character: Character, allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'], includeTempAC = true): ResolvedArmorSheet {
   const race = getRaceById(character.race);
@@ -491,7 +493,16 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
   );
 }
 
-// ─── Light Picker Modal ───────────────────────────────────────────────────────
+const AREA_ATTACK_OPTIONS: { kind: AreaAttackKind; label: string; note: string }[] = [
+  { kind: 'explosion', label: 'Explosion', note: 'Explosion DT/DR' },
+  { kind: 'fragmentation', label: 'Fragmentation', note: 'Normal DT/DR' },
+  { kind: 'concussion', label: 'Concussion', note: 'Ignores DT; Explosion DR' },
+  { kind: 'flamethrower', label: 'Flamethrower / Firestream', note: 'Fire DT/DR + 1d6 ongoing' },
+  { kind: 'gasInhaled', label: 'Gas — Inhaled', note: 'Inhaled gas resistance' },
+  { kind: 'gasContact', label: 'Gas — Contact', note: 'Contact gas resistance' },
+  { kind: 'electricity', label: 'Electricity', note: 'Resistance, then Endurance; failure = 1d10 rounds unconscious' },
+  { kind: 'acid', label: 'Acid', note: 'Fire protection + 1d6 ongoing' },
+];
 function LightPickerModal({ visible, value, onChange, onClose }: {
   visible: boolean; value: number; onChange: (v: number) => void; onClose: () => void;
 }) {
@@ -679,7 +690,7 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -688,6 +699,7 @@ export default function CombatScreen() {
   const [showRoundTracker, setShowRoundTracker] = useState(false);
   const [showInitSetup, setShowInitSetup] = useState(false);
   const [initRolls, setInitRolls] = useState<Record<string, number>>({});
+  const [showAreaAttack, setShowAreaAttack] = useState(false);
 
   // Combatants
   const [attackerId, setAttackerId] = useState<string | null>(null);
@@ -1947,6 +1959,51 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Init {entry.initiative} · HP {entry.currentHp}/{entry.maxHp} · AP {entry.currentAP}/{entry.maxAP}{entry.tempAC > 0 ? ` · +${entry.tempAC}AC` : ''}
                     </Text>
+                    {entryChar?.isKnockedOut && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
+                        Unconscious for {entryChar.knockOutRoundsLeft} rounds · Prone
+                      </Text>
+                    )}
+                    {(entryChar?.areaEffects ?? []).map(effect => (
+                      <View key={effect.id} style={{ marginTop: 3, gap: 3 }}>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+                          {effect.name}: 1d6/round · {effect.persistent
+                            ? (effect.removeAfterTick ? 'removing after this turn' : 'until removed')
+                            : `${effect.roundsLeft ?? 0} rounds`}
+                        </Text>
+                        {effect.kind === 'fire' ? (
+                          <TouchableOpacity
+                            testID={`extinguish-fire-${entryChar?.id}`}
+                            disabled={!isActive || effect.removeAfterTick}
+                            onPress={() => {
+                              if (!entryChar || !isActive) return;
+                              markAreaEffectForRemoval(entryChar.id, effect.id);
+                              nextTurn();
+                            }}
+                            style={{ alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 4, backgroundColor: isActive ? colors.primary : colors.border, opacity: isActive ? 1 : 0.5 }}
+                          >
+                            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: isActive ? colors.primaryForeground : colors.mutedForeground }}>ROLL & EXTINGUISH — FULL TURN</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            testID={`remove-acid-${entryChar?.id}`}
+                            onPress={() => {
+                              if (!entryChar) return;
+                              const remove = () => removeAreaEffect(entryChar.id, effect.id);
+                              const message = 'Confirm the acid was washed off with water or chemicals the GM ruled appropriate.';
+                              if (Platform.OS === 'web') {
+                                if (window.confirm(message)) remove();
+                              } else {
+                                Alert.alert('GM: Acid Removed?', message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm Removed', onPress: remove }]);
+                              }
+                            }}
+                            style={{ alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: colors.primary }}
+                          >
+                            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>GM: CONFIRM WASHED OFF</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
                   </View>
                   {entry.hasActed && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DONE</Text>}
                   <View style={{ flexDirection: 'column', gap: 2 }}>
@@ -1964,12 +2021,18 @@ export default function CombatScreen() {
               );
             })}
 
-            {/* Add combatant during active combat */}
+            {/* Area effects and adding combatants during active combat */}
             {combatActive && (
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, borderStyle: 'dashed' }} onPress={() => setShowAddCombatantPicker(true)}>
-                <Feather name="user-plus" size={14} color={colors.primary} />
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>ADD COMBATANT</Text>
-              </TouchableOpacity>
+              <View style={{ gap: 7 }}>
+                <TouchableOpacity testID="open-aoe-damage" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={() => setShowAreaAttack(true)}>
+                  <Feather name="target" size={14} color="#fff" />
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY AOE DAMAGE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, borderStyle: 'dashed' }} onPress={() => setShowAddCombatantPicker(true)}>
+                  <Feather name="user-plus" size={14} color={colors.primary} />
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>ADD COMBATANT</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {combatActive && (
@@ -2967,6 +3030,16 @@ export default function CombatScreen() {
 
       <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} />
       <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} />
+      <AreaAttackModal
+        visible={showAreaAttack}
+        combatants={initiativeEntries.flatMap(entry => {
+          const c = characters.find(character => character.id === entry.characterId);
+          return c && c.currentHp > 0 ? [c] : [];
+        })}
+        onClose={() => setShowAreaAttack(false)}
+        onApply={applyAreaAttack}
+        receipt={areaAttackReceipt}
+      />
       <CharacterPickerModal visible={showAddCombatantPicker} onClose={() => setShowAddCombatantPicker(false)} onSelect={(id) => {
         const c = characters.find(ch => ch.id === id);
         if (!c) return;
@@ -3175,5 +3248,115 @@ export default function CombatScreen() {
         onClose={() => setShowAmmoPicker(false)}
       />
     </View>
+  );
+}
+function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
+  visible: boolean;
+  combatants: Character[];
+  onClose: () => void;
+  onApply: (attack: AreaAttack, targetIds: string[]) => string;
+  receipt?: { requestId: string; results: AreaResolution[] };
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const [kind, setKind] = useState<AreaAttackKind>('explosion');
+  const [rawDamage, setRawDamage] = useState(10);
+  const [targets, setTargets] = useState<string[]>([]);
+  const [summary, setSummary] = useState<AreaResolution[] | null>(null);
+  const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const ongoing = kind === 'flamethrower' || kind === 'acid';
+
+  useEffect(() => {
+    if (pendingRequestId && receipt?.requestId === pendingRequestId) {
+      setSummary(receipt.results);
+      setPendingRequestId(null);
+    }
+  }, [pendingRequestId, receipt]);
+
+  const close = () => {
+    setTargets([]);
+    setSummary(null);
+    setApplying(false);
+    applyingRef.current = false;
+    setPendingRequestId(null);
+    onClose();
+  };
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#000c' }}>
+        <View style={{ maxHeight: '92%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: Math.max(insets.bottom, 12), borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <View>
+              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{summary ? 'AREA EFFECT RESULTS' : 'APPLY AOE DAMAGE'}</Text>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : 'Select an effect and every active combatant in its area.'}</Text>
+            </View>
+            <TouchableOpacity testID="aoe-close" onPress={close}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+          {summary ? (
+            <ScrollView contentContainerStyle={{ padding: 14, gap: 8 }}>
+              {summary.map(result => (
+                <View key={result.targetId} style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{result.targetName}</Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 3 }}>{formatAreaResolution(result)}</Text>
+                </View>
+              ))}
+              <TouchableOpacity testID="aoe-summary-done" onPress={close} style={{ paddingVertical: 12, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }}>
+                <Text style={{ fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>DONE</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          ) : (
+            <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>EFFECT</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                {AREA_ATTACK_OPTIONS.map(option => (
+                  <TouchableOpacity key={option.kind} testID={`aoe-kind-${option.kind}`} onPress={() => setKind(option.kind)} style={{ width: '48%', padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: kind === option.kind ? colors.primary : colors.border, backgroundColor: kind === option.kind ? colors.primary + '22' : colors.secondary }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: kind === option.kind ? colors.primary : colors.foreground }}>{option.label}</Text>
+                    <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{option.note}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>Rolled / base damage</Text>
+                <Stepper value={rawDamage} min={0} max={999} onChange={setRawDamage} formatValue={v => String(v)} />
+              </View>
+              {ongoing && (
+                <Text style={{ fontSize: 10, color: colors.primary }}>
+                  Mandatory 1d6 each round until removed. Fire requires a full turn rolling on safe ground; acid requires GM-confirmed washing with an appropriate material.
+                </Text>
+              )}
+              {kind === 'flamethrower' && <Text style={{ fontSize: 10, color: colors.primary }}>On a miss, the GM chooses the landing hex from the miss margin; select only combatants in the line from attacker to that hex.</Text>}
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>TARGETS</Text>
+              {combatants.map(c => {
+                const selected = targets.includes(c.id);
+                return (
+                  <TouchableOpacity key={c.id} testID={`aoe-target-${c.id}`} onPress={() => setTargets(prev => selected ? prev.filter(id => id !== c.id) : [...prev, c.id])} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '18' : colors.secondary }}>
+                    <Feather name={selected ? 'check-square' : 'square'} size={17} color={selected ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground }}>HP {c.currentHp}/{c.maxHp}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity testID="aoe-apply" disabled={targets.length === 0 || applying} onPress={() => {
+                if (applyingRef.current) return;
+                applyingRef.current = true;
+                setApplying(true);
+                const requestId = onApply({
+                  kind, rawDamage,
+                  gmAdjudicatedLanding: kind === 'flamethrower',
+                }, targets);
+                setPendingRequestId(requestId);
+              }} style={{ paddingVertical: 13, alignItems: 'center', borderRadius: colors.radius, backgroundColor: targets.length && !applying ? colors.destructive : colors.secondary, opacity: targets.length && !applying ? 1 : 0.5 }}>
+                <Text style={{ fontFamily: 'Inter_700Bold', color: targets.length && !applying ? '#fff' : colors.mutedForeground }}>{applying ? 'APPLYING…' : `APPLY TO ${targets.length} TARGET${targets.length === 1 ? '' : 'S'}`}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={close} style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL — APPLY NOTHING</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }

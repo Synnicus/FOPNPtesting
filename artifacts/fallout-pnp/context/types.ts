@@ -150,6 +150,9 @@ export interface Armor {
   drFire: number;
   drPlasma: number;
   drExplosion: number;
+  /** Manual gas protection pair. Omitted means this armor provides none. */
+  gasResistanceInhaled?: number;
+  gasResistanceContact?: number;
   acBonus: number;
   weight: number;
   isCustom: boolean;
@@ -222,7 +225,7 @@ export interface ActiveEffect {
   isActive: boolean;
 }
 
-// ─── Natural Protection (built-in DT/DR for creatures like Deathclaws) ────────
+export type AreaEffectKind = 'fire' | 'acid';
 export interface NaturalProtection {
   dtNormal: number; dtLaser: number; dtFire: number; dtPlasma: number; dtExplosion: number;
   drNormal: number; drLaser: number; drFire: number; drPlasma: number; drExplosion: number;
@@ -253,88 +256,144 @@ export interface ManualDerivedStats {
 // ─── Character ────────────────────────────────────────────────────────────────
 export interface Character {
   id: string;
+
   name: string;
+
   type: CharacterType;
+
   race: RaceType;
+
   level: number;
+
   xp: number;
+
   portrait?: string;
   /** How the portrait image fits its frame ('cover' crops, 'contain' letterboxes). */
+
   portraitFit?: 'cover' | 'contain';
   /** Crop focus when portraitFit is 'cover': 0–1 in each axis (0.5 = centered). */
+
   portraitOffset?: { x: number; y: number };
   /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
+
   traits?: string[];
   /** Night Person's explicitly selected period. Older saves leave this unset;
    * its effective value is day only when Night Person is selected. */
+
   nightPersonPeriod?: 'day' | 'night';
 
   // SPECIAL
+
   special: SPECIALStats;
 
   // Derived
+
   maxHp: number;
+
   currentHp: number;
+
   armorClass: number;
+
   tempAC: number;
+
   maxAP: number;
+
   currentAP: number;
+
   position: PositionType;
+
   sequence: number;
   /** Printed NPC values that take precedence over SPECIAL-derived base values. */
+
   manualDerivedStats?: ManualDerivedStats;
 
   // Skills
+
   skills: CharacterSkills;
+
   taggedSkills: SkillType[];
+
   unspentSkillPoints: number;
 
   // Perks
+
   perks: CharacterPerk[];
   /** Break the Rules: the next successfully spent perk point ignores normal
    * level, SPECIAL, skill, prerequisite, and race requirements. */
+
   breakTheRulesPending?: boolean;
 
   // Elemental resistances (base, before armor)
+
   radiationResistance: number;
+
   gasResistance: number;
+  /** Optional split values; old saves use gasResistance for both exposures. */
+
   gasResistanceSecondary?: number;
+
   electricityResistance: number;
   /** Base poison resistance. Legacy saves are normalized to zero. */
+
   poisonResistance?: number;
 
   // Equipment
+
   equippedWeaponId?: string;
   /** Dual-wield hand slots (weapon ids). A two-handed weapon occupies both.
    *  When absent, fall back to equippedWeaponId in the right hand. */
+
   leftHandWeaponId?: string;
+
   rightHandWeaponId?: string;
   /** Carried weapons (max 5, ids incl. equipped). Absent = derive from equipped. */
+
   inventoryWeaponIds?: string[];
+
   equippedBodyArmorId?: string;
+
   equippedHelmetId?: string;
+
   weaponAmmoStates: WeaponAmmoState[];
   /** Printed creature attacks, kept separate from carried/held equipment. */
+
   naturalAttacks?: BestiaryAttack[];
   /** Source template for a spawned manual bestiary creature. */
+
   bestiaryTemplateId?: string;
   /** XP awarded for defeating this manual bestiary creature. */
+
   xpValue?: number;
 
   // Status
+
   injuries: Injury[];
   /** Temporary effects (chems etc.) — merged with injuries in the Effects UI. */
+
   effects?: ActiveEffect[];
+
   isKnockedOut: boolean;
+
   knockOutRoundsLeft: number;
+  /** Fire/acid and similar hazards tick at the end of this combatant's turn. */
+
   conditions: string[];
 
   // Biography / notes
+
   biography?: string;
   // Built-in natural DT/DR (for characters that don't rely on armor)
+
   naturalProtection?: NaturalProtection;
   // Character storage — stored characters are hidden from combat operations
+
   inStorage?: boolean;
+
+  gasResistanceInhaled?: number;
+
+  gasResistanceContact?: number;
+
+  areaEffects?: TimedAreaEffect[];
 }
 
 // ─── Bestiary Template ────────────────────────────────────────────────────────
@@ -392,4 +451,20 @@ export interface InitiativeEntry {
   position: PositionType;
   hasActed: boolean;
   isActive: boolean;
+}
+
+export interface TimedAreaEffect {
+  id: string;
+  kind: AreaEffectKind;
+  name: string;
+  /** Legacy finite effects may still carry a countdown. Manual fire/acid persist until removed. */
+  roundsLeft?: number;
+  persistent?: boolean;
+  /** Fire is removed only after its final 1d6 tick during the extinguishing turn. */
+  removeAfterTick?: boolean;
+  damageDieCount: number;
+  damageDie: number;
+  damageBonus: number;
+  damageType: DamageType;
+  notes?: string[];
 }
