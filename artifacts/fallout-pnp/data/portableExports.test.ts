@@ -7,8 +7,10 @@ import {
   createCharacterBundle,
   createEquipmentBundle,
   parseCampaignFile,
+  parseIndividualFile,
   portraitAsset,
   restoreCampaignPortraits,
+  restoreCharacterPortrait,
 } from './portableExports.ts';
 
 const character: Character = {
@@ -158,6 +160,78 @@ test('standalone equipment exports identify their item type', () => {
   assert.equal(bundle.kind, 'equipment');
   assert.equal(bundle.equipmentType, 'weapon');
   assert.equal(bundle.item.id, customWeapon.id);
+});
+
+test('individual character files validate dependencies and restore only their matching portrait', async () => {
+  const asset = portraitAsset(character.id, 'image/jpeg', 'AQID');
+  assert.ok(asset);
+  const exported = createCharacterBundle(character, [customWeapon], [customArmor], asset);
+  const parsed = parseIndividualFile(JSON.stringify({
+    ...exported,
+    character: { ...exported.character, portrait: 'file:///attacker-controlled.jpg' },
+  }));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.kind === 'character') {
+    assert.equal(parsed.bundle.character.portrait, undefined);
+    assert.equal(parsed.bundle.customWeapons[0].id, customWeapon.id);
+    assert.equal(parsed.bundle.customArmor[0].id, customArmor.id);
+    const restored = await restoreCharacterPortrait(
+      parsed.bundle,
+      async image => `restored://${image.characterId}`,
+    );
+    assert.equal(restored.character.portrait, `restored://${character.id}`);
+    assert.equal(restored.restored, 1);
+  }
+});
+
+test('individual character files ignore corrupt, duplicate, and mismatched portrait assets', () => {
+  const asset = portraitAsset(character.id, 'image/png', 'AQID');
+  assert.ok(asset);
+  const exported = createCharacterBundle(character, [customWeapon], [customArmor], asset);
+  const parsed = parseIndividualFile(JSON.stringify({
+    ...exported,
+    assets: [
+      asset,
+      asset,
+      { ...asset, characterId: 'someone-else' },
+      { ...asset, base64: 'invalid!' },
+    ],
+  }));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.kind === 'character') {
+    assert.equal(parsed.bundle.assets.length, 1);
+    assert.equal(parsed.ignoredAssets, 3);
+  }
+});
+
+test('individual equipment files accept only structurally valid custom equipment', () => {
+  const weapon = parseIndividualFile(JSON.stringify(createEquipmentBundle('weapon', customWeapon)));
+  assert.equal(weapon.ok, true);
+  if (weapon.ok) {
+    assert.equal(weapon.kind, 'equipment');
+    if (weapon.kind === 'equipment') assert.equal(weapon.bundle.item.id, customWeapon.id);
+  }
+
+  const builtIn = parseIndividualFile(JSON.stringify(createEquipmentBundle(
+    'weapon',
+    { ...customWeapon, isCustom: false },
+  )));
+  assert.deepEqual(builtIn, {
+    ok: false,
+    error: 'The equipment export is incomplete, damaged, or not custom equipment.',
+  });
+});
+
+test('damaged individual character files are rejected before any portrait materialization', () => {
+  const exported = createCharacterBundle(character, [customWeapon], [customArmor], null);
+  const parsed = parseIndividualFile(JSON.stringify({
+    ...exported,
+    character: { id: character.id },
+  }));
+  assert.deepEqual(parsed, {
+    ok: false,
+    error: 'The character export is incomplete or damaged.',
+  });
 });
 
 test('individual asset files are rejected by campaign import', () => {
