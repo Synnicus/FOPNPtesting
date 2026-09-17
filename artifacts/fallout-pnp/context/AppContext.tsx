@@ -94,10 +94,20 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
   const normalizeArmor = (armor: Armor): Armor => armor.effects
     ? armor
     : { ...armor, effects: { special: {}, skills: {} } };
-  const normalizeCharacter = (character: Character): Character =>
-    typeof character.poisonResistance === 'number'
+  const normalizeCharacter = (character: Character): Character => {
+    let normalized = typeof character.poisonResistance === 'number'
       ? character
       : { ...character, poisonResistance: 0 };
+    // Break the Rules had no implemented effect before this flag existed, so
+    // an older owner necessarily still has the one-time selection available.
+    if (
+      normalized.breakTheRulesPending === undefined
+      && (normalized.perks ?? []).some(perk => perk.perkId === 'break_the_rules')
+    ) {
+      normalized = { ...normalized, breakTheRulesPending: true };
+    }
+    return normalized;
+  };
   const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => ({
     ...template,
     poisonResistance: template.poisonResistance ?? 0,

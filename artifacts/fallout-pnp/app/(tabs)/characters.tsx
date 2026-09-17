@@ -24,6 +24,7 @@ import {
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
+import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
@@ -574,8 +575,19 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           return prev;
         }
-        if (!existing) return recomputeDerived({ ...prev, perks: [...prev.perks, { perkId, rank: 1, takenAtLevel: prev.level }] });
-        return recomputeDerived({ ...prev, perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p) });
+        const breakTheRulesPending = breakTheRulesPendingAfterPurchase(prev.breakTheRulesPending, perkId);
+        if (!existing) {
+          return recomputeDerived({
+            ...prev,
+            breakTheRulesPending,
+            perks: [...prev.perks, { perkId, rank: 1, takenAtLevel: prev.level }],
+          });
+        }
+        return recomputeDerived({
+          ...prev,
+          breakTheRulesPending,
+          perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p),
+        });
       }
       return prev;
     });
@@ -583,7 +595,11 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   const confirmPerkRefund = useCallback(() => {
     if (!perkRefundId) return;
-    setChar(prev => recomputeDerived({ ...prev, perks: refundPerk(prev.perks, perkRefundId).perks }));
+    setChar(prev => recomputeDerived({
+      ...prev,
+      perks: refundPerk(prev.perks, perkRefundId).perks,
+      breakTheRulesPending: perkRefundId === 'break_the_rules' ? false : prev.breakTheRulesPending,
+    }));
     setPerkRefundId(null);
   }, [perkRefundId, recomputeDerived]);
 
@@ -1245,6 +1261,11 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             <>
               <PointCounter label="PERK POINTS REMAINING" remaining={perkPointsRemaining} total={perkPointsAvailable} warn />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Each rank costs 1 perk point. Adding ranks and refunding a perk are separate actions; refunding removes every rank and returns every point spent on that perk.</Text>
+              {char.breakTheRulesPending && (
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                  BREAK THE RULES READY — your next perk point may select any perk, regardless of requirements or race.
+                </Text>
+              )}
 
               {/* Only-show-available toggle */}
               <TouchableOpacity

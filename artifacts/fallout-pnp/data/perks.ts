@@ -2,6 +2,7 @@ import { Character, CharacterSkills, RaceType, SPECIALStats, SkillType } from '@
 import { calcBaseSkills } from './derived';
 import { computePerkStatBonuses } from './effects';
 import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './effectiveRules';
+import { breakTheRulesWaivesRequirements } from './breakTheRules';
 
 export type PerkCategory = 'combat' | 'defense' | 'utility' | 'social' | 'survival' | 'racial';
 
@@ -1089,6 +1090,20 @@ export function canTakePerk(
   armorModifiers?: { special?: Partial<SPECIALStats>; skills?: Partial<CharacterSkills> },
 ): { allowed: boolean; reasons: string[] } {
   const reasons: string[] = [];
+
+  // Max ranks.
+  const maxRanks = perk.maxRanks ?? 1;
+  if (currentRanks >= maxRanks) {
+    reasons.push(`Already at max ranks (${maxRanks})`);
+  }
+
+  // Break the Rules applies to the next successfully spent perk point. It
+  // waives every eligibility requirement, including race, but never permits a
+  // rank beyond the perk's printed maximum.
+  if (breakTheRulesWaivesRequirements(char.breakTheRulesPending, perk.id)) {
+    return { allowed: reasons.length === 0, reasons };
+  }
+
   const requirementValues = effectiveRequirementValues(char, armorModifiers);
 
   // Robots never gain perks.
@@ -1104,12 +1119,6 @@ export function canTakePerk(
   // Race exclusion.
   if (perk.excludedRaces && perk.excludedRaces.includes(char.race)) {
     reasons.push('Your race cannot choose this perk');
-  }
-
-  // Max ranks.
-  const maxRanks = perk.maxRanks ?? 1;
-  if (currentRanks >= maxRanks) {
-    reasons.push(`Already at max ranks (${maxRanks})`);
   }
 
   // Level.

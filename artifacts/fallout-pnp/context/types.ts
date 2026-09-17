@@ -287,6 +287,9 @@ export interface Character {
 
   // Perks
   perks: CharacterPerk[];
+  /** Break the Rules: the next successfully spent perk point ignores normal
+   * level, SPECIAL, skill, prerequisite, and race requirements. */
+  breakTheRulesPending?: boolean;
 
   // Elemental resistances (base, before armor)
   radiationResistance: number;
