@@ -1345,7 +1345,7 @@ export default function CombatScreen() {
       luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon]);
 
   const confirmPhysicalHit = useCallback(() => {
-    if (attackResolved || isBurst) return;
+    if (isBurst) return;
     if (weaponBroken) {
       notify('Weapon Broken', 'This weapon is jammed/broken and cannot attack until repaired.');
       return;
@@ -1376,10 +1376,10 @@ export default function CombatScreen() {
     if (attacker && weapon && weapon.magazineSize > 0) {
       spendAmmo(attacker.id, weapon.id, 1);
     }
-  }, [attackResolved, isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
+  }, [isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
 
   const confirmManualCritical = useCallback((outcome: 'hit' | 'fail') => {
-    if (attackResolved || isBurst) return;
+    if (isBurst) return;
     if (weaponBroken) {
       notify('Weapon Broken', 'This weapon is jammed/broken and cannot attack until repaired.');
       return;
@@ -1417,7 +1417,7 @@ export default function CombatScreen() {
     if (attacker && weapon && weapon.magazineSize > 0) {
       spendAmmo(attacker.id, weapon.id, 1);
     }
-  }, [attackResolved, isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
+  }, [isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
 
   const rollStreamlined = useCallback(() => {
     if (weaponBroken) {
@@ -2871,9 +2871,9 @@ export default function CombatScreen() {
               <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>{attackActionLabel}{attackResolved ? ' AGAIN' : ''}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || attackResolved || isBurst) ? 0.5 : 1 }}
+               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
               onPress={confirmPhysicalHit}
-              disabled={!canRoll || attackBlocked || attackResolved || isBurst}
+               disabled={!canRoll || attackBlocked || isBurst}
             >
               <Feather name="check-circle" size={16} color={physicalHitConfirmed ? '#4a8c3f' : colors.primary} />
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? '#4a8c3f' : colors.primary }}>
@@ -2881,9 +2881,9 @@ export default function CombatScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || attackResolved || isBurst) ? 0.5 : 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
               onPress={() => confirmManualCritical('hit')}
-              disabled={!canRoll || attackBlocked || attackResolved || isBurst}
+              disabled={!canRoll || attackBlocked || isBurst}
             >
               <Feather name="zap" size={16} color={primaryIsCrit ? '#4a8c3f' : colors.primary} />
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: primaryIsCrit ? '#4a8c3f' : colors.primary }}>
@@ -2891,9 +2891,9 @@ export default function CombatScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: isCritFail ? colors.destructive : colors.border, opacity: (!canRoll || attackBlocked || attackResolved || isBurst) ? 0.5 : 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: isCritFail ? colors.destructive : colors.border, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
               onPress={() => confirmManualCritical('fail')}
-              disabled={!canRoll || attackBlocked || attackResolved || isBurst}
+              disabled={!canRoll || attackBlocked || isBurst}
             >
               <Feather name="alert-triangle" size={16} color={colors.destructive} />
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.destructive }}>
