@@ -983,6 +983,17 @@ export default function EquipmentScreen() {
   // Duplicate: open the creator pre-filled from an existing weapon/armor as a NEW custom.
   const openCopyWeapon = (w: Weapon) => { setEditingWeapon({ ...w, id: genId(), name: `${w.name} (Copy)`, isCustom: true }); setShowWeaponForm(true); };
   const openCopyArmor = (a: Armor) => { setEditingArmor({ ...a, id: genId(), name: `${a.name} (Copy)`, isCustom: true }); setShowArmorForm(true); };
+  const confirmDelete = (name: string, onDelete: () => void) => {
+    // React Native Web does not implement Alert.alert action buttons.
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete ${name}?`)) onDelete();
+      return;
+    }
+    Alert.alert('Delete', `Delete ${name}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: onDelete },
+    ]);
+  };
 
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
@@ -1060,10 +1071,9 @@ export default function EquipmentScreen() {
               onCondition={() => setConditionWeapon(item)}
               onCopy={() => openCopyWeapon(item)}
               onEdit={item.isCustom ? () => openEditWeapon(item) : undefined}
-              onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => deleteCustomWeapon(item.id) },
-              ]) : undefined}
+              onDelete={item.isCustom
+                ? () => confirmDelete(item.name, () => deleteCustomWeapon(item.id))
+                : undefined}
             />
           )}
         />
@@ -1077,10 +1087,9 @@ export default function EquipmentScreen() {
               armor={item}
               onCopy={() => openCopyArmor(item)}
               onEdit={item.isCustom ? () => openEditArmor(item) : undefined}
-              onDelete={item.isCustom ? () => Alert.alert('Delete', `Delete ${item.name}?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => deleteCustomArmor(item.id) },
-              ]) : undefined}
+              onDelete={item.isCustom
+                ? () => confirmDelete(item.name, () => deleteCustomArmor(item.id))
+                : undefined}
             />
           )}
         />
