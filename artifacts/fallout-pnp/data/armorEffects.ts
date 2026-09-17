@@ -14,6 +14,7 @@ import {
 } from './effectiveRules.ts';
 import { calcBaseSkills } from './derived.ts';
 import { computeConditionModifiers } from './conditions.ts';
+import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 
 const SPECIAL_KEYS: (keyof SPECIALStats)[] = [
   'strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck',
@@ -165,10 +166,11 @@ function perkBonus(perks: ArmorResolverInput['perks'], id: string): number {
 }
 
 function armorClassPerkBonus(perks: ArmorResolverInput['perks']): number {
-  // Static, unconditional AC perks. Situational bonuses remain combat actions.
-  const bonuses: Record<string, number> = { dodger: 5, tough_hide: 15, cyborg_systems: 5 };
   return (perks ?? []).reduce((total, owned) => {
-    return total + numeric(bonuses[owned.perkId]) * numeric(owned.rank ?? 1);
+    const perk = UNCONDITIONAL_ARMOR_CLASS_PERKS[
+      owned.perkId as keyof typeof UNCONDITIONAL_ARMOR_CLASS_PERKS
+    ];
+    return total + numeric(perk?.armorClassBonus) * numeric(owned.rank ?? 1);
   }, 0);
 }
 

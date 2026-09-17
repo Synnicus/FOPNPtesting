@@ -3,6 +3,7 @@ import { calcBaseSkills } from './derived';
 import { computePerkStatBonuses } from './effects';
 import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './effectiveRules';
 import { breakTheRulesWaivesRequirements } from './breakTheRules';
+import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks';
 
 export type PerkCategory = 'combat' | 'defense' | 'utility' | 'social' | 'survival' | 'racial';
 
@@ -290,7 +291,7 @@ export const PERKS: Perk[] = [
     description: 'You have developed into a slippery little rat. Armor Class increases by +5 for each rank.',
     minLevel: 9, maxRanks: 2, minAGI: 6,
     requirements: { level: 9, stats: { agility: 6 } },
-    combatEffect: { armorClassBonus: 5, combatNote: '+5 AC per rank' },
+    combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.dodger, combatNote: '+5 AC per rank' },
   },
   {
     id: 'driving_city_style', name: 'Driving, City Style', category: 'utility',
@@ -871,7 +872,7 @@ export const PERKS: Perk[] = [
     minLevel: 12, maxRanks: 2, minEND: 1,
     requiresRace: ['superMutant'],
     requirements: { level: 12 },
-    combatEffect: { armorClassBonus: 15, combatNote: '+15 AC, +10% all resistances per rank' },
+    combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.tough_hide, combatNote: '+15 AC, +10% all resistances per rank' },
   },
   {
     id: 'toughness', name: 'Toughness', category: 'defense',
@@ -991,7 +992,7 @@ export const PERKS: Perk[] = [
     minLevel: 6, maxRanks: 2,
     requiresRace: ['robot'],
     requirements: { level: 6 },
-    combatEffect: { damageResistBonus: 10, armorClassBonus: 5, combatNote: '+10% DR, +5 AC per rank' },
+    combatEffect: { damageResistBonus: 10, ...UNCONDITIONAL_ARMOR_CLASS_PERKS.cyborg_systems, combatNote: '+10% DR, +5 AC per rank' },
   },
   {
     id: 'deathclaw_rampage', name: 'Deathclaw Rampage', category: 'racial',

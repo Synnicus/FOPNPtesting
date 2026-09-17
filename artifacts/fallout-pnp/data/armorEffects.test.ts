@@ -3,6 +3,7 @@ import test from 'node:test';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from './armorEffects.ts';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from './initiativeSync.ts';
+import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 
 const special = { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 };
 const skills = {
@@ -95,6 +96,19 @@ test('derived NPC AC exposes every cumulative source including natural AC and pe
     agility: 5, racial: 0, trait: 0, natural: 4, manual: 0,
     bodyArmor: 28, helmet: 13, temporary: 0, effects: 0, perks: 25, minimum: 0,
   });
+});
+
+test('every unconditional AC perk definition is applied by the shared sheet resolver', () => {
+  for (const [perkId, effect] of Object.entries(UNCONDITIONAL_ARMOR_CLASS_PERKS)) {
+    const result = resolveArmorAwareSheet({
+      special,
+      skills,
+      perks: [{ perkId, rank: 2 }],
+      allArmor: [],
+    });
+
+    assert.equal(result.armorClassBreakdown.perks, effect.armorClassBonus * 2, perkId);
+  }
 });
 
 test('AC breakdown attributes the zero-floor adjustment', () => {

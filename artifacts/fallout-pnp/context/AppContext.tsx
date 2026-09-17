@@ -328,7 +328,6 @@ interface AppContextValue extends AppState {
   updateCharacter: (char: Character) => void;
   deleteCharacter: (id: string) => void;
   cloneCharacter: (id: string) => void;
-  moveCharacter: (characterId: string, targetCharacterId: string) => void;
 
   applyDamage: (characterId: string, damage: number) => void;
   healCharacter: (characterId: string, amount: number) => void;
