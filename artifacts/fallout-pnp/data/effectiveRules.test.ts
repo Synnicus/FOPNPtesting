@@ -18,6 +18,7 @@ import {
   fastShotAppliesToSkill,
   replaceStoredNaturalArmorClass,
 } from './effectiveRules.ts';
+import { computePerkDerivedBonuses } from './derived.ts';
 
 const BASE_SPECIAL = {
   strength: 5,
@@ -91,6 +92,18 @@ test('effective SPECIAL composes immediate Gifted before bounded Night Person', 
 test('carry weight uses working STR and Small Frame formula', () => {
   assert.equal(calculateCarryWeight(8), 225);
   assert.equal(calculateCarryWeight(8, ['small_frame']), 120);
+});
+
+test('Pack Rat and Strong Back add their carry-weight bonuses by rank', () => {
+  const bonuses = computePerkDerivedBonuses([
+    { perkId: 'pack_rat', rank: 2 },
+    { perkId: 'strong_back', rank: 2 },
+  ], 6);
+  assert.equal(bonuses.carryWeight, 120);
+  assert.deepEqual(bonuses.notes, [
+    'Pack Rat: +20 lbs carry weight',
+    'Strong Back: +100 lbs carry weight',
+  ]);
 });
 
 test('Bruiser lowers max AP after working agility is used', () => {

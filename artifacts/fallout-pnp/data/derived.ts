@@ -101,7 +101,7 @@ export interface PerkDerivedBonuses {
   maxHP: number;          // Lifegiver: +4 max HP per level per rank
   sequence: number;       // Earlier Sequence: +2 per rank
   healingRate: number;    // Faster Healing / Fast Metabolism / Cancerous Growth
-  carryWeight: number;    // Pack Rat: +10 lbs per rank
+  carryWeight: number;    // Pack Rat: +10 lbs and Strong Back: +50 lbs per rank
   doubleHPPerLevel: boolean; // Brutish Hulk: double HP gained per level
   /** Levels gained since Brutish Hulk was taken (for the doubled HP). */
   doubleHPLevels: number;
@@ -142,6 +142,10 @@ export function computePerkDerivedBonuses(
       case 'pack_rat':
         out.carryWeight += 10 * cp.rank;
         out.notes.push(`Pack Rat: +${10 * cp.rank} lbs carry weight`);
+        break;
+      case 'strong_back':
+        out.carryWeight += 50 * cp.rank;
+        out.notes.push(`Strong Back: +${50 * cp.rank} lbs carry weight`);
         break;
       case 'brutish_hulk':
         out.doubleHPPerLevel = true;
