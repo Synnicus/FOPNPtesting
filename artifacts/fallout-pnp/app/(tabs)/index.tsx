@@ -13,7 +13,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } 
 import {
   TARGETED_CRIT_BONUS, TARGETED_CRIT_EFFECTS, CRITICAL_HIT_TABLE, CritTableEntry,
   CRITICAL_FAILURE_TABLE, CritFailTableEntry,
-  baseCritChance as calcBaseCritChance, hasPerk, BodyPart,
+  baseCritChance as calcBaseCritChance, hasPerk, BodyPart, HELMET_HEAD_CRIT_REDUCTION,
+  applyHelmetHeadCritReduction,
 } from '@/data/criticals';
 import { computeInjuryEffects } from '@/data/injuries';
 import {
@@ -1096,7 +1097,18 @@ export default function CombatScreen() {
     : 0;
   const aimCritBonus = isAimed && targetedBodyPart ? TARGETED_CRIT_BONUS[targetedBodyPart] : 0;
   const specialCritBonus = specialUnarmedAttack?.critBonus ?? 0;
-  const totalCritChance = attackerBaseCrit + aimCritBonus + perkBonuses.critChance + (traitEffects.critChanceBonus ?? 0) + specialCritBonus;
+  const rawCritChance = attackerBaseCrit + aimCritBonus + perkBonuses.critChance + (traitEffects.critChanceBonus ?? 0) + specialCritBonus;
+  const helmetHeadCritReduction = isAimed
+    && targetedBodyPart === 'head'
+    && !!defenderSheet?.helmet
+    && defenderSheet.helmet.id !== 'no_helmet'
+    ? HELMET_HEAD_CRIT_REDUCTION
+    : 0;
+  const totalCritChance = applyHelmetHeadCritReduction(
+    rawCritChance,
+    targetedBodyPart,
+    helmetHeadCritReduction > 0,
+  );
 
   // Perks: Sniper (ranged) / Slayer (melee+unarmed) — on a successful hit, also
   // roll 1d10; if <= Luck the hit is critical. Whether that perk applies here:
@@ -2604,7 +2616,7 @@ export default function CombatScreen() {
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
               <FormulaLine label="= Chance to Hit" value={`${shotChances[0]}%`} color={shotChances[0] >= 60 ? '#4a8c3f' : shotChances[0] >= 35 ? colors.primary : colors.destructive} />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 2 }}>
-                Crit chance: {totalCritChance}% (base {attackerBaseCrit}%{aimCritBonus > 0 ? ` + aimed ${aimCritBonus}%` : ''}{perkBonuses.critChance > 0 ? ` + perks ${perkBonuses.critChance}%` : ''}{specialCritBonus > 0 ? ` + ${specialUnarmedAttack?.name} ${specialCritBonus}%` : ''})
+                Crit chance: {totalCritChance}% (base {attackerBaseCrit}%{aimCritBonus > 0 ? ` + aimed ${aimCritBonus}%` : ''}{perkBonuses.critChance > 0 ? ` + perks ${perkBonuses.critChance}%` : ''}{specialCritBonus > 0 ? ` + ${specialUnarmedAttack?.name} ${specialCritBonus}%` : ''}{helmetHeadCritReduction > 0 ? ` − helmet ${helmetHeadCritReduction}%` : ''})
               </Text>
               {luckPerkApplies && (
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary }}>

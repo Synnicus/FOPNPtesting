@@ -22,6 +22,18 @@ export const TARGETED_CRIT_BONUS: Record<BodyPart, number> = {
   eyes: 30,
 };
 
+/** Protective helmets reduce the chance that a targeted head shot is critical. */
+export const HELMET_HEAD_CRIT_REDUCTION = 15;
+
+export function applyHelmetHeadCritReduction(
+  chance: number,
+  bodyPart: BodyPart | null | undefined,
+  hasHelmet: boolean,
+): number {
+  if (bodyPart !== 'head' || !hasHelmet) return Math.max(0, chance);
+  return Math.max(0, chance - HELMET_HEAD_CRIT_REDUCTION);
+}
+
 /** Effects of a critical on a TARGETED shot (manual, "Chance for Criticals"). */
 export interface TargetedCritEffect {
   damageMultiplier: number;
