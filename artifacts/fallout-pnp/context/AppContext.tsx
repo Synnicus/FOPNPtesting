@@ -19,6 +19,7 @@ import { RESTORED_BESTIARY } from '@/data/bestiary';
 import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
+import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
   if (!c.isKnockedOut) return c;
   const left = Math.max(0, (c.knockOutRoundsLeft ?? 0) - 1);
@@ -413,7 +414,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({
       ...s,
       characters: s.characters.map(c => c.id === characterId
-        ? { ...c, isKnockedOut: rounds > 0, knockOutRoundsLeft: Math.max(0, rounds) }
+        ? setUnconsciousness(c, rounds)
         : c),
     }));
   }, []);
@@ -689,7 +690,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Reset every character to its armor-aware full AP and clear temp AC.
       characters: s.characters.map(c => {
         const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]);
-        return { ...c, currentAP: maxAP, tempAC: 0 };
+        return { ...clearUnconsciousness(c), currentAP: maxAP, tempAC: 0 };
       }),
       initiativeEntries: [],
       currentRound: 1,
@@ -1066,7 +1067,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({
       ...s,
       characters: s.characters.map(c => c.id === characterId
-        ? { ...c, isKnockedOut: rounds > 0, knockOutRoundsLeft: Math.max(0, rounds), ...(rounds > 0 ? { position: 'prone' as const, currentAP: 0 } : {}) }
+        ? { ...setUnconsciousness(c, rounds), ...(rounds > 0 ? { position: 'prone' as const, currentAP: 0 } : {}) }
         : c),
       initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
         ? { ...e, ...(rounds > 0 ? { position: 'prone' as const, currentAP: 0 } : {}) }
@@ -1466,7 +1467,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Reset every character to full AP (derived max) and clear temp AC.
       characters: s.characters.map(c => {
         const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]);
-        return { ...c, currentAP: maxAP, tempAC: 0 };
+        return { ...clearUnconsciousness(c), currentAP: maxAP, tempAC: 0 };
       }),
       initiativeEntries: [],
       currentRound: 1,

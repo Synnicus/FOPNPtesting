@@ -44,6 +44,7 @@ import {
 import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
+import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -1808,16 +1809,43 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               </View>
 
               {/* ── ACTIVE EFFECTS ── */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>ACTIVE EFFECTS</Text>
-                <TouchableOpacity onPress={() => setShowChemPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
-                  <Feather name="plus" size={13} color={colors.primary} />
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>ADD CHEM</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  <TouchableOpacity onPress={() => setChar(c => c.isKnockedOut
+                    ? clearUnconsciousness(c)
+                    : { ...setUnconsciousness(c), position: 'prone', currentAP: 0 }
+                  )} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: char.isKnockedOut ? colors.destructive + '88' : colors.primary + '66' }}>
+                    <Feather name={char.isKnockedOut ? 'x' : 'plus'} size={13} color={char.isKnockedOut ? colors.destructive : colors.primary} />
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: char.isKnockedOut ? colors.destructive : colors.primary }}>{char.isKnockedOut ? 'REMOVE UNCONSCIOUS' : 'ADD UNCONSCIOUS'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowChemPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
+                    <Feather name="plus" size={13} color={colors.primary} />
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>ADD CHEM</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              {(char.effects ?? []).length === 0 ? (
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No active effects. Add a chem for out-of-combat use.</Text>
+              {char.isKnockedOut && (
+                <View style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '88', backgroundColor: colors.destructive + '14', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.destructive, backgroundColor: colors.destructive + '33', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                      <Feather name="check" size={12} color={colors.destructive} />
+                    </View>
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Unconsciousness</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{char.knockOutRoundsLeft} round{char.knockOutRoundsLeft === 1 ? '' : 's'} remaining</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Cannot act in combat. The character remains prone after waking until they get up.</Text>
+                    </View>
+                    <TouchableOpacity accessibilityLabel="Remove unconsciousness" onPress={() => setChar(c => clearUnconsciousness(c))} style={{ padding: 4 }}>
+                      <Feather name="x" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {(char.effects ?? []).length === 0 && !char.isKnockedOut ? (
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No active effects. Add unconsciousness or a chem for out-of-combat use.</Text>
               ) : (
                 (char.effects ?? []).map(effect => {
                   const chem = effect.chemId ? getChem(effect.chemId) : undefined;
