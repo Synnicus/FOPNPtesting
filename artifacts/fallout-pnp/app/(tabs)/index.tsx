@@ -14,7 +14,7 @@ import {
   TARGETED_CRIT_BONUS, TARGETED_CRIT_EFFECTS, CRITICAL_HIT_TABLE, CritTableEntry,
   CRITICAL_FAILURE_TABLE, CritFailTableEntry,
   baseCritChance as calcBaseCritChance, hasPerk, BodyPart, HELMET_HEAD_CRIT_REDUCTION,
-  applyHelmetHeadCritReduction,
+  applyHelmetHeadCritReduction, criticalFailureSelfDamage,
 } from '@/data/criticals';
 import { computeInjuryEffects } from '@/data/injuries';
 import {
@@ -1917,9 +1917,8 @@ export default function CombatScreen() {
     }
     if (entry.damageSelfHalf) {
       if (weapon) {
-        const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
-        const rawBase = rolls.reduce((a, b) => a + b, 0) + weapon.damageBonus;
-        const half = Math.max(1, Math.floor(rawBase / 2));
+        const maximumDamage = Math.max(0, weapon.damageDieCount * weapon.damageDie + weapon.damageBonus);
+        const half = criticalFailureSelfDamage(weapon);
         // Attacker's own armor applies per normal damage rules.
         const selfBodyArmor = attackerSheet?.bodyArmor ?? null;
         const selfHelmet = attackerSheet?.helmet ?? null;
@@ -1927,7 +1926,7 @@ export default function CombatScreen() {
         const sp = combinedProtectionFor(weapon.damageType, selfBodyArmor as any, selfHelmet as any, selfNatural, shieldFor(attacker).prot);
         const finalSelf = applyProtection(half, sp.dt, sp.dr);
         applyDamage(attacker.id, finalSelf);
-        notes.push(`Damaged self — ${finalSelf} damage (half of ${rawBase}, armor applied)`);
+        notes.push(`Damaged self — ${finalSelf} damage (half of maximum ${maximumDamage} = ${half}, then DT ${sp.dt} / DR ${sp.dr}% applied)`);
       }
     }
     if (entry.slipAndFall) {

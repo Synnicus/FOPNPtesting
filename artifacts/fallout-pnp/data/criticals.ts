@@ -8,7 +8,7 @@
 // Better Criticals: non-fatal crits deal 150% damage (in addition to other
 // bonuses) and limb-damage chance +50%.
 
-import type { Character } from '@/context/types';
+import type { Character, Weapon } from '@/context/types';
 
 export type BodyPart = 'torso' | 'head' | 'eyes' | 'groin' | 'arms' | 'legs';
 
@@ -120,6 +120,17 @@ export const CRITICAL_FAILURE_TABLE: CritFailTableEntry[] = [
   { roll: 9, title: 'Weapon Breaks', description: 'The weapon breaks beyond repair. Time for a new one. Oops.', breaks: true },
   { roll: 10, title: 'Anvil', description: 'A miniature anvil falls out of the sky and strikes you on the head for 1d10 points of damage. No chance to dodge, and DT and DR are disregarded for this strange, magical attack.', anvil: true },
 ];
+
+/** Damage Self uses half of the weapon's maximum printed damage, before DT/DR. */
+export function criticalFailureSelfDamage(
+  weapon: Pick<Weapon, 'damageDieCount' | 'damageDie' | 'damageBonus'>,
+): number {
+  const maximumDamage = Math.max(
+    0,
+    weapon.damageDieCount * weapon.damageDie + weapon.damageBonus,
+  );
+  return Math.floor(maximumDamage / 2);
+}
 
 /** Base critical chance for a character: Luck + More Criticals ranks ×5. */
 export function baseCritChance(char: Pick<Character, 'special' | 'perks' | 'manualDerivedStats'>): number {
