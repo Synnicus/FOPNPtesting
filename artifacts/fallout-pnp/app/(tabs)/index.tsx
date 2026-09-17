@@ -771,6 +771,7 @@ export default function CombatScreen() {
 
   // Critical failure (miss with roll 97-100): table + modal + applied notes.
   const [isCritFail, setIsCritFail] = useState(false);
+  const [manualCritFailConfirmed, setManualCritFailConfirmed] = useState(false);
   const [showCritFailModal, setShowCritFailModal] = useState(false);
   const [critFailEntry, setCritFailEntry] = useState<CritFailTableEntry | null>(null);
   const [critFailNotes, setCritFailNotes] = useState<string[]>([]);
@@ -1124,7 +1125,7 @@ export default function CombatScreen() {
   const hasBetterCriticals = !!attacker && hasPerk(attacker, 'better_criticals');
 
   // Shot results
-  const resolvedShotChances = physicalHitConfirmed ? shotChances.slice(0, 1) : shotChances;
+   const resolvedShotChances = physicalHitConfirmed ? shotChances.slice(0, 1) : shotChances;
   const shotResults: ShotResult[] = resolvedShotChances.map((cth, i) => {
     const roll = rollTotal;
     const hit = physicalHitConfirmed ? i === 0 : roll !== null && roll <= cth;
@@ -1133,13 +1134,14 @@ export default function CombatScreen() {
     const isCrit = i === 0
       ? (hit && primaryIsCrit)
       : (hit && roll !== null && roll <= totalCritChance);
-    const isCritFail = !physicalHitConfirmed && !hit && roll !== null && roll >= 97;
+    const isCritFail = (manualCritFailConfirmed && i === 0)
+      || (!physicalHitConfirmed && !hit && roll !== null && roll >= 97);
     const margin = (roll !== null && hit) ? cth - roll : 0;
     return { index: i, chanceToHit: cth, penalty: burstPenalties[i], roll, hit, margin, isCrit, isCritFail };
   });
 
   const canRoll = !!(attacker && defender && weapon);
-  const attackResolved = rollTotal !== null || physicalHitConfirmed;
+  const attackResolved = rollTotal !== null || physicalHitConfirmed || manualCritFailConfirmed;
 
   // ─── AP cost (per-weapon apSingle/apTargeted/apBurst; fallback AP_COSTS) ───────
   const wSingle = weapon?.apSingle ?? AP_COSTS.ATTACK_SINGLE;
@@ -1200,6 +1202,7 @@ export default function CombatScreen() {
     setCritTableEntry(null);
     setCritEffectNotes([]);
     setIsCritFail(false);
+    setManualCritFailConfirmed(false);
     setShowCritFailModal(false);
     setCritFailEntry(null);
     setCritFailNotes([]);
@@ -1300,6 +1303,7 @@ export default function CombatScreen() {
     setPrimaryIsCrit(false); setAimedCritPart(null); setAimedCritApplied(false); setAimedCritNotes([]);
     setShowCritModal(false); setCritTableEntry(null); setCritEffectNotes([]);
     setIsCritFail(false); setShowCritFailModal(false); setCritFailEntry(null); setCritFailNotes([]);
+    setManualCritFailConfirmed(false);
     setApSpent(false);
     const roll = percentileRoll(t, u);
 
@@ -1364,6 +1368,7 @@ export default function CombatScreen() {
     setCritTableEntry(null);
     setCritEffectNotes([]);
     setIsCritFail(false);
+    setManualCritFailConfirmed(false);
     setShowCritFailModal(false);
     setCritFailEntry(null);
     setCritFailNotes([]);
