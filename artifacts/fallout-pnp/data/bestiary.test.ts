@@ -189,6 +189,7 @@ test('spawning preserves every printed catalog value and natural attack', () => 
       maxAP: template.maxAP,
       sequence: template.sequence,
       criticalChance: template.criticalChance,
+      baseMaxHp: template.maxHp,
     });
     assert.deepEqual(character.skills, template.skills, `${template.name} skills`);
     assert.equal(character.poisonResistance, template.poisonResistance, `${template.name} PR`);

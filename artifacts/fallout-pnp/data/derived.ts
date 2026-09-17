@@ -8,6 +8,18 @@ export function calcMaxHP(special: SPECIALStats, level: number, raceBonusHPPerLe
   return base + levelBonus;
 }
 
+/** NPCs preserve their printed/template HP at level 1, then gain HP using the
+ * normal per-level formula instead of replacing that baseline with PC HP. */
+export function calcNpcMaxHP(
+  baseMaxHp: number,
+  special: SPECIALStats,
+  level: number,
+  raceBonusHPPerLevel: number = 0,
+): number {
+  const levelsGained = Math.max(0, level - 1);
+  return baseMaxHp + levelsGained * (1 + Math.floor(special.endurance / 2) + raceBonusHPPerLevel);
+}
+
 export function calcMaxAP(special: SPECIALStats): number {
   return 5 + Math.floor(special.agility / 2);
 }

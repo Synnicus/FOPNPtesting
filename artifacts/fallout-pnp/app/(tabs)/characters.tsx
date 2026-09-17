@@ -18,7 +18,7 @@ import {
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
-  calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
+  calcMaxHP, calcNpcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
   xpForLevel, levelForXP,
   computePerkDerivedBonuses, brutishHulkExtraHP,
 } from '@/data/derived';
@@ -370,15 +370,6 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   );
 
   const recomputeDerived = useCallback((updatedChar: Character): Character => {
-    if (updatedChar.manualDerivedStats) {
-      return {
-        ...updatedChar,
-        armorClass: updatedChar.manualDerivedStats.armorClass,
-        maxAP: updatedChar.manualDerivedStats.maxAP,
-        sequence: updatedChar.manualDerivedStats.sequence,
-        currentAP: Math.min(updatedChar.currentAP, updatedChar.manualDerivedStats.maxAP),
-      };
-    }
     const raceRef = getRaceById(updatedChar.race) ?? RACES[0];
     // Derived stats use base SPECIAL + permanent Gain-X perks (NOT chem mods —
     // chems are temporary and applied at display/combat time instead).
@@ -387,6 +378,31 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     for (const k of SPECIAL_KEYS) perkSpecial[k] += perkStat[k] ?? 0;
     const hpSpecial = applyImmediateTraitSpecial(perkSpecial, updatedChar.traits);
     const pdb = computePerkDerivedBonuses(updatedChar.perks, updatedChar.level);
+
+    if (updatedChar.manualDerivedStats) {
+      // Printed NPC HP is the level-1 baseline. Legacy NPC saves predate
+      // baseMaxHp, so their current stored max HP becomes that baseline once.
+      const baseMaxHp = updatedChar.manualDerivedStats.baseMaxHp ?? updatedChar.maxHp;
+      const maxHp = calcNpcMaxHP(
+        baseMaxHp,
+        hpSpecial,
+        updatedChar.level,
+        raceRef.bonusHPPerLevel ?? 0,
+      ) + pdb.maxHP
+        + (pdb.doubleHPPerLevel
+          ? brutishHulkExtraHP(hpSpecial, pdb.doubleHPLevels, raceRef.bonusHPPerLevel ?? 0)
+          : 0);
+      return {
+        ...updatedChar,
+        manualDerivedStats: { ...updatedChar.manualDerivedStats, baseMaxHp },
+        maxHp,
+        currentHp: Math.min(updatedChar.currentHp, maxHp),
+        armorClass: updatedChar.manualDerivedStats.armorClass,
+        maxAP: updatedChar.manualDerivedStats.maxAP,
+        sequence: updatedChar.manualDerivedStats.sequence,
+        currentAP: Math.min(updatedChar.currentAP, updatedChar.manualDerivedStats.maxAP),
+      };
+    }
     const maxHp = calcMaxHP(hpSpecial, updatedChar.level, raceRef.bonusHPPerLevel ?? 0)
       + pdb.maxHP
       + (pdb.doubleHPPerLevel ? brutishHulkExtraHP(hpSpecial, pdb.doubleHPLevels, raceRef.bonusHPPerLevel ?? 0) : 0);

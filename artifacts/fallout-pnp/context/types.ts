@@ -244,6 +244,8 @@ export interface ManualDerivedStats {
   maxAP: number;
   sequence: number;
   criticalChance?: number;
+  /** Printed/template max HP at level 1. Used as the baseline for NPC leveling. */
+  baseMaxHp?: number;
 }
 
 // ─── Character ────────────────────────────────────────────────────────────────

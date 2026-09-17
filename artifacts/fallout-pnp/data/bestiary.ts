@@ -400,6 +400,7 @@ export function spawnBestiaryTemplate(
       maxAP: template.maxAP,
       sequence: template.sequence,
       criticalChance: template.criticalChance,
+      baseMaxHp: template.maxHp,
     },
     skills: { ...template.skills },
     taggedSkills: [],
