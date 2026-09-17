@@ -1,4 +1,5 @@
 import type { PoisonSpec } from './mods.ts';
+import type { Weapon } from '../context/types.ts';
 
 // ─── Ammunition — Fallout PnP 2.0 manual "Ammunition for Guns" chapter ────────
 // Every entry is transcribed from the manual's ammo table (values, AC/DR
@@ -106,6 +107,32 @@ export const AMMO_TYPES: AmmoType[] = [
 
 export function getAmmoById(id: string): AmmoType | undefined {
   return AMMO_TYPES.find(a => a.id === id);
+}
+
+/** Resolve a persisted selection, falling back to the weapon's first valid
+ * compatible ammo type. This makes legacy/empty ammo states mechanically use
+ * the same default round shown in the UI. */
+export function resolveEquippedAmmoType(
+  weapon: Pick<Weapon, 'compatibleAmmo'> | null | undefined,
+  ammoTypeId?: string,
+): AmmoType | undefined {
+  const compatibleIds = weapon?.compatibleAmmo ?? [];
+  if (ammoTypeId && compatibleIds.includes(ammoTypeId)) {
+    const selected = getAmmoById(ammoTypeId);
+    if (selected) return selected;
+  }
+  for (const compatibleId of compatibleIds) {
+    const fallback = getAmmoById(compatibleId);
+    if (fallback) return fallback;
+  }
+  return undefined;
+}
+
+export function resolveEquippedAmmoTypeId(
+  weapon: Pick<Weapon, 'compatibleAmmo'> | null | undefined,
+  ammoTypeId?: string,
+): string | undefined {
+  return resolveEquippedAmmoType(weapon, ammoTypeId)?.id;
 }
 
 /** Human-readable modifier summary for combat breakdowns, e.g. "AC -15, ignores DT, +1d6". */

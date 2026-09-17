@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AMMO_TYPES } from './ammo.ts';
+import { AMMO_TYPES, resolveEquippedAmmoType, resolveEquippedAmmoTypeId } from './ammo.ts';
 import { BUILT_IN_WEAPONS, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
@@ -47,4 +47,22 @@ test('every built-in compatible ammo id resolves to a defined ammunition type', 
       assert.ok(ammoIds.has(ammoId), `${weapon.name}: missing compatible ammo ${ammoId}`);
     }
   }
+});
+
+test('a weapon with no saved ammo selection equips its first compatible ammo type', () => {
+  const pistol = weaponById('10mm_pistol');
+  const ammo = resolveEquippedAmmoType(pistol);
+  assert.equal(resolveEquippedAmmoTypeId(pistol), '10mm_jhp');
+  assert.equal(ammo?.name, '10mm JHP');
+  assert.deepEqual(
+    [ammo?.drMod, ammo?.dmgDieCount, ammo?.dmgDie, ammo?.dmgBonus],
+    [-10, 1, 6, 0],
+  );
+});
+
+test('a valid selected ammo type wins while an invalid selection returns to the default', () => {
+  const pistol = weaponById('10mm_pistol');
+  assert.equal(resolveEquippedAmmoTypeId(pistol, '10mm_ap'), '10mm_ap');
+  assert.equal(resolveEquippedAmmoTypeId(pistol, 'not-compatible'), '10mm_jhp');
+  assert.equal(resolveEquippedAmmoTypeId(weaponById('super_sledge')), undefined);
 });

@@ -38,6 +38,7 @@ import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
+import { resolveEquippedAmmoTypeId } from '@/data/ammo';
 function koTick<T extends { currentHp: number; isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
   return advanceKnockoutTimer(c);
 }
@@ -155,6 +156,35 @@ function effectiveMagazineSize(weapon: Weapon): number {
   if (weapon.magazineSize <= 0) return weapon.magazineSize;
   const eff = computeModEffects(weapon.mods ?? []);
   return Math.round(weapon.magazineSize * (eff.magazineMult ?? 1));
+}
+
+function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly Weapon[]): Character {
+  const existingByWeapon = new Map((character.weaponAmmoStates ?? []).map(state => [state.weaponId, state]));
+  const weaponIds = new Set([
+    ...existingByWeapon.keys(),
+    character.equippedWeaponId,
+    character.leftHandWeaponId,
+    character.rightHandWeaponId,
+    ...(character.inventoryWeaponIds ?? []),
+  ].filter((id): id is string => !!id));
+  const weaponAmmoStates: WeaponAmmoState[] = [];
+
+  for (const weaponId of weaponIds) {
+    const existing = existingByWeapon.get(weaponId);
+    const weapon = allWeapons.find(candidate => candidate.id === weaponId);
+    if (!weapon) {
+      if (existing) weaponAmmoStates.push(existing);
+      continue;
+    }
+    if (weapon.magazineSize <= 0 && !existing) continue;
+    weaponAmmoStates.push({
+      weaponId,
+      currentAmmo: existing?.currentAmmo ?? effectiveMagazineSize(weapon),
+      conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
+      ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId),
+    });
+  }
+  return { ...character, weaponAmmoStates };
 }
 
 // v4 — new damage types (N/L/F/P/E), DR added to armor, pilot skill, custom bestiary
@@ -281,7 +311,13 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
 }
 
 function normalizePersistedState(parsed: AppState): AppState {
-  return normalizeArmorEffectsData(migrateConditionSemantics(parsed));
+  const normalized = normalizeArmorEffectsData(migrateConditionSemantics(parsed));
+  const allWeapons = [...BUILT_IN_WEAPONS, ...(normalized.customWeapons ?? [])];
+  return {
+    ...normalized,
+    characters: (normalized.characters ?? []).map(character =>
+      normalizeCharacterAmmoStates(character, allWeapons)),
+  };
 }
 
 interface AppContextValue extends AppState {
@@ -1068,14 +1104,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Character CRUD ─────────────────────────────────────────────────────────
 
   const addCharacter = useCallback((char: Character) => {
-    setState(s => ({ ...s, characters: [...s.characters, char] }));
+    setState(s => ({
+      ...s,
+      characters: [
+        ...s.characters,
+        normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons]),
+      ],
+    }));
   }, []);
 
   const updateCharacter = useCallback((char: Character) => {
     setState(s => {
       const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
       const sheet = resolveCharacterArmorSheet(char, allArmor);
-      const normalized = { ...char, currentAP: Math.min(char.currentAP, sheet.maxAP) };
+      const normalized = normalizeCharacterAmmoStates(
+        { ...char, currentAP: Math.min(char.currentAP, sheet.maxAP) },
+        [...BUILT_IN_WEAPONS, ...s.customWeapons],
+      );
       return {
         ...s,
         characters: s.characters.map(c => c.id === char.id ? normalized : c),
@@ -1498,7 +1543,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (current < shots) { success = false; return s; }
       success = true;
       const newStates: WeaponAmmoState[] = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: existing?.ammoTypeId });
+      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
     return success;
@@ -1512,7 +1557,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!weapon) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: existing?.ammoTypeId });
+      newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -1529,7 +1574,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         weaponId,
         currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
         conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
-        ammoTypeId,
+        ammoTypeId: resolveEquippedAmmoTypeId(weapon, ammoTypeId),
       });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
@@ -1570,10 +1615,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Keep the inventory (max 5, ids incl. equipped) in sync.
       const inv = (char.inventoryWeaponIds ?? (char.equippedWeaponId ? [char.equippedWeaponId] : []));
       const inventoryWeaponIds = inv.includes(weaponId) ? inv : [...inv, weaponId].slice(0, 5);
+      const equippedCharacter = normalizeCharacterAmmoStates({
+        ...char,
+        equippedWeaponId: weaponId,
+        leftHandWeaponId,
+        rightHandWeaponId,
+        inventoryWeaponIds,
+      }, [...BUILT_IN_WEAPONS, ...s.customWeapons]);
       return {
         ...s,
         characters: s.characters.map(c => c.id === characterId
-          ? { ...c, equippedWeaponId: weaponId, leftHandWeaponId, rightHandWeaponId, inventoryWeaponIds }
+          ? equippedCharacter
           : c),
       };
     });
@@ -1658,7 +1710,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!char) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1), ammoTypeId: existing?.ammoTypeId });
+      const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(candidate => candidate.id === weaponId);
+      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -1675,7 +1728,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         weaponId,
         currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
         conditionBoxes: clampConditionBoxes(filledBoxes),
-        ammoTypeId: existing?.ammoTypeId,
+        ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId),
       });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });

@@ -23,7 +23,7 @@ import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
-import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoById, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
@@ -1009,7 +1009,7 @@ export default function CombatScreen() {
   const ammoTypeId = (attacker && weapon)
     ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.ammoTypeId
     : undefined;
-  const loadedAmmo: AmmoType | null = ammoTypeId ? (getAmmoById(ammoTypeId) ?? null) : null;
+  const loadedAmmo: AmmoType | null = resolveEquippedAmmoType(weapon, ammoTypeId) ?? null;
   const attackPoisons = poisonExposuresForAttack(weapon, loadedAmmo);
   // Only the weapon's compatible ammo may be loaded.
   const compatibleAmmo: AmmoType[] = weapon?.compatibleAmmo
