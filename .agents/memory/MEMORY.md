@@ -9,3 +9,4 @@
 - [Fallout PnP Helmet Gas Ratings](fallout-pnp-helmet-gas-ratings.md) — `GR 100/10` and `100/20` map to +100 Gas only; the second number is intentionally unmodeled
 - [Fallout PnP Bestiary Authority](fallout-pnp-bestiary-authority.md) — Part V has no SPECIAL; printed combat stats and both GR numbers remain authoritative after spawning
 - [Fallout PnP Powered Weapons](fallout-pnp-powered-weapons.md) — powered melee/unarmed weapons consume ammo; Super Sledge is non-ammunition-powered
+- [Fallout PnP Portable Imports](fallout-pnp-portable-imports.md) — validate complete bundle state before mutation; strip all portrait URIs and restore only validated embedded assets

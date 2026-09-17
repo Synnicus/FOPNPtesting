@@ -13,12 +13,25 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import type { Armor, Character, Weapon } from '@/context/types';
 import { CRITICAL_HIT_TABLE } from '@/data/criticals';
+import {
+  CampaignStateSnapshot,
+  PortablePortraitAsset,
+  createCampaignBundle,
+  createCharacterBundle,
+  createEquipmentBundle,
+  parseCampaignFile,
+  parsePortraitDataUri,
+  portraitAsset,
+  portraitDataUri,
+  restoreCampaignPortraits,
+} from '@/data/portableExports';
 
 function defaultExportName() {
   const d = new Date();
@@ -45,15 +58,113 @@ function webDownload(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function mimeTypeForUri(uri: string, reportedType?: string | null): string {
+  if (reportedType?.startsWith('image/')) return reportedType;
+  const path = uri.toLowerCase().split(/[?#]/)[0];
+  if (path.endsWith('.png')) return 'image/png';
+  if (path.endsWith('.webp')) return 'image/webp';
+  if (path.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function readPortrait(character: Character): Promise<PortablePortraitAsset | null> {
+  if (!character.portrait) return null;
+  const embedded = parsePortraitDataUri(character.portrait);
+  if (embedded) return portraitAsset(character.id, embedded.mimeType, embedded.base64);
+
+  try {
+    if (Platform.OS === 'web') {
+      const response = await fetch(character.portrait);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return portraitAsset(
+        character.id,
+        mimeTypeForUri(character.portrait, blob.type),
+        arrayBufferToBase64(await blob.arrayBuffer()),
+      );
+    }
+
+    const file = new ExpoFile(character.portrait);
+    if (!file.exists) return null;
+    return portraitAsset(
+      character.id,
+      mimeTypeForUri(character.portrait, file.type),
+      await file.base64(),
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function collectPortraitAssets(characters: readonly Character[]) {
+  const results = await Promise.all(characters.map(readPortrait));
+  return {
+    assets: results.filter((asset): asset is PortablePortraitAsset => !!asset),
+    failed: characters.filter(character => character.portrait).length
+      - results.filter(Boolean).length,
+  };
+}
+
+function portraitExtension(mimeType: string): string {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/gif') return 'gif';
+  return 'jpg';
+}
+
+function createPortraitImportSession(): {
+  materialize: (asset: PortablePortraitAsset) => Promise<string>;
+  cleanup: () => void;
+} {
+  if (Platform.OS === 'web') {
+    return {
+      materialize: async asset => portraitDataUri(asset),
+      cleanup: () => {},
+    };
+  }
+
+  const directory = new Directory(
+    Paths.document,
+    `fallout-pnp-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  directory.create({ intermediates: true, idempotent: true });
+  let assetIndex = 0;
+  return {
+    materialize: async asset => {
+      const safeId = asset.characterId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
+      const file = new ExpoFile(
+        directory,
+        `${assetIndex++}-${safeId}.${portraitExtension(asset.mimeType)}`,
+      );
+      file.create({ overwrite: false });
+      file.write(asset.base64, { encoding: 'base64' });
+      return file.uri;
+    },
+    cleanup: () => {
+      if (directory.exists) directory.delete();
+    },
+  };
+}
+
 export default function CampaignScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { characters, customWeapons, customArmor, exportCampaign, importCampaign } = useApp();
-  const [importing, setImporting] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [exportName, setExportName] = useState(defaultExportName());
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const pcs = characters.filter(c => c.type === 'pc');
   const npcs = characters.filter(c => c.type === 'npc');
@@ -63,50 +174,156 @@ export default function CampaignScreen() {
     setTimeout(() => setStatus(null), 3000);
   };
 
-  const handleExport = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const json = exportCampaign();
-    const filename = sanitizeFilename(exportName);
-
+  const saveJsonFile = async (json: string, filename: string): Promise<string> => {
     if (Platform.OS === 'web') {
       webDownload(json, filename);
-      showStatus('success', `Saved to your browser's Downloads folder as ${filename}.`);
-      return;
+      return `Saved to Downloads as ${filename}.`;
     }
 
-    try {
-      const file = new File(Paths.document, filename);
-      if (file.exists) {
-        file.delete();
-      }
-      file.create();
-      file.write(json);
+    const file = new ExpoFile(Paths.document, filename);
+    file.create({ intermediates: true, overwrite: true });
+    file.write(json);
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
+    }
+    return `Saved to ${file.uri}`;
+  };
 
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
-        showStatus('success', `Saved to ${file.uri}`);
+  const handleExport = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setBusyAction('campaign');
+    try {
+      const state = JSON.parse(exportCampaign()) as CampaignStateSnapshot;
+      const portraits = await collectPortraitAssets(state.characters);
+      const bundle = createCampaignBundle(state, portraits.assets);
+      const filename = sanitizeFilename(exportName);
+      const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
+      const omittedPortraits = portraits.failed + portraits.assets.length - bundle.assets.length;
+      const portraitNote = bundle.assets.length > 0
+        ? ` Included ${bundle.assets.length} portrait${bundle.assets.length === 1 ? '' : 's'}.`
+        : '';
+      const warning = omittedPortraits > 0
+        ? ` ${omittedPortraits} portrait${omittedPortraits === 1 ? '' : 's'} could not be included.`
+        : '';
+      showStatus('success', `${saved}${portraitNote}${warning}`);
+    } catch {
+      showStatus('error', 'Campaign export failed. Try again.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const importCampaignJson = async (json: string) => {
+    const parsed = parseCampaignFile(json.trim());
+    if (!parsed.ok) {
+      showStatus('error', parsed.error);
+      return;
+    }
+    setBusyAction('import');
+    let importSession: ReturnType<typeof createPortraitImportSession> | null = null;
+    try {
+      let state: CampaignStateSnapshot;
+      let restored = 0;
+      let failed = 0;
+      let ignored = 0;
+      if (parsed.source === 'portable') {
+        importSession = createPortraitImportSession();
+        const result = await restoreCampaignPortraits(parsed.bundle, importSession.materialize);
+        state = result.state;
+        restored = result.restored;
+        failed = result.failed;
+        ignored = parsed.ignoredAssets;
       } else {
-        showStatus('success', `Saved to ${file.uri}`);
+        state = parsed.state;
       }
-    } catch (e) {
-      showStatus('error', 'Export failed. Try again.');
+
+      const ok = importCampaign(JSON.stringify(state));
+      if (!ok) {
+        importSession?.cleanup();
+        showStatus('error', 'The campaign data could not be loaded.');
+        return;
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const portraitNote = restored > 0
+        ? ` Restored ${restored} portrait${restored === 1 ? '' : 's'}.`
+        : '';
+      const warning = failed > 0
+        ? ` ${failed} portrait${failed === 1 ? '' : 's'} could not be restored.`
+        : '';
+      const ignoredNote = ignored > 0
+        ? ` Ignored ${ignored} invalid portrait asset${ignored === 1 ? '' : 's'}.`
+        : '';
+      showStatus('success', `Campaign loaded successfully.${portraitNote}${warning}${ignoredNote}`);
+      setShowImportModal(false);
+      setImportJson('');
+    } catch {
+      importSession?.cleanup();
+      showStatus('error', 'The campaign file could not be restored safely.');
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const handleImportFile = async () => {
-    setShowImportModal(true);
+    try {
+      if (Platform.OS === 'web') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = async () => {
+          try {
+            const file = input.files?.[0];
+            if (file) await importCampaignJson(await file.text());
+          } catch {
+            showStatus('error', 'The campaign file could not be opened.');
+          }
+        };
+        input.click();
+        return;
+      }
+      const picked = await ExpoFile.pickFileAsync(undefined, 'application/json');
+      const file = Array.isArray(picked) ? picked[0] : picked;
+      if (file) await importCampaignJson(await file.text());
+    } catch (error) {
+      if (error instanceof Error && /cancel/i.test(error.message)) return;
+      showStatus('error', 'The campaign file could not be opened.');
+    }
   };
 
-  const handleImportText = () => {
-    const ok = importCampaign(importJson.trim());
-    if (ok) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showStatus('success', 'Campaign loaded successfully.');
-      setShowImportModal(false);
-      setImportJson('');
-    } else {
-      showStatus('error', 'Invalid campaign JSON. Check the format and try again.');
+  const handleImportText = async () => importCampaignJson(importJson);
+
+  const exportCharacter = async (character: Character) => {
+    setBusyAction(`character:${character.id}`);
+    try {
+      const asset = await readPortrait(character);
+      const bundle = createCharacterBundle(character, customWeapons, customArmor, asset);
+      const filename = sanitizeFilename(`fallout-character-${character.name}`);
+      const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
+      const dependencyCount = bundle.customWeapons.length + bundle.customArmor.length;
+      const portraitNote = asset
+        ? ' Portrait included.'
+        : character.portrait
+          ? ' Portrait could not be read and was omitted.'
+          : '';
+      showStatus('success', `${saved}${portraitNote}${dependencyCount > 0 ? ` Included ${dependencyCount} custom equipment item${dependencyCount === 1 ? '' : 's'}.` : ''}`);
+    } catch {
+      showStatus('error', `Could not export ${character.name}.`);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const exportEquipment = async (equipmentType: 'weapon' | 'armor', item: Weapon | Armor) => {
+    setBusyAction(`${equipmentType}:${item.id}`);
+    try {
+      const bundle = createEquipmentBundle(equipmentType, item);
+      const filename = sanitizeFilename(`fallout-${equipmentType}-${item.name}`);
+      const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
+      showStatus('success', saved);
+    } catch {
+      showStatus('error', `Could not export ${item.name}.`);
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -220,12 +437,13 @@ export default function CampaignScreen() {
               gap: 14,
             }}
             onPress={handleExport}
+            disabled={busyAction !== null}
           >
             <Feather name="download" size={22} color={colors.primaryForeground} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>EXPORT CAMPAIGN</Text>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>{busyAction === 'campaign' ? 'PREPARING CAMPAIGN…' : 'EXPORT CAMPAIGN'}</Text>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primaryForeground + 'cc', marginTop: 2 }}>
-                Save all characters & custom equipment as a JSON file
+                Save characters, portraits & custom equipment in one JSON file
               </Text>
             </View>
             <Feather name="chevron-right" size={18} color={colors.primaryForeground} />
@@ -244,16 +462,95 @@ export default function CampaignScreen() {
               gap: 14,
             }}
             onPress={handleImportFile}
+            disabled={busyAction !== null}
           >
             <Feather name="upload" size={22} color={colors.primary} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.foreground }}>LOAD CAMPAIGN</Text>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{busyAction === 'import' ? 'LOADING CAMPAIGN…' : 'LOAD CAMPAIGN FILE'}</Text>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-                {Platform.OS === 'web' ? 'Paste exported JSON to restore campaign' : 'Pick a campaign JSON file to restore'}
+                Choose an exported JSON file to restore
               </Text>
             </View>
             <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7 }}
+            onPress={() => setShowImportModal(true)}
+            disabled={busyAction !== null}
+          >
+            <Feather name="clipboard" size={14} color={colors.primary} />
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.5 }}>PASTE CAMPAIGN JSON INSTEAD</Text>
+          </TouchableOpacity>
+
+          {/* Individual portable files */}
+          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 10 }}>
+            <View style={{ gap: 3 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>INDIVIDUAL EXPORTS</Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                Save or share one character or custom equipment item.
+              </Text>
+            </View>
+
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>CHARACTERS</Text>
+            {characters.length === 0 ? (
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No characters to export.</Text>
+            ) : characters.map(character => {
+              const busy = busyAction === `character:${character.id}`;
+              return (
+                <View key={character.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{character.name}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{character.type.toUpperCase()} · portrait and linked custom gear included</Text>
+                  </View>
+                  <TouchableOpacity
+                    accessibilityLabel={`Export ${character.name}`}
+                    onPress={() => exportCharacter(character)}
+                    disabled={busyAction !== null}
+                    style={{ padding: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}
+                  >
+                    <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginTop: 4 }}>CUSTOM EQUIPMENT</Text>
+            {customWeapons.length === 0 && customArmor.length === 0 ? (
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No custom equipment to export.</Text>
+            ) : (
+              <>
+                {customWeapons.map(weapon => {
+                  const busy = busyAction === `weapon:${weapon.id}`;
+                  return (
+                    <View key={`weapon:${weapon.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{weapon.name}</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>CUSTOM WEAPON</Text>
+                      </View>
+                      <TouchableOpacity accessibilityLabel={`Export ${weapon.name}`} onPress={() => exportEquipment('weapon', weapon)} disabled={busyAction !== null} style={{ padding: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}>
+                        <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+                {customArmor.map(armor => {
+                  const busy = busyAction === `armor:${armor.id}`;
+                  return (
+                    <View key={`armor:${armor.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{armor.name}</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>CUSTOM ARMOR</Text>
+                      </View>
+                      <TouchableOpacity accessibilityLabel={`Export ${armor.name}`} onPress={() => exportEquipment('armor', armor)} disabled={busyAction !== null} style={{ padding: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}>
+                        <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+          </View>
 
           {/* Clear */}
           <TouchableOpacity
