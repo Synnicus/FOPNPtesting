@@ -8,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
@@ -20,7 +20,7 @@ const genId = () => Date.now().toString() + Math.random().toString(36).substr(2,
 
 const SKILL_LABELS: Record<string, string> = {
   smallGuns: 'Small Guns', bigGuns: 'Big Guns', energyWeapons: 'Energy Weapons',
-  meleeWeapons: 'Melee Weapons', unarmed: 'Unarmed', throwing: 'Throwing', natural: 'Natural',
+  meleeWeapons: 'Melee Weapons', unarmed: 'Unarmed', throwing: 'Throwing', natural: 'Natural', minesTraps: 'Mines & Traps',
 };
 
 const ARMOR_SPECIAL_FIELDS: { key: keyof SPECIALStats; label: string }[] = [
@@ -128,12 +128,14 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
   const [showPresets, setShowPresets] = useState(false);
+  const [areaAttackProfileId, setAreaAttackProfileId] = useState<string | undefined>();
 
   const isEditing = !!editWeapon;
 
   const applyWeaponFields = (w: Weapon, nameOverride?: string) => {
     setName(nameOverride ?? w.name);
     setCategory(w.category);
+    setAreaAttackProfileId(w.areaAttackProfileId);
     setDamageType(w.damageType);
     setDieCount(w.damageDieCount);
     setDieSides(w.damageDie);
@@ -167,10 +169,11 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       setCanBurst(false); setApBurst(AP_COSTS.ATTACK_BURST);
       setHands(1); setCompatibleAmmo([]);
       setSelectedMods([]);
+      setAreaAttackProfileId(undefined);
     }
   }, [visible, editWeapon]);
 
-  const isValid = name.trim().length > 0 && dieCount > 0 && dieSides > 0;
+  const isValid = name.trim().length > 0 && ((dieCount > 0 && dieSides > 0) || !!areaAttackProfileId);
 
   const modEffects = computeModEffects(selectedMods);
   const ammoCompatibleCategory = weaponCategorySupportsAmmo(category);
@@ -200,8 +203,9 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     onSave({
       id: isEditing ? editWeapon!.id : genId(), name: name.trim(),
       category,
+      areaAttackProfileId: category === 'minesTraps' ? areaAttackProfileId : undefined,
       damageType, damageDieCount: dieCount, damageDie: dieSides,
-      damageBonus, skill: (category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
+      damageBonus, skill: (category === 'minesTraps' ? 'traps' : category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
       burstLimit, isDoubleShot, magazineSize,
       weight: 0, minStr, rangeNormal, knockdownChance: 0,
       apSingle, apTargeted: canTarget ? apTargeted : null, apBurst: canBurst ? apBurst : null,
@@ -281,6 +285,16 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   ))}
                 </View>
                 {/* Damage type */}
+                {category === 'minesTraps' && (
+                  <View style={{ gap: 6 }}>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Shared trigger profile overrides the damage fields below. Choose custom damage to use your own dice.</Text>
+                    {[undefined, ...Object.keys(MINE_TRAP_PROFILES)].map(id => (
+                      <TouchableOpacity key={id ?? 'custom'} onPress={() => setAreaAttackProfileId(id)} style={{ padding: 8, borderWidth: 1, borderColor: areaAttackProfileId === id ? colors.primary : colors.border }}>
+                        <Text style={{ color: colors.foreground }}>{id ? (BUILT_IN_WEAPONS.find(w => w.areaAttackProfileId === id)?.name ?? id) : 'Custom damage — no shared profile'}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>DAMAGE TYPE</Text>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   {(Object.keys(DAMAGE_TYPES) as string[]).map(label => {

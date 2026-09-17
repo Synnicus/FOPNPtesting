@@ -40,7 +40,7 @@ export const AP_COSTS = {
 
   // ─── Special Actions ─────────────────────────────────────
   DEFEND: 0,          // forfeit remaining AP, convert to tempAC
-  LAYING_MINE: 4,
+  LAYING_MINE: 6,
   SETUP_TRIPOD: 3,
 } as const;
 

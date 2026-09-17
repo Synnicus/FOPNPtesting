@@ -1,4 +1,8 @@
 import type { Weapon, DamageType, WeaponCategory } from '../context/types.ts';
+import { MINE_TRAP_PROFILES } from './areaEffects.ts';
+import type { AreaAttack } from './areaEffects.ts';
+
+export { MINE_TRAP_PROFILES } from './areaEffects.ts';
 
 export const WEAPON_CATEGORIES: Record<string, WeaponCategory> = {
   'Unarmed': 'unarmed',
@@ -7,6 +11,7 @@ export const WEAPON_CATEGORIES: Record<string, WeaponCategory> = {
   'Big Guns': 'bigGuns',
   'Energy Weapons': 'energyWeapons',
   'Throwing': 'throwing',
+  'Mines & Traps': 'minesTraps',
   'Natural': 'natural',
 };
 
@@ -17,11 +22,12 @@ export const WEAPON_CATEGORY_LABELS: Record<WeaponCategory, string> = {
   bigGuns: 'Big Guns',
   energyWeapons: 'Energy Weapons',
   throwing: 'Throwing',
+  minesTraps: 'Mines & Traps',
   natural: 'Natural',
 };
 
 export const WEAPON_CATEGORY_ORDER: WeaponCategory[] = [
-  'unarmed', 'meleeWeapons', 'smallGuns', 'bigGuns', 'energyWeapons', 'throwing', 'natural',
+  'unarmed', 'meleeWeapons', 'smallGuns', 'bigGuns', 'energyWeapons', 'throwing', 'minesTraps', 'natural',
 ];
 
 export function weaponCategorySupportsAmmo(category: WeaponCategory): boolean {
@@ -259,6 +265,20 @@ export const BUILT_IN_WEAPONS: Weapon[] = [
   { id: "dynamite", name: "Dynamite", category: "throwing", damageType: "explosion", damageDieCount: 6, damageDie: 6, damageBonus: 0, skill: "throwing", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 2, minStr: 1, rangeNormal: 10, knockdownChance: 0, apSingle: 5, apTargeted: null, apBurst: null, hands: 1, mods: [], isCustom: false },
   { id: "plastique_c_14_plastic_explosive", name: "Plastique (C-14 Plastic Explosive)", category: "throwing", damageType: "explosion", damageDieCount: 8, damageDie: 8, damageBonus: 0, skill: "throwing", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 2, minStr: 1, rangeNormal: 5, knockdownChance: 0, apSingle: 5, apTargeted: null, apBurst: null, hands: 1, mods: [], isCustom: false },
 
+  // ─── MINES AND TRAPS ─────────────────────────────────────────────
+  // The manual describes these as Traps-skill devices rather than normal
+  // attacks.  They are represented as weapons so they can be carried and
+  // equipped; setting/triggering remains GM-adjudicated.
+  { id: "bullhorn_trap", name: "Bullhorn Trap", category: "minesTraps", damageType: "normal", damageDieCount: 0, damageDie: 0, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "bullhorn_trap", mods: [], isCustom: false },
+  { id: "silent_alarm", name: "Silent Alarm", category: "minesTraps", damageType: "normal", damageDieCount: 0, damageDie: 0, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "silent_alarm", mods: [], isCustom: false },
+  { id: "gas_trap", name: "Gas Trap", category: "minesTraps", damageType: "normal", damageDieCount: 0, damageDie: 0, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "gas_trap", mods: [], isCustom: false },
+  { id: "poison_needle", name: "Poison Needle", category: "minesTraps", damageType: "normal", damageDieCount: 0, damageDie: 0, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 1, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "poison_needle", mods: [], isCustom: false },
+  { id: "pit_of_spikes", name: "Pit of Spikes", category: "minesTraps", damageType: "normal", damageDieCount: 3, damageDie: 10, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "pit_of_spikes", mods: [], isCustom: false },
+  { id: "explosive_trap", name: "Explosive Trap", category: "minesTraps", damageType: "explosion", damageDieCount: 0, damageDie: 0, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "explosive_trap", mods: [], isCustom: false },
+  { id: "claymore_trap", name: "Claymore Trap", category: "minesTraps", damageType: "explosion", damageDieCount: 0, damageDie: 0, damageBonus: 0, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "claymore_trap", mods: [], isCustom: false },
+  { id: "t13_antipersonnel_mine", name: "T13 Antipersonnel Mine", category: "minesTraps", damageType: "explosion", damageDieCount: 1, damageDie: 20, damageBonus: 20, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "t13_antipersonnel_mine", mods: [], isCustom: false },
+  { id: "t45_se_antivehicle_mine", name: "T45-SE Antivehicle Mine", category: "minesTraps", damageType: "explosion", damageDieCount: 3, damageDie: 20, damageBonus: 20, skill: "traps", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 1, minStr: 1, rangeNormal: 0, knockdownChance: 0, apSingle: 0, apTargeted: null, apBurst: null, hands: 1, areaAttackProfileId: "t45_se_antivehicle_mine", mods: [], isCustom: false },
+
   // ─── NATURAL WEAPONS ─────────────────────────────────────────────
   { id: "deathclaw_claw", name: "Deathclaw Claw", category: "natural", damageType: "normal", damageDieCount: 3, damageDie: 8, damageBonus: 0, skill: "unarmed", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 1, knockdownChance: 0, apSingle: 3, apTargeted: null, apBurst: null, hands: 1, mods: [], isCustom: false },
   { id: "deathclaw_bite", name: "Deathclaw Bite", category: "natural", damageType: "normal", damageDieCount: 2, damageDie: 10, damageBonus: 0, skill: "unarmed", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 1, knockdownChance: 20, apSingle: 3, apTargeted: null, apBurst: null, hands: 1, mods: [], isCustom: false },
@@ -323,6 +343,19 @@ export const BUILT_IN_WEAPONS: Weapon[] = [
 
 export function getWeaponById(id: string): Weapon | undefined {
   return BUILT_IN_WEAPONS.find(w => w.id === id);
+}
+
+/**
+ * Return the shared area-effect profile for a weapon, when one exists.
+ *
+ * The reference is optional so old persisted/custom Weapon objects remain
+ * valid.  A fresh object is returned to keep callers from mutating the
+ * canonical catalog entry while pre-filling a modal's rolled damage.
+ */
+export function getWeaponAreaAttack(weapon: Weapon): AreaAttack | undefined {
+  const profileId = weapon.areaAttackProfileId;
+  const profile = profileId ? MINE_TRAP_PROFILES[profileId] : undefined;
+  return profile ? { ...profile } : undefined;
 }
 
 /**

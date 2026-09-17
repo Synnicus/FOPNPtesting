@@ -21,7 +21,7 @@ import {
 } from '@/data/condition';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
-import { isMeleeWeapon, isRangedWeapon, getWeaponHands, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
+import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoMods, AmmoType } from '@/data/ammo';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
@@ -506,6 +506,14 @@ const AREA_ATTACK_OPTIONS: { kind: AreaAttackKind; label: string; note: string }
   { kind: 'electricity', label: 'Electricity', note: 'Resistance, then Endurance; failure = 1d10 rounds unconscious' },
   { kind: 'acid', label: 'Acid', note: 'Fire protection + 1d6 ongoing' },
 ];
+
+function catalogProfileLabel(profileId: string): string {
+  return profileId
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 function LightPickerModal({ visible, value, onChange, onClose }: {
   visible: boolean; value: number; onChange: (v: number) => void; onClose: () => void;
 }) {
@@ -766,6 +774,9 @@ export default function CombatScreen() {
   const [showDefenderPicker, setShowDefenderPicker] = useState(false);
   const [showAddCombatantPicker, setShowAddCombatantPicker] = useState(false);
   const [showApActions, setShowApActions] = useState(false);
+  // A mine/trap opens the same area-attack modal as the GM AoE action, but
+  // carries its catalog profile and selected defender into that modal.
+  const [areaAttackPreset, setAreaAttackPreset] = useState<AreaAttack | null>(null);
   const [showChemPicker, setShowChemPicker] = useState(false);
   const [showAmmoPicker, setShowAmmoPicker] = useState(false);
   const [showWeaponPicker, setShowWeaponPicker] = useState(false);
@@ -834,6 +845,11 @@ export default function CombatScreen() {
   ).values());
   // Every rule below consumes this one authoritative attack-session weapon.
   const weapon = resolveAttackWeapon(activeWeapon, attackWeaponId, attackCandidates);
+  const weaponAreaAttack = weapon ? getWeaponAreaAttack(weapon) : undefined;
+  // Profiled devices use the area resolver. Legacy/custom mines and traps
+  // without a profile deliberately retain the normal custom weapon dice path.
+  const isMineTrap = weapon?.category === 'minesTraps' || !!weaponAreaAttack;
+  const usesAreaAttackProfile = !!weaponAreaAttack;
   const heldWeapons: Weapon[] = dualWielding
     ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
     : (weapon ? [weapon] : []);
@@ -1498,6 +1514,15 @@ export default function CombatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attacker, effectiveAPCost, spendAP]);
 
+  const openMineTrapAreaAttack = useCallback(() => {
+    if (!weaponAreaAttack || !weapon) {
+      notify('Missing Area Profile', `${weapon?.name ?? 'This mine/trap'} has no catalog area profile yet.`);
+      return;
+    }
+    setAreaAttackPreset(weaponAreaAttack);
+    setShowAreaAttack(true);
+  }, [weaponAreaAttack, weapon]);
+
   const selectAttackWeapon = useCallback((weaponId: string) => {
     if (weapon?.id === weaponId) return;
     setAttackWeaponId(weaponId === activeWeapon?.id ? null : weaponId);
@@ -1665,6 +1690,24 @@ export default function CombatScreen() {
     spendAP(attacker.id, attacker.currentAP);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [attacker, spendAP]);
+
+  const handleLayMine = () => {
+    if (!attacker || !attackerSheet) return;
+    const message = `${attacker.name} — effective Traps ${attackerSheet.effectiveSkills.traps}%.\n\nTrap setting is a roll for the GM. The app does not roll Traps automatically or assume success.\n\nSpend ${AP_COSTS.LAYING_MINE} AP to attempt placement? Cancelling spends no AP.`;
+    const confirm = () => {
+      if (!spendAP(attacker.id, AP_COSTS.LAYING_MINE)) {
+        notify('Not Enough AP', `Lay Mine needs ${AP_COSTS.LAYING_MINE} AP.`);
+      }
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) confirm();
+    } else {
+      Alert.alert('Lay Mine — 6 AP', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Spend 6 AP — attempt placement', onPress: confirm },
+      ]);
+    }
+  };
 
   // Defend: forfeit remaining AP, converting it to temporary AC.
   const handleDefend = useCallback(() => {
@@ -2047,7 +2090,7 @@ export default function CombatScreen() {
             {/* Area effects and adding combatants during active combat */}
             {combatActive && (
               <View style={{ gap: 7 }}>
-                <TouchableOpacity testID="open-aoe-damage" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={() => setShowAreaAttack(true)}>
+                <TouchableOpacity testID="open-aoe-damage" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={() => { setAreaAttackPreset(null); setShowAreaAttack(true); }}>
                   <Feather name="target" size={14} color="#fff" />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY AOE DAMAGE</Text>
                 </TouchableOpacity>
@@ -2261,7 +2304,7 @@ export default function CombatScreen() {
           )}
 
           {/* Attack AP controls; the active weapon name removes dual-wield ambiguity. */}
-          {canRoll && (
+          {canRoll && !usesAreaAttackProfile && (
             <View style={{ gap: 8 }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {!apSpent && (
@@ -2303,6 +2346,31 @@ export default function CombatScreen() {
                   </Text>
                 </TouchableOpacity>
               )}
+            </View>
+          )}
+
+          {/* Mines and traps are triggered through their catalog area profile.
+              They must not use the normal percentile attack or weapon-dice
+              damage path.  AP setup/placement remains in the AP actions owned
+              by the combat screen, so this only opens the resolver modal. */}
+          {canRoll && isMineTrap && usesAreaAttackProfile && (
+            <View style={{ gap: 6, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: weaponAreaAttack ? colors.primary : colors.destructive, backgroundColor: colors.secondary }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>MINE / TRAP TRIGGER</Text>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                {weaponAreaAttack
+                  ? 'Uses the printed blast, fragmentation, concussion, or trap profile. Select the affected area and resolve it once.'
+                  : 'This device is missing a catalog area profile.'}
+              </Text>
+              <TouchableOpacity
+                testID="trigger-mine-trap"
+                disabled={!defender}
+                onPress={openMineTrapAreaAttack}
+                style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, backgroundColor: defender ? colors.destructive : colors.border, opacity: defender ? 1 : 0.55 }}
+              >
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: weaponAreaAttack && defender ? '#fff' : colors.mutedForeground, letterSpacing: 1 }}>
+                  {defender ? `TRIGGER PROFILE → ${defender.name.toUpperCase()}` : 'SELECT A DEFENDER FIRST'}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -2363,7 +2431,7 @@ export default function CombatScreen() {
                       { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => { setWeaponPickerFree(false); setShowWeaponPicker(true); } },
                       { key: 'grab_use_item', label: 'GRAB / USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => handleGenericApAction(AP_COSTS.USE_ITEM, 'Grab / Use Item') },
                       { key: 'use_skill', label: 'USE SKILL', cost: AP_COSTS.USE_SKILL, onPress: () => handleGenericApAction(AP_COSTS.USE_SKILL, 'Use Skill') },
-                      { key: 'lay_mine', label: 'LAY MINE', cost: AP_COSTS.LAYING_MINE, onPress: () => handleGenericApAction(AP_COSTS.LAYING_MINE, 'Lay Mine') },
+                      { key: 'lay_mine', label: 'LAY MINE', cost: AP_COSTS.LAYING_MINE, onPress: handleLayMine },
                     ] as { key: string; label: string; cost: number; onPress: () => void }[]).map(action => {
                       const disabled = attacker.currentAP < action.cost;
                       return (
@@ -2426,7 +2494,7 @@ export default function CombatScreen() {
         </View>
 
         {/* ─── Burst / Double-Shot Mode ─── */}
-        {canRoll && weapon && !specialUnarmedAttack && (canBurst || weapon.isDoubleShot) && (
+        {canRoll && !usesAreaAttackProfile && weapon && !specialUnarmedAttack && (canBurst || weapon.isDoubleShot) && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>FIRE MODE</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -2698,7 +2766,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Dice Roll (Complex burst / Single) ─── */}
-        {canRoll && (!isBurst || burstMode === 'complex' || !isBurst) && (
+        {canRoll && !usesAreaAttackProfile && (!isBurst || burstMode === 'complex' || !isBurst) && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>PERCENTILE ROLL (d10 × 10 + d10)</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
@@ -2747,7 +2815,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Streamlined Burst Dice ─── */}
-        {canRoll && isBurst && burstMode === 'streamlined' && (
+        {canRoll && !usesAreaAttackProfile && isBurst && burstMode === 'streamlined' && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>BURST DICE ROLL ({burstShots}× d10, hit if ≤ {streamlinedHitThreshold})</Text>
             {streamlinedDice.length > 0 && (
@@ -2831,7 +2899,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Shot Results (Complex/Single) ─── */}
-        {attackResolved && canRoll && (!isBurst || burstMode === 'complex') && (
+        {attackResolved && canRoll && !usesAreaAttackProfile && (!isBurst || burstMode === 'complex') && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>SHOT RESULTS</Text>
             {shotResults.map((shot, i) => (
@@ -2956,7 +3024,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Damage ─── */}
-        {attackResolved && shotResults.some(s => s.hit) && weapon && (!isBurst || burstMode === 'complex') && (
+        {attackResolved && !usesAreaAttackProfile && shotResults.some(s => s.hit) && weapon && (!isBurst || burstMode === 'complex') && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>DAMAGE CALCULATION</Text>
             <View style={{ gap: 2 }}>
@@ -3080,8 +3148,16 @@ export default function CombatScreen() {
         combatants={initiativeEntries.flatMap(entry => {
           const c = characters.find(character => character.id === entry.characterId);
           return c && c.currentHp > 0 ? [c] : [];
-        })}
-        onClose={() => setShowAreaAttack(false)}
+        }).concat(
+          areaAttackPreset && defender && defender.currentHp > 0
+            && !initiativeEntries.some(entry => entry.characterId === defender.id)
+            ? [defender]
+            : [],
+        )}
+        initialAttack={areaAttackPreset ?? undefined}
+        initialDefenderId={areaAttackPreset ? defender?.id : undefined}
+        sourceWeaponName={areaAttackPreset ? weapon?.name : undefined}
+        onClose={() => { setShowAreaAttack(false); setAreaAttackPreset(null); }}
         onApply={applyAreaAttack}
         receipt={areaAttackReceipt}
       />
@@ -3295,12 +3371,15 @@ export default function CombatScreen() {
     </View>
   );
 }
-function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
+function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initialAttack, initialDefenderId, sourceWeaponName }: {
   visible: boolean;
   combatants: Character[];
   onClose: () => void;
   onApply: (attack: AreaAttack, targetIds: string[]) => string;
   receipt?: { requestId: string; results: AreaResolution[] };
+  initialAttack?: AreaAttack;
+  initialDefenderId?: string;
+  sourceWeaponName?: string;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -3311,7 +3390,37 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
   const [applying, setApplying] = useState(false);
   const applyingRef = useRef(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [profileComponent, setProfileComponent] = useState<'main' | 'fragmentation' | 'concussion'>('main');
+  const [profileDamageRolled, setProfileDamageRolled] = useState<number | null>(null);
+  const [catalogProfileId, setCatalogProfileId] = useState<string | null>(null);
+  const [gasExposure, setGasExposure] = useState<'gasInhaled' | 'gasContact' | null>(null);
+  const activeProfile = initialAttack ?? (catalogProfileId ? MINE_TRAP_PROFILES[catalogProfileId] : undefined);
+  const profileMode = !!activeProfile;
   const ongoing = kind === 'flamethrower' || kind === 'acid';
+
+  // A profile is intentionally copied into local modal state.  This makes
+  // opening a second trigger start clean, while a receipt can only resolve the
+  // request that this modal submitted.
+  useEffect(() => {
+    if (!visible) return;
+    setGasExposure(null);
+    if (initialAttack) {
+      setKind(initialAttack.kind);
+      setRawDamage(initialAttack.rawDamage);
+      setProfileComponent('main');
+      setProfileDamageRolled(null);
+      setTargets(initialDefenderId ? [initialDefenderId] : []);
+      setCatalogProfileId(null);
+    } else {
+      setTargets([]);
+      setProfileDamageRolled(null);
+      setCatalogProfileId(null);
+    }
+    setSummary(null);
+    setApplying(false);
+    applyingRef.current = false;
+    setPendingRequestId(null);
+  }, [visible, initialAttack, initialDefenderId]);
 
   useEffect(() => {
     if (pendingRequestId && receipt?.requestId === pendingRequestId) {
@@ -3326,7 +3435,44 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
     setApplying(false);
     applyingRef.current = false;
     setPendingRequestId(null);
+    setCatalogProfileId(null);
     onClose();
+  };
+  const profileParts = activeProfile ? [
+    { key: 'main' as const, label: 'MAIN BLAST', component: activeProfile },
+    ...(activeProfile.fragmentation ? [{ key: 'fragmentation' as const, label: 'FRAGMENTATION', component: activeProfile.fragmentation }] : []),
+    ...(activeProfile.concussion ? [{ key: 'concussion' as const, label: 'CONCUSSION', component: activeProfile.concussion }] : []),
+  ] : [];
+  const selectedPart = profileParts.find(part => part.key === profileComponent) ?? profileParts[0];
+  const selectedComponent = selectedPart?.component;
+  const selectedDiceCount = selectedComponent?.damageDieCount ?? 0;
+  const selectedDice = selectedComponent?.damageDie ?? 0;
+  const selectedBonus = selectedComponent?.damageBonus ?? 0;
+  const selectedNotes = [
+    ...(activeProfile?.notes ?? []),
+    ...(selectedComponent?.notes ?? []),
+  ];
+  const attackToApply: AreaAttack = activeProfile && selectedComponent
+    ? {
+        ...activeProfile,
+        kind: activeProfile.requiresGasChoice ? (gasExposure ?? selectedComponent.kind) : selectedComponent.kind,
+        requiresGasChoice: activeProfile.requiresGasChoice ? !gasExposure : false,
+        rawDamage,
+        damageDieCount: selectedDiceCount,
+        damageDie: selectedDice,
+        damageBonus: selectedBonus,
+        damageType: selectedComponent.damageType,
+        radius: selectedComponent.radius ?? activeProfile.radius,
+        diameter: selectedComponent.diameter ?? activeProfile.diameter,
+        notes: selectedNotes,
+      }
+    : { kind, rawDamage, gmAdjudicatedLanding: kind === 'flamethrower' };
+  const rollProfileDamage = () => {
+    if (!selectedComponent || selectedDiceCount <= 0 || selectedDice <= 0) return;
+    const rolls = Array.from({ length: selectedDiceCount }, () => Math.floor(Math.random() * selectedDice) + 1);
+    const total = rolls.reduce((sum, roll) => sum + roll, 0) + selectedBonus;
+    setRawDamage(total);
+    setProfileDamageRolled(total);
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
@@ -3334,8 +3480,8 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
         <View style={{ maxHeight: '92%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: Math.max(insets.bottom, 12), borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View>
-              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{summary ? 'AREA EFFECT RESULTS' : 'APPLY AOE DAMAGE'}</Text>
-              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : 'Select an effect and every active combatant in its area.'}</Text>
+              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{summary ? 'AREA EFFECT RESULTS' : profileMode ? 'TRIGGER MINE / TRAP' : 'APPLY AOE DAMAGE'}</Text>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : profileMode ? `${sourceWeaponName ?? (catalogProfileId ? catalogProfileLabel(catalogProfileId) : 'Device')} — choose a printed component and resolve its affected targets.` : 'Select an effect and every active combatant in its area.'}</Text>
             </View>
             <TouchableOpacity testID="aoe-close" onPress={close}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
@@ -3353,19 +3499,87 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
             </ScrollView>
           ) : (
             <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }}>
-              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>EFFECT</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                {AREA_ATTACK_OPTIONS.map(option => (
-                  <TouchableOpacity key={option.kind} testID={`aoe-kind-${option.kind}`} onPress={() => setKind(option.kind)} style={{ width: '48%', padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: kind === option.kind ? colors.primary : colors.border, backgroundColor: kind === option.kind ? colors.primary + '22' : colors.secondary }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: kind === option.kind ? colors.primary : colors.foreground }}>{option.label}</Text>
-                    <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{option.note}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {!initialAttack && (
+                <>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>MINE / TRAP PROFILE (OPTIONAL)</Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Choose a catalog profile to use its printed components, dice, reach, and GM notes instead of a generic AoE approximation.</Text>
+                  <View style={{ gap: 7 }}>
+                    {Object.entries(MINE_TRAP_PROFILES).map(([profileId, profile]) => {
+                      const selected = catalogProfileId === profileId;
+                      return (
+                        <TouchableOpacity
+                          key={profileId}
+                          testID={`aoe-mine-profile-${profileId}`}
+                          onPress={() => { setCatalogProfileId(profileId); setProfileComponent('main'); setRawDamage(profile.rawDamage); setProfileDamageRolled(null); }}
+                          style={{ padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}
+                        >
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground }}>{catalogProfileLabel(profileId)}</Text>
+                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{profile.kind} · {profile.notes?.[0] ?? 'Catalog area profile'}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{profileMode ? 'PROFILE COMPONENT' : 'EFFECT'}</Text>
+              {profileMode ? (
+                <View style={{ gap: 7 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                    {profileParts.map(part => {
+                      const selected = profileComponent === part.key;
+                      const component = part.component;
+                      const dice = (component.damageDieCount ?? 0) > 0 ? `${component.damageDieCount}d${component.damageDie}` : 'no printed dice';
+                      const reach = component.radius !== undefined ? `radius ${component.radius}` : component.diameter !== undefined ? `diameter ${component.diameter}` : 'device target';
+                      return (
+                        <TouchableOpacity key={part.key} testID={`aoe-profile-${part.key}`} onPress={() => { setProfileComponent(part.key); setRawDamage('rawDamage' in component ? component.rawDamage : 0); setProfileDamageRolled(null); }} style={{ minWidth: '47%', flexGrow: 1, padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}>
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground }}>{part.label}</Text>
+                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{dice} · {reach}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {selectedNotes.map((note, index) => <Text key={index} style={{ fontSize: 10, color: colors.mutedForeground }}>• {note}</Text>)}
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  {AREA_ATTACK_OPTIONS.map(option => (
+                    <TouchableOpacity key={option.kind} testID={`aoe-kind-${option.kind}`} onPress={() => setKind(option.kind)} style={{ width: '48%', padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: kind === option.kind ? colors.primary : colors.border, backgroundColor: kind === option.kind ? colors.primary + '22' : colors.secondary }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: kind === option.kind ? colors.primary : colors.foreground }}>{option.label}</Text>
+                      <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{option.note}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>Rolled / base damage</Text>
-                <Stepper value={rawDamage} min={0} max={999} onChange={setRawDamage} formatValue={v => String(v)} />
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{profileMode ? 'Manual damage roll' : 'Rolled / base damage'}</Text>
+                {profileMode ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <TextInput
+                      testID="aoe-raw-damage"
+                      value={String(rawDamage)}
+                      onChangeText={value => { const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10); setRawDamage(Number.isFinite(parsed) ? parsed : 0); setProfileDamageRolled(null); }}
+                      keyboardType="numeric"
+                      style={{ minWidth: 58, paddingVertical: 5, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center', fontFamily: 'Inter_700Bold' }}
+                    />
+                    {selectedDiceCount > 0 && selectedDice > 0 && (
+                      <TouchableOpacity testID="aoe-roll-profile-damage" onPress={rollProfileDamage} style={{ paddingVertical: 7, paddingHorizontal: 8, borderRadius: 5, backgroundColor: colors.primary }}>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>ROLL {selectedDiceCount}d{selectedDice}{selectedBonus ? `+${selectedBonus}` : ''}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ) : <Stepper value={rawDamage} min={0} max={999} onChange={setRawDamage} formatValue={v => String(v)} />}
               </View>
+              {activeProfile?.requiresGasChoice && (
+                <View style={{ gap: 8 }}>
+                  <Text style={{ color: colors.foreground }}>GM: determine the canister payload and damage, then select its exposure. Other effects remain GM-adjudicated.</Text>
+                  {(['gasInhaled', 'gasContact'] as const).map(exposure => (
+                    <TouchableOpacity key={exposure} onPress={() => setGasExposure(exposure)} style={{ padding: 10, borderWidth: 1, borderColor: gasExposure === exposure ? colors.primary : colors.border }}>
+                      <Text style={{ color: colors.foreground }}>{exposure === 'gasInhaled' ? 'Inhaled gas' : 'Contact gas'}{gasExposure === exposure ? ' — selected' : ''}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {profileMode && profileDamageRolled !== null && <Text style={{ fontSize: 10, color: colors.primary }}>Rolled profile damage: {profileDamageRolled}. You may replace it with the table roll.</Text>}
               {ongoing && (
                 <Text style={{ fontSize: 10, color: colors.primary }}>
                   Mandatory 1d6 each round until removed. Fire requires a full turn rolling on safe ground; acid requires GM-confirmed washing with an appropriate material.
@@ -3385,11 +3599,14 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt }: {
               })}
               <TouchableOpacity testID="aoe-apply" disabled={targets.length === 0 || applying} onPress={() => {
                 if (applyingRef.current) return;
+                if (attackToApply.requiresGasChoice) {
+                  notify('GM Gas Choice Required', 'Select the canister exposure and enter its GM-determined damage first.');
+                  return;
+                }
                 applyingRef.current = true;
                 setApplying(true);
                 const requestId = onApply({
-                  kind, rawDamage,
-                  gmAdjudicatedLanding: kind === 'flamethrower',
+                  ...attackToApply,
                 }, targets);
                 setPendingRequestId(requestId);
               }} style={{ paddingVertical: 13, alignItems: 'center', borderRadius: colors.radius, backgroundColor: targets.length && !applying ? colors.destructive : colors.secondary, opacity: targets.length && !applying ? 1 : 0.5 }}>

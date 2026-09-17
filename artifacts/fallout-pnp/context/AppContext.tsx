@@ -1071,9 +1071,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const body = c.equippedBodyArmorId ? armor.find(a => a.id === c.equippedBodyArmorId) : undefined;
         const helmet = c.equippedHelmetId ? armor.find(a => a.id === c.equippedHelmetId) : undefined;
         const natural = c.naturalProtection;
-        const cap = (attack.kind === 'flamethrower' || attack.kind === 'acid' ? 'Fire'
-          : attack.kind === 'electricity' ? 'Laser'
-          : attack.kind === 'fragmentation' ? 'Normal' : 'Explosion');
+        const cap = attack.damageType === 'normal' ? 'Normal'
+          : attack.damageType === 'laser' ? 'Laser'
+          : attack.damageType === 'fire' ? 'Fire'
+          : attack.damageType === 'plasma' ? 'Plasma'
+          : attack.damageType === 'explosion' ? 'Explosion'
+          : (attack.kind === 'flamethrower' || attack.kind === 'acid' ? 'Fire'
+            : attack.kind === 'electricity' ? 'Laser'
+            : attack.kind === 'fragmentation' ? 'Normal' : 'Explosion');
         const dt = ((body?.[`dt${cap}` as keyof Armor] as number) ?? 0)
           + ((helmet?.[`dt${cap}` as keyof Armor] as number) ?? 0)
           + ((natural?.[`dt${cap}` as keyof typeof natural] as number) ?? 0);

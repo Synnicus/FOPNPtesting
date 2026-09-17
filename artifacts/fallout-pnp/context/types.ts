@@ -7,7 +7,7 @@ export const DAMAGE_TYPE_NAMES: Record<DamageType, string> = {
   normal: 'Normal', laser: 'Laser', fire: 'Fire', plasma: 'Plasma', explosion: 'Explosion',
 };
 
-export type WeaponCategory = 'smallGuns' | 'bigGuns' | 'energyWeapons' | 'meleeWeapons' | 'unarmed' | 'throwing' | 'natural';
+export type WeaponCategory = 'smallGuns' | 'bigGuns' | 'energyWeapons' | 'meleeWeapons' | 'unarmed' | 'throwing' | 'minesTraps' | 'natural';
 export type ArmorSlot = 'body' | 'helmet';
 export type CharacterType = 'pc' | 'npc';
 export type RaceType =
@@ -131,6 +131,8 @@ export interface Weapon {
   apTargeted?: number | null;
   /** AP cost for a burst attack (manual "B"). null = no burst mode. */
   apBurst?: number | null;
+  /** Optional shared area-effect profile id. Absent on legacy/custom weapons. */
+  areaAttackProfileId?: string;
 }
 
 // ─── Armor ────────────────────────────────────────────────────────────────────
