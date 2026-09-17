@@ -31,7 +31,6 @@ import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
 import { poisonEffectName } from '@/data/poisonEffects';
-import { ALCOHOL_CONSUMABLES } from '@/data/chems';
 import { applyImmediateTraitSpecial, calculateHealingRate, calculateSkillPointsPerLevel as calculateRuleSkillPointsPerLevel, calculateTagSkillRules, calculatePerkCadence } from '@/data/effectiveRules';
 import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
@@ -1791,21 +1790,6 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     </TouchableOpacity>
                   );
                 })}
-                <View style={{ marginTop: 4, gap: 6 }}>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>ALCOHOL</Text>
-                  {ALCOHOL_CONSUMABLES.map(alcohol => (
-                    <TouchableOpacity key={alcohol.id} onPress={() => setChar(c => ({
-                      ...c,
-                      conditions: (c.conditions ?? []).includes(alcohol.conditionId)
-                        ? c.conditions
-                        : [...(c.conditions ?? []), alcohol.conditionId],
-                    }))} style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}>
-                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{alcohol.name}</Text>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{alcohol.description}</Text>
-                    </TouchableOpacity>
-                  ))}
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Alcohol activates Drunk only; use the Drunk condition toggle above to remove it.</Text>
-                </View>
               </View>
 
               {/* ── ACTIVE EFFECTS ── */}
