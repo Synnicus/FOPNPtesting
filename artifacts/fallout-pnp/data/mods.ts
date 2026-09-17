@@ -230,8 +230,8 @@ export const WEAPON_MOD_DEFS: WeaponModDef[] = [
   },
   {
     id: 'shield_t4', name: 'Shield T4 (Advanced/Power)', appliesTo: 'any', weight: 10,
-    description: 'A powered composite shield. Grants the defensive stats of a power armor helmet (+10 AC) while the weapon is held.',
-    acBonus: 10,
+    description: 'A powered composite shield. Grants the defensive stats of a power armor helmet (+13 AC) while the weapon is held.',
+    acBonus: 13,
     shieldDt: { normal: 8, laser: 6, fire: 6, plasma: 8, explosion: 8 },
     shieldDr: { normal: 30, laser: 40, fire: 20, plasma: 30, explosion: 30 },
   },
