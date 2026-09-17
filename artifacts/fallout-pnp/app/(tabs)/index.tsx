@@ -84,25 +84,6 @@ function resolveCombatSheet(character: Character, allArmor: Parameters<typeof re
     : sheet;
 }
 
-function armorEffectsSummary(sheet: ResolvedArmorSheet): string | null {
-  const sources = sheet.armorEffects.sources.flatMap(source => {
-    const special = Object.entries(source.effects.special ?? {}).map(([stat, value]) => `${stat.slice(0, 3).toUpperCase()} ${Number(value) >= 0 ? '+' : ''}${value}`);
-    const skills = Object.entries(source.effects.skills ?? {}).map(([skill, value]) => `${skill} ${Number(value) >= 0 ? '+' : ''}${value}`);
-    const resistances = [
-      ['Gas', source.effects.gasResistance],
-      ['Poison', source.effects.poisonResistance],
-      ['Rad', source.effects.radiationResistance],
-      ['Elec', source.effects.electricityResistance],
-    ].filter(([, value]) => value).map(([name, value]) => `${name} ${Number(value) >= 0 ? '+' : ''}${value}%`);
-    const effects = [...special, ...skills, ...resistances];
-    return effects.length
-      ? [`${source.slot === 'body' ? 'Body' : 'Helmet'}: ${source.armorName} (${effects.join(', ')})`]
-      : [];
-  });
-  if (!sources.length) return null;
-  return `Armor effects — ${sources.join(' · ')}. Resist G/P/R/E ${sheet.gasResistance}/${sheet.poisonResistance}/${sheet.radiationResistance}/${sheet.electricityResistance}%`;
-}
-
 // ─── Dice helpers ─────────────────────────────────────────────────────────────
 function rollD10() { return Math.floor(Math.random() * 10) + 1; }
 function rollDie(sides: number) { return Math.floor(Math.random() * sides) + 1; }
@@ -2368,32 +2349,20 @@ export default function CombatScreen() {
                     {weapon && weaponBroken && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>⚠ JAMMED / BROKEN</Text>}
                     {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
                     {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP} · {attackerPos}</Text>}
-                    {attackerSheet && armorEffectsSummary(attackerSheet) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }} numberOfLines={3}>🛡 {armorEffectsSummary(attackerSheet)}</Text>}
-                    {/* Ammo display: count + loaded ammo type (shorthand) */}
+                    {/* Ammo display: count + equipped ammo type. Legacy weapon states
+                        without an explicit ammoTypeId use the weapon's first/default type. */}
                     {weapon && weapon.magazineSize > 0 && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: hasAmmo ? colors.primary : colors.destructive }}>
                           [{currentAmmo}/{weapon.magazineSize}]
                         </Text>
                         <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: loadedAmmo ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-                          {loadedAmmo ? shortAmmoName(loadedAmmo.name) : 'standard'}
+                          {shortAmmoName(loadedAmmo?.name ?? compatibleAmmo[0]?.name ?? 'standard')}
                         </Text>
                         {conditionBoxes > 0 && (
                           <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>COND {conditionBoxes}/{CONDITION_BOXES_MAX}</Text>
                         )}
                       </View>
-                    )}
-                    {/* Dual wield: off-hand weapon (+ its ammo) and attack-session selection. */}
-                    {dualWielding && offhandWeapon && (
-                      <TouchableOpacity onPress={() => selectAttackWeapon(offhandWeapon.id)} style={{ marginTop: 2 }}>
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }} numberOfLines={1}>
-                          ⇄ Off-hand: {offhandWeapon.name}
-                          {offhandWeapon.magazineSize > 0
-                            ? ` [${attacker.weaponAmmoStates.find(a => a.weaponId === offhandWeapon.id)?.currentAmmo ?? offhandWeapon.magazineSize}/${offhandWeapon.magazineSize}]`
-                            : ''}
-                          {weapon?.id === offhandWeapon.id ? '  (selected)' : '  (tap to attack)'}
-                        </Text>
-                      </TouchableOpacity>
                     )}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
@@ -2441,7 +2410,6 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${Math.min(defender.currentAP, defenderSheet?.maxAP ?? defender.maxAP)}/${defenderSheet?.maxAP ?? defender.maxAP}` : ''}
                     </Text>
-                    {defenderSheet && armorEffectsSummary(defenderSheet) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }} numberOfLines={3}>🛡 {armorEffectsSummary(defenderSheet)}</Text>}
                     {defender.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
