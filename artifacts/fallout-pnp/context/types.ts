@@ -207,6 +207,8 @@ export interface ActiveEffect {
   chemId?: string;
   /** Flavor-only poison marker; poison effects never supply combat modifiers. */
   poisonType?: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
+  /** Number of times this poison type has been applied to the character. */
+  poisonCount?: number;
   name: string;
   /** Current stage index for multi-stage chems (jet, voodoo, ...). */
   stage?: number;

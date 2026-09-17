@@ -17,6 +17,7 @@ import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiati
 // wake once the counter runs out (position stays prone until they Get Up).
 import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
+import { mergePoisonedEffect } from '@/data/poisonEffects';
 function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
   if (!c.isKnockedOut) return c;
   const left = Math.max(0, (c.knockOutRoundsLeft ?? 0) - 1);
@@ -528,9 +529,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addEffect = useCallback((characterId: string, effect: ActiveEffect) => {
     setState(s => ({
       ...s,
-      characters: s.characters.map(c => c.id === characterId
-        ? { ...c, effects: [...(c.effects ?? []), effect] }
-        : c),
+      characters: s.characters.map(c => {
+        if (c.id !== characterId) return c;
+        const effects = c.effects ?? [];
+        if (!effect.poisonType) return { ...c, effects: [...effects, effect] };
+        const existingIndex = effects.findIndex(existing => existing.poisonType === effect.poisonType);
+        if (existingIndex < 0) return { ...c, effects: [...effects, effect] };
+        const nextEffects = [...effects];
+        nextEffects[existingIndex] = mergePoisonedEffect(nextEffects[existingIndex], effect);
+        return { ...c, effects: nextEffects };
+      }),
     }));
   }, []);
 
