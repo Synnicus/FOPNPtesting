@@ -30,6 +30,7 @@ import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
+import { poisonEffectName } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES } from '@/data/chems';
 import { applyImmediateTraitSpecial, calculateHealingRate, calculateSkillPointsPerLevel as calculateRuleSkillPointsPerLevel, calculateTagSkillRules, calculatePerkCadence } from '@/data/effectiveRules';
 import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
@@ -1821,7 +1822,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                           {effect.isActive && <Feather name="check" size={12} color={colors.primary} />}
                         </TouchableOpacity>
                         <View style={{ flex: 1, gap: 3 }}>
-                          <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: effect.isActive ? colors.primary : colors.mutedForeground }}>{effect.name}</Text>
+                          <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: effect.isActive ? colors.primary : colors.mutedForeground }}>{effect.poisonType ? poisonEffectName(effect.poisonType, effect.poisonCount) : effect.name}</Text>
                           {chem && chem.stages.length > 1 && effect.stage !== undefined && (
                             <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.5 }}>STAGE {(effect.stage ?? 0) + 1}/{chem.stages.length} · {chem.stages[effect.stage ?? 0].label}</Text>
                           )}
@@ -2110,7 +2111,7 @@ function CharacterCard({ character, onEdit, onDelete, onClone, onBio, onToggleSt
             if (e.sequenceMod) bits.push(`SEQ ${e.sequenceMod > 0 ? '+' : ''}${e.sequenceMod}`);
             return (
               <Text key={e.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>
-                ⚗ {e.name}{bits.length ? ` — ${bits.join(', ')}` : ''}
+                ⚗ {e.poisonType ? poisonEffectName(e.poisonType, e.poisonCount) : e.name}{bits.length ? ` — ${bits.join(', ')}` : ''}
               </Text>
             );
           })}

@@ -49,3 +49,21 @@ export function mergePoisonedEffect(existing: ActiveEffect, incoming: ActiveEffe
     notes: [...(existing.notes ?? []), ...newSources],
   };
 }
+
+/** Collapse legacy duplicate poison entries into one counted status per type. */
+export function consolidatePoisonedEffects(effects: ActiveEffect[]): ActiveEffect[] {
+  return effects.reduce<ActiveEffect[]>((result, effect) => {
+    if (!effect.poisonType) {
+      result.push(effect);
+      return result;
+    }
+    const existingIndex = result.findIndex(existing => existing.poisonType === effect.poisonType);
+    if (existingIndex < 0) {
+      const count = Math.max(1, effect.poisonCount ?? 1);
+      result.push({ ...effect, poisonCount: count, name: poisonEffectName(effect.poisonType, count) });
+      return result;
+    }
+    result[existingIndex] = mergePoisonedEffect(result[existingIndex], effect);
+    return result;
+  }, []);
+}

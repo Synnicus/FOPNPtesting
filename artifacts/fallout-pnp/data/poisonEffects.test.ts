@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getAmmoById } from './ammo.ts';
-import { makePoisonedEffect, mergePoisonedEffect, poisonEffectName, poisonExposuresForAttack } from './poisonEffects.ts';
+import { consolidatePoisonedEffects, makePoisonedEffect, mergePoisonedEffect, poisonEffectName, poisonExposuresForAttack } from './poisonEffects.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
 
 const weapon = (id: string) => {
@@ -54,4 +54,16 @@ test('repeated exposure consolidates into a poison multiplier', () => {
   assert.equal(merged.poisonCount, 3);
   assert.equal(merged.statMods, undefined);
   assert.equal(merged.notes?.filter(note => note.startsWith('Source:')).length, 3);
+});
+
+test('legacy duplicate poison effects consolidate when persisted data loads', () => {
+  const first = makePoisonedEffect({ type: 'D', effectText: 'Type D poison description.' }, 'Radscorpion Tail');
+  const second = { ...makePoisonedEffect({ type: 'D', effectText: 'Type D poison description.' }, 'Radscorpion Tail'), poisonCount: undefined, name: 'Poisoned (Type D)' };
+  const unrelated = makePoisonedEffect({ type: 'A', effectText: 'Type A poison description.' }, 'Giant Rat Bite');
+  const consolidated = consolidatePoisonedEffects([first, second, unrelated]);
+
+  assert.equal(consolidated.length, 2);
+  assert.equal(consolidated.find(effect => effect.poisonType === 'D')?.poisonCount, 2);
+  assert.equal(consolidated.find(effect => effect.poisonType === 'D')?.name, 'Poisoned with Type D X2');
+  assert.equal(consolidated.find(effect => effect.poisonType === 'A')?.name, 'Poisoned with Type A X1');
 });

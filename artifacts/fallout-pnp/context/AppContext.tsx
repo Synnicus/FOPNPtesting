@@ -17,7 +17,7 @@ import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiati
 // wake once the counter runs out (position stays prone until they Get Up).
 import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
-import { mergePoisonedEffect } from '@/data/poisonEffects';
+import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 function koTick<T extends { isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
   if (!c.isKnockedOut) return c;
   const left = Math.max(0, (c.knockOutRoundsLeft ?? 0) - 1);
@@ -154,6 +154,11 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     let normalized = typeof character.poisonResistance === 'number'
       ? character
       : { ...character, poisonResistance: 0 };
+    const effects = consolidatePoisonedEffects(normalized.effects ?? []);
+    if (effects.length !== (normalized.effects ?? []).length
+      || effects.some((effect, index) => effect !== normalized.effects?.[index])) {
+      normalized = { ...normalized, effects };
+    }
     // Break the Rules had no implemented effect before this flag existed, so
     // an older owner necessarily still has the one-time selection available.
     if (
@@ -533,11 +538,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (c.id !== characterId) return c;
         const effects = c.effects ?? [];
         if (!effect.poisonType) return { ...c, effects: [...effects, effect] };
-        const existingIndex = effects.findIndex(existing => existing.poisonType === effect.poisonType);
-        if (existingIndex < 0) return { ...c, effects: [...effects, effect] };
-        const nextEffects = [...effects];
-        nextEffects[existingIndex] = mergePoisonedEffect(nextEffects[existingIndex], effect);
-        return { ...c, effects: nextEffects };
+        return { ...c, effects: consolidatePoisonedEffects([...effects, effect]) };
       }),
     }));
   }, []);
