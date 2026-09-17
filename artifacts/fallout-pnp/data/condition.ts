@@ -11,6 +11,11 @@ export function clampConditionBoxes(filled: number): number {
   return Math.max(0, Math.min(CONDITION_BOXES_MAX, Math.round(filled)));
 }
 
+/** Every confirmed critical failure degrades the attacking weapon by 10%. */
+export function conditionAfterCriticalFailure(filledBoxes: number): number {
+  return clampConditionBoxes(filledBoxes + 1);
+}
+
 /** To-hit penalty from condition (negative number or 0). */
 export function conditionToHitPenalty(filledBoxes: number): number {
   const f = clampConditionBoxes(filledBoxes);

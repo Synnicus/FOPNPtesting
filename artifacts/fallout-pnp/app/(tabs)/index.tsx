@@ -18,7 +18,7 @@ import {
 } from '@/data/criticals';
 import { computeInjuryEffects } from '@/data/injuries';
 import {
-  CONDITION_BOXES_MAX, clampConditionBoxes, conditionToHitPenalty, isWeaponJammed, conditionLabel,
+  CONDITION_BOXES_MAX, clampConditionBoxes, conditionAfterCriticalFailure, conditionToHitPenalty, isWeaponJammed, conditionLabel,
 } from '@/data/condition';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
@@ -656,9 +656,9 @@ function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, onSelect, bet
 }
 
 // ─── Critical Failure Modal ──────────────────────────────────────────────────
-function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onRoll }: {
+function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onRoll, onSelect }: {
   visible: boolean; onClose: () => void; rolledEntry: CritFailTableEntry | null;
-  appliedNotes: string[]; onRoll: () => void;
+  appliedNotes: string[]; onRoll: () => void; onSelect: (entry: CritFailTableEntry) => void;
 }) {
   const colors = useColors();
   return (
@@ -674,27 +674,30 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
           </View>
           <ScrollView contentContainerStyle={{ padding: 14, gap: 6 }}>
             <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 4 }}>CRITICAL FAILURES</Text>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginBottom: 2 }}>
+              {rolledEntry ? 'Result applied — resolves once per critical failure.' : 'Rolled the dice at the table? Tap a row to apply that result manually.'}
+            </Text>
             {CRITICAL_FAILURE_TABLE.map(entry => {
               const active = rolledEntry?.roll === entry.roll;
               return (
-                <View key={entry.roll} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 6, backgroundColor: active ? colors.destructive + '33' : colors.secondary, borderWidth: 1, borderColor: active ? colors.destructive : colors.border }}>
+                <TouchableOpacity key={entry.roll} disabled={!!rolledEntry} onPress={() => onSelect(entry)} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 6, opacity: rolledEntry && !active ? 0.5 : 1, backgroundColor: active ? colors.destructive + '33' : colors.secondary, borderWidth: 1, borderColor: active ? colors.destructive : colors.border }}>
                   <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.mutedForeground, minWidth: 22, textAlign: 'center' }}>{entry.roll}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: active ? colors.destructive : colors.foreground }}>{entry.title}</Text>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{entry.description}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </ScrollView>
           <View style={{ padding: 14, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 }}>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={onRoll}>
-              <Feather name="refresh-cw" size={16} color="#fff" />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>ROLL 1d10</Text>
+            <TouchableOpacity disabled={!!rolledEntry} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: rolledEntry ? colors.secondary : colors.destructive }} onPress={onRoll}>
+              <Feather name="refresh-cw" size={16} color={rolledEntry ? colors.mutedForeground : '#fff'} />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: rolledEntry ? colors.mutedForeground : '#fff' }}>ROLL 1d10</Text>
             </TouchableOpacity>
             {rolledEntry && (
               <View style={{ padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '22', borderWidth: 1, borderColor: colors.destructive, gap: 2 }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Rolled {rolledEntry.roll}: {rolledEntry.title}</Text>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive }}>[{rolledEntry.roll}] {rolledEntry.title} — APPLIED</Text>
                 {appliedNotes.map((n, i) => <Text key={i} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>• {n}</Text>)}
               </View>
             )}
@@ -709,7 +712,7 @@ function CriticalFailureModal({ visible, onClose, rolledEntry, appliedNotes, onR
 export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, allWeapons, allArmor, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
   } = useApp();
@@ -1830,15 +1833,20 @@ export default function CombatScreen() {
   const specialTechniqueUnavailable = !!specialUnarmedAttack && specialUnarmedEligibility?.eligible === false;
   const attackBlocked = critFailPending || cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked || attackerKO || specialTechniqueUnavailable;
 
-  // Roll on the Critical Failure table (1d10) and auto-apply to the ATTACKER.
-  const rollCritFailTable = useCallback(() => {
+  // Apply a critical-failure entry to the attacker. Random rolls and manual
+  // row selections share this guarded path so effects and condition apply once.
+  const applyCritFailEntry = useCallback((entry: CritFailTableEntry, manual: boolean) => {
     if (!attacker) return;
-    const failRoll = rollD10();
-    const entry = CRITICAL_FAILURE_TABLE.find(e => e.roll === failRoll) ?? CRITICAL_FAILURE_TABLE[0];
+    if (critFailEntry) return;
     setCritFailEntry(entry);
-    const notes: string[] = [];
+    const notes: string[] = [`${manual ? 'Manual pick' : 'Rolled'} ${entry.roll}: ${entry.title}`];
     const isExplosiveOrEnergy = !!weapon && (weapon.damageType === 'explosion' || weapon.damageType === 'plasma' || weapon.damageType === 'laser' || weapon.damageType === 'fire' || weapon.skill === 'energyWeapons');
 
+    if (weapon) {
+      const nextCondition = conditionAfterCriticalFailure(conditionBoxes);
+      setWeaponCondition(attacker.id, weapon.id, nextCondition);
+      notes.push(`Weapon condition −10% (${nextCondition}/${CONDITION_BOXES_MAX} boxes filled)`);
+    }
     if (entry.emptyAmmo) {
       if (weapon && weapon.magazineSize > 0) {
         spendAmmo(attacker.id, weapon.id, currentAmmo); // discard the whole magazine
@@ -1846,7 +1854,7 @@ export default function CombatScreen() {
       } else notes.push('Gun does not fire (no magazine to discard)');
     }
     if (entry.jam) {
-      if (weapon) { jamWeapon(attacker.id, weapon.id); notes.push('Weapon jammed — 1 turn to unjam; ammo discarded'); if (weapon.magazineSize > 0) spendAmmo(attacker.id, weapon.id, currentAmmo); }
+      if (weapon) { notes.push('Weapon jammed — 1 turn to unjam; ammo discarded'); if (weapon.magazineSize > 0) spendAmmo(attacker.id, weapon.id, currentAmmo); }
     }
     if (entry.loseAllAP) {
       if (attacker.currentAP > 0) spendAP(attacker.id, attacker.currentAP);
@@ -1895,7 +1903,14 @@ export default function CombatScreen() {
     }
     setCritFailNotes(notes);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-  }, [attacker, attackerSheet, weapon, currentAmmo, spendAmmo, jamWeapon, spendAP, applyDamage, setPosition, setWeaponCondition]);
+  }, [attacker, attackerSheet, weapon, critFailEntry, conditionBoxes, currentAmmo, spendAmmo, spendAP, applyDamage, setPosition, setWeaponCondition]);
+
+  // Roll on the Critical Failure table (1d10) and auto-apply to the ATTACKER.
+  const rollCritFailTable = useCallback(() => {
+    const failRoll = rollD10();
+    const entry = CRITICAL_FAILURE_TABLE.find(e => e.roll === failRoll) ?? CRITICAL_FAILURE_TABLE[0];
+    applyCritFailEntry(entry, false);
+  }, [applyCritFailEntry]);
 
   // Display-level DT/DR (before calculateDamage is called) — armor + natural protection
   const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot) : { dt: 0, dr: 0 };
@@ -3218,6 +3233,7 @@ export default function CombatScreen() {
         rolledEntry={critFailEntry}
         appliedNotes={critFailNotes}
         onRoll={rollCritFailTable}
+        onSelect={(entry) => applyCritFailEntry(entry, true)}
       />
       {/* ─── Chem picker (TAKE CHEMS — AP charged on selection) ─── */}
       <OptionPickerModal
