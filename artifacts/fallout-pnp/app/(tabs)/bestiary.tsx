@@ -110,6 +110,11 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
               {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
             </Text>
           ))}
+          {!attacks.length && template.equippedWeaponId && (
+            <Text style={{ fontSize: 12, color: colors.foreground }}>
+              Equipped: {allWeapons.find(w => w.id === template.equippedWeaponId)?.name ?? template.equippedWeaponId}
+            </Text>
+          )}
 
           {/* Derived DT/DR (armor + natural protection) */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -610,6 +615,11 @@ function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
           {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
         </Text>
       ))}
+      {!attacks.length && template.equippedWeaponId && (
+        <Text style={{ fontSize: 11, color: colors.foreground }}>
+          Equipped: {allWeapons.find(w => w.id === template.equippedWeaponId)?.name ?? template.equippedWeaponId}
+        </Text>
+      )}
 
       <TouchableOpacity
         style={{ paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.primary, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}

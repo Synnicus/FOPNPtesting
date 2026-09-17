@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
 import {
-  BUILT_IN_BESTIARY,
+  MANUAL_BESTIARY as BUILT_IN_BESTIARY,
   EXPECTED_MANUAL_BESTIARY_IDS,
   spawnBestiaryTemplate,
 } from './bestiary.ts';

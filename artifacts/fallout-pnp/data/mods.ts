@@ -1,4 +1,4 @@
-import { Weapon, WeaponMod } from '@/context/types';
+import type { Weapon, WeaponMod } from '../context/types.ts';
 
 // ─── Weapon Enhancements (manual "Weapon Enhancements" chapter, p.99–100) ─────
 // This module OWNS the reworked weapon-mod system. It replaces the legacy

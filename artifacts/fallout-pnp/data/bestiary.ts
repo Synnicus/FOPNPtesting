@@ -8,6 +8,8 @@ import type {
   SPECIALStats,
   Weapon,
 } from '../context/types.ts';
+import { RESTORED_BESTIARY } from './legacyBestiary.ts';
+export { RESTORED_BESTIARY };
 
 const defaultSkills = (): CharacterSkills => ({
   smallGuns: 0, bigGuns: 0, energyWeapons: 0, meleeWeapons: 0, unarmed: 0, throwing: 0,
@@ -104,7 +106,7 @@ export const EXPECTED_MANUAL_BESTIARY_IDS = [
   'gecko', 'fire_gecko', 'golden_gecko',
 ] as const;
 
-export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
+export const MANUAL_BESTIARY: BestiaryTemplate[] = [
   manualTemplate({
     id: 'giant_rat', name: 'Giant Rat',
     description: 'Large pack-hunting wasteland rat.',
@@ -122,7 +124,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     protection: none, poison: 60, radiation: 100, gas: [0, 50],
     attacks: [
       { weaponId: 'giant_rat_claw', hitChance: 75, notes: 'Successful hit adds 10 rads' },
-      { weaponId: 'giant_rat_bite', hitChance: 70, notes: 'Successful hit adds 10 rads' },
+      { weaponId: 'rad_rat_bite', hitChance: 70, notes: 'Successful hit adds 10 rads' },
     ],
   }),
   manualTemplate({
@@ -322,7 +324,7 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
     poison: 80, radiation: 80, gas: [0, 20],
     attacks: [
       { weaponId: 'gecko_claw', hitChance: 75 },
-      { weaponId: 'gecko_bite', hitChance: 80, notes: 'Poison Type B' },
+      { weaponId: 'fire_gecko_bite', hitChance: 80, notes: 'Poison Type B' },
     ],
   }),
   manualTemplate({
@@ -336,6 +338,11 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
       { weaponId: 'golden_gecko_bite', hitChance: 85 },
     ],
   }),
+];
+
+export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
+  ...MANUAL_BESTIARY,
+  ...RESTORED_BESTIARY,
 ];
 
 export const BESTIARY_CATEGORIES: { id: BestiaryCategory; label: string; icon: string }[] = [
@@ -357,15 +364,18 @@ export function spawnBestiaryTemplate(
   name: string,
   id: string,
 ): Character {
-  const naturalAttacks = (template.naturalAttacks ?? []).filter(attack =>
-    allWeapons.some(weapon => weapon.id === attack.weaponId),
-  );
-  const inventoryIds = Array.from(new Set(template.inventoryWeaponIds ?? []))
-    .filter(weaponId => allWeapons.some(weapon => weapon.id === weaponId));
-  const equippedWeaponId = template.equippedWeaponId
-    && allWeapons.some(weapon => weapon.id === template.equippedWeaponId)
-      ? template.equippedWeaponId
-      : naturalAttacks[0]?.weaponId;
+  const naturalAttacks = template.naturalAttacks ?? [];
+  const equippedWeaponId = template.equippedWeaponId ?? naturalAttacks[0]?.weaponId;
+  const inventoryIds = Array.from(new Set([
+    ...(equippedWeaponId ? [equippedWeaponId] : []),
+    ...(template.inventoryWeaponIds ?? []),
+  ]));
+  for (const weaponId of new Set([...inventoryIds, ...naturalAttacks.map(attack => attack.weaponId)])) {
+    if (!allWeapons.some(weapon => weapon.id === weaponId)) {
+      throw new Error(`${template.name} references missing weapon: ${weaponId}`);
+    }
+  }
+  const equippedWeapon = allWeapons.find(weapon => weapon.id === equippedWeaponId);
 
   return {
     id,
@@ -400,6 +410,8 @@ export function spawnBestiaryTemplate(
     electricityResistance: template.electricityResistance,
     naturalProtection: template.naturalProtection ? { ...template.naturalProtection } : undefined,
     equippedWeaponId,
+    rightHandWeaponId: equippedWeaponId,
+    leftHandWeaponId: equippedWeapon?.hands === 2 ? equippedWeaponId : undefined,
     inventoryWeaponIds: inventoryIds.length > 0 ? inventoryIds : undefined,
     equippedBodyArmorId: template.equippedBodyArmorId,
     equippedHelmetId: template.equippedHelmetId,
