@@ -69,6 +69,11 @@ export type PortableBundle =
   | PortableCharacterBundle
   | PortableEquipmentBundle;
 
+export type IndividualFileParseResult =
+  | { ok: true; kind: 'character'; bundle: PortableCharacterBundle; ignoredAssets: number }
+  | { ok: true; kind: 'equipment'; bundle: PortableEquipmentBundle }
+  | { ok: false; error: string };
+
 export type CampaignParseResult =
   | { ok: true; source: 'portable'; bundle: PortableCampaignBundle; ignoredAssets: number }
   | { ok: true; source: 'legacy'; state: CampaignStateSnapshot }
@@ -381,6 +386,28 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && (value.activeEntryId === null || typeof value.activeEntryId === 'string');
 }
 
+function isCompletePortableCharacterBundle(value: unknown): value is PortableCharacterBundle {
+  if (!isRecord(value)
+    || !isCharacterRecord(value.character)
+    || !Array.isArray(value.customWeapons)
+    || !Array.isArray(value.customArmor)
+    || !Array.isArray(value.assets)) return false;
+  return value.customWeapons.every(item => isWeaponRecord(item) && item.isCustom)
+    && value.customArmor.every(item => isArmorRecord(item) && item.isCustom)
+    && hasUniqueIds(value.customWeapons)
+    && hasUniqueIds(value.customArmor);
+}
+
+function isCompletePortableEquipmentBundle(value: unknown): value is PortableEquipmentBundle {
+  if (!isRecord(value)
+    || (value.equipmentType !== 'weapon' && value.equipmentType !== 'armor')
+    || !isRecord(value.item)
+    || value.item.isCustom !== true) return false;
+  return value.equipmentType === 'weapon'
+    ? isWeaponRecord(value.item)
+    : isArmorRecord(value.item);
+}
+
 function isPortablePortraitAsset(value: unknown): value is PortablePortraitAsset {
   const bytes = isRecord(value) && typeof value.base64 === 'string'
     ? decodedBase64Bytes(value.base64)
@@ -392,6 +419,76 @@ function isPortablePortraitAsset(value: unknown): value is PortablePortraitAsset
     && typeof value.base64 === 'string'
     && bytes !== null
     && bytes <= MAX_PORTRAIT_BYTES;
+}
+
+export function parseIndividualFile(json: string): IndividualFileParseResult {
+  if (json.length > MAX_CAMPAIGN_FILE_CHARS) {
+    return { ok: false, error: 'The selected file is too large to import safely.' };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return { ok: false, error: 'The selected file is not valid JSON.' };
+  }
+  if (!isRecord(parsed)
+    || parsed.format !== PORTABLE_EXPORT_FORMAT
+    || parsed.version !== PORTABLE_EXPORT_VERSION) {
+    return { ok: false, error: 'The selected file is not an individual Fallout PnP export.' };
+  }
+
+  if (parsed.kind === 'character') {
+    if (!isCompletePortableCharacterBundle(parsed)) {
+      return { ok: false, error: 'The character export is incomplete or damaged.' };
+    }
+    const validAssets: PortablePortraitAsset[] = [];
+    let ignoredAssets = 0;
+    for (const candidate of parsed.assets) {
+      if (
+        !isPortablePortraitAsset(candidate)
+        || candidate.characterId !== parsed.character.id
+        || validAssets.length > 0
+      ) {
+        ignoredAssets += 1;
+        continue;
+      }
+      validAssets.push(candidate);
+    }
+    return {
+      ok: true,
+      kind: 'character',
+      ignoredAssets,
+      bundle: {
+        format: PORTABLE_EXPORT_FORMAT,
+        version: PORTABLE_EXPORT_VERSION,
+        kind: 'character',
+        character: characterForBundle(parsed.character),
+        customWeapons: parsed.customWeapons,
+        customArmor: parsed.customArmor,
+        assets: validAssets,
+      },
+    };
+  }
+
+  if (parsed.kind === 'equipment') {
+    if (!isCompletePortableEquipmentBundle(parsed)) {
+      return { ok: false, error: 'The equipment export is incomplete, damaged, or not custom equipment.' };
+    }
+    return {
+      ok: true,
+      kind: 'equipment',
+      bundle: {
+        format: PORTABLE_EXPORT_FORMAT,
+        version: PORTABLE_EXPORT_VERSION,
+        kind: 'equipment',
+        equipmentType: parsed.equipmentType,
+        item: parsed.item,
+      },
+    };
+  }
+
+  return { ok: false, error: 'The selected file is not an individual Fallout PnP export.' };
 }
 
 export function parseCampaignFile(json: string): CampaignParseResult {
@@ -462,6 +559,21 @@ export function parseCampaignFile(json: string): CampaignParseResult {
     },
     ignoredAssets,
   };
+}
+
+export async function restoreCharacterPortrait(
+  bundle: PortableCharacterBundle,
+  materialize: (asset: PortablePortraitAsset) => Promise<string>,
+): Promise<{ character: Character; restored: number; failed: number }> {
+  const asset = bundle.assets[0];
+  if (!asset) return { character: bundle.character, restored: 0, failed: 0 };
+  try {
+    const portrait = await materialize(asset);
+    if (!portrait) throw new Error('Portrait materializer returned an empty URI');
+    return { character: { ...bundle.character, portrait }, restored: 1, failed: 0 };
+  } catch {
+    return { character: bundle.character, restored: 0, failed: 1 };
+  }
 }
 
 export async function restoreCampaignPortraits(
