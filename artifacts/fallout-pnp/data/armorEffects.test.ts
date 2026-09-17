@@ -60,6 +60,23 @@ test('armor SPECIAL changes derived AP, AC, sequence, critical, melee, carry, an
   assert.equal(result.effectiveSkills.smallGuns, 33);
 });
 
+test('resolved AC exposes body and helmet bonuses separately for cumulative summaries', () => {
+  const body = armor('clothing');
+  const helmet = armor('leather_cap');
+  const result = resolveArmorAwareSheet({
+    special,
+    skills,
+    equippedBodyArmorId: body.id,
+    equippedHelmetId: helmet.id,
+    allArmor: [body, helmet],
+  });
+
+  assert.equal(result.armorClassWithoutEquipment, 5);
+  assert.equal(body.acBonus, 0);
+  assert.equal(helmet.acBonus, 3);
+  assert.equal(result.armorClass, result.armorClassWithoutEquipment + (body.acBonus ?? 0) + (helmet.acBonus ?? 0));
+});
+
 test('condition, chem, and armor SPECIAL layers compose without changing saved SPECIAL', () => {
   const withdrawal = resolveArmorAwareSheet({
     special,

@@ -128,6 +128,8 @@ export interface ResolvedArmorSheet {
   effectiveSkills: CharacterSkills;
   maxAP: number;
   armorClass: number;
+  /** Resolved AC before body/helmet AC, used for transparent equipment summaries. */
+  armorClassWithoutEquipment: number;
   sequence: number;
   criticalChance: number;
   meleeDamage: number;
@@ -234,6 +236,7 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     effectiveSkills,
     maxAP: Math.max(1, maxAP),
     armorClass: Math.max(0, armorClass),
+    armorClassWithoutEquipment: Math.max(0, armorClass - armorAC),
     sequence: Math.max(0, sequence),
     criticalChance: Math.max(0, manual?.criticalChance ?? Math.floor(effectiveSpecial.luck / 2)),
     meleeDamage: Math.max(1, effectiveSpecial.strength - 5),

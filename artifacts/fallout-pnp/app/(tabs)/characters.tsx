@@ -1563,10 +1563,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   { key: 'Fire', label: 'FIRE' }, { key: 'Plasma', label: 'PLASMA' },
                   { key: 'Explosion', label: 'EXPL' },
                 ];
-                const totalAC = armorSheet.armorClass + perkAC + shieldAC;
-                const acParts = [`AGI-based ${armorSheet.effectiveSpecial.agility <= 0 ? 0 : Math.min(armorSheet.effectiveSpecial.agility, 99)}`];
-                if (body?.acBonus) acParts.push(`+${body.acBonus} armor`);
-                if (helm?.acBonus) acParts.push(`+${helm.acBonus} helmet`);
+                 const bodyAC = body?.acBonus ?? 0;
+                 const helmetAC = helm?.acBonus ?? 0;
+                 const totalAC = armorSheet.armorClassWithoutEquipment + bodyAC + helmetAC + perkAC + shieldAC;
+                 const acParts = [`base/resolved ${armorSheet.armorClassWithoutEquipment}`];
+                 if (bodyAC) acParts.push(`+${bodyAC} armor`);
+                 if (helmetAC) acParts.push(`+${helmetAC} helmet`);
                 if (race.naturalACBonus > 0) acParts.push(`+${race.naturalACBonus} racial`);
                 if (perkAC > 0) acParts.push(`+${perkAC} perks`);
                 if (shieldAC > 0) acParts.push(`+${shieldAC} shield`);
