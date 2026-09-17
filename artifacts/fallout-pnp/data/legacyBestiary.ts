@@ -174,7 +174,7 @@ const RESTORED_BESTIARY_ENTRIES: BestiaryTemplate[] = [
     skills: { ...defaultSkills(), unarmed: 45, energyWeapons: 50 },
     equippedWeaponId: 'laser_pistol',
     naturalProtection: natural([6, 4, 4, 2, 6], [40, 40, 30, 20, 40]),
-    radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
+    radiationResistance: 100, gasResistance: 100, poisonResistance: 100, electricityResistance: -50,
   },
   {
     id: 'mr_handy', name: 'Mr. Handy', category: 'robot',
@@ -184,7 +184,7 @@ const RESTORED_BESTIARY_ENTRIES: BestiaryTemplate[] = [
     skills: { ...defaultSkills(), meleeWeapons: 55, energyWeapons: 40, repair: 70, science: 60 },
     equippedWeaponId: 'ripper',
     naturalProtection: natural([5, 3, 3, 2, 5], [35, 35, 25, 15, 35]),
-    radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
+    radiationResistance: 100, gasResistance: 100, poisonResistance: 100, electricityResistance: -50,
   },
   {
     id: 'sentry_bot', name: 'Sentry Bot', category: 'robot',
@@ -194,7 +194,7 @@ const RESTORED_BESTIARY_ENTRIES: BestiaryTemplate[] = [
     skills: { ...defaultSkills(), bigGuns: 80, smallGuns: 70, energyWeapons: 60 },
     equippedWeaponId: 'minigun',
     naturalProtection: natural([12, 8, 8, 6, 12], [50, 50, 40, 30, 50]),
-    radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
+    radiationResistance: 100, gasResistance: 100, poisonResistance: 100, electricityResistance: -50,
   },
   {
     id: 'eyebot', name: 'Eyebot', category: 'robot',
@@ -204,7 +204,7 @@ const RESTORED_BESTIARY_ENTRIES: BestiaryTemplate[] = [
     skills: { ...defaultSkills(), energyWeapons: 55 },
     equippedWeaponId: 'laser_pistol',
     naturalProtection: natural([2, 1, 1, 1, 2], [20, 20, 15, 10, 20]),
-    radiationResistance: 100, gasResistance: 100, electricityResistance: -50,
+    radiationResistance: 100, gasResistance: 100, poisonResistance: 100, electricityResistance: -50,
   },
 ];
 

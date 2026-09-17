@@ -254,6 +254,17 @@ test('restored humanoids derive AC while printed creatures retain manual AC', ()
   assert.equal(creatureSheet.armorClass, creatureTemplate.armorClass);
 });
 
+test('robot bestiary NPCs spawn as robots with complete poison resistance', () => {
+  const robotTemplates = RESTORED_BESTIARY.filter(template => template.category === 'robot');
+  assert.ok(robotTemplates.length > 0);
+  for (const template of robotTemplates) {
+    const robot = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, template.name, `robot-${template.id}`);
+    assert.equal(robot.race, 'robot', `${template.name} race`);
+    assert.equal(robot.poisonResistance, 100, `${template.name} poison resistance`);
+    assert.equal(template.poisonResistance, 100, `${template.name} template poison resistance`);
+  }
+});
+
 test('combat critical chance uses printed creature CC instead of synthetic Luck', () => {
   const brahmin = spawnBestiaryTemplate(byId('brahmin'), BUILT_IN_WEAPONS, 'Brahmin', 'crit-brahmin');
   const deathclaw = spawnBestiaryTemplate(byId('deathclaw'), BUILT_IN_WEAPONS, 'Deathclaw', 'crit-deathclaw');

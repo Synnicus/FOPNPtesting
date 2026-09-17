@@ -179,6 +179,15 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
       ));
       if (template) normalized = { ...normalized, usesDerivedArmorClass: true };
     }
+    if (normalized.race === 'robot' && normalized.poisonResistance !== 100) {
+      normalized = { ...normalized, poisonResistance: 100 };
+    }
+    if (normalized.type === 'npc' && normalized.bestiaryTemplateId) {
+      const template = RESTORED_BESTIARY.find(candidate => candidate.id === normalized.bestiaryTemplateId);
+      if (template?.category === 'robot' && (normalized.race !== 'robot' || normalized.poisonResistance !== 100)) {
+        normalized = { ...normalized, race: 'robot', poisonResistance: 100 };
+      }
+    }
     return normalized;
   };
   const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => ({
