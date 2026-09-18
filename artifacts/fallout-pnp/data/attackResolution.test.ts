@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline } from './attackResolution.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
+import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 
 const special = { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 };
 const skills = {
@@ -9,11 +10,17 @@ const skills = {
   firstAid: 20, doctor: 10, sneak: 20, lockpick: 20, steal: 15, traps: 20,
   science: 20, repair: 15, speech: 25, barter: 20, gambling: 25, outdoorsman: 20, pilot: 20,
 };
-const perkDefinitions = {
-  dodger: { id: 'dodger', name: 'Dodger', combatEffect: { armorClassBonus: 5, combatNote: '+5 AC per rank' } },
-  tough_hide: { id: 'tough_hide', name: 'Tough Hide', combatEffect: { armorClassBonus: 15, combatNote: '+15 AC, +10% all resistances per rank' } },
-  cyborg_systems: { id: 'cyborg_systems', name: 'Cyborg Systems', combatEffect: { armorClassBonus: 5, damageResistBonus: 10, combatNote: '+10% DR, +5 AC per rank' } },
+const staticArmorClassPerkDefinitions = {
+  dodger: { id: 'dodger', name: 'Dodger', combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.dodger, combatNote: '+5 AC per rank' } },
+  tough_hide: { id: 'tough_hide', name: 'Tough Hide', combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.tough_hide, combatNote: '+15 AC, +10% all resistances per rank' } },
+  cyborg_systems: { id: 'cyborg_systems', name: 'Cyborg Systems', combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.cyborg_systems, damageResistBonus: 10, combatNote: '+10% DR, +5 AC per rank' } },
+} as const;
+const situationalArmorClassPerkDefinitions = {
   deathclaw_rampage: { id: 'deathclaw_rampage', name: 'Deathclaw Rampage', combatEffect: { armorClassBonus: 5, combatNote: '+6 melee dmg, +5 AC when HP < 50%' } },
+} as const;
+const perkDefinitions = {
+  ...staticArmorClassPerkDefinitions,
+  ...situationalArmorClassPerkDefinitions,
 } as const;
 const getPerk = (id: string) => perkDefinitions[id as keyof typeof perkDefinitions];
 
@@ -72,6 +79,16 @@ test('manual creature damage can preserve printed DR above the normal 90% cap', 
 
 test('combat attack resolution counts one Dodger rank as exactly +5 AC', () => {
   assert.equal(resolvedCombatAc([{ perkId: 'dodger', rank: 1 }]), 10);
+});
+
+test('static combat AC perk fixtures match the shared unconditional rules', () => {
+  for (const perkId of Object.keys(UNCONDITIONAL_ARMOR_CLASS_PERKS) as Array<keyof typeof UNCONDITIONAL_ARMOR_CLASS_PERKS>) {
+    assert.equal(
+      staticArmorClassPerkDefinitions[perkId].combatEffect.armorClassBonus,
+      UNCONDITIONAL_ARMOR_CLASS_PERKS[perkId].armorClassBonus,
+      `${perkId} combat fixture must use the shared unconditional AC bonus`,
+    );
+  }
 });
 
 test('combat attack resolution counts ranked static AC perks exactly once', () => {
