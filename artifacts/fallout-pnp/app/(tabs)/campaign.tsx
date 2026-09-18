@@ -410,7 +410,6 @@ export default function CampaignScreen() {
         if (characterExists) updateCharacter(importedCharacter);
         else addCharacter(importedCharacter);
       }
-
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const characterNote = willImportCharacter
         ? `${bundle.character.name} was imported.`

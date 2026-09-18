@@ -1,5 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import { Directory, Paths } from 'expo-file-system';
 import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
@@ -39,6 +41,57 @@ import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import { resolveEquippedAmmoTypeId } from '@/data/ammo';
+import {
+  planPortraitImportCleanup,
+  PORTRAIT_IMPORT_DIRECTORY_PREFIX,
+} from '@/data/portraitStorageCleanup';
+
+function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
+  if (Platform.OS === 'web') return;
+
+  try {
+    const directoryByUri = new Map<string, Directory>();
+    const itemByUri = new Map<string, ReturnType<Directory['list']>[number]>();
+    const snapshots = Paths.document.list()
+      .filter((entry): entry is Directory => entry instanceof Directory)
+      .filter(directory => directory.name.startsWith(PORTRAIT_IMPORT_DIRECTORY_PREFIX))
+      .flatMap(directory => {
+        try {
+          const contents = directory.list();
+          directoryByUri.set(directory.uri, directory);
+          for (const item of contents) itemByUri.set(item.uri, item);
+          return [{
+            uri: directory.uri,
+            name: directory.name,
+            contentUris: contents.map(item => item.uri),
+          }];
+        } catch (error) {
+          console.warn(`Could not inspect imported portrait folder ${directory.uri}.`, error);
+          return [];
+        }
+      });
+    const plan = planPortraitImportCleanup(snapshots, activePortraitUris);
+
+    for (const uri of plan.contentUris) {
+      try {
+        itemByUri.get(uri)?.delete();
+      } catch (error) {
+        console.warn(`Could not remove unreferenced imported portrait ${uri}.`, error);
+      }
+    }
+    for (const uri of plan.directoryUris) {
+      try {
+        const directory = directoryByUri.get(uri);
+        if (directory?.exists) directory.delete();
+      } catch (error) {
+        console.warn(`Could not remove unreferenced imported portrait folder ${uri}.`, error);
+      }
+    }
+  } catch (error) {
+    console.warn('Could not scan imported portrait folders for cleanup.', error);
+  }
+}
+
 function koTick<T extends { currentHp: number; isKnockedOut: boolean; knockOutRoundsLeft: number }>(c: T): T {
   return advanceKnockoutTimer(c);
 }
@@ -1101,6 +1154,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
   }, [state, loaded]);
+
+  const activePortraitUris = state.characters
+    .map(character => character.portrait)
+    .filter((uri): uri is string => !!uri);
+  const activePortraitSignature = [...activePortraitUris].sort().join('\n');
+  useEffect(() => {
+    if (!loaded) return;
+    cleanupUnreferencedPortraitImports(new Set(activePortraitUris));
+  }, [loaded, activePortraitSignature]);
 
   // ─── Character CRUD ─────────────────────────────────────────────────────────
 
