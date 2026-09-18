@@ -10,3 +10,4 @@
 - [Fallout PnP Bestiary Authority](fallout-pnp-bestiary-authority.md) — Part V has no SPECIAL; printed combat stats and both GR numbers remain authoritative after spawning
 - [Fallout PnP Powered Weapons](fallout-pnp-powered-weapons.md) — powered melee/unarmed weapons consume ammo; Super Sledge is non-ammunition-powered
 - [Fallout PnP Portable Imports](fallout-pnp-portable-imports.md) — validate complete bundle state before mutation; strip all portrait URIs and restore only validated embedded assets
+- [Fallout PnP Radiation](fallout-pnp-radiation.md) — accumulated radiation is a capped persistent meter, separate from HP; resolved combat exposure is already post-resistance

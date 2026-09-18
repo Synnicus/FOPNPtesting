@@ -298,6 +298,8 @@ export interface Character {
   maxHp: number;
 
   currentHp: number;
+  /** Accumulated radiation exposure. This never modifies HP automatically. */
+  accumulatedRadiation?: number;
 
   armorClass: number;
 

@@ -720,7 +720,7 @@ export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const app = useApp();
-  const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, allAmmo, applyDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
@@ -1638,7 +1638,7 @@ export default function CombatScreen() {
           ? `${critMult !== 1 ? ` · crit ×${critMult}` : ''}${(traitEffects.damageMultiplier ?? 1) !== 1 ? ` · trait ×${traitEffects.damageMultiplier}` : ''}`
           : '';
         return component.component.type === 'radiation'
-          ? `${component.component.label}: ${rolled} = ${component.rawDamage} radiation; ${defenderSheet?.radiationResistance ?? 0}% resistance → ${component.finalRadiation ?? 0} unapplied exposure`
+          ? `${component.component.label}: ${rolled} = ${component.rawDamage} incoming radiation; ${defenderSheet?.radiationResistance ?? 0}% resistance → ${component.finalRadiation ?? 0} applied`
           : `${component.component.label} (${component.component.type}): ${rolled} = ${component.rawDamage}${multipliers}; DT ${component.protection?.damageThreshold ?? 0} / DR ${component.protection?.damageResistance ?? 0}% → ${component.finalHp ?? 0} HP`;
       }) ?? [];
       const physicalDmg = weaponPhysicalDmg + (componentResolution?.totalHpDamage ?? 0);
@@ -1988,16 +1988,17 @@ export default function CombatScreen() {
   }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
 
   const handleApplyDamage = useCallback(() => {
-    if (!defender || (totalDamage === 0 && !hasAppliedPoison)) return;
+    if (!defender || (totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison)) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     if (totalDamage > 0) applyDamage(defender.id, totalDamage);
+    if (totalRadiationExposure > 0) adjustRadiation(defender.id, totalRadiationExposure);
     if (hasAppliedPoison) applyPoisonExposure(appliedPoisonResults);
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
     if (primaryIsCrit && isAimed && aimedCritPart && !aimedCritApplied) {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, hasAppliedPoison, appliedPoisonResults, applyDamage, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
+  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyDamage, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).
@@ -3221,7 +3222,7 @@ export default function CombatScreen() {
                     componentResult.components.forEach(component => {
                       componentBreakdown.push(
                         `Hit ${hitIndex + 1} · ${component.component.label}: ${component.rawDamage} ${component.component.type === 'radiation'
-                          ? `radiation → ${component.finalRadiation ?? 0} unapplied exposure`
+                          ? `radiation; ${defenderSheet?.radiationResistance ?? 0}% resistance → ${component.finalRadiation ?? 0} applied`
                           : `${component.component.type} → ${component.finalHp ?? 0} HP`}`,
                       );
                     });
@@ -3236,6 +3237,7 @@ export default function CombatScreen() {
                 setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage, componentBreakdown, radiationExposure });
                 if (defender) {
                   if (totalBurstDmg > 0) applyDamage(defender.id, totalBurstDmg);
+                    if (radiationExposure > 0) adjustRadiation(defender.id, radiationExposure);
                   applyPoisonExposure(poisonResults);
                 }
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -3256,7 +3258,7 @@ export default function CombatScreen() {
                 ))}
                 {streamlinedDmgResult.radiationExposure > 0 && (
                   <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>
-                    Radiation exposure not yet applied: {streamlinedDmgResult.radiationExposure}
+                    Radiation applied: {streamlinedDmgResult.radiationExposure}
                   </Text>
                 )}
                 {streamlinedDmgResult.poisonResults.map((result, index) => (
@@ -3474,7 +3476,7 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>− DT {dmg.combinedDT} → {dmg.afterDT}</Text>
                     {dmg.combinedDR > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>× (1 − DR {dmg.combinedDR}%) → {dmg.physicalDmg}</Text>}
                     {dmg.componentBreakdown.map((line, index) => <Text key={index} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary }}>{line}</Text>)}
-                    {dmg.radiationExposure > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>Radiation exposure not yet applied: {dmg.radiationExposure}</Text>}
+                    {dmg.radiationExposure > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>Resolved radiation: {dmg.radiationExposure}</Text>}
                     {dmg.poisonResults.map(result => (
                       <Text key={result.poison.type} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
                         Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
@@ -3493,7 +3495,7 @@ export default function CombatScreen() {
                 </View>
                 {totalRadiationExposure > 0 && (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>UNAPPLIED RADIATION EXPOSURE</Text>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>RADIATION TO APPLY</Text>
                     <Text style={{ fontSize: 24, fontFamily: 'Inter_700Bold', color: colors.primary }}>{totalRadiationExposure}</Text>
                   </View>
                 )}
@@ -3509,14 +3511,14 @@ export default function CombatScreen() {
                 )}
 
                 {!damageApplied ? (
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 14, gap: 8, backgroundColor: totalDamage === 0 && !hasAppliedPoison ? colors.secondary : colors.destructive, opacity: totalDamage === 0 && !hasAppliedPoison ? 0.5 : 1 }} onPress={handleApplyDamage} disabled={totalDamage === 0 && !hasAppliedPoison}>
+                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 14, gap: 8, backgroundColor: totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison ? colors.secondary : colors.destructive, opacity: totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison ? 0.5 : 1 }} onPress={handleApplyDamage} disabled={totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison}>
                     <Feather name="activity" size={16} color="#fff" />
-                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG{hasAppliedPoison ? ' + POISON' : ''} → {defender?.name?.toUpperCase()}</Text>
+                    <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG{totalRadiationExposure > 0 ? ` + ${totalRadiationExposure} RAD` : ''}{hasAppliedPoison ? ' + POISON' : ''} → {defender?.name?.toUpperCase()}</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, backgroundColor: '#4a8c3f22', borderColor: '#4a8c3f' }}>
                     <Feather name="check-circle" size={16} color="#4a8c3f" />
-                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{hasAppliedPoison ? ' and poison' : ''} applied to {defender?.name}</Text>
+                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{totalRadiationExposure > 0 ? ' and radiation' : ''}{hasAppliedPoison ? ' and poison' : ''} applied to {defender?.name}</Text>
                   </View>
                 )}
 

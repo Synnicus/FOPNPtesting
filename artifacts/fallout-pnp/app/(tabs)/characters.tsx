@@ -44,6 +44,7 @@ import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
+import { adjustRadiation, MAX_RADIATION, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -77,7 +78,7 @@ function makeDefaultCharacter(): Character {
     skills: { ...baseSkills },
     taggedSkills: [], unspentSkillPoints: calculateRuleSkillPointsPerLevel(special.intelligence),
     perks: [],
-    radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
+    radiationResistance: 0, gasResistance: 0, electricityResistance: 0, accumulatedRadiation: 0,
     equippedWeaponId: undefined, equippedBodyArmorId: undefined, equippedHelmetId: undefined,
     weaponAmmoStates: [],
     injuries: [], isKnockedOut: false, knockOutRoundsLeft: 0, conditions: [],
@@ -262,8 +263,8 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
 }
 
 // ─── Confirm Modal (cross-platform; Alert.alert buttons don't work on web) ────
-function ConfirmModal({ visible, title, message, confirmLabel, onCancel, onConfirm }: {
-  visible: boolean; title: string; message: string; confirmLabel?: string;
+function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, onCancel, onConfirm }: {
+  visible: boolean; title: string; message: string; confirmLabel?: string; cancelLabel?: string;
   onCancel: () => void; onConfirm: () => void;
 }) {
   const colors = useColors();
@@ -277,7 +278,7 @@ function ConfirmModal({ visible, title, message, confirmLabel, onCancel, onConfi
           </View>
           <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border }}>
             <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={onCancel}>
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CANCEL</Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{cancelLabel ?? 'CANCEL'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
@@ -316,6 +317,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   // Skill points GM adjustment input
   const [skillPointsInput, setSkillPointsInput] = useState('');
+  const [radiationInput, setRadiationInput] = useState('');
+  const [pendingRadiation, setPendingRadiation] = useState<number | null>(null);
 
   // Injury form
   const [addingInjury, setAddingInjury] = useState(false);
@@ -1027,6 +1030,23 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 {isHealingBlocked(char) && (
                   <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, textAlign: 'center' }}>HEALING BLOCKED BY WITHDRAWAL</Text>
                 )}
+              </View>
+
+              {/* Accumulated radiation — intentionally separate from HP. */}
+              <View style={{ gap: 7 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>RADIATION</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary }}>{char.accumulatedRadiation ?? 0} / {MAX_RADIATION}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: (char.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>{radiationSicknessLabel(char.accumulatedRadiation ?? 0)}</Text>
+                </View>
+                <View style={{ height: 7, borderRadius: 4, overflow: 'hidden', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                  <View style={{ height: '100%', width: `${Math.min(100, (char.accumulatedRadiation ?? 0) / 10)}%`, backgroundColor: (char.accumulatedRadiation ?? 0) >= 600 ? colors.destructive : '#b6d43b' }} />
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput style={{ flex: 1, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold' }} keyboardType="number-pad" placeholder="Amount" placeholderTextColor={colors.mutedForeground} value={radiationInput} onChangeText={text => setRadiationInput(text.replace(/[^0-9]/g, ''))} />
+                  <TouchableOpacity style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, -amount) })); setRadiationInput(''); }}><Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold' }}>SUBTRACT</Text></TouchableOpacity>
+                  <TouchableOpacity style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; if (amount > 0) setPendingRadiation(amount); }}><Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold' }}>ADD</Text></TouchableOpacity>
+                </View>
               </View>
 
               {/* Resistances */}
@@ -1880,6 +1900,15 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             </>
           )}
         </ScrollView>
+        <ConfirmModal
+          visible={pendingRadiation !== null}
+          title="Apply Radiation Resistance?"
+          message={`Effective radiation resistance is ${armorSheet.radiationResistance}%.`}
+          cancelLabel="NO"
+          confirmLabel="YES"
+          onCancel={() => { if (pendingRadiation !== null) setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, pendingRadiation) })); setPendingRadiation(null); setRadiationInput(''); }}
+          onConfirm={() => { if (pendingRadiation !== null) setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, resolveRadiationAddition(pendingRadiation, armorSheet.radiationResistance)) })); setPendingRadiation(null); setRadiationInput(''); }}
+        />
 
         <ConfirmModal
           visible={perkRefundId !== null}

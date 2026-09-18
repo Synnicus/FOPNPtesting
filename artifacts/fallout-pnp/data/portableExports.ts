@@ -273,6 +273,11 @@ function isCharacterRecord(value: unknown): value is Character {
     && (value.type === 'pc' || value.type === 'npc')
     && typeof value.race === 'string'
     && numericFields.every(field => isFiniteNumber(value[field]))
+    && (value.accumulatedRadiation === undefined
+      || (isFiniteNumber(value.accumulatedRadiation)
+        && Number.isInteger(value.accumulatedRadiation)
+        && value.accumulatedRadiation >= 0
+        && value.accumulatedRadiation <= 1000))
     && hasFiniteNumbers(value.special, SPECIAL_KEYS)
     && hasFiniteNumbers(value.skills, SKILL_KEYS)
     && isStringArray(value.taggedSkills)

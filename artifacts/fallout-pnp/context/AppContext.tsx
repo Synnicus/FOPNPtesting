@@ -47,6 +47,7 @@ import {
   planPortraitImportCleanup,
   PORTRAIT_IMPORT_DIRECTORY_PREFIX,
 } from '@/data/portraitStorageCleanup';
+import { adjustRadiation as adjustRadiationValue, normalizeRadiation } from '@/data/radiation';
 
 function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
   if (Platform.OS === 'web') return;
@@ -319,6 +320,10 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     let normalized = typeof character.poisonResistance === 'number'
       ? character
       : { ...character, poisonResistance: 0 };
+    const accumulatedRadiation = normalizeRadiation(normalized.accumulatedRadiation);
+    if (accumulatedRadiation !== normalized.accumulatedRadiation) {
+      normalized = { ...normalized, accumulatedRadiation };
+    }
     const effects = consolidatePoisonedEffects(normalized.effects ?? []);
     if (effects.length !== (normalized.effects ?? []).length
       || effects.some((effect, index) => effect !== normalized.effects?.[index])) {
@@ -399,6 +404,7 @@ interface AppContextValue extends AppState {
 
   applyDamage: (characterId: string, damage: number) => void;
   healCharacter: (characterId: string, amount: number) => void;
+  adjustRadiation: (characterId: string, delta: number) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
   /** Start a GM-timed combat skill. See TimedSkillActionRequest for AP/round timing. */
@@ -1576,6 +1582,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return {
           ...c,
           currentHp: Math.max(0, c.currentHp - result.damage),
+          accumulatedRadiation: adjustRadiationValue(c.accumulatedRadiation ?? 0, result.radiationExposure ?? 0),
           areaEffects,
           ...(result.unconsciousRounds > 0 ? {
             isKnockedOut: true, knockOutRoundsLeft: result.unconsciousRounds,
@@ -2277,6 +2284,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (_) { return false; }
   }, []);
 
+  const adjustRadiation = useCallback((characterId: string, delta: number) => {
+    setState(s => ({
+      ...s,
+      characters: s.characters.map(character => character.id === characterId
+        ? { ...character, accumulatedRadiation: adjustRadiationValue(character.accumulatedRadiation ?? 0, delta) }
+        : character),
+    }));
+  }, []);
+
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...state.customArmor];
   const allAmmo = [...AMMO_TYPES, ...state.customAmmo];
@@ -2286,7 +2302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...state,
       allWeapons, allArmor, allAmmo,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
-       applyDamage, healCharacter, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
+        applyDamage, healCharacter, adjustRadiation, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,

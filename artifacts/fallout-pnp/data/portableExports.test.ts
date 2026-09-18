@@ -133,6 +133,15 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
+test('portable characters accept legacy missing radiation and validate a present meter', () => {
+  const legacy = createCharacterBundle(character, [customWeapon], [customArmor]);
+  assert.equal(parseIndividualFile(JSON.stringify(legacy)).ok, true);
+  const current = createCharacterBundle({ ...character, accumulatedRadiation: 425 }, [customWeapon], [customArmor]);
+  assert.equal(parseIndividualFile(JSON.stringify(current)).ok, true);
+  const invalid = { ...current, character: { ...current.character, accumulatedRadiation: 425.5 } };
+  assert.equal(parseIndividualFile(JSON.stringify(invalid)).ok, false);
+});
+
 test('unembedded portrait URIs are removed rather than exporting device or network dependencies', () => {
   const bundle = createCampaignBundle({
     ...state,
