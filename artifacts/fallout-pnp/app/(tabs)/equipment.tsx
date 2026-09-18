@@ -10,7 +10,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
-import { AMMO_TYPES } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoReferenceEffects, type AmmoType } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
 import { CONDITION_BOXES_MAX, clampConditionBoxes, conditionLabel, conditionToHitPenalty, isWeaponJammed } from '@/data/condition';
@@ -827,6 +827,61 @@ function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?
   );
 }
 
+// ─── Ammo Reference Row ───────────────────────────────────────────────────────
+function AmmoRow({ ammo }: { ammo: AmmoType }) {
+  const colors = useColors();
+  const effects = getAmmoReferenceEffects(ammo);
+  const signed = (value: number, suffix = '') => `${value > 0 ? '+' : ''}${value}${suffix}`;
+  const chips = [
+    { label: `DMG ${effects.damage}`, emphasized: effects.damage !== 'No direct damage' },
+    { label: `AC ${signed(effects.acModifier)}`, emphasized: effects.acModifier !== 0 },
+    { label: `DR ${signed(effects.drModifier, '%')}`, emphasized: effects.drModifier !== 0 },
+    { label: effects.ignoresDT ? 'IGNORES DT' : 'DT APPLIES', emphasized: effects.ignoresDT },
+  ];
+
+  return (
+    <View style={{ marginHorizontal: 16, marginBottom: 10, padding: 14, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 9 }}>
+      <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{ammo.name}</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {chips.map(chip => (
+          <View
+            key={chip.label}
+            style={{
+              paddingHorizontal: 8,
+              paddingVertical: 5,
+              borderRadius: 4,
+              borderWidth: 1,
+              borderColor: chip.emphasized ? colors.primary : colors.border,
+              backgroundColor: chip.emphasized ? colors.primary + '18' : colors.secondary,
+            }}
+          >
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 0.4, color: chip.emphasized ? colors.primary : colors.mutedForeground }}>
+              {chip.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+      {!!effects.notes && (
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+          {effects.notes}
+        </Text>
+      )}
+      {!!effects.poisonType && (
+        <View style={{ padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '12', borderWidth: 1, borderColor: colors.destructive + '55', gap: 2 }}>
+          <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>
+            POISON TYPE {effects.poisonType}
+          </Text>
+          {!!effects.poisonEffect && (
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              {effects.poisonEffect}
+            </Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Weapon Condition Modal ─────────────────────────────────────────────────
 function WeaponConditionModal({ visible, weapon, onClose }: {
   visible: boolean; weapon: Weapon | null; onClose: () => void;
@@ -967,7 +1022,7 @@ export default function EquipmentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { customWeapons, customArmor, addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor } = useApp();
-  const [tab, setTab] = useState<'weapons' | 'armor'>('weapons');
+  const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [showArmorForm, setShowArmorForm] = useState(false);
   const [editingWeapon, setEditingWeapon] = useState<Weapon | null>(null);
@@ -1003,6 +1058,7 @@ export default function EquipmentScreen() {
     (categoryFilter === 'all' || w.category === categoryFilter)
   );
   const filteredArmor = allArmor.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredAmmo = AMMO_TYPES.filter(ammo => !search || ammo.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
@@ -1010,15 +1066,17 @@ export default function EquipmentScreen() {
       <View style={{ padding: 16, gap: 10 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
-          <TouchableOpacity
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
-            onPress={() => tab === 'weapons' ? openNewWeapon() : openNewArmor()}
-          >
-            <Feather name="plus" size={14} color={colors.primaryForeground} />
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
-              {tab === 'weapons' ? 'WEAPON' : 'ARMOR'}
-            </Text>
-          </TouchableOpacity>
+          {tab !== 'ammo' && (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
+              onPress={() => tab === 'weapons' ? openNewWeapon() : openNewArmor()}
+            >
+              <Feather name="plus" size={14} color={colors.primaryForeground} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
+                {tab === 'weapons' ? 'WEAPON' : 'ARMOR'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Search */}
@@ -1034,10 +1092,14 @@ export default function EquipmentScreen() {
 
         {/* Tab bar */}
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          {(['weapons', 'armor'] as const).map(t => (
+          {(['weapons', 'armor', 'ammo'] as const).map(t => (
             <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === t ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === t ? colors.primary : colors.border }} onPress={() => setTab(t)}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === t ? colors.primaryForeground : colors.mutedForeground }}>
-                {t === 'weapons' ? `WEAPONS (${filteredWeapons.length})` : `ARMOR (${filteredArmor.length})`}
+                {t === 'weapons'
+                  ? `WEAPONS (${filteredWeapons.length})`
+                  : t === 'armor'
+                    ? `ARMOR (${filteredArmor.length})`
+                    : `AMMO (${filteredAmmo.length})`}
               </Text>
             </TouchableOpacity>
           ))}
@@ -1077,7 +1139,7 @@ export default function EquipmentScreen() {
             />
           )}
         />
-      ) : (
+      ) : tab === 'armor' ? (
         <FlatList
           data={filteredArmor}
           keyExtractor={a => a.id}
@@ -1092,6 +1154,18 @@ export default function EquipmentScreen() {
                 : undefined}
             />
           )}
+        />
+      ) : (
+        <FlatList
+          data={filteredAmmo}
+          keyExtractor={ammo => ammo.id}
+          contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
+          ListHeaderComponent={(
+            <Text style={{ marginHorizontal: 16, marginBottom: 10, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              Built-in ammunition effects. This reference does not change equipment or campaign state.
+            </Text>
+          )}
+          renderItem={({ item }) => <AmmoRow ammo={item} />}
         />
       )}
 

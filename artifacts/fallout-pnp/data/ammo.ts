@@ -32,6 +32,16 @@ export interface AmmoType {
   poison?: PoisonSpec;
 }
 
+export interface AmmoReferenceEffects {
+  damage: string;
+  acModifier: number;
+  drModifier: number;
+  ignoresDT: boolean;
+  notes?: string;
+  poisonType?: PoisonSpec['type'];
+  poisonEffect?: string;
+}
+
 export const AMMO_TYPES: AmmoType[] = [
   // ─── Basic / primitive ────────────────────────────────────────────
   { id: 'bb', name: 'BBs', value: 100, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 4, dmgBonus: 0, volume: 100 },
@@ -133,6 +143,28 @@ export function resolveEquippedAmmoTypeId(
   ammoTypeId?: string,
 ): string | undefined {
   return resolveEquippedAmmoType(weapon, ammoTypeId)?.id;
+}
+
+export function formatAmmoDamage(ammo: AmmoType): string {
+  if (ammo.dmgDieCount > 0 && ammo.dmgDie > 0) {
+    const bonus = ammo.dmgBonus === 0 ? '' : ammo.dmgBonus > 0 ? `+${ammo.dmgBonus}` : `${ammo.dmgBonus}`;
+    return `${ammo.dmgDieCount}d${ammo.dmgDie}${bonus}`;
+  }
+  if (ammo.dmgBonus !== 0) return `${ammo.dmgBonus > 0 ? '+' : ''}${ammo.dmgBonus}`;
+  return 'No direct damage';
+}
+
+/** Read-only presentation model used by the Equipment ammo reference. */
+export function getAmmoReferenceEffects(ammo: AmmoType): AmmoReferenceEffects {
+  return {
+    damage: formatAmmoDamage(ammo),
+    acModifier: ammo.acMod,
+    drModifier: ammo.drMod,
+    ignoresDT: !!ammo.ignoresDT,
+    notes: ammo.notes,
+    poisonType: ammo.poison?.type,
+    poisonEffect: ammo.poison?.effectText,
+  };
 }
 
 /** Human-readable modifier summary for combat breakdowns, e.g. "AC -15, ignores DT, +1d6". */

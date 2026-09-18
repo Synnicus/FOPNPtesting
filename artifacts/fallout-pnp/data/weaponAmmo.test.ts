@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AMMO_TYPES, resolveEquippedAmmoType, resolveEquippedAmmoTypeId } from './ammo.ts';
+import { AMMO_TYPES, getAmmoReferenceEffects, resolveEquippedAmmoType, resolveEquippedAmmoTypeId } from './ammo.ts';
 import { BUILT_IN_WEAPONS, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
@@ -47,6 +47,42 @@ test('every built-in compatible ammo id resolves to a defined ammunition type', 
       assert.ok(ammoIds.has(ammoId), `${weapon.name}: missing compatible ammo ${ammoId}`);
     }
   }
+});
+
+test('the Equipment ammo reference represents every catalog entry from shared data', () => {
+  const referenceEntries = AMMO_TYPES.map(ammo => ({
+    id: ammo.id,
+    effects: getAmmoReferenceEffects(ammo),
+  }));
+
+  assert.deepEqual(referenceEntries.map(entry => entry.id), AMMO_TYPES.map(ammo => ammo.id));
+  assert.equal(referenceEntries.length, AMMO_TYPES.length);
+});
+
+test('ammo reference effects preserve damage, protection modifiers, DT bypass, and poison notes', () => {
+  const armorPiercing = AMMO_TYPES.find(ammo => ammo.id === '10mm_ap');
+  const poisonNeedle = AMMO_TYPES.find(ammo => ammo.id === 'hn_needler_poison');
+  assert.ok(armorPiercing);
+  assert.ok(poisonNeedle);
+
+  assert.deepEqual(getAmmoReferenceEffects(armorPiercing), {
+    damage: '1d4',
+    acModifier: -10,
+    drModifier: 0,
+    ignoresDT: true,
+    notes: undefined,
+    poisonType: undefined,
+    poisonEffect: undefined,
+  });
+  assert.deepEqual(getAmmoReferenceEffects(poisonNeedle), {
+    damage: 'No direct damage',
+    acModifier: 0,
+    drModifier: 0,
+    ignoresDT: false,
+    notes: 'Poison Type G.',
+    poisonType: 'G',
+    poisonEffect: 'Type G — the worst poison. Death 5 minutes after exposure unless Antidote is administered.',
+  });
 });
 
 test('a weapon with no saved ammo selection equips its first compatible ammo type', () => {
