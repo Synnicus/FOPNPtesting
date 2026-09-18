@@ -4,6 +4,7 @@ import {
   adjustRadiation,
   normalizeRadiation,
   radiationSicknessLabel,
+  radiationSicknessEffect,
   resolveRadiationAddition,
 } from './radiation.ts';
 
@@ -23,6 +24,20 @@ test('radiation sickness labels change at the documented 200-rad boundaries', ()
   assert.equal(radiationSicknessLabel(600), 'Critical Radiation Sickness');
   assert.equal(radiationSicknessLabel(800), 'Deadly Radiation Sickness');
   assert.equal(radiationSicknessLabel(1000), 'Fatal Radiation Sickness');
+});
+
+test('radiation sickness is a single derived effect that upgrades, downgrades, and clears with the meter', () => {
+  assert.equal(radiationSicknessEffect(199), null);
+  assert.deepEqual(radiationSicknessEffect(200), {
+    id: 'radiation-sickness',
+    name: 'Minor Radiation Sickness',
+    threshold: 200,
+    description: 'Automatically active at 200 radiation. Lower radiation below 200 to downgrade or clear this effect.',
+  });
+  assert.equal(radiationSicknessEffect(425)?.name, 'Advanced Radiation Sickness');
+  assert.equal(radiationSicknessEffect(800)?.name, 'Deadly Radiation Sickness');
+  assert.equal(radiationSicknessEffect(1000)?.name, 'Fatal Radiation Sickness');
+  assert.equal(radiationSicknessEffect(adjustRadiation(200, -1)), null);
 });
 
 test('manual resistance uses effective percentage and rounds the applied amount', () => {

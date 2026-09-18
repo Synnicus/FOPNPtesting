@@ -44,7 +44,7 @@ import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
-import { adjustRadiation, MAX_RADIATION, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
+import { adjustRadiation, MAX_RADIATION, radiationSicknessEffect, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -370,6 +370,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     allArmor,
   }), [char, allArmor, race, tagRules.freeTagSkills]);
   const effectiveSkills = armorSheet.effectiveSkills;
+  const radiationEffect = useMemo(
+    () => radiationSicknessEffect(char.accumulatedRadiation ?? 0),
+    [char.accumulatedRadiation],
+  );
   const lockedTagCount = useMemo(
     () => ALL_SKILLS.filter(sk => !canChangeSkillTag(char.skills[sk], baseSkills[sk])).length,
     [char.skills, baseSkills],
@@ -1848,7 +1852,22 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 </View>
               )}
 
-              {(char.effects ?? []).length === 0 && !char.isKnockedOut ? (
+              {radiationEffect && (
+                <View style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '88', backgroundColor: colors.destructive + '14', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.destructive, backgroundColor: colors.destructive + '33', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                      <Feather name="alert-triangle" size={12} color={colors.destructive} />
+                    </View>
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{radiationEffect.name}</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{radiationEffect.description}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.5 }}>AUTOMATIC · CONTROLLED BY RADIATION LEVEL</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {(char.effects ?? []).length === 0 && !char.isKnockedOut && !radiationEffect ? (
                 <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No active effects. Add unconsciousness or a chem for out-of-combat use.</Text>
               ) : (
                 (char.effects ?? []).map(effect => {

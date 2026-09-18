@@ -3,8 +3,8 @@ name: Fallout PnP Radiation
 description: Durable rules for accumulated radiation, resistance, and combat application
 ---
 
-Accumulated radiation is a persistent 0–1000 whole-number meter that is entirely separate from HP. Never let radiation changes trigger damage, healing restrictions, knockdown, or automatic sickness mechanics.
+Accumulated radiation is a persistent 0–1000 whole-number meter that is entirely separate from HP. Radiation sickness is an automatic, non-dismissible effect derived from the current meter stage, but it has no invented numeric penalties.
 
-**Why:** Radiation sickness labels are informational in the current product. Mixing accumulated radiation into HP or initiative HP would create hidden combat side effects outside the requested rules.
+**Why:** The user wants sickness to remain active until radiation is manually lowered. Deriving it prevents stale or independently disabled sickness state, while keeping radiation separate from HP and unrelated combat mechanics.
 
-**How to apply:** Manual additions may optionally reduce the incoming amount by the current effective radiation resistance, rounded to the nearest whole number. Combat radiation resolver outputs are already post-resistance and must be added directly without applying resistance a second time.
+**How to apply:** Manual additions may optionally use effective resistance. Combat outputs are already post-resistance. Show the matching sickness stage at 200/400/600/800/1000 and clear it only when the meter falls below 200.
