@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline } from './attackResolution.ts';
+import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection } from './attackResolution.ts';
+import { getAmmoById } from './ammo.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 
@@ -75,6 +76,63 @@ test('manual creature damage can preserve printed DR above the normal 90% cap', 
       finalDamage: 5,
     },
   );
+});
+
+test('flamer fuel explains the Sentry Bot fire DR reduction without changing its base protection', () => {
+  const firePack = getAmmoById('flamer_fire_pack');
+  assert.ok(firePack);
+  assert.deepEqual(
+    resolveDamageProtection({
+      baseDT: 8,
+      baseDR: 40,
+      ammoIgnoresDT: firePack.ignoresDT,
+      ammoDRModifier: firePack.drMod,
+      damageResistanceCap: 100,
+    }),
+    {
+      baseDT: 8,
+      baseDR: 40,
+      ammoIgnoresDT: false,
+      ammoDRModifier: -10,
+      ignoredDT: 0,
+      defenderDRModifier: 0,
+      effectiveDT: 8,
+      effectiveDR: 30,
+      bypassesArmor: false,
+    },
+  );
+});
+
+test('armor-piercing ammo reports DT bypass while preserving base DT for the explanation', () => {
+  const armorPiercing = getAmmoById('10mm_ap');
+  assert.ok(armorPiercing);
+  const protection = resolveDamageProtection({
+    baseDT: 6,
+    baseDR: 35,
+    ammoIgnoresDT: armorPiercing.ignoresDT,
+    ammoDRModifier: armorPiercing.drMod,
+  });
+
+  assert.equal(protection.baseDT, 6);
+  assert.equal(protection.ammoIgnoresDT, true);
+  assert.equal(protection.effectiveDT, 0);
+  assert.equal(protection.effectiveDR, 35);
+});
+
+test('neutral ammo leaves effective protection unchanged and has no modifier values', () => {
+  const neutralAmmo = getAmmoById('5mm');
+  assert.ok(neutralAmmo);
+  const protection = resolveDamageProtection({
+    baseDT: 4,
+    baseDR: 25,
+    ammoIgnoresDT: neutralAmmo.ignoresDT,
+    ammoDRModifier: neutralAmmo.drMod,
+  });
+
+  assert.equal(protection.ammoIgnoresDT, false);
+  assert.equal(protection.ammoDRModifier, 0);
+  assert.equal(protection.effectiveDT, protection.baseDT);
+  assert.equal(protection.effectiveDR, protection.baseDR);
 });
 
 test('combat attack resolution counts one Dodger rank as exactly +5 AC', () => {

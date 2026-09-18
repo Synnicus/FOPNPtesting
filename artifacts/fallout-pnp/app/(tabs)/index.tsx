@@ -30,7 +30,7 @@ import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial,
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
-import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline } from '@/data/attackResolution';
+import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import { computeConditionModifiers } from '@/data/conditions';
 import {
@@ -174,6 +174,7 @@ interface ShotDamage {
   physicalDmg: number;
   poisonBonusDamage: number;
   poisonResults: PoisonResistanceResult[];
+  protection: DamageProtectionBreakdown;
 }
 
 // ─── Perk Bonuses Computed ────────────────────────────────────────────────────
@@ -412,6 +413,52 @@ function FormulaLine({ label, value, color }: { label: string; value: string; co
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 }}>
       <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{label}</Text>
       <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: color ?? colors.foreground }}>{value}</Text>
+    </View>
+  );
+}
+
+function ProtectionBreakdownLines({
+  protection,
+  ammoName,
+}: {
+  protection: DamageProtectionBreakdown;
+  ammoName?: string;
+}) {
+  const colors = useColors();
+  const ammoChangesProtection = protection.ammoIgnoresDT || protection.ammoDRModifier !== 0;
+  return (
+    <View style={{ gap: 2 }}>
+      <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+        Base protection: DT {protection.baseDT} · DR {protection.baseDR}%
+      </Text>
+      {ammoChangesProtection && (
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+          Ammo{ammoName ? ` — ${ammoName}` : ''}: {[
+            protection.ammoIgnoresDT ? `ignores DT (${protection.baseDT} → 0)` : '',
+            protection.ammoDRModifier !== 0
+              ? `DR ${protection.ammoDRModifier > 0 ? '+' : ''}${protection.ammoDRModifier}%`
+              : '',
+          ].filter(Boolean).join(' · ')}
+        </Text>
+      )}
+      {protection.ignoredDT > 0 && !protection.ammoIgnoresDT && !protection.bypassesArmor && (
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary }}>
+          Attack effects: −{protection.ignoredDT} DT
+        </Text>
+      )}
+      {protection.defenderDRModifier !== 0 && !protection.bypassesArmor && (
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: protection.defenderDRModifier > 0 ? '#4a8c3f' : colors.destructive }}>
+          Defender perks/effects: DR {protection.defenderDRModifier > 0 ? '+' : ''}{protection.defenderDRModifier}%
+        </Text>
+      )}
+      {protection.bypassesArmor && (
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+          Critical effect: all DT/DR bypassed
+        </Text>
+      )}
+      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>
+        Effective protection: DT {protection.effectiveDT} · DR {protection.effectiveDR}%
+      </Text>
     </View>
   );
 }
@@ -766,8 +813,7 @@ export default function CombatScreen() {
   const [streamlinedDmgResult, setStreamlinedDmgResult] = useState<{
     perHit: number[];
     total: number;
-    dt: number;
-    dr: number;
+    protection: DamageProtectionBreakdown;
     poisonResults: PoisonResistanceResult[];
     poisonBonusDamage: number;
   } | null>(null);
@@ -1461,16 +1507,8 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // Combined DT/DR from armor + defender natural protection.
     const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
-    // Ammo: ignoresDT bypasses DT; drMod adjusts the target's DR (negative = AP).
-    const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
-    const ammoDrMod = loadedAmmo?.drMod ?? 0;
-    const baseDT = ammoIgnoresDT ? 0 : Math.max(0, prot.dt - perkBonuses.ignoreDT);
-    // Defender DR: armor/natural + ammo modifier + defender perks (Toughness…)
-    // + active chem effects (e.g. Voodoo +20% DR). Manual creature entries can
-    // print DR above the normal 90% character cap.
     const damageResistanceCap = defender?.manualDerivedStats ? 100 : 90;
-    const baseDR = Math.max(0, Math.min(damageResistanceCap,
-      prot.dr + ammoDrMod + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
+    const defenderDRModifier = defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0);
     // Optional manual base-damage override (replaces the rolled dice total).
     const overrideVal = damageOverride.trim() === '' ? null : Math.max(0, parseInt(damageOverride, 10) || 0);
 
@@ -1541,8 +1579,18 @@ export default function CombatScreen() {
       if (specialUnarmedAttack) {
         notes.push(`${specialUnarmedAttack.name}: +${specialDamageBonus} damage${specialUnarmedAttack.armorClassPiercing ? ', Armor Class ignored for hit roll' : ''}`);
       }
-      const dt = bypassArmor ? 0 : baseDT;
-      const dr = bypassArmor ? 0 : baseDR;
+      const protection = resolveDamageProtection({
+        baseDT: prot.dt,
+        baseDR: prot.dr,
+        ammoIgnoresDT: loadedAmmo?.ignoresDT,
+        ammoDRModifier: loadedAmmo?.drMod,
+        ignoredDT: perkBonuses.ignoreDT,
+        defenderDRModifier,
+        damageResistanceCap,
+        bypassesArmor: bypassArmor,
+      });
+      const dt = protection.effectiveDT;
+      const dr = protection.effectiveDR;
       if (bypassArmor) notes.push('Bypasses armor (DT/DR ignored)');
       // Apply DT first, then DR: finalDmg = max(0, (baseDmg − DT) × (1 − DR/100))
       const resolvedDamage = resolveDamagePipeline({
@@ -1566,7 +1614,7 @@ export default function CombatScreen() {
         shotIndex: i, baseRolls, baseDmg: rawBaseDmg, combinedDT: dt, combinedDR: dr,
         finalDmg, physicalDmg, poisonBonusDamage, poisonResults,
         critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor,
-        critNotes: notes, manualBaseDamage: overrideVal,
+        critNotes: notes, manualBaseDamage: overrideVal, protection,
       };
     });
     setShotDamages(damages); setDamageApplied(false);
@@ -2028,8 +2076,15 @@ export default function CombatScreen() {
 
   // Display-level DT/DR (before calculateDamage is called) — armor + natural protection
   const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot) : { dt: 0, dr: 0 };
-  const combinedDT = displayProt.dt;
-  const combinedDR = displayProt.dr;
+  const displayProtectionBreakdown = resolveDamageProtection({
+    baseDT: displayProt.dt,
+    baseDR: displayProt.dr,
+    ammoIgnoresDT: loadedAmmo?.ignoresDT,
+    ammoDRModifier: loadedAmmo?.drMod,
+    ignoredDT: perkBonuses.ignoreDT,
+    defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0),
+    damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
+  });
 
   // Compact DT/DR summary across all damage types for the defender info panel
   const defenderProtSummary = DAMAGE_TYPE_ORDER.map(dt => {
@@ -3071,9 +3126,15 @@ export default function CombatScreen() {
             {streamlinedRolled && streamlinedHits > 0 && weapon && !streamlinedDmgResult && (
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary }} onPress={() => {
                 const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
-                const ammoIgnoresDT = !!loadedAmmo?.ignoresDT;
-                const burstDT = ammoIgnoresDT ? 0 : Math.max(0, burstProt.dt - perkBonuses.ignoreDT);
-                const burstDR = Math.max(0, Math.min(defender?.manualDerivedStats ? 100 : 90, burstProt.dr + (loadedAmmo?.drMod ?? 0) + defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)));
+                const protection = resolveDamageProtection({
+                  baseDT: burstProt.dt,
+                  baseDR: burstProt.dr,
+                  ammoIgnoresDT: loadedAmmo?.ignoresDT,
+                  ammoDRModifier: loadedAmmo?.drMod,
+                  ignoredDT: perkBonuses.ignoreDT,
+                  defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0),
+                  damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
+                });
                 const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
                 const hthPerkBonus = isMelee ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
                 const traitMeleeBonus = isMelee && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
@@ -3087,7 +3148,7 @@ export default function CombatScreen() {
                     ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie)) : [];
                   const raw = rolls.reduce((a, b) => a + b, 0) + ammoRolls.reduce((a, b) => a + b, 0)
                     + (loadedAmmo?.dmgBonus ?? 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
-                  const physicalDamage = applyProtection(raw, burstDT, burstDR);
+                  const physicalDamage = applyProtection(raw, protection.effectiveDT, protection.effectiveDR);
                   const hitPoisonResults = attackPoisons.map(poison =>
                     resolvePoisonResistance(poison, defenderSheet?.poisonResistance ?? 0, Math.floor(Math.random() * 100) + 1));
                   poisonResults.push(...hitPoisonResults);
@@ -3095,7 +3156,7 @@ export default function CombatScreen() {
                 });
                 const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
                 const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
-                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, dt: burstDT, dr: burstDR, poisonResults, poisonBonusDamage });
+                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage });
                 if (defender) {
                   if (totalBurstDmg > 0) applyDamage(defender.id, totalBurstDmg);
                   applyPoisonExposure(poisonResults);
@@ -3109,8 +3170,9 @@ export default function CombatScreen() {
             {streamlinedDmgResult && (
               <View style={{ borderWidth: 1, borderRadius: colors.radius, padding: 10, borderColor: colors.destructive, gap: 4 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>BURST DAMAGE APPLIED{defender ? ` → ${defender.name.toUpperCase()}` : ''}</Text>
+                <ProtectionBreakdownLines protection={streamlinedDmgResult.protection} ammoName={loadedAmmo?.name} />
                 <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
-                  Per hit (after DT {streamlinedDmgResult.dt}{streamlinedDmgResult.dr > 0 ? ` / DR ${streamlinedDmgResult.dr}%` : ''}): [{streamlinedDmgResult.perHit.join(', ')}]
+                  Per hit (after DT {streamlinedDmgResult.protection.effectiveDT}{streamlinedDmgResult.protection.effectiveDR > 0 ? ` / DR ${streamlinedDmgResult.protection.effectiveDR}%` : ''}): [{streamlinedDmgResult.perHit.join(', ')}]
                 </Text>
                 {streamlinedDmgResult.poisonResults.map((result, index) => (
                   <Text key={`${result.poison.type}-${index}`} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
@@ -3259,8 +3321,12 @@ export default function CombatScreen() {
               <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                 {doubleShotActive ? `Double-shot: ${weapon.damageDieCount * 2}` : weapon.damageDieCount}d{weapon.damageDie}{weapon.damageBonus > 0 ? `+${weapon.damageBonus}` : ''} · {weapon.damageType.toUpperCase()}
               </Text>
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                DT {weapon ? DAMAGE_TYPE_LABELS[weapon.damageType] : ''}: {combinedDT}{perkBonuses.ignoreDT > 0 ? ` (−${perkBonuses.ignoreDT} ignored)` : ''} → effective {Math.max(0, combinedDT - perkBonuses.ignoreDT)}{combinedDR > 0 ? ` · DR ${combinedDR}%` : ''} — formula: max(0,(base−DT)×(1−DR%))
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>
+                {DAMAGE_TYPE_LABELS[weapon.damageType]} PROTECTION
+              </Text>
+              <ProtectionBreakdownLines protection={displayProtectionBreakdown} ammoName={loadedAmmo?.name} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                Formula: max(0,(base−DT)×(1−DR%))
               </Text>
               {perkBonuses.damage > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>Perk damage bonus: +{perkBonuses.damage}</Text>}
             </View>
@@ -3317,6 +3383,7 @@ export default function CombatScreen() {
                       {dmg.meleeDmgBonus > 0 ? ` +${dmg.meleeDmgBonus} MD` : ''}{modBonuses.damage > 0 ? ` +${modBonuses.damage} mods` : ''}{perkBonuses.damage > 0 ? ` +${perkBonuses.damage} perks` : ''}{dmg.critMultiplier > 1 ? ` ×${dmg.critMultiplier}` : ''} = {dmg.baseDmg}
                     </Text>
                     {dmg.critNotes.length > 0 && dmg.critNotes.map((n, k) => <Text key={k} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primary }}>⚡ {n}</Text>)}
+                    <ProtectionBreakdownLines protection={dmg.protection} ammoName={loadedAmmo?.name} />
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>− DT {dmg.combinedDT} → {dmg.afterDT}</Text>
                     {dmg.combinedDR > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>× (1 − DR {dmg.combinedDR}%) → {dmg.physicalDmg}</Text>}
                     {dmg.poisonResults.map(result => (

@@ -16,6 +16,29 @@ export interface DamagePipelineResult {
   finalDamage: number;
 }
 
+export interface DamageProtectionBreakdownInput {
+  baseDT: number;
+  baseDR: number;
+  ammoIgnoresDT?: boolean;
+  ammoDRModifier?: number;
+  ignoredDT?: number;
+  defenderDRModifier?: number;
+  damageResistanceCap?: number;
+  bypassesArmor?: boolean;
+}
+
+export interface DamageProtectionBreakdown {
+  baseDT: number;
+  baseDR: number;
+  ammoIgnoresDT: boolean;
+  ammoDRModifier: number;
+  ignoredDT: number;
+  defenderDRModifier: number;
+  effectiveDT: number;
+  effectiveDR: number;
+  bypassesArmor: boolean;
+}
+
 export interface DefensivePerkBonuses {
   ac: number;
   dr: number;
@@ -87,6 +110,37 @@ export function resolveAttackWeapon<T extends { id: string }>(
 ): T | null {
   if (!attackWeaponId) return activeWeapon;
   return heldWeapons.find(weapon => weapon?.id === attackWeaponId) ?? activeWeapon;
+}
+
+/**
+ * Keeps the printed/equipped protection separate from attack-specific changes
+ * so combat results can explain why the effective DT/DR differs.
+ */
+export function resolveDamageProtection(
+  input: DamageProtectionBreakdownInput,
+): DamageProtectionBreakdown {
+  const baseDT = Math.max(0, input.baseDT);
+  const baseDR = Math.max(0, input.baseDR);
+  const ammoIgnoresDT = !!input.ammoIgnoresDT;
+  const ammoDRModifier = input.ammoDRModifier ?? 0;
+  const ignoredDT = Math.max(0, input.ignoredDT ?? 0);
+  const defenderDRModifier = input.defenderDRModifier ?? 0;
+  const bypassesArmor = !!input.bypassesArmor;
+  const damageResistanceCap = input.damageResistanceCap ?? 90;
+
+  return {
+    baseDT,
+    baseDR,
+    ammoIgnoresDT,
+    ammoDRModifier,
+    ignoredDT,
+    defenderDRModifier,
+    effectiveDT: bypassesArmor || ammoIgnoresDT ? 0 : Math.max(0, baseDT - ignoredDT),
+    effectiveDR: bypassesArmor
+      ? 0
+      : Math.max(0, Math.min(damageResistanceCap, baseDR + ammoDRModifier + defenderDRModifier)),
+    bypassesArmor,
+  };
 }
 
 export function resolveDamagePipeline(input: DamagePipelineInput): DamagePipelineResult {
