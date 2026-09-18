@@ -1,5 +1,16 @@
 import type { PoisonSpec } from './mods.ts';
-import type { Weapon } from '../context/types.ts';
+import type { DamageType, Weapon } from '../context/types.ts';
+
+export type AmmoComponentType = DamageType | 'concussion' | 'radiation';
+
+export interface AmmoDamageComponent {
+  id: string;
+  label: string;
+  type: AmmoComponentType;
+  dmgDieCount: number;
+  dmgDie: number;
+  dmgBonus: number;
+}
 
 // ─── Ammunition — Fallout PnP 2.0 manual "Ammunition for Guns" chapter ────────
 // Every entry is transcribed from the manual's ammo table (values, AC/DR
@@ -30,6 +41,9 @@ export interface AmmoType {
   notes?: string;
   /** Poison delivered on a successful hit after a poison-resistance roll. */
   poison?: PoisonSpec;
+  /** Custom rounds resolve each component independently; built-ins retain legacy fields. */
+  components?: AmmoDamageComponent[];
+  isCustom?: boolean;
 }
 
 export interface AmmoReferenceEffects {
@@ -115,8 +129,8 @@ export const AMMO_TYPES: AmmoType[] = [
   { id: 'micro_fusion_cell', name: 'Micro Fusion Cell', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 20, notes: 'Recharges the weapon; no inherent damage dice.' },
 ];
 
-export function getAmmoById(id: string): AmmoType | undefined {
-  return AMMO_TYPES.find(a => a.id === id);
+export function getAmmoById(id: string, catalog: readonly AmmoType[] = AMMO_TYPES): AmmoType | undefined {
+  return catalog.find(a => a.id === id);
 }
 
 /** Resolve a persisted selection, falling back to the weapon's first valid
@@ -125,14 +139,15 @@ export function getAmmoById(id: string): AmmoType | undefined {
 export function resolveEquippedAmmoType(
   weapon: Pick<Weapon, 'compatibleAmmo'> | null | undefined,
   ammoTypeId?: string,
+  catalog: readonly AmmoType[] = AMMO_TYPES,
 ): AmmoType | undefined {
   const compatibleIds = weapon?.compatibleAmmo ?? [];
   if (ammoTypeId && compatibleIds.includes(ammoTypeId)) {
-    const selected = getAmmoById(ammoTypeId);
+    const selected = getAmmoById(ammoTypeId, catalog);
     if (selected) return selected;
   }
   for (const compatibleId of compatibleIds) {
-    const fallback = getAmmoById(compatibleId);
+    const fallback = getAmmoById(compatibleId, catalog);
     if (fallback) return fallback;
   }
   return undefined;
@@ -141,8 +156,83 @@ export function resolveEquippedAmmoType(
 export function resolveEquippedAmmoTypeId(
   weapon: Pick<Weapon, 'compatibleAmmo'> | null | undefined,
   ammoTypeId?: string,
+  catalog: readonly AmmoType[] = AMMO_TYPES,
 ): string | undefined {
-  return resolveEquippedAmmoType(weapon, ammoTypeId)?.id;
+  return resolveEquippedAmmoType(weapon, ammoTypeId, catalog)?.id;
+}
+
+export function validateCustomAmmo(ammo: AmmoType, catalog: readonly AmmoType[] = AMMO_TYPES): string[] {
+  const errors: string[] = [];
+  const id = typeof ammo?.id === 'string' ? ammo.id.trim() : '';
+  const name = typeof ammo?.name === 'string' ? ammo.name.trim() : '';
+  if (!id) errors.push('Ammunition id is required.');
+  if (id && catalog.some(candidate => candidate.id === id)) errors.push('Ammunition id must be unique.');
+  if (!name) errors.push('Ammunition name is required.');
+  const finiteInteger = (value: unknown, min: number, max: number) =>
+    typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= min && value <= max;
+  if (!finiteInteger(ammo?.acMod, -1000, 1000)) errors.push('AC modifier must be a whole number between -1000 and 1000.');
+  if (!finiteInteger(ammo?.drMod, -1000, 1000)) errors.push('DR modifier must be a whole number between -1000 and 1000.');
+  if (!finiteInteger(ammo?.dmgDieCount, 0, 100) || !finiteInteger(ammo?.dmgDie, 0, 1000) || !finiteInteger(ammo?.dmgBonus, -100000, 100000)) {
+    errors.push('Legacy damage fields must contain finite whole numbers.');
+  }
+  if (!finiteInteger(ammo?.value, 0, 100000000) || !finiteInteger(ammo?.volume, 0, 100000000)) {
+    errors.push('Value and volume must be non-negative whole numbers.');
+  }
+  if (ammo?.ignoresDT !== undefined && typeof ammo.ignoresDT !== 'boolean') errors.push('Ignores DT must be a boolean.');
+  if (ammo?.notes !== undefined && typeof ammo.notes !== 'string') errors.push('Notes must be text.');
+  if (ammo?.poison !== undefined) {
+    const poison = ammo.poison as unknown;
+    const validPoison = !!poison
+      && typeof poison === 'object'
+      && !Array.isArray(poison)
+      && typeof (poison as PoisonSpec).type === 'string'
+      && /^[A-G]$/.test((poison as PoisonSpec).type)
+      && typeof (poison as PoisonSpec).effectText === 'string'
+      && (poison as PoisonSpec).effectText.trim().length > 0;
+    if (!validPoison) errors.push('Poison must use a type from A through G and include effect text.');
+  }
+  const components = Array.isArray(ammo?.components) ? ammo.components : [];
+  if (components.length < 1 || components.length > 3) errors.push('Custom ammunition requires one to three components.');
+  const componentIds = new Set<string>();
+  const componentTypes = new Set<AmmoComponentType>(['normal', 'laser', 'fire', 'plasma', 'explosion', 'concussion', 'radiation']);
+  for (const component of components) {
+    if (!component || typeof component !== 'object') {
+      errors.push('Every component must be a valid object.');
+      continue;
+    }
+    const componentId = typeof component.id === 'string' ? component.id.trim() : '';
+    if (!componentId || componentIds.has(componentId)) errors.push('Component ids must be present and unique.');
+    if (componentId) componentIds.add(componentId);
+    if (typeof component.label !== 'string' || !component.label.trim()) errors.push('Every component requires a label.');
+    if (!componentTypes.has(component.type)) errors.push('Every component requires a supported damage type.');
+    if (!finiteInteger(component.dmgDieCount, 0, 100)) errors.push('Dice count must be between 0 and 100.');
+    if (!finiteInteger(component.dmgDie, 0, 1000)) errors.push('Die size must be between 0 and 1000.');
+    if (!finiteInteger(component.dmgBonus, -100000, 100000)) errors.push('Flat damage must be a finite whole number.');
+    if ((component.dmgDieCount === 0) !== (component.dmgDie === 0)) errors.push('Dice count and die size must either both be zero or both be positive.');
+    if (component.dmgDieCount === 0 && component.dmgBonus === 0) errors.push('Every component must roll dice or include a flat amount.');
+  }
+  return [...new Set(errors)];
+}
+
+/** Non-throwing normalization for saved/imported custom ammunition. */
+export function sanitizeCustomAmmoCatalog(value: unknown): AmmoType[] {
+  const customAmmo: AmmoType[] = [];
+  if (!Array.isArray(value)) return customAmmo;
+  for (const ammo of value) {
+    if (!ammo || typeof ammo !== 'object' || Array.isArray(ammo)) continue;
+    const candidate = { ...ammo, isCustom: true } as AmmoType;
+    if (validateCustomAmmo(candidate, [...AMMO_TYPES, ...customAmmo]).length === 0) customAmmo.push(candidate);
+  }
+  return customAmmo;
+}
+
+export function filterCompatibleAmmoIds(
+  ids: readonly string[] | undefined,
+  catalog: readonly AmmoType[],
+): string[] | undefined {
+  if (!ids) return undefined;
+  const validIds = new Set(catalog.map(ammo => ammo.id));
+  return ids.filter(id => typeof id === 'string' && validIds.has(id));
 }
 
 export function formatAmmoDamage(ammo: AmmoType): string {

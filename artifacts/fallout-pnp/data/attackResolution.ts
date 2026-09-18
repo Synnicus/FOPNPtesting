@@ -1,4 +1,99 @@
 import type { Character, DamageType } from '../context/types.ts';
+import type { AmmoDamageComponent } from './ammo.ts';
+
+export type AmmoDieRoller = (sides: number) => number;
+
+export interface AmmoComponentProtection {
+  damageThreshold: number;
+  damageResistance: number;
+}
+
+export interface AmmoComponentResolution {
+  component: AmmoDamageComponent;
+  rolls: number[];
+  rawDamage: number;
+  protection?: AmmoComponentProtection;
+  finalHp?: number;
+  finalRadiation?: number;
+}
+
+export interface AmmoComponentsResolutionInput {
+  components: readonly AmmoDamageComponent[];
+  rollDie: AmmoDieRoller;
+  /** Returns protection for the requested damage type. */
+  resolveProtection: (damageType: DamageType, component: AmmoDamageComponent) => AmmoComponentProtection;
+  radiationResistance?: number;
+  /** Applied to HP components before DT/DR, matching legacy ammunition. */
+  criticalMultiplier?: number;
+  /** Applied to HP components after DT/DR, matching attack trait effects. */
+  postProtectionMultiplier?: number;
+}
+
+export interface AmmoComponentsResolution {
+  components: AmmoComponentResolution[];
+  totalHpDamage: number;
+  totalRadiation: number;
+}
+
+/**
+ * Resolves custom ammunition one component at a time. In particular, a
+ * concussion rider is explosive damage (for DR), but has no DT; radiation is
+ * a separate rider and never becomes HP damage.
+ */
+export function resolveAmmoDamageComponents(input: AmmoComponentsResolutionInput): AmmoComponentsResolution {
+  if (!Array.isArray(input.components) || input.components.length < 1 || input.components.length > 3) {
+    throw new RangeError('Custom ammunition requires one to three components.');
+  }
+  if (typeof input.rollDie !== 'function' || typeof input.resolveProtection !== 'function') {
+    throw new TypeError('Custom ammunition requires a die roller and protection resolver.');
+  }
+
+  const resolved: AmmoComponentResolution[] = [];
+  let totalHpDamage = 0;
+  let totalRadiation = 0;
+  for (const component of input.components) {
+    const rolls: number[] = [];
+    for (let i = 0; i < component.dmgDieCount; i += 1) {
+      const roll = input.rollDie(component.dmgDie);
+      if (!Number.isFinite(roll)) throw new RangeError('The die roller must return finite numbers.');
+      rolls.push(roll);
+    }
+    const rawDamage = rolls.reduce((sum, roll) => sum + roll, component.dmgBonus);
+    if (component.type === 'radiation') {
+      const resistance = Math.max(0, Math.min(100, input.radiationResistance ?? 0));
+      const finalRadiation = Math.max(0, Math.round(rawDamage * (1 - resistance / 100)));
+      resolved.push({ component, rolls, rawDamage, finalRadiation });
+      totalRadiation += finalRadiation;
+      continue;
+    }
+
+    const damageType: DamageType = component.type === 'concussion' ? 'explosion' : component.type;
+    const suppliedProtection = input.resolveProtection(damageType, component);
+    const protection = component.type === 'concussion'
+      ? { damageThreshold: 0, damageResistance: suppliedProtection.damageResistance }
+      : suppliedProtection;
+    const resolvedHp = resolveDamagePipeline({
+      initialDiceDamage: rawDamage,
+      flatDamageBonus: 0,
+      criticalMultiplier: Number.isFinite(input.criticalMultiplier) ? Math.max(0, input.criticalMultiplier ?? 1) : 1,
+      damageThreshold: protection.damageThreshold,
+      damageResistance: protection.damageResistance,
+      // The caller already resolves the applicable cap. Preserve printed/manual
+      // 100% DR instead of applying the normal pipeline's default 90% cap again.
+      damageResistanceCap: 100,
+    }).finalDamage;
+    const postProtectionMultiplier = Number.isFinite(input.postProtectionMultiplier)
+      ? Math.max(0, input.postProtectionMultiplier ?? 1)
+      : 1;
+    const finalHp = Math.max(0, Math.round(resolvedHp * postProtectionMultiplier));
+    resolved.push({ component, rolls, rawDamage, protection, finalHp });
+    totalHpDamage += finalHp;
+  }
+  return { components: resolved, totalHpDamage, totalRadiation };
+}
+
+/** Short alias for callers that refer to the resolver as custom ammo damage. */
+export const resolveCustomAmmoDamage = resolveAmmoDamageComponents;
 
 export interface DamagePipelineInput {
   initialDiceDamage: number;

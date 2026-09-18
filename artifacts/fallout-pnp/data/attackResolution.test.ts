@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection } from './attackResolution.ts';
+import {
+  computeDefensivePerkBonuses,
+  resolveAmmoDamageComponents,
+  resolveAttackWeapon,
+  resolveDamagePipeline,
+  resolveDamageProtection,
+} from './attackResolution.ts';
 import { getAmmoById } from './ammo.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
@@ -162,4 +168,102 @@ test('HP-conditional AC remains combat-only and activates strictly below half HP
   assert.equal(sheet.armorClass, 5);
   assert.equal(resolvedCombatAc(perks, 50, 100), 5);
   assert.equal(resolvedCombatAc(perks, 49, 100), 10);
+});
+
+test('custom ammunition rolls each component independently and resolves protection by type', () => {
+  const components = [
+    { id: 'normal', label: 'normal', type: 'normal' as const, dmgDieCount: 2, dmgDie: 6, dmgBonus: 1 },
+    { id: 'laser', label: 'laser', type: 'laser' as const, dmgDieCount: 1, dmgDie: 8, dmgBonus: 0 },
+    { id: 'radiation', label: 'radiation', type: 'radiation' as const, dmgDieCount: 1, dmgDie: 10, dmgBonus: 2 },
+  ];
+  const seenTypes: string[] = [];
+  const values = [3, 5, 7, 8];
+  const result = resolveAmmoDamageComponents({
+    components,
+    rollDie: () => values.shift()!,
+    resolveProtection: type => {
+      seenTypes.push(type);
+      return type === 'normal'
+        ? { damageThreshold: 4, damageResistance: 25 }
+        : { damageThreshold: 2, damageResistance: 50 };
+    },
+    radiationResistance: 25,
+  });
+
+  assert.deepEqual(seenTypes, ['normal', 'laser']);
+  assert.deepEqual(result.components[0], {
+    component: components[0],
+    rolls: [3, 5],
+    rawDamage: 9,
+    protection: { damageThreshold: 4, damageResistance: 25 },
+    finalHp: 4,
+  });
+  assert.equal(result.components[1].finalHp, 3);
+  assert.equal(result.components[2].finalRadiation, 8);
+  assert.equal(result.totalHpDamage, 7);
+  assert.equal(result.totalRadiation, 8);
+});
+
+test('concussion uses explosion DR but ignores DT, while radiation never deals HP damage', () => {
+  const calls: string[] = [];
+  const result = resolveAmmoDamageComponents({
+    components: [
+      { id: 'conc', label: 'concussion', type: 'concussion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 },
+      { id: 'rad', label: 'radiation', type: 'radiation', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 },
+    ],
+    rollDie: () => 6,
+    resolveProtection: type => {
+      calls.push(type);
+      return { damageThreshold: 99, damageResistance: 50 };
+    },
+    radiationResistance: 50,
+  });
+
+  assert.deepEqual(calls, ['explosion']);
+  assert.deepEqual(result.components[0].protection, { damageThreshold: 0, damageResistance: 50 });
+  assert.equal(result.components[0].finalHp, 3);
+  assert.equal(result.components[1].finalRadiation, 3);
+  assert.equal(result.totalHpDamage, 3);
+  assert.equal(result.totalRadiation, 3);
+});
+
+test('custom ammunition resolver rejects component lists outside one to three', () => {
+  const base = {
+    rollDie: () => 1,
+    resolveProtection: () => ({ damageThreshold: 0, damageResistance: 0 }),
+  };
+  assert.throws(() => resolveAmmoDamageComponents({ ...base, components: [] }), RangeError);
+  assert.throws(() => resolveAmmoDamageComponents({
+    ...base,
+    components: [1, 2, 3, 4].map((_, index) => ({
+      id: `${index}`, label: `${index}`, type: 'normal' as const, dmgDieCount: 0, dmgDie: 0, dmgBonus: 1,
+    })),
+  }), RangeError);
+});
+
+test('custom ammunition preserves a supplied 100% damage resistance result', () => {
+  const result = resolveAmmoDamageComponents({
+    components: [{ id: 'manual', label: 'Manual DR', type: 'normal', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 }],
+    rollDie: () => 1,
+    resolveProtection: () => ({ damageThreshold: 0, damageResistance: 100 }),
+  });
+  assert.equal(result.totalHpDamage, 0);
+});
+
+test('custom HP components use legacy critical and post-protection trait multipliers while radiation does not', () => {
+  const result = resolveAmmoDamageComponents({
+    components: [
+      { id: 'hp', label: 'HP', type: 'normal', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 },
+      { id: 'rad', label: 'Radiation', type: 'radiation', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 },
+    ],
+    rollDie: () => 1,
+    resolveProtection: () => ({ damageThreshold: 0, damageResistance: 50 }),
+    criticalMultiplier: 2,
+    postProtectionMultiplier: 0.5,
+    radiationResistance: 0,
+  });
+  assert.equal(result.components[0].finalHp, 50);
+  assert.equal(result.components[1].finalRadiation, 100);
+  assert.equal(result.totalHpDamage, 50);
+  assert.equal(result.totalRadiation, 100);
 });

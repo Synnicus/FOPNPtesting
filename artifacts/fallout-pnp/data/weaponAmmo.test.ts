@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AMMO_TYPES, getAmmoReferenceEffects, resolveEquippedAmmoType, resolveEquippedAmmoTypeId } from './ammo.ts';
+import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
 import { BUILT_IN_WEAPONS, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
@@ -101,4 +101,56 @@ test('a valid selected ammo type wins while an invalid selection returns to the 
   assert.equal(resolveEquippedAmmoTypeId(pistol, '10mm_ap'), '10mm_ap');
   assert.equal(resolveEquippedAmmoTypeId(pistol, 'not-compatible'), '10mm_jhp');
   assert.equal(resolveEquippedAmmoTypeId(weaponById('super_sledge')), undefined);
+});
+
+test('custom ammunition persists all three independently typed components and resolves from a combined catalog', () => {
+  const custom: AmmoType = {
+    id: 'custom-mortar', name: 'Rad Concussion Mortar', value: 0, volume: 0,
+    acMod: -5, drMod: -10, ignoresDT: false,
+    dmgDieCount: 2, dmgDie: 10, dmgBonus: 5, isCustom: true,
+    components: [
+      { id: 'blast', label: 'Blast', type: 'explosion', dmgDieCount: 2, dmgDie: 10, dmgBonus: 5 },
+      { id: 'shock', label: 'Concussion', type: 'concussion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 },
+      { id: 'rads', label: 'Radiation', type: 'radiation', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 },
+    ],
+  };
+  assert.deepEqual(validateCustomAmmo(custom), []);
+  const restored = JSON.parse(JSON.stringify(custom)) as AmmoType;
+  assert.deepEqual(restored.components, custom.components);
+  const catalog = [...AMMO_TYPES, restored];
+  const weapon = { compatibleAmmo: [custom.id] };
+  assert.equal(resolveEquippedAmmoType(weapon, custom.id, catalog)?.name, custom.name);
+  assert.equal(resolveEquippedAmmoTypeId(weapon, custom.id, catalog), custom.id);
+});
+
+test('custom ammunition validation rejects empty, excessive, duplicate, and invalid components', () => {
+  const base: AmmoType = {
+    id: 'custom', name: 'Custom', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, components: [],
+  };
+  assert.match(validateCustomAmmo(base).join(' '), /one to three/i);
+  const component = { id: 'same', label: 'Damage', type: 'normal' as const, dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 };
+  assert.match(validateCustomAmmo({ ...base, components: [component, component, component, component] }).join(' '), /one to three|unique/i);
+  assert.match(validateCustomAmmo({ ...base, components: [{ ...component, dmgDie: 0 }] }).join(' '), /both be zero|positive/i);
+  assert.match(validateCustomAmmo({ ...base, id: AMMO_TYPES[0].id, components: [component] }).join(' '), /unique/i);
+});
+
+test('malformed imported ammunition is skipped without throwing and stale weapon references are removed', () => {
+  assert.doesNotThrow(() => sanitizeCustomAmmoCatalog([
+    { id: null, name: {}, components: [{ id: null, label: null, type: 'void', dmgDieCount: 'many' }] },
+    { id: 'bad-notes', name: 'Bad', value: 0, volume: 0, acMod: 0, drMod: 0, ignoresDT: 'yes', notes: {}, dmgDieCount: 0, dmgDie: 0, dmgBonus: 1, components: [{ id: 'x', label: 'x', type: 'normal', dmgDieCount: 0, dmgDie: 0, dmgBonus: 1 }] },
+    { id: 'bad-poison', name: 'Bad poison', value: 0, volume: 0, acMod: 0, drMod: 0, dmgDieCount: 0, dmgDie: 0, dmgBonus: 1, poison: { type: 7, effectText: null }, components: [{ id: 'x', label: 'x', type: 'normal', dmgDieCount: 0, dmgDie: 0, dmgBonus: 1 }] },
+  ]));
+  const custom = {
+    id: 'safe-custom', name: 'Safe Custom', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true,
+    components: [{ id: 'main', label: 'Main', type: 'normal', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
+  } satisfies AmmoType;
+  const sanitized = sanitizeCustomAmmoCatalog([custom, { ...custom, id: 'duplicate-built-in', components: [{ ...custom.components[0], type: 'void' }] }]);
+  assert.deepEqual(sanitized.map(ammo => ammo.id), ['safe-custom']);
+  assert.deepEqual(filterCompatibleAmmoIds(['safe-custom', 'missing'], [...AMMO_TYPES, ...sanitized]), ['safe-custom']);
+});
+
+test('area-profile mine and trap weapons may declare compatible ammunition', () => {
+  assert.equal(weaponCategorySupportsAmmo('minesTraps'), true);
 });

@@ -35,7 +35,8 @@ export function weaponCategorySupportsAmmo(category: WeaponCategory): boolean {
     || category === 'meleeWeapons'
     || category === 'smallGuns'
     || category === 'bigGuns'
-    || category === 'energyWeapons';
+    || category === 'energyWeapons'
+    || category === 'minesTraps';
 }
 
 export const DAMAGE_TYPES: Record<string, DamageType> = {

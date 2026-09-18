@@ -30,7 +30,7 @@ import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial,
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
-import { computeDefensivePerkBonuses, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
+import { computeDefensivePerkBonuses, resolveAmmoDamageComponents, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import { computeConditionModifiers } from '@/data/conditions';
 import {
@@ -175,6 +175,8 @@ interface ShotDamage {
   poisonBonusDamage: number;
   poisonResults: PoisonResistanceResult[];
   protection: DamageProtectionBreakdown;
+  componentBreakdown: string[];
+  radiationExposure: number;
 }
 
 // ─── Perk Bonuses Computed ────────────────────────────────────────────────────
@@ -718,7 +720,7 @@ export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const app = useApp();
-  const { characters, allWeapons, allArmor, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
@@ -816,6 +818,8 @@ export default function CombatScreen() {
     protection: DamageProtectionBreakdown;
     poisonResults: PoisonResistanceResult[];
     poisonBonusDamage: number;
+    componentBreakdown: string[];
+    radiationExposure: number;
   } | null>(null);
 
   // Manual base-damage override ('' = use rolled dice). Recomputes DT/DR/crit.
@@ -900,7 +904,7 @@ export default function CombatScreen() {
         role,
         currentAmmo: state?.currentAmmo ?? magazineSize,
         magazineSize,
-        ammo: resolveEquippedAmmoType(heldWeapon, state?.ammoTypeId),
+        ammo: resolveEquippedAmmoType(heldWeapon, state?.ammoTypeId, allAmmo),
       };
     });
   const allHeldMagazinesFull = reloadableHeldWeapons.every(w => {
@@ -1044,11 +1048,11 @@ export default function CombatScreen() {
   const ammoTypeId = (attacker && weapon)
     ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.ammoTypeId
     : undefined;
-  const loadedAmmo: AmmoType | null = resolveEquippedAmmoType(weapon, ammoTypeId) ?? null;
+  const loadedAmmo: AmmoType | null = resolveEquippedAmmoType(weapon, ammoTypeId, allAmmo) ?? null;
   const attackPoisons = poisonExposuresForAttack(weapon, loadedAmmo);
   // Only the weapon's compatible ammo may be loaded.
   const compatibleAmmo: AmmoType[] = weapon?.compatibleAmmo
-    ? weapon.compatibleAmmo.map(id => getAmmoById(id)).filter((a): a is AmmoType => !!a)
+    ? weapon.compatibleAmmo.map(id => getAmmoById(id, allAmmo)).filter((a): a is AmmoType => !!a)
     : [];
 
   // Defender natural protection (creatures like Deathclaws)
@@ -1564,7 +1568,7 @@ export default function CombatScreen() {
         ? Array.from({ length: dieCount }, () => rollDie(weapon.damageDie))
         : [];
       // Ammo contributes its own dice (manual: gun damage = weapon dice + ammo).
-      const ammoRolls = overrideVal === null && loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
+      const ammoRolls = overrideVal === null && loadedAmmo && !loadedAmmo.components?.length && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
         ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie))
         : [];
       if (loadedAmmo && (ammoRolls.length > 0 || loadedAmmo.dmgBonus)) {
@@ -1574,7 +1578,7 @@ export default function CombatScreen() {
       // Manual override replaces the summed dice total (mods/melee/perks still add).
       const rolledSum = overrideVal !== null ? overrideVal : baseRolls.reduce((a, b) => a + b, 0);
       if (overrideVal !== null) notes.push(`Manual base damage: ${overrideVal}`);
-      const ammoFlat = loadedAmmo?.dmgBonus ?? 0;
+      const ammoFlat = loadedAmmo?.components?.length ? 0 : loadedAmmo?.dmgBonus ?? 0;
       const specialDamageBonus = specialUnarmedAttack?.damageBonus ?? 0;
       if (specialUnarmedAttack) {
         notes.push(`${specialUnarmedAttack.name}: +${specialDamageBonus} damage${specialUnarmedAttack.armorClassPiercing ? ', Armor Class ignored for hit roll' : ''}`);
@@ -1603,7 +1607,41 @@ export default function CombatScreen() {
       });
       const rawBaseDmg = resolvedDamage.baseDamage;
       const afterDT = resolvedDamage.afterDamageThreshold;
-      const physicalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
+      const weaponPhysicalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
+      const componentResolution = loadedAmmo?.components?.length
+        ? resolveAmmoDamageComponents({
+            components: loadedAmmo.components,
+            rollDie,
+            radiationResistance: defenderSheet?.radiationResistance ?? 0,
+            criticalMultiplier: critMult,
+            postProtectionMultiplier: traitEffects.damageMultiplier ?? 1,
+            resolveProtection: damageType => {
+              const typedProtection = combinedProtectionFor(damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
+              const typedDefenderPerks = computeDefensivePerkBonuses(defender, damageType, getPerkById);
+              const resolved = resolveDamageProtection({
+                baseDT: typedProtection.dt,
+                baseDR: typedProtection.dr,
+                ammoIgnoresDT: loadedAmmo.ignoresDT,
+                ammoDRModifier: loadedAmmo.drMod,
+                ignoredDT: perkBonuses.ignoreDT,
+                defenderDRModifier: typedDefenderPerks.dr + (defenderEffectMods?.drMod ?? 0),
+                damageResistanceCap,
+                bypassesArmor: bypassArmor,
+              });
+              return { damageThreshold: resolved.effectiveDT, damageResistance: resolved.effectiveDR };
+            },
+          })
+        : null;
+      const componentBreakdown = componentResolution?.components.map(component => {
+        const rolled = component.rolls.length ? `[${component.rolls.join(', ')}]${component.component.dmgBonus ? ` ${component.component.dmgBonus > 0 ? '+' : ''}${component.component.dmgBonus}` : ''}` : `${component.component.dmgBonus}`;
+        const multipliers = component.component.type !== 'radiation'
+          ? `${critMult !== 1 ? ` · crit ×${critMult}` : ''}${(traitEffects.damageMultiplier ?? 1) !== 1 ? ` · trait ×${traitEffects.damageMultiplier}` : ''}`
+          : '';
+        return component.component.type === 'radiation'
+          ? `${component.component.label}: ${rolled} = ${component.rawDamage} radiation; ${defenderSheet?.radiationResistance ?? 0}% resistance → ${component.finalRadiation ?? 0} unapplied exposure`
+          : `${component.component.label} (${component.component.type}): ${rolled} = ${component.rawDamage}${multipliers}; DT ${component.protection?.damageThreshold ?? 0} / DR ${component.protection?.damageResistance ?? 0}% → ${component.finalHp ?? 0} HP`;
+      }) ?? [];
+      const physicalDmg = weaponPhysicalDmg + (componentResolution?.totalHpDamage ?? 0);
       const poisonResistance = defenderSheet?.poisonResistance ?? 0;
       const poisonResults = attackPoisons.map(poison =>
         resolvePoisonResistance(poison, poisonResistance, Math.floor(Math.random() * 100) + 1));
@@ -1615,6 +1653,7 @@ export default function CombatScreen() {
         finalDmg, physicalDmg, poisonBonusDamage, poisonResults,
         critMultiplier: critMult, meleeDmgBonus, afterDT, bypassArmor,
         critNotes: notes, manualBaseDamage: overrideVal, protection,
+        componentBreakdown, radiationExposure: componentResolution?.totalRadiation ?? 0,
       };
     });
     setShotDamages(damages); setDamageApplied(false);
@@ -1622,6 +1661,7 @@ export default function CombatScreen() {
 
   const totalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.finalDmg ?? 0), 0) : 0;
   const totalPhysicalDamage = shotDamages ? shotDamages.reduce((s, d) => s + (d?.physicalDmg ?? 0), 0) : 0;
+  const totalRadiationExposure = shotDamages ? shotDamages.reduce((s, d) => s + (d?.radiationExposure ?? 0), 0) : 0;
   const appliedPoisonResults = shotDamages?.flatMap(damage =>
     damage?.poisonResults.filter(result => result.applied) ?? []) ?? [];
   const hasAppliedPoison = appliedPoisonResults.length > 0;
@@ -1648,9 +1688,16 @@ export default function CombatScreen() {
       notify('Missing Area Profile', `${weapon?.name ?? 'This mine/trap'} has no catalog area profile yet.`);
       return;
     }
-    setAreaAttackPreset(weaponAreaAttack);
+    setAreaAttackPreset(loadedAmmo?.components?.length
+      ? {
+          ...weaponAreaAttack,
+          components: loadedAmmo.components,
+          ammoIgnoresDT: loadedAmmo.ignoresDT,
+          ammoDRModifier: loadedAmmo.drMod,
+        }
+      : weaponAreaAttack);
     setShowAreaAttack(true);
-  }, [weaponAreaAttack, weapon]);
+  }, [weaponAreaAttack, weapon, loadedAmmo]);
 
   const selectAttackWeapon = useCallback((weaponId: string) => {
     if (weapon?.id === weaponId) return;
@@ -3142,13 +3189,43 @@ export default function CombatScreen() {
                   ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
                   : 0;
                 const poisonResults: PoisonResistanceResult[] = [];
-                const perHit = Array.from({ length: streamlinedHits }, () => {
+                const componentBreakdown: string[] = [];
+                let radiationExposure = 0;
+                const perHit = Array.from({ length: streamlinedHits }, (_, hitIndex) => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
-                  const ammoRolls = loadedAmmo && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
+                  const ammoRolls = loadedAmmo && !loadedAmmo.components?.length && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
                     ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie)) : [];
                   const raw = rolls.reduce((a, b) => a + b, 0) + ammoRolls.reduce((a, b) => a + b, 0)
-                    + (loadedAmmo?.dmgBonus ?? 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
-                  const physicalDamage = applyProtection(raw, protection.effectiveDT, protection.effectiveDR);
+                    + (loadedAmmo?.components?.length ? 0 : loadedAmmo?.dmgBonus ?? 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
+                  let physicalDamage = applyProtection(raw, protection.effectiveDT, protection.effectiveDR);
+                  if (loadedAmmo?.components?.length) {
+                    const componentResult = resolveAmmoDamageComponents({
+                      components: loadedAmmo.components,
+                      rollDie,
+                      radiationResistance: defenderSheet?.radiationResistance ?? 0,
+                      resolveProtection: damageType => {
+                        const typed = combinedProtectionFor(damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
+                        const typedPerks = computeDefensivePerkBonuses(defender, damageType, getPerkById);
+                        const resolved = resolveDamageProtection({
+                          baseDT: typed.dt, baseDR: typed.dr,
+                          ammoIgnoresDT: loadedAmmo.ignoresDT, ammoDRModifier: loadedAmmo.drMod,
+                          ignoredDT: perkBonuses.ignoreDT,
+                          defenderDRModifier: typedPerks.dr + (defenderEffectMods?.drMod ?? 0),
+                          damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
+                        });
+                        return { damageThreshold: resolved.effectiveDT, damageResistance: resolved.effectiveDR };
+                      },
+                    });
+                    physicalDamage += componentResult.totalHpDamage;
+                    radiationExposure += componentResult.totalRadiation;
+                    componentResult.components.forEach(component => {
+                      componentBreakdown.push(
+                        `Hit ${hitIndex + 1} · ${component.component.label}: ${component.rawDamage} ${component.component.type === 'radiation'
+                          ? `radiation → ${component.finalRadiation ?? 0} unapplied exposure`
+                          : `${component.component.type} → ${component.finalHp ?? 0} HP`}`,
+                      );
+                    });
+                  }
                   const hitPoisonResults = attackPoisons.map(poison =>
                     resolvePoisonResistance(poison, defenderSheet?.poisonResistance ?? 0, Math.floor(Math.random() * 100) + 1));
                   poisonResults.push(...hitPoisonResults);
@@ -3156,7 +3233,7 @@ export default function CombatScreen() {
                 });
                 const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
                 const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
-                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage });
+                setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage, componentBreakdown, radiationExposure });
                 if (defender) {
                   if (totalBurstDmg > 0) applyDamage(defender.id, totalBurstDmg);
                   applyPoisonExposure(poisonResults);
@@ -3174,6 +3251,14 @@ export default function CombatScreen() {
                 <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
                   Per hit (after DT {streamlinedDmgResult.protection.effectiveDT}{streamlinedDmgResult.protection.effectiveDR > 0 ? ` / DR ${streamlinedDmgResult.protection.effectiveDR}%` : ''}): [{streamlinedDmgResult.perHit.join(', ')}]
                 </Text>
+                {streamlinedDmgResult.componentBreakdown.map((line, index) => (
+                  <Text key={index} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary }}>{line}</Text>
+                ))}
+                {streamlinedDmgResult.radiationExposure > 0 && (
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                    Radiation exposure not yet applied: {streamlinedDmgResult.radiationExposure}
+                  </Text>
+                )}
                 {streamlinedDmgResult.poisonResults.map((result, index) => (
                   <Text key={`${result.poison.type}-${index}`} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
                     Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
@@ -3360,7 +3445,9 @@ export default function CombatScreen() {
                 )}
               </View>
               <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                Replaces only the initial weapon and ammunition dice. Critical multipliers, flat bonuses, DT, and DR still apply.
+                {loadedAmmo?.components?.length
+                  ? 'Replaces the weapon’s initial dice. Custom ammunition components remain independently rolled; critical multipliers, traits, flat bonuses, DT, and DR still apply.'
+                  : 'Replaces only the initial weapon and ammunition dice. Critical multipliers, flat bonuses, DT, and DR still apply.'}
               </Text>
             </View>
 
@@ -3386,6 +3473,8 @@ export default function CombatScreen() {
                     <ProtectionBreakdownLines protection={dmg.protection} ammoName={loadedAmmo?.name} />
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>− DT {dmg.combinedDT} → {dmg.afterDT}</Text>
                     {dmg.combinedDR > 0 && <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>× (1 − DR {dmg.combinedDR}%) → {dmg.physicalDmg}</Text>}
+                    {dmg.componentBreakdown.map((line, index) => <Text key={index} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary }}>{line}</Text>)}
+                    {dmg.radiationExposure > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>Radiation exposure not yet applied: {dmg.radiationExposure}</Text>}
                     {dmg.poisonResults.map(result => (
                       <Text key={result.poison.type} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
                         Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
@@ -3402,6 +3491,12 @@ export default function CombatScreen() {
                   <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>TOTAL DAMAGE</Text>
                   <Text style={{ fontSize: 36, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{totalDamage}</Text>
                 </View>
+                {totalRadiationExposure > 0 && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>UNAPPLIED RADIATION EXPOSURE</Text>
+                    <Text style={{ fontSize: 24, fontFamily: 'Inter_700Bold', color: colors.primary }}>{totalRadiationExposure}</Text>
+                  </View>
+                )}
 
                 {/* Knockdown check (melee) */}
                 {isMeleeOrUnarmed && defender?.special && totalPhysicalDamage > 0 && (

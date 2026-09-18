@@ -37,10 +37,12 @@ import {
 // When a knocked-out combatant's own turn begins, one KO turn elapses; they
 // wake once the counter runs out (position stays prone until they Get Up).
 import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
+import { computeDefensivePerkBonuses } from '@/data/attackResolution';
+import { getPerkById } from '@/data/perks';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
-import { resolveEquippedAmmoTypeId } from '@/data/ammo';
+import { AMMO_TYPES, filterCompatibleAmmoIds, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from '@/data/ammo';
 import {
   planPortraitImportCleanup,
   PORTRAIT_IMPORT_DIRECTORY_PREFIX,
@@ -211,7 +213,7 @@ function effectiveMagazineSize(weapon: Weapon): number {
   return Math.round(weapon.magazineSize * (eff.magazineMult ?? 1));
 }
 
-function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly Weapon[]): Character {
+function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly Weapon[], allAmmo: readonly AmmoType[] = AMMO_TYPES): Character {
   const existingByWeapon = new Map((character.weaponAmmoStates ?? []).map(state => [state.weaponId, state]));
   const weaponIds = new Set([
     ...existingByWeapon.keys(),
@@ -234,7 +236,7 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
       weaponId,
       currentAmmo: existing?.currentAmmo ?? effectiveMagazineSize(weapon),
       conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
-      ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId),
+      ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, allAmmo),
     });
   }
   return { ...character, weaponAmmoStates };
@@ -247,6 +249,7 @@ interface AppState {
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
+  customAmmo: AmmoType[];
   customBestiaryTemplates: BestiaryTemplate[];
   initiativeEntries: InitiativeEntry[];
   currentRound: number;
@@ -363,19 +366,30 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
   };
 }
 
+function normalizeCustomAmmo(parsed: AppState): AppState {
+  return { ...parsed, customAmmo: sanitizeCustomAmmoCatalog(parsed.customAmmo) };
+}
+
 function normalizePersistedState(parsed: AppState): AppState {
-  const normalized = normalizeArmorEffectsData(migrateConditionSemantics(parsed));
-  const allWeapons = [...BUILT_IN_WEAPONS, ...(normalized.customWeapons ?? [])];
+  const normalized = normalizeCustomAmmo(normalizeArmorEffectsData(migrateConditionSemantics(parsed)));
+  const allAmmo = [...AMMO_TYPES, ...(normalized.customAmmo ?? [])];
+  const customWeapons = (normalized.customWeapons ?? []).map(weapon => ({
+    ...weapon,
+    compatibleAmmo: filterCompatibleAmmoIds(weapon.compatibleAmmo, allAmmo),
+  }));
+  const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   return {
     ...normalized,
+    customWeapons,
     characters: (normalized.characters ?? []).map(character =>
-      normalizeCharacterAmmoStates(character, allWeapons)),
+      normalizeCharacterAmmoStates(character, allWeapons, allAmmo)),
   };
 }
 
 interface AppContextValue extends AppState {
   allWeapons: Weapon[];
   allArmor: Armor[];
+  allAmmo: AmmoType[];
 
   addCharacter: (char: Character) => void;
   updateCharacter: (char: Character) => void;
@@ -435,6 +449,9 @@ interface AppContextValue extends AppState {
   addCustomArmor: (a: Armor) => void;
   updateCustomArmor: (a: Armor) => void;
   deleteCustomArmor: (id: string) => void;
+  addCustomAmmo: (a: AmmoType) => void;
+  updateCustomAmmo: (a: AmmoType) => void;
+  deleteCustomAmmo: (id: string) => void;
 
   addCustomBestiaryTemplate: (t: BestiaryTemplate) => void;
   removeCustomBestiaryTemplate: (id: string) => void;
@@ -449,6 +466,7 @@ const defaultState: AppState = {
   characters: [],
   customWeapons: [],
   customArmor: [],
+  customAmmo: [],
   customBestiaryTemplates: [],
   initiativeEntries: [],
   currentRound: 1,
@@ -1117,7 +1135,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={{
       ...state,
-      allWeapons, allArmor,
+        allWeapons, allArmor,
       addCharacter, updateCharacter, deleteCharacter, cloneCharacter,
       applyDamage, healCharacter, spendAP, restoreAP, setPosition, setKnockedOut, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
@@ -1125,7 +1143,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,
-      addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor,
+       addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
       exportCampaign, importCampaign,
     }}>
@@ -1171,7 +1189,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...s,
       characters: [
         ...s.characters,
-        normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons]),
+        normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo]),
       ],
     }));
   }, []);
@@ -1183,6 +1201,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const normalized = normalizeCharacterAmmoStates(
         { ...char, currentAP: Math.min(char.currentAP, sheet.maxAP) },
         [...BUILT_IN_WEAPONS, ...s.customWeapons],
+        [...AMMO_TYPES, ...s.customAmmo],
       );
       return {
         ...s,
@@ -1465,10 +1484,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       resistance: Math.floor(Math.random() * 100) + 1,
       endurance: Math.floor(Math.random() * 10) + 1,
       unconscious: Math.floor(Math.random() * 10) + 1,
+      componentRolls: (attack.components ?? []).flatMap(component =>
+        Array.from({ length: component.dmgDieCount }, () => Math.floor(Math.random() * component.dmgDie) + 1)),
       effectId: genId(),
     }]));
     setState(s => {
       const armor = [...BUILT_IN_ARMOR, ...s.customArmor];
+      const allWeapons = [...BUILT_IN_WEAPONS, ...s.customWeapons];
       const results = characterIds.flatMap(id => {
         const c = s.characters.find(char => char.id === id);
         if (!c) return [];
@@ -1501,13 +1523,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           + (body?.gasResistanceContact ?? 0) + (helmetGasActive ? (helmet?.gasResistanceContact ?? 0) : 0));
         const fixed = rolls[id];
         let dieIndex = 0;
-        const dieRolls = [fixed.endurance, fixed.unconscious];
+        const dieRolls = [...fixed.componentRolls, fixed.endurance, fixed.unconscious];
+        const armorSheet = resolveCharacterArmorSheet(c, armor);
+        const protectionByType = (['normal', 'laser', 'fire', 'plasma', 'explosion'] as const).reduce((out, damageType) => {
+          const typeCap = damageType.charAt(0).toUpperCase() + damageType.slice(1);
+          let shieldDT = 0;
+          let shieldDR = 0;
+          const heldIds = new Set([c.leftHandWeaponId, c.rightHandWeaponId, c.equippedWeaponId].filter((id): id is string => !!id));
+          for (const heldId of heldIds) {
+            const shield = computeModEffects(allWeapons.find(weapon => weapon.id === heldId)?.mods ?? []).shieldProtection;
+            shieldDT += (shield?.[`dt${typeCap}` as keyof typeof shield] as number) ?? 0;
+            shieldDR += (shield?.[`dr${typeCap}` as keyof typeof shield] as number) ?? 0;
+          }
+          const defensivePerks = computeDefensivePerkBonuses(c, damageType, getPerkById);
+          const effectDR = computeEffectModifiers(c).drMod ?? 0;
+          out[damageType] = {
+            dt: ((body?.[`dt${typeCap}` as keyof Armor] as number) ?? 0)
+              + ((helmet?.[`dt${typeCap}` as keyof Armor] as number) ?? 0)
+              + ((natural?.[`dt${typeCap}` as keyof typeof natural] as number) ?? 0)
+              + shieldDT,
+            dr: ((body?.[`dr${typeCap}` as keyof Armor] as number) ?? 0)
+              + ((helmet?.[`dr${typeCap}` as keyof Armor] as number) ?? 0)
+              + ((natural?.[`dr${typeCap}` as keyof typeof natural] as number) ?? 0)
+              + shieldDR + defensivePerks.dr + effectDR,
+          };
+          return out;
+        }, {} as Record<'normal' | 'laser' | 'fire' | 'plasma' | 'explosion', { dt: number; dr: number }>);
         return [resolveAreaTarget(attack, {
           id: c.id, name: c.name, endurance: effectiveSpecial(c).stats.endurance,
           gasInhaledResistance: gasInhaled,
           gasContactResistance: gasContact,
           electricityResistance: c.electricityResistance ?? 0,
           dt, dr,
+          radiationResistance: armorSheet.radiationResistance,
+          protectionByType,
+          damageResistanceCap: c.manualDerivedStats ? 100 : 90,
         }, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)])];
       });
       const byId = new Map(results.map(r => [r.targetId, r]));
@@ -1618,7 +1668,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (current < shots) { success = false; return s; }
       success = true;
       const newStates: WeaponAmmoState[] = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId) });
+       newStates.push({ weaponId, currentAmmo: current - shots, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
     return success;
@@ -1632,7 +1682,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!weapon) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-      newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId) });
+       newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -1649,7 +1699,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         weaponId,
         currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
         conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
-        ammoTypeId: resolveEquippedAmmoTypeId(weapon, ammoTypeId),
+        ammoTypeId: resolveEquippedAmmoTypeId(weapon, ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]),
       });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
@@ -1696,7 +1746,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         leftHandWeaponId,
         rightHandWeaponId,
         inventoryWeaponIds,
-      }, [...BUILT_IN_WEAPONS, ...s.customWeapons]);
+      }, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo]);
       return {
         ...s,
         characters: s.characters.map(c => c.id === characterId
@@ -1786,7 +1836,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
       const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(candidate => candidate.id === weaponId);
-      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId) });
+      newStates.push({ weaponId, currentAmmo: existing?.currentAmmo ?? 0, conditionBoxes: clampConditionBoxes((existing?.conditionBoxes ?? 0) + 1), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -1803,7 +1853,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         weaponId,
         currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
         conditionBoxes: clampConditionBoxes(filledBoxes),
-        ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId),
+        ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]),
       });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
@@ -2142,7 +2192,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
           const character = characters.find(candidate => candidate.id === entry.characterId);
           if (!character) return entry;
-          return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor));
+           return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor));
         })),
       };
     });
@@ -2165,6 +2215,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor));
         })),
       };
+    });
+  }, []);
+
+  // ─── Custom Ammunition ───────────────────────────────────────────────────────
+  const addCustomAmmo = useCallback((ammo: AmmoType) => {
+    setState(s => {
+      const candidate = { ...ammo, isCustom: true };
+      if (validateCustomAmmo(candidate, [...AMMO_TYPES, ...s.customAmmo]).length > 0) return s;
+      return { ...s, customAmmo: [...s.customAmmo, candidate] };
+    });
+  }, []);
+  const updateCustomAmmo = useCallback((ammo: AmmoType) => {
+    setState(s => {
+      const candidate = { ...ammo, isCustom: true };
+      const catalog = [...AMMO_TYPES, ...s.customAmmo.filter(existing => existing.id !== ammo.id)];
+      if (validateCustomAmmo(candidate, catalog).length > 0) return s;
+      return { ...s, customAmmo: s.customAmmo.map(existing => existing.id === ammo.id ? candidate : existing) };
+    });
+  }, []);
+  const deleteCustomAmmo = useCallback((id: string) => {
+    setState(s => {
+      if (!s.customAmmo.some(ammo => ammo.id === id)) return s;
+      const customAmmo = s.customAmmo.filter(ammo => ammo.id !== id);
+      const customWeapons = s.customWeapons.map(weapon => weapon.compatibleAmmo?.includes(id)
+        ? { ...weapon, compatibleAmmo: weapon.compatibleAmmo.filter(ammoId => ammoId !== id) }
+        : weapon);
+      const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
+      const allAmmo = [...AMMO_TYPES, ...customAmmo];
+      const characters = s.characters.map(character =>
+        normalizeCharacterAmmoStates(character, allWeapons, allAmmo));
+      return { ...s, customAmmo, customWeapons, characters };
     });
   }, []);
 
@@ -2198,11 +2279,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...state.customArmor];
+  const allAmmo = [...AMMO_TYPES, ...state.customAmmo];
 
   return (
     <AppContext.Provider value={{
       ...state,
-      allWeapons, allArmor,
+      allWeapons, allArmor, allAmmo,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
        applyDamage, healCharacter, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
@@ -2211,6 +2293,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,
       addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor,
+      addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
       exportCampaign, importCampaign,
     }}>

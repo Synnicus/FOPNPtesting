@@ -140,3 +140,52 @@ test('gas requires GM exposure selection and claymore preserves printed alarm re
   }), /GM must select/);
   assert.match(MINE_TRAP_PROFILES.claymore_trap.notes!.join(' '), /200 meters/);
 });
+
+test('area rounds resolve explosion, concussion, and radiation separately without applying radiation to HP', () => {
+  const result = resolveAreaTarget({
+    kind: 'explosion',
+    rawDamage: 0,
+    components: [
+      { id: 'blast', label: 'Blast', type: 'explosion', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 },
+      { id: 'conc', label: 'Concussion', type: 'concussion', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 },
+      { id: 'rads', label: 'Radiation', type: 'radiation', dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 },
+    ],
+  }, {
+    id: 'target', name: 'Target', endurance: 5,
+    gasInhaledResistance: 0, gasContactResistance: 0, electricityResistance: 0,
+    radiationResistance: 40,
+    dt: 20, dr: 0,
+    protectionByType: { explosion: { dt: 20, dr: 50 } },
+  }, () => 100, () => 1);
+
+  assert.equal(result.damage, 90); // blast 40 HP + concussion 50 HP; radiation is never HP
+  assert.equal(result.radiationExposure, 60);
+  assert.match(result.componentBreakdown?.join(' ') ?? '', /Blast.*40 HP.*Concussion.*50 HP.*Radiation.*60 unapplied exposure/);
+});
+
+test('area ammunition applies its DR modifier before the target-specific cap', () => {
+  const component = [{ id: 'blast', label: 'Blast', type: 'explosion' as const, dmgDieCount: 0, dmgDie: 0, dmgBonus: 100 }];
+  const target = {
+    id: 'target', name: 'Target', endurance: 5,
+    gasInhaledResistance: 0, gasContactResistance: 0, electricityResistance: 0,
+    dt: 0, dr: 0, protectionByType: { explosion: { dt: 0, dr: 80 } },
+  };
+  const capped = resolveAreaTarget(
+    { kind: 'explosion', rawDamage: 0, components: component, ammoDRModifier: 20 },
+    { ...target, damageResistanceCap: 90 },
+    () => 100, () => 1,
+  );
+  assert.equal(capped.damage, 10);
+  const armorPiercing = resolveAreaTarget(
+    { kind: 'explosion', rawDamage: 0, components: component, ammoDRModifier: -50 },
+    { ...target, protectionByType: { explosion: { dt: 0, dr: 120 } }, damageResistanceCap: 90 },
+    () => 100, () => 1,
+  );
+  assert.equal(armorPiercing.damage, 30);
+  const manual = resolveAreaTarget(
+    { kind: 'explosion', rawDamage: 0, components: component, ammoDRModifier: 20 },
+    { ...target, damageResistanceCap: 100 },
+    () => 100, () => 1,
+  );
+  assert.equal(manual.damage, 0);
+});

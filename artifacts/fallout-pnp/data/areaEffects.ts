@@ -1,4 +1,6 @@
 import type { AreaEffectKind, DamageType, TimedAreaEffect } from '../context/types.ts';
+import type { AmmoDamageComponent } from './ammo.ts';
+import { resolveAmmoDamageComponents } from './attackResolution.ts';
 
 export type AreaAttackKind =
   | 'explosion' | 'fragmentation' | 'concussion'
@@ -34,6 +36,9 @@ export interface AreaTarget {
   electricityResistance: number;
   dt: number;
   dr: number;
+  radiationResistance?: number;
+  protectionByType?: Partial<Record<DamageType, { dt: number; dr: number }>>;
+  damageResistanceCap?: number;
 }
 
 export interface AreaAttack {
@@ -58,6 +63,10 @@ export interface AreaAttack {
   ongoingRounds?: number;
   /** Required for a missed flamethrower shot after the GM chooses its landing hex. */
   gmAdjudicatedLanding?: boolean;
+  /** Optional custom-ammunition riders, independently rolled for every target. */
+  components?: readonly AmmoDamageComponent[];
+  ammoIgnoresDT?: boolean;
+  ammoDRModifier?: number;
 }
 
 /**
@@ -226,6 +235,8 @@ export interface AreaResolution {
   /** Structured trap/status outcomes; omitted on legacy manually-created receipts. */
   statuses?: AreaAttackStatus[];
   notes: string[];
+  componentBreakdown?: string[];
+  radiationExposure?: number;
 }
 
 export type PercentRoller = () => number;
@@ -270,9 +281,33 @@ export function resolveAreaTarget(
     };
   }
 
-  const protectedDamage = attack.kind === 'electricity'
+  let protectedDamage = attack.kind === 'electricity'
     ? Math.max(0, Math.round(attack.rawDamage * (1 - Math.min(100, target.electricityResistance) / 100)))
     : applyProtection(attack.rawDamage, attack.kind === 'concussion' ? 0 : target.dt, target.dr);
+  let componentBreakdown: string[] | undefined;
+  let radiationExposure = 0;
+  if (attack.components?.length) {
+    const componentResult = resolveAmmoDamageComponents({
+      components: attack.components,
+      rollDie,
+      radiationResistance: target.radiationResistance ?? 0,
+      resolveProtection: damageType => {
+        const typed = target.protectionByType?.[damageType] ?? { dt: target.dt, dr: target.dr };
+        return {
+          damageThreshold: attack.ammoIgnoresDT ? 0 : typed.dt,
+          damageResistance: Math.max(0, Math.min(target.damageResistanceCap ?? 90, typed.dr + (attack.ammoDRModifier ?? 0))),
+        };
+      },
+    });
+    protectedDamage += componentResult.totalHpDamage;
+    radiationExposure = componentResult.totalRadiation;
+    componentBreakdown = componentResult.components.map(component =>
+      component.component.type === 'radiation'
+        ? `${component.component.label}: ${component.rawDamage} radiation → ${component.finalRadiation ?? 0} unapplied exposure`
+        : `${component.component.label} (${component.component.type}): ${component.rawDamage} → ${component.finalHp ?? 0} HP`);
+    notes.push(...componentBreakdown);
+    if (radiationExposure > 0) notes.push(`Radiation exposure not yet applied: ${radiationExposure}`);
+  }
   let enduranceRoll: number | undefined;
   let unconsciousRounds = 0;
   if (attack.kind === 'electricity') {
@@ -308,6 +343,7 @@ export function resolveAreaTarget(
   return {
     targetId: target.id, targetName: target.name, damage: protectedDamage,
     resisted, resistanceRoll, enduranceRoll, unconsciousRounds, ongoing, statuses, notes,
+    componentBreakdown, radiationExposure,
   };
 }
 
@@ -315,6 +351,7 @@ export function formatAreaResolution(result: AreaResolution): string {
   const parts = [`${result.targetName}: ${result.damage} damage`];
   if (result.resisted) parts.push('resisted');
   if (result.unconsciousRounds > 0) parts.push(`unconscious ${result.unconsciousRounds} rounds`);
+  if (result.radiationExposure) parts.push(`${result.radiationExposure} radiation exposure (not yet applied)`);
   if (result.statuses?.length) parts.push(result.statuses.join(', '));
   if (result.ongoing) parts.push(`${result.ongoing.kind} (1d6/round until removed)`);
   if (result.notes.length) parts.push(result.notes.join('; '));

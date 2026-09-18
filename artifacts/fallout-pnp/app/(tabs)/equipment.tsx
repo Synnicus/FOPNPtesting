@@ -10,7 +10,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
-import { AMMO_TYPES, getAmmoReferenceEffects, type AmmoType } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
 import { CONDITION_BOXES_MAX, clampConditionBoxes, conditionLabel, conditionToHitPenalty, isWeaponJammed } from '@/data/condition';
@@ -107,6 +107,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   editWeapon?: Weapon | null;
 }) {
   const colors = useColors();
+  const { allAmmo } = useApp();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<WeaponCategory>('smallGuns');
   const [damageType, setDamageType] = useState<DamageType>('normal');
@@ -351,7 +352,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                     </Text>
                     <View style={{ maxHeight: 240, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
                       <ScrollView nestedScrollEnabled>
-                        {AMMO_TYPES.map(ammo => {
+                        {allAmmo.map(ammo => {
                           const active = compatibleAmmo.includes(ammo.id);
                           return (
                             <TouchableOpacity key={ammo.id} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 10, backgroundColor: active ? colors.primary + '22' : 'transparent' }} onPress={() => toggleAmmo(ammo.id)}>
@@ -690,6 +691,181 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   );
 }
 
+// ─── Ammo Form Modal ──────────────────────────────────────────────────────────
+function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
+  visible: boolean;
+  onClose: () => void;
+  onSave: (ammo: AmmoType) => void;
+  editAmmo?: AmmoType | null;
+  catalog: readonly AmmoType[];
+}) {
+  const colors = useColors();
+  const [name, setName] = useState('');
+  const [acMod, setAcMod] = useState(0);
+  const [drMod, setDrMod] = useState(0);
+  const [ignoresDT, setIgnoresDT] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [poisonEnabled, setPoisonEnabled] = useState(false);
+  const [poisonType, setPoisonType] = useState<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'>('A');
+  const [poisonEffect, setPoisonEffect] = useState('');
+  const [components, setComponents] = useState<AmmoDamageComponent[]>([]);
+
+  const newComponent = (index: number): AmmoDamageComponent => ({
+    id: genId(),
+    label: `Component ${index + 1}`,
+    type: 'normal',
+    dmgDieCount: 1,
+    dmgDie: 6,
+    dmgBonus: 0,
+  });
+
+  React.useEffect(() => {
+    if (!visible) return;
+    if (editAmmo) {
+      setName(editAmmo.name);
+      setAcMod(editAmmo.acMod);
+      setDrMod(editAmmo.drMod);
+      setIgnoresDT(!!editAmmo.ignoresDT);
+      setNotes(editAmmo.notes ?? '');
+      setPoisonEnabled(!!editAmmo.poison);
+      setPoisonType(editAmmo.poison?.type ?? 'A');
+      setPoisonEffect(editAmmo.poison?.effectText ?? '');
+      setComponents((editAmmo.components ?? [{
+        id: genId(), label: 'Damage', type: 'normal',
+        dmgDieCount: editAmmo.dmgDieCount, dmgDie: editAmmo.dmgDie, dmgBonus: editAmmo.dmgBonus,
+      }]).map(component => ({ ...component })));
+    } else {
+      setName(''); setAcMod(0); setDrMod(0); setIgnoresDT(false); setNotes('');
+      setPoisonEnabled(false); setPoisonType('A'); setPoisonEffect('');
+      setComponents([newComponent(0)]);
+    }
+  }, [visible, editAmmo]);
+
+  const updateComponent = (id: string, patch: Partial<AmmoDamageComponent>) => {
+    setComponents(current => current.map(component => component.id === id ? { ...component, ...patch } : component));
+  };
+
+  const candidate: AmmoType = {
+    id: editAmmo?.id ?? '__new_custom_ammo__',
+    name: name.trim(),
+    value: 0,
+    volume: 0,
+    acMod,
+    drMod,
+    ignoresDT,
+    dmgDieCount: components[0]?.dmgDieCount ?? 0,
+    dmgDie: components[0]?.dmgDie ?? 0,
+    dmgBonus: components[0]?.dmgBonus ?? 0,
+    notes: notes.trim() || undefined,
+    poison: poisonEnabled ? { type: poisonType, effectText: poisonEffect.trim() } : undefined,
+    components,
+    isCustom: true,
+  };
+  const validationCatalog = catalog.filter(ammo => ammo.id !== editAmmo?.id && ammo.id !== '__new_custom_ammo__');
+  const errors = validateCustomAmmo(candidate, validationCatalog);
+  const isValid = errors.length === 0 && (!poisonEnabled || poisonEffect.trim().length > 0);
+
+  const save = () => {
+    if (!isValid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSave({ ...candidate, id: editAmmo?.id ?? genId() });
+    onClose();
+  };
+
+  const step = (component: AmmoDamageComponent, key: 'dmgDieCount' | 'dmgDie' | 'dmgBonus', delta: number) => {
+    const minimum = key === 'dmgBonus' ? -999 : 0;
+    updateComponent(component.id, { [key]: Math.max(minimum, component[key] + delta) });
+  };
+  const componentTypes: Array<{ type: AmmoComponentType; label: string }> = [
+    ...Object.values(DAMAGE_TYPES).map(type => ({ type, label: DAMAGE_TYPE_NAMES[type] })),
+    { type: 'concussion', label: 'Concussion' },
+    { type: 'radiation', label: 'Radiation' },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
+        <View style={{ maxHeight: '94%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{editAmmo ? 'EDIT CUSTOM AMMO' : 'CREATE CUSTOM AMMO'}</Text>
+            <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 100 }}>
+            <TextInput style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: name.trim() ? colors.border : colors.destructive + '88', borderRadius: colors.radius, padding: 11, color: colors.foreground }} placeholder="Ammunition name*" placeholderTextColor={colors.mutedForeground} value={name} onChangeText={setName} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {[{ label: 'TARGET AC', value: acMod, set: setAcMod }, { label: 'TARGET DR %', value: drMod, set: setDrMod }].map(field => (
+                <View key={field.label} style={{ flex: 1, gap: 5 }}>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{field.label}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <TouchableOpacity onPress={() => field.set(field.value - 5)} style={{ padding: 8 }}><Feather name="minus" size={16} color={colors.foreground} /></TouchableOpacity>
+                    <Text style={{ fontFamily: 'Inter_700Bold', color: colors.primary }}>{field.value > 0 ? '+' : ''}{field.value}</Text>
+                    <TouchableOpacity onPress={() => field.set(field.value + 5)} style={{ padding: 8 }}><Feather name="plus" size={16} color={colors.foreground} /></TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity onPress={() => setIgnoresDT(value => !value)} style={{ padding: 11, borderWidth: 1, borderColor: ignoresDT ? colors.primary : colors.border, backgroundColor: ignoresDT ? colors.primary + '22' : colors.secondary, borderRadius: colors.radius }}>
+              <Text style={{ fontFamily: 'Inter_700Bold', color: ignoresDT ? colors.primary : colors.foreground }}>{ignoresDT ? '✓ ' : ''}BYPASSES DAMAGE THRESHOLD</Text>
+            </TouchableOpacity>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>DAMAGE / EXPOSURE COMPONENTS ({components.length}/3)</Text>
+              {components.length < 3 && <TouchableOpacity onPress={() => setComponents(current => [...current, newComponent(current.length)])}><Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold' }}>+ ADD</Text></TouchableOpacity>}
+            </View>
+            {components.map((component, index) => (
+              <View key={component.id} style={{ padding: 12, gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.background }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput style={{ flex: 1, color: colors.foreground, fontFamily: 'Inter_600SemiBold', borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 5 }} value={component.label} onChangeText={label => updateComponent(component.id, { label })} placeholder={`Component ${index + 1} label`} placeholderTextColor={colors.mutedForeground} />
+                  {components.length > 1 && <TouchableOpacity onPress={() => setComponents(current => current.filter(item => item.id !== component.id))}><Feather name="trash-2" size={17} color={colors.destructive} /></TouchableOpacity>}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                  {componentTypes.map(option => (
+                    <TouchableOpacity key={option.type} onPress={() => updateComponent(component.id, { type: option.type })} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 4, borderWidth: 1, borderColor: component.type === option.type ? colors.primary : colors.border, backgroundColor: component.type === option.type ? colors.primary : colors.secondary }}>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: component.type === option.type ? colors.primaryForeground : colors.foreground }}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {(['dmgDieCount', 'dmgDie', 'dmgBonus'] as const).map(key => {
+                  const label = key === 'dmgDieCount' ? 'Dice count' : key === 'dmgDie' ? 'Die sides' : component.type === 'radiation' ? 'Flat exposure' : 'Flat damage';
+                  return (
+                    <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, color: colors.foreground }}>{label}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <TouchableOpacity onPress={() => step(component, key, -1)}><Feather name="minus" size={16} color={colors.foreground} /></TouchableOpacity>
+                        <Text style={{ minWidth: 35, textAlign: 'center', color: colors.primary, fontFamily: 'Inter_700Bold' }}>{component[key]}</Text>
+                        <TouchableOpacity onPress={() => step(component, key, 1)}><Feather name="plus" size={16} color={colors.foreground} /></TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
+
+            <TextInput style={{ minHeight: 72, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 11, color: colors.foreground, textAlignVertical: 'top' }} multiline placeholder="Special notes (optional)" placeholderTextColor={colors.mutedForeground} value={notes} onChangeText={setNotes} />
+            <TouchableOpacity onPress={() => setPoisonEnabled(value => !value)} style={{ padding: 11, borderWidth: 1, borderColor: poisonEnabled ? colors.primary : colors.border, borderRadius: colors.radius }}>
+              <Text style={{ color: poisonEnabled ? colors.primary : colors.foreground, fontFamily: 'Inter_700Bold' }}>{poisonEnabled ? '✓ ' : ''}DELIVERS POISON</Text>
+            </TouchableOpacity>
+            {poisonEnabled && (
+              <>
+                <View style={{ flexDirection: 'row', gap: 5 }}>
+                  {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map(type => <TouchableOpacity key={type} onPress={() => setPoisonType(type)} style={{ flex: 1, paddingVertical: 7, alignItems: 'center', backgroundColor: poisonType === type ? colors.primary : colors.secondary, borderRadius: 4 }}><Text style={{ color: poisonType === type ? colors.primaryForeground : colors.foreground, fontFamily: 'Inter_700Bold' }}>{type}</Text></TouchableOpacity>)}
+                </View>
+                <TextInput style={{ minHeight: 60, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 10, color: colors.foreground }} multiline placeholder="Poison effect*" placeholderTextColor={colors.mutedForeground} value={poisonEffect} onChangeText={setPoisonEffect} />
+              </>
+            )}
+            {!isValid && <Text style={{ fontSize: 11, color: colors.destructive }}>{errors[0] ?? 'Poison effect is required.'}</Text>}
+          </ScrollView>
+          <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <TouchableOpacity disabled={!isValid} onPress={save} style={{ paddingVertical: 14, alignItems: 'center', borderRadius: colors.radius, backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }}>
+              <Text style={{ fontFamily: 'Inter_700Bold', color: isValid ? colors.primaryForeground : colors.mutedForeground }}>{editAmmo ? 'SAVE CHANGES' : 'CREATE AMMUNITION'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Weapon Row ───────────────────────────────────────────────────────────────
 function WeaponRow({ weapon, onDelete, onEdit, onCopy, onCondition }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void; onCondition?: () => void }) {
   const colors = useColors();
@@ -828,7 +1004,7 @@ function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?
 }
 
 // ─── Ammo Reference Row ───────────────────────────────────────────────────────
-function AmmoRow({ ammo }: { ammo: AmmoType }) {
+function AmmoRow({ ammo, onCopy, onEdit, onDelete }: { ammo: AmmoType; onCopy?: () => void; onEdit?: () => void; onDelete?: () => void }) {
   const colors = useColors();
   const effects = getAmmoReferenceEffects(ammo);
   const signed = (value: number, suffix = '') => `${value > 0 ? '+' : ''}${value}${suffix}`;
@@ -841,7 +1017,17 @@ function AmmoRow({ ammo }: { ammo: AmmoType }) {
 
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 10, padding: 14, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 9 }}>
-      <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{ammo.name}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{ammo.name}</Text>
+          {ammo.isCustom && <View style={{ paddingHorizontal: 5, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 3 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
+        </View>
+        <View style={{ flexDirection: 'row' }}>
+          {onCopy && <TouchableOpacity onPress={onCopy} style={{ padding: 6 }}><Feather name="copy" size={16} color={colors.mutedForeground} /></TouchableOpacity>}
+          {onEdit && <TouchableOpacity onPress={onEdit} style={{ padding: 6 }}><Feather name="edit-2" size={16} color={colors.primary} /></TouchableOpacity>}
+          {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 6 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>}
+        </View>
+      </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {chips.map(chip => (
           <View
@@ -861,6 +1047,15 @@ function AmmoRow({ ammo }: { ammo: AmmoType }) {
           </View>
         ))}
       </View>
+      {!!ammo.components?.length && (
+        <View style={{ gap: 3 }}>
+          {ammo.components.map(component => (
+            <Text key={component.id} style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+              {component.label}: {component.dmgDieCount > 0 ? `${component.dmgDieCount}d${component.dmgDie}` : ''}{component.dmgBonus !== 0 ? `${component.dmgBonus > 0 && component.dmgDieCount > 0 ? '+' : ''}${component.dmgBonus}` : ''} · {component.type === 'radiation' ? 'Radiation exposure' : component.type === 'concussion' ? 'Concussion' : DAMAGE_TYPE_NAMES[component.type]}
+            </Text>
+          ))}
+        </View>
+      )}
       {!!effects.notes && (
         <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
           {effects.notes}
@@ -1021,23 +1216,45 @@ function WeaponConditionModal({ visible, weapon, onClose }: {
 export default function EquipmentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { customWeapons, customArmor, addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor } = useApp();
+  const {
+    customWeapons, customArmor, customAmmo, allAmmo,
+    addCustomWeapon, updateCustomWeapon, deleteCustomWeapon,
+    addCustomArmor, updateCustomArmor, deleteCustomArmor,
+    addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
+  } = useApp();
   const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [showArmorForm, setShowArmorForm] = useState(false);
+  const [showAmmoForm, setShowAmmoForm] = useState(false);
   const [editingWeapon, setEditingWeapon] = useState<Weapon | null>(null);
   const [editingArmor, setEditingArmor] = useState<Armor | null>(null);
+  const [editingAmmo, setEditingAmmo] = useState<AmmoType | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all'>('all');
   const [conditionWeapon, setConditionWeapon] = useState<Weapon | null>(null);
 
   const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
+  const openNewAmmo = () => { setEditingAmmo(null); setShowAmmoForm(true); };
   const openEditWeapon = (w: Weapon) => { setEditingWeapon(w); setShowWeaponForm(true); };
   const openEditArmor = (a: Armor) => { setEditingArmor(a); setShowArmorForm(true); };
+  const openEditAmmo = (ammo: AmmoType) => { setEditingAmmo(ammo); setShowAmmoForm(true); };
   // Duplicate: open the creator pre-filled from an existing weapon/armor as a NEW custom.
   const openCopyWeapon = (w: Weapon) => { setEditingWeapon({ ...w, id: genId(), name: `${w.name} (Copy)`, isCustom: true }); setShowWeaponForm(true); };
   const openCopyArmor = (a: Armor) => { setEditingArmor({ ...a, id: genId(), name: `${a.name} (Copy)`, isCustom: true }); setShowArmorForm(true); };
+  const openCopyAmmo = (ammo: AmmoType) => {
+    setEditingAmmo({
+      ...ammo,
+      id: genId(),
+      name: `${ammo.name} (Copy)`,
+      isCustom: true,
+      components: (ammo.components ?? [{
+        id: genId(), label: 'Damage', type: 'normal' as const,
+        dmgDieCount: ammo.dmgDieCount, dmgDie: ammo.dmgDie, dmgBonus: ammo.dmgBonus,
+      }]).map(component => ({ ...component, id: genId() })),
+    });
+    setShowAmmoForm(true);
+  };
   const confirmDelete = (name: string, onDelete: () => void) => {
     // React Native Web does not implement Alert.alert action buttons.
     if (Platform.OS === 'web') {
@@ -1058,7 +1275,7 @@ export default function EquipmentScreen() {
     (categoryFilter === 'all' || w.category === categoryFilter)
   );
   const filteredArmor = allArmor.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()));
-  const filteredAmmo = AMMO_TYPES.filter(ammo => !search || ammo.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredAmmo = allAmmo.filter(ammo => !search || ammo.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
@@ -1066,17 +1283,15 @@ export default function EquipmentScreen() {
       <View style={{ padding: 16, gap: 10 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
-          {tab !== 'ammo' && (
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
-              onPress={() => tab === 'weapons' ? openNewWeapon() : openNewArmor()}
-            >
-              <Feather name="plus" size={14} color={colors.primaryForeground} />
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
-                {tab === 'weapons' ? 'WEAPON' : 'ARMOR'}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
+            onPress={() => tab === 'weapons' ? openNewWeapon() : tab === 'armor' ? openNewArmor() : openNewAmmo()}
+          >
+            <Feather name="plus" size={14} color={colors.primaryForeground} />
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
+              {tab === 'weapons' ? 'WEAPON' : tab === 'armor' ? 'ARMOR' : 'AMMO'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Search */}
@@ -1162,10 +1377,17 @@ export default function EquipmentScreen() {
           contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
           ListHeaderComponent={(
             <Text style={{ marginHorizontal: 16, marginBottom: 10, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-              Built-in ammunition effects. This reference does not change equipment or campaign state.
+              Built-in and reusable custom ammunition. Custom components resolve independently in combat.
             </Text>
           )}
-          renderItem={({ item }) => <AmmoRow ammo={item} />}
+          renderItem={({ item }) => (
+            <AmmoRow
+              ammo={item}
+              onCopy={() => openCopyAmmo(item)}
+              onEdit={item.isCustom ? () => openEditAmmo(item) : undefined}
+              onDelete={item.isCustom ? () => confirmDelete(item.name, () => deleteCustomAmmo(item.id)) : undefined}
+            />
+          )}
         />
       )}
 
@@ -1186,6 +1408,17 @@ export default function EquipmentScreen() {
         onSave={a => {
           if (customArmor.some(x => x.id === a.id)) updateCustomArmor(a);
           else addCustomArmor(a);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
+      <AmmoFormModal
+        visible={showAmmoForm}
+        editAmmo={editingAmmo}
+        catalog={allAmmo}
+        onClose={() => { setShowAmmoForm(false); setEditingAmmo(null); }}
+        onSave={ammo => {
+          if (customAmmo.some(candidate => candidate.id === ammo.id)) updateCustomAmmo(ammo);
+          else addCustomAmmo(ammo);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
