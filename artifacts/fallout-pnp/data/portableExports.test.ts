@@ -133,6 +133,23 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
+test('portable campaign exports migrate the legacy radiation flag and prefer Hardcore', () => {
+  const legacyBundle = createCampaignBundle({
+    ...state,
+    fallout3RadiationDebuffs: true,
+  }, []);
+  assert.equal(legacyBundle.state.hardcoreRadiationRules, true);
+  assert.equal('fallout3RadiationDebuffs' in legacyBundle.state, false);
+
+  const explicitOffBundle = createCampaignBundle({
+    ...state,
+    fallout3RadiationDebuffs: true,
+    hardcoreRadiationRules: false,
+  }, []);
+  assert.equal(explicitOffBundle.state.hardcoreRadiationRules, false);
+  assert.equal('fallout3RadiationDebuffs' in explicitOffBundle.state, false);
+});
+
 test('portable characters accept legacy missing radiation and validate a present meter', () => {
   const legacy = createCharacterBundle(character, [customWeapon], [customArmor]);
   assert.equal(parseIndividualFile(JSON.stringify(legacy)).ok, true);

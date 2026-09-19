@@ -48,14 +48,14 @@ test('normal and streamlined combat add resolved radiation without applying resi
 
 test('combat sheets receive the campaign toggle and character radiation meter', () => {
   assert.match(combatSource, /accumulatedRadiation: character\.accumulatedRadiation/);
-  assert.match(combatSource, /fallout3RadiationDebuffs,/);
-  assert.match(combatSource, /resolveCombatSheet\(attacker, allArmor, true, fallout3RadiationDebuffs\)/);
-  assert.match(combatSource, /resolveCombatSheet\(defender, allArmor, true, fallout3RadiationDebuffs\)/);
-  assert.match(combatSource, /resolveCombatSheet\(completionHealActor, allArmor, true, fallout3RadiationDebuffs\)/);
+  assert.match(combatSource, /hardcoreRadiationRules,/);
+  assert.match(combatSource, /resolveCombatSheet\(attacker, allArmor, true, hardcoreRadiationRules\)/);
+  assert.match(combatSource, /resolveCombatSheet\(defender, allArmor, true, hardcoreRadiationRules\)/);
+  assert.match(combatSource, /resolveCombatSheet\(completionHealActor, allArmor, true, hardcoreRadiationRules\)/);
 });
 
 test('radiation changes resynchronize live initiative when optional penalties are enabled', () => {
-  assert.match(contextSource, /if \(!s\.fallout3RadiationDebuffs\) return \{ \.\.\.s, characters \}/);
+  assert.match(contextSource, /if \(!s\.hardcoreRadiationRules\) return \{ \.\.\.s, characters \}/);
   assert.match(contextSource, /syncInitiativeEntrySheet\(entry, resolveCharacterArmorSheet\(character, allArmor, false, true\)\)/);
   assert.match(contextSource, /sortInitiativeEntries\(s\.initiativeEntries\.map/);
 });

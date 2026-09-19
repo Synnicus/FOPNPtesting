@@ -139,11 +139,11 @@ test('condition, chem, and armor SPECIAL layers compose without changing saved S
   assert.deepEqual(special, { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 });
 });
 
-test('optional Fallout 3 radiation penalties rebase SPECIAL and skills without mutating saved values', () => {
+test('optional Hardcore radiation penalties rebase SPECIAL and skills without mutating saved values', () => {
   const input = { special: { ...special }, skills: { ...skills }, allArmor: [] };
   const savedSpecial = { ...input.special };
   const disabled = resolveArmorAwareSheet({ ...input, accumulatedRadiation: 500 });
-  const enabled = resolveArmorAwareSheet({ ...input, accumulatedRadiation: 500, fallout3RadiationDebuffs: true });
+  const enabled = resolveArmorAwareSheet({ ...input, accumulatedRadiation: 500, hardcoreRadiationRules: true });
   assert.deepEqual(input.special, savedSpecial);
   assert.equal(disabled.effectiveSpecial.strength, savedSpecial.strength);
   assert.equal(enabled.effectiveSpecial.strength, Math.max(1, savedSpecial.strength - 2));

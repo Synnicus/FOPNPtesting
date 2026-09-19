@@ -29,6 +29,8 @@ export interface CampaignStateSnapshot {
   activeEntryId: string | null;
   areaAttackReceipt?: unknown;
   conditionSemanticsV2?: boolean;
+  hardcoreRadiationRules?: boolean;
+  /** Legacy import alias retained so older campaign files remain compatible. */
   fallout3RadiationDebuffs?: boolean;
 }
 
@@ -162,7 +164,15 @@ export function createCampaignBundle(
     version: PORTABLE_EXPORT_VERSION,
     kind: 'campaign',
     state: {
-      ...state,
+      ...(() => {
+        const { fallout3RadiationDebuffs: _legacy, ...portableState } = state;
+        return {
+          ...portableState,
+          hardcoreRadiationRules: state.hardcoreRadiationRules !== undefined
+            ? state.hardcoreRadiationRules
+            : state.fallout3RadiationDebuffs === true,
+        };
+      })(),
       characters: state.characters.map(character =>
         characterForBundle(character)),
     },

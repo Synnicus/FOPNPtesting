@@ -44,7 +44,7 @@ import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
-import { adjustRadiation, fallout3RadiationRule, formatFallout3RadiationPenalties, MAX_RADIATION, radiationSicknessEffect, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
+import { adjustRadiation, hardcoreRadiationRule, formatHardcoreRadiationPenalties, MAX_RADIATION, radiationSicknessEffect, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -296,7 +296,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { allWeapons, allArmor, fallout3RadiationDebuffs } = useApp();
+  const { allWeapons, allArmor, hardcoreRadiationRules } = useApp();
   const [char, setChar] = useState<Character>(character ?? makeDefaultCharacter());
   const [activeTab, setActiveTab] = useState(0);
   const [specialPoolTotal, setSpecialPoolTotal] = useState(40);
@@ -366,10 +366,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     tempAC: char.tempAC,
     radiationResistance: char.radiationResistance, gasResistance: char.gasResistance,
     poisonResistance: char.poisonResistance, electricityResistance: char.electricityResistance,
-    accumulatedRadiation: char.accumulatedRadiation, fallout3RadiationDebuffs,
+    accumulatedRadiation: char.accumulatedRadiation, hardcoreRadiationRules,
     equippedBodyArmorId: char.equippedBodyArmorId, equippedHelmetId: char.equippedHelmetId,
     allArmor,
-  }), [char, allArmor, race, tagRules.freeTagSkills, fallout3RadiationDebuffs]);
+  }), [char, allArmor, race, tagRules.freeTagSkills, hardcoreRadiationRules]);
   const effectiveSkills = armorSheet.effectiveSkills;
   const radiationEffect = useMemo(
     () => radiationSicknessEffect(char.accumulatedRadiation ?? 0),
@@ -2076,9 +2076,9 @@ function PremadePickerModal({ visible, onClose, onPick }: {
 }
 
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, fallout3RadiationDebuffs, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor }: {
+function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
-  fallout3RadiationDebuffs: boolean;
+  hardcoreRadiationRules: boolean;
   onBio: () => void; onToggleStorage: () => void; onResetHp: () => void;
   onMoveUp: () => void; onMoveDown: () => void; canMoveUp: boolean; canMoveDown: boolean;
   allWeapons: { id: string; name: string }[];
@@ -2102,7 +2102,7 @@ function CharacterCard({ character, fallout3RadiationDebuffs, onEdit, onDelete, 
     nightPersonPeriod: character.nightPersonPeriod, tempAC: character.tempAC,
     radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
     poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,
-    accumulatedRadiation: character.accumulatedRadiation, fallout3RadiationDebuffs,
+    accumulatedRadiation: character.accumulatedRadiation, hardcoreRadiationRules,
     equippedBodyArmorId: character.equippedBodyArmorId, equippedHelmetId: character.equippedHelmetId, allArmor,
   });
   const effSpecial = armorSheet.effectiveSpecial;
@@ -2141,11 +2141,11 @@ function CharacterCard({ character, fallout3RadiationDebuffs, onEdit, onDelete, 
           <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: (character.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>
             RAD {character.accumulatedRadiation ?? 0}/{MAX_RADIATION} · {radiationSicknessLabel(character.accumulatedRadiation ?? 0)}
           </Text>
-          {fallout3RadiationDebuffs && fallout3RadiationRule(character.accumulatedRadiation ?? 0).threshold > 0 && (
+          {hardcoreRadiationRules && hardcoreRadiationRule(character.accumulatedRadiation ?? 0).threshold > 0 && (
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
-              {fallout3RadiationRule(character.accumulatedRadiation ?? 0).fatal
-                ? 'FALLOUT 3 RULE: FATAL — INSTANT DEATH'
-                : `FALLOUT 3 PENALTIES: ${formatFallout3RadiationPenalties(character.accumulatedRadiation ?? 0)}`}
+              {hardcoreRadiationRule(character.accumulatedRadiation ?? 0).fatal
+                ? 'HARDCORE RULE: FATAL — INSTANT DEATH'
+                : `HARDCORE PENALTIES: ${formatHardcoreRadiationPenalties(character.accumulatedRadiation ?? 0)}`}
             </Text>
           )}
         </View>
@@ -2238,7 +2238,7 @@ function CharacterCard({ character, fallout3RadiationDebuffs, onEdit, onDelete, 
 export default function CharactersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter, allWeapons, allArmor, fallout3RadiationDebuffs, setFallout3RadiationDebuffs } = useApp();
+  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter, allWeapons, allArmor, hardcoreRadiationRules, setHardcoreRadiationRules } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -2246,7 +2246,7 @@ export default function CharactersScreen() {
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
-  const [showFallout3Warning, setShowFallout3Warning] = useState(false);
+  const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
   const active = characters.filter(c => !c.inStorage && matchesSearch(c));
@@ -2304,7 +2304,7 @@ export default function CharactersScreen() {
         character={item}
         allWeapons={allWeapons}
         allArmor={allArmor}
-        fallout3RadiationDebuffs={fallout3RadiationDebuffs}
+        hardcoreRadiationRules={hardcoreRadiationRules}
         onEdit={() => { setEditingChar(item); setShowForm(true); }}
         onBio={() => setBioChar(item)}
         onToggleStorage={() => toggleStorage(item)}
@@ -2347,15 +2347,15 @@ export default function CharactersScreen() {
         </View>
         <TouchableOpacity
           accessibilityRole="switch"
-          accessibilityState={{ checked: fallout3RadiationDebuffs }}
-          onPress={() => fallout3RadiationDebuffs ? setFallout3RadiationDebuffs(false) : setShowFallout3Warning(true)}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: fallout3RadiationDebuffs ? colors.destructive : colors.border }}
+          accessibilityState={{ checked: hardcoreRadiationRules }}
+          onPress={() => hardcoreRadiationRules ? setHardcoreRadiationRules(false) : setShowHardcoreWarning(true)}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: hardcoreRadiationRules ? colors.destructive : colors.border }}
         >
           <View style={{ flex: 1, paddingRight: 12 }}>
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>FALLOUT 3 RADIATION PENALTIES</Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>HARDCORE RADIATION PENALTIES</Text>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Optional campaign-wide SPECIAL penalties</Text>
           </View>
-          <View style={{ width: 42, height: 24, borderRadius: 12, padding: 3, backgroundColor: fallout3RadiationDebuffs ? colors.destructive : colors.border, alignItems: fallout3RadiationDebuffs ? 'flex-end' : 'flex-start' }}>
+          <View style={{ width: 42, height: 24, borderRadius: 12, padding: 3, backgroundColor: hardcoreRadiationRules ? colors.destructive : colors.border, alignItems: hardcoreRadiationRules ? 'flex-end' : 'flex-start' }}>
             <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff' }} />
           </View>
         </TouchableOpacity>
@@ -2418,12 +2418,12 @@ export default function CharactersScreen() {
 
       {/* Delete confirmation (cross-platform) */}
       <ConfirmModal
-        visible={showFallout3Warning}
-        title="OPTIONAL FALLOUT 3 RULES"
-        message="These radiation penalties are inspired by Fallout 3. They are not part of the Fallout PnP 2.0 rules. Enabling them applies campaign-wide SPECIAL penalties based on current radiation; 1000 radiation is displayed as fatal/instant death."
+        visible={showHardcoreWarning}
+        title="OPTIONAL HARDCORE RULES"
+        message="Hardcore radiation penalties are optional house rules separate from Fallout PnP 2.0. Enabling them applies campaign-wide SPECIAL penalties based on current radiation; 1000 radiation is displayed as fatal/instant death."
         confirmLabel="ENABLE"
-        onCancel={() => setShowFallout3Warning(false)}
-        onConfirm={() => { setFallout3RadiationDebuffs(true); setShowFallout3Warning(false); }}
+        onCancel={() => setShowHardcoreWarning(false)}
+        onConfirm={() => { setHardcoreRadiationRules(true); setShowHardcoreWarning(false); }}
       />
 
       <ConfirmModal

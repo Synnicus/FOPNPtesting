@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   adjustRadiation,
-  fallout3RadiationRule,
-  formatFallout3RadiationPenalties,
+  hardcoreRadiationRule,
+  formatHardcoreRadiationPenalties,
   normalizeRadiation,
   radiationSicknessLabel,
   radiationSicknessEffect,
@@ -53,16 +53,16 @@ test('radiation subtraction and addition clamp to the meter bounds', () => {
   assert.equal(adjustRadiation(990, 25), 1000);
 });
 
-test('optional Fallout 3 rules use their own exact thresholds and never change HP', () => {
-  assert.deepEqual(fallout3RadiationRule(149), { threshold: 0, statMods: {}, fatal: false });
-  assert.deepEqual(fallout3RadiationRule(150), { threshold: 150, statMods: { strength: -1 }, fatal: false });
-  assert.deepEqual(fallout3RadiationRule(300).statMods, { strength: -1, agility: -1 });
-  assert.deepEqual(fallout3RadiationRule(500).statMods, { strength: -2, agility: -2, endurance: -1 });
-  assert.deepEqual(fallout3RadiationRule(750).statMods, { strength: -3, agility: -3, endurance: -3, charisma: -2 });
-  assert.equal(fallout3RadiationRule(999).fatal, false);
-  assert.equal(fallout3RadiationRule(1000).fatal, true);
-  assert.equal(formatFallout3RadiationPenalties(750), 'STR -3 · AGI -3 · END -3 · CHA -2');
+test('optional Hardcore rules use their own exact thresholds and never change HP', () => {
+  assert.deepEqual(hardcoreRadiationRule(149), { threshold: 0, statMods: {}, fatal: false });
+  assert.deepEqual(hardcoreRadiationRule(150), { threshold: 150, statMods: { strength: -1 }, fatal: false });
+  assert.deepEqual(hardcoreRadiationRule(300).statMods, { strength: -1, agility: -1 });
+  assert.deepEqual(hardcoreRadiationRule(500).statMods, { strength: -2, agility: -2, endurance: -1 });
+  assert.deepEqual(hardcoreRadiationRule(750).statMods, { strength: -3, agility: -3, endurance: -3, charisma: -2 });
+  assert.equal(hardcoreRadiationRule(999).fatal, false);
+  assert.equal(hardcoreRadiationRule(1000).fatal, true);
+  assert.equal(formatHardcoreRadiationPenalties(750), 'STR -3 · AGI -3 · END -3 · CHA -2');
   const hp = 27;
-  fallout3RadiationRule(1000);
+  hardcoreRadiationRule(1000);
   assert.equal(hp, 27);
 });

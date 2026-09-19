@@ -15,7 +15,7 @@ import {
 import { calcBaseSkills } from './derived.ts';
 import { computeConditionModifiers } from './conditions.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
-import { fallout3RadiationRule } from './radiation.ts';
+import { hardcoreRadiationRule } from './radiation.ts';
 
 const SPECIAL_KEYS: (keyof SPECIALStats)[] = [
   'strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck',
@@ -120,7 +120,7 @@ export interface ArmorResolverInput {
   poisonResistance?: number;
   electricityResistance?: number;
   accumulatedRadiation?: number;
-  fallout3RadiationDebuffs?: boolean;
+  hardcoreRadiationRules?: boolean;
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;
   allArmor: readonly Armor[];
@@ -224,8 +224,8 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     radEffectMod += numeric(effect.radResistMod);
     poisonEffectMod += numeric(effect.poisonResistMod);
   }
-  if (input.fallout3RadiationDebuffs) {
-    const radiationMods = fallout3RadiationRule(input.accumulatedRadiation ?? 0).statMods;
+  if (input.hardcoreRadiationRules) {
+    const radiationMods = hardcoreRadiationRule(input.accumulatedRadiation ?? 0).statMods;
     for (const [key, modifier] of Object.entries(radiationMods)) {
       effectiveSpecial[key as keyof SPECIALStats] += numeric(modifier);
     }

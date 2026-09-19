@@ -7,7 +7,7 @@ export interface RadiationSicknessEffect {
   threshold: number;
 }
 
-export interface Fallout3RadiationRule {
+export interface HardcoreRadiationRule {
   threshold: 0 | 150 | 300 | 500 | 750 | 1000;
   statMods: {
     strength?: number;
@@ -53,8 +53,8 @@ export function radiationSicknessEffect(value: number): RadiationSicknessEffect 
   };
 }
 
-/** Optional Fallout 3-inspired house rules, kept separate from PnP 2.0 stages. */
-export function fallout3RadiationRule(value: number): Fallout3RadiationRule {
+/** Optional Hardcore house rules, kept separate from PnP 2.0 stages. */
+export function hardcoreRadiationRule(value: number): HardcoreRadiationRule {
   const radiation = normalizeRadiation(value);
   if (radiation >= 1000) return {
     threshold: 1000,
@@ -84,11 +84,11 @@ export function fallout3RadiationRule(value: number): Fallout3RadiationRule {
   return { threshold: 0, statMods: {}, fatal: false };
 }
 
-export function formatFallout3RadiationPenalties(value: number): string {
-  const labels: Record<keyof Fallout3RadiationRule['statMods'], string> = {
+export function formatHardcoreRadiationPenalties(value: number): string {
+  const labels: Record<keyof HardcoreRadiationRule['statMods'], string> = {
     strength: 'STR', endurance: 'END', charisma: 'CHA', agility: 'AGI',
   };
-  return Object.entries(fallout3RadiationRule(value).statMods)
+  return Object.entries(hardcoreRadiationRule(value).statMods)
     .map(([key, modifier]) => `${labels[key as keyof typeof labels]} ${modifier}`)
     .join(' · ');
 }
