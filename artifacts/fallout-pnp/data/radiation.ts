@@ -18,6 +18,15 @@ export interface HardcoreRadiationRule {
   fatal: boolean;
 }
 
+export const HARDCORE_RADIATION_RULES: readonly HardcoreRadiationRule[] = [
+  { threshold: 1000, statMods: { strength: -3, agility: -3, endurance: -3, charisma: -2 }, fatal: true },
+  { threshold: 750, statMods: { strength: -3, agility: -3, endurance: -3, charisma: -2 }, fatal: false },
+  { threshold: 500, statMods: { strength: -2, agility: -2, endurance: -1 }, fatal: false },
+  { threshold: 300, statMods: { strength: -1, agility: -1 }, fatal: false },
+  { threshold: 150, statMods: { strength: -1 }, fatal: false },
+  { threshold: 0, statMods: {}, fatal: false },
+];
+
 export function normalizeRadiation(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, Math.min(MAX_RADIATION, Math.round(value)))
@@ -56,32 +65,8 @@ export function radiationSicknessEffect(value: number): RadiationSicknessEffect 
 /** Optional Hardcore house rules, kept separate from PnP 2.0 stages. */
 export function hardcoreRadiationRule(value: number): HardcoreRadiationRule {
   const radiation = normalizeRadiation(value);
-  if (radiation >= 1000) return {
-    threshold: 1000,
-    statMods: { strength: -3, agility: -3, endurance: -3, charisma: -2 },
-    fatal: true,
-  };
-  if (radiation >= 750) return {
-    threshold: 750,
-    statMods: { strength: -3, agility: -3, endurance: -3, charisma: -2 },
-    fatal: false,
-  };
-  if (radiation >= 500) return {
-    threshold: 500,
-    statMods: { strength: -2, agility: -2, endurance: -1 },
-    fatal: false,
-  };
-  if (radiation >= 300) return {
-    threshold: 300,
-    statMods: { strength: -1, agility: -1 },
-    fatal: false,
-  };
-  if (radiation >= 150) return {
-    threshold: 150,
-    statMods: { strength: -1 },
-    fatal: false,
-  };
-  return { threshold: 0, statMods: {}, fatal: false };
+  return HARDCORE_RADIATION_RULES.find(rule => radiation >= rule.threshold)
+    ?? HARDCORE_RADIATION_RULES[HARDCORE_RADIATION_RULES.length - 1];
 }
 
 export function formatHardcoreRadiationPenalties(value: number): string {
