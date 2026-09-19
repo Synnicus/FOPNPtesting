@@ -29,6 +29,7 @@ export interface CampaignStateSnapshot {
   activeEntryId: string | null;
   areaAttackReceipt?: unknown;
   conditionSemanticsV2?: boolean;
+  fallout3RadiationDebuffs?: boolean;
 }
 
 export interface PortablePortraitAsset {

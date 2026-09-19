@@ -128,7 +128,7 @@ function statusTick(c: Character, allArmor: Armor[]): { character: Character; da
   };
 }
 
-function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], includeTempAC = false) {
+function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], includeTempAC = false, fallout3RadiationDebuffs = false) {
   const race = getRaceById(c.race);
   const sheet = resolveArmorAwareSheet({
     special: c.special,
@@ -149,6 +149,8 @@ function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], in
     gasResistance: c.gasResistance,
     poisonResistance: c.poisonResistance,
     electricityResistance: c.electricityResistance,
+    accumulatedRadiation: c.accumulatedRadiation,
+    fallout3RadiationDebuffs,
     equippedBodyArmorId: c.equippedBodyArmorId,
     equippedHelmetId: c.equippedHelmetId,
     allArmor,
@@ -161,12 +163,12 @@ function resolveCharacterArmorSheet(c: Character, allArmor: readonly Armor[], in
     : sheet;
 }
 
-function charMaxAP(c: Character, allArmor: readonly Armor[]): number {
-  return resolveCharacterArmorSheet(c, allArmor).maxAP;
+function charMaxAP(c: Character, allArmor: readonly Armor[], fallout3RadiationDebuffs = false): number {
+  return resolveCharacterArmorSheet(c, allArmor, false, fallout3RadiationDebuffs).maxAP;
 }
 
-function effectiveCombatSkillValue(c: Character, skill: keyof Character['skills'], allArmor: readonly Armor[]): number {
-  const sheetValue = resolveCharacterArmorSheet(c, allArmor).effectiveSkills[skill];
+function effectiveCombatSkillValue(c: Character, skill: keyof Character['skills'], allArmor: readonly Armor[], fallout3RadiationDebuffs = false): number {
+  const sheetValue = resolveCharacterArmorSheet(c, allArmor, false, fallout3RadiationDebuffs).effectiveSkills[skill];
   const injuryPenalty = (c.injuries ?? []).filter(injury => injury.isActive)
     .reduce((total, injury) => total + (injury.skillPenalty[skill] ?? 0), 0);
   return Math.max(0, sheetValue + injuryPenalty);
@@ -178,11 +180,12 @@ function syncCombatSkillInitiative(
   entries: InitiativeEntry[],
   characters: Character[],
   allArmor: readonly Armor[],
+  fallout3RadiationDebuffs = false,
 ): InitiativeEntry[] {
   return entries.map(entry => {
     const character = entry.characterId ? characters.find(candidate => candidate.id === entry.characterId) : undefined;
     if (!character) return entry;
-    const sheet = resolveCharacterArmorSheet(character, allArmor);
+    const sheet = resolveCharacterArmorSheet(character, allArmor, false, fallout3RadiationDebuffs);
     return {
       ...entry,
       currentAP: character.currentAP,
@@ -265,6 +268,7 @@ interface AppState {
   /** true once weapon conditionBoxes use the manual's FILLED 0–10 semantics
    *  (legacy saves stored 0–5 "remaining boxes"). */
   conditionSemanticsV2?: boolean;
+  fallout3RadiationDebuffs: boolean;
 }
 
 /** One-time migration: legacy conditionBoxes counted REMAINING boxes (0–5,
@@ -385,6 +389,7 @@ function normalizePersistedState(parsed: AppState): AppState {
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   return {
     ...normalized,
+    fallout3RadiationDebuffs: normalized.fallout3RadiationDebuffs === true,
     customWeapons,
     characters: (normalized.characters ?? []).map(character =>
       normalizeCharacterAmmoStates(character, allWeapons, allAmmo)),
@@ -405,6 +410,7 @@ interface AppContextValue extends AppState {
   applyDamage: (characterId: string, damage: number) => void;
   healCharacter: (characterId: string, amount: number) => void;
   adjustRadiation: (characterId: string, delta: number) => void;
+  setFallout3RadiationDebuffs: (enabled: boolean) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
   /** Start a GM-timed combat skill. See TimedSkillActionRequest for AP/round timing. */
@@ -479,6 +485,7 @@ const defaultState: AppState = {
   combatActive: false,
   activeEntryId: null,
   pendingCombatSkillActions: [],
+  fallout3RadiationDebuffs: false,
 };
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -1203,7 +1210,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateCharacter = useCallback((char: Character) => {
     setState(s => {
       const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
-      const sheet = resolveCharacterArmorSheet(char, allArmor);
+      const sheet = resolveCharacterArmorSheet(char, allArmor, false, s.fallout3RadiationDebuffs);
       const normalized = normalizeCharacterAmmoStates(
         { ...char, currentAP: Math.min(char.currentAP, sheet.maxAP) },
         [...BUILT_IN_WEAPONS, ...s.customWeapons],
@@ -1233,6 +1240,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           s.initiativeEntries.filter(e => e.characterId !== id),
           canceled.characters,
           [...BUILT_IN_ARMOR, ...s.customArmor],
+          s.fallout3RadiationDebuffs,
         ),
         pendingCombatSkillActions: canceled.pendingActions,
       };
@@ -1312,7 +1320,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const char = s.characters.find(c => c.id === characterId);
       if (!char) return s;
       if (isRevivedAPRestricted(char, s.currentRound)) return s;
-      const maxAP = charMaxAP(char, [...BUILT_IN_ARMOR, ...s.customArmor]);
+      const maxAP = charMaxAP(char, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs);
       const currentAP = amount !== undefined ? Math.min(maxAP, char.currentAP + amount) : maxAP;
       return {
         ...s,
@@ -1341,7 +1349,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const characters = s.characters.map(c => c.id === actor.id ? updated : c);
       return {
         ...s, characters,
-        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
         pendingCombatSkillActions: plan.completionRoundOffset ? [...s.pendingCombatSkillActions, action] : s.pendingCombatSkillActions,
         combatSkillReceipt: { requestId, kind: 'general', status: plan.completionRoundOffset ? 'pending' : 'completed', actorId: actor.id, spentAP: plan.spentAP, completesOnRound },
       };
@@ -1370,7 +1378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
       const resolution = request.resolution
-        ? resolveCombatSkillOutcome(request.resolution, effectiveCombatSkillValue(actor, request.skill, allArmor))
+        ? resolveCombatSkillOutcome(request.resolution, effectiveCombatSkillValue(actor, request.skill, allArmor, s.fallout3RadiationDebuffs))
         : undefined;
       if (request.resolution && !resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
       if (!plan.completionRoundOffset && !resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
@@ -1383,7 +1391,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return {
         ...s, characters,
-        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, allArmor),
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, allArmor, s.fallout3RadiationDebuffs),
         pendingCombatSkillActions: plan.completionRoundOffset ? [...s.pendingCombatSkillActions, action] : s.pendingCombatSkillActions,
         combatSkillReceipt: { requestId, kind: 'healFallen', status: plan.completionRoundOffset ? 'pending' : 'completed', actorId: actor.id, targetId: target.id, spentAP: plan.spentAP, completesOnRound, success: plan.completionRoundOffset ? undefined : resolution?.success },
       };
@@ -1413,7 +1421,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!target || !target.isKnockedOut) return finishWithoutHealing('Heal Fallen cannot affect a missing or conscious target.');
       const resolution = resolveCombatSkillOutcome(
         request.resolution,
-        effectiveCombatSkillValue(actor, action.skill, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        effectiveCombatSkillValue(actor, action.skill, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
       );
       if (!resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
       const outcome = applyHealFallenOutcome(s.characters, target.id, resolution.success, s.currentRound);
@@ -1421,7 +1429,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return {
         ...s,
         characters,
-        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
         pendingCombatSkillActions: s.pendingCombatSkillActions.filter(candidate => candidate.id !== action.id),
         combatSkillReceipt: { requestId, kind: 'healFallen', status: 'completed', actorId: actor.id, targetId: target.id, spentAP: 0, completesOnRound: action.completesOnRound, success: resolution.success },
       };
@@ -1454,7 +1462,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return {
         ...s,
         characters,
-        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        initiativeEntries: syncCombatSkillInitiative(s.initiativeEntries, characters, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
         pendingCombatSkillActions,
         combatSkillReceipt: {
           requestId, kind: 'healFallen', status: 'completed', actorId: action.actorId,
@@ -1530,7 +1538,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const fixed = rolls[id];
         let dieIndex = 0;
         const dieRolls = [...fixed.componentRolls, fixed.endurance, fixed.unconscious];
-        const armorSheet = resolveCharacterArmorSheet(c, armor);
+        const armorSheet = resolveCharacterArmorSheet(c, armor, false, s.fallout3RadiationDebuffs);
         const protectionByType = (['normal', 'laser', 'fire', 'plasma', 'explosion'] as const).reduce((out, damageType) => {
           const typeCap = damageType.charAt(0).toUpperCase() + damageType.slice(1);
           let shieldDT = 0;
@@ -1556,7 +1564,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return out;
         }, {} as Record<'normal' | 'laser' | 'fire' | 'plasma' | 'explosion', { dt: number; dr: number }>);
         return [resolveAreaTarget(attack, {
-          id: c.id, name: c.name, endurance: effectiveSpecial(c).stats.endurance,
+          id: c.id, name: c.name, endurance: armorSheet.effectiveSpecial.endurance,
           gasInhaledResistance: gasInhaled,
           gasContactResistance: gasContact,
           electricityResistance: c.electricityResistance ?? 0,
@@ -1579,7 +1587,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               damageBonus: result.ongoing.damageBonus, damageType: result.ongoing.damageType,
             }]
           : c.areaEffects;
-        return {
+        const updated = {
           ...c,
           currentHp: Math.max(0, c.currentHp - result.damage),
           accumulatedRadiation: adjustRadiationValue(c.accumulatedRadiation ?? 0, result.radiationExposure ?? 0),
@@ -1589,18 +1597,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             position: 'prone' as const, currentAP: 0,
           } : {}),
         };
+        if (!s.fallout3RadiationDebuffs) return updated;
+        const maxAP = charMaxAP(updated, armor, true);
+        return { ...updated, currentAP: Math.min(updated.currentAP, maxAP) };
       });
-      const initiativeEntries = s.initiativeEntries.map(e => {
+      const initiativeEntries = sortInitiativeEntries(s.initiativeEntries.map(e => {
         const result = e.characterId ? byId.get(e.characterId) : undefined;
         if (!result) return e;
         const updatedCharacter = characters.find(c => c.id === e.characterId);
+        if (updatedCharacter && s.fallout3RadiationDebuffs) {
+          return syncInitiativeEntrySheet(
+            e,
+            resolveCharacterArmorSheet(updatedCharacter, armor, false, true),
+          );
+        }
         return {
           ...e,
           currentHp: updatedCharacter?.currentHp ?? Math.max(0, e.currentHp - result.damage),
           position: updatedCharacter?.position ?? e.position,
           ...(result.unconsciousRounds > 0 ? { currentAP: 0 } : {}),
         };
-      });
+      }));
       return { ...s, characters, initiativeEntries, areaAttackReceipt: { requestId, results } };
     });
     return requestId;
@@ -1810,7 +1827,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const apMod = effect.apMod ?? 0;
         const withEffect = { ...c, currentHp, effects: [...(c.effects ?? []), effect] };
         const currentAP = apMod !== 0
-          ? Math.max(0, Math.min(charMaxAP(withEffect, [...BUILT_IN_ARMOR, ...s.customArmor]), c.currentAP + apMod))
+          ? Math.max(0, Math.min(charMaxAP(withEffect, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs), c.currentAP + apMod))
           : c.currentAP;
         return { ...withEffect, currentAP };
       }),
@@ -1825,7 +1842,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Keep entry AP in sync with the character (Jet +AP, crash −AP).
         const apMod = effect.apMod ?? 0;
         const maxAP = sourceCharacter
-          ? charMaxAP({ ...sourceCharacter, effects: [...(sourceCharacter.effects ?? []), effect] }, [...BUILT_IN_ARMOR, ...s.customArmor])
+          ? charMaxAP({ ...sourceCharacter, effects: [...(sourceCharacter.effects ?? []), effect] }, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs)
           : Math.max(1, e.maxAP + apMod);
         const currentAP = apMod !== 0
           ? Math.max(0, Math.min(maxAP, e.currentAP + apMod))
@@ -1913,7 +1930,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...s,
       // Reset every character to full AP (derived max) and clear temp AC.
       characters: s.characters.map(c => {
-        const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]);
+        const maxAP = charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs);
         return {
           ...clearUnconsciousness(c),
           currentAP: maxAP,
@@ -1947,7 +1964,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return {
         ...s,
         characters: canceled.characters,
-        initiativeEntries: syncCombatSkillInitiative(entries, canceled.characters, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        initiativeEntries: syncCombatSkillInitiative(entries, canceled.characters, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
         pendingCombatSkillActions: canceled.pendingActions,
         activeEntryId: s.activeEntryId === id ? (entries[0]?.id ?? null) : s.activeEntryId,
       };
@@ -2017,7 +2034,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (firstChar0) {
           chars = chars.map(c => c.id === firstChar0 ? {
             ...c,
-            currentAP: c.isKnockedOut || isRevivedAPRestricted(c, round) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]),
+            currentAP: c.isKnockedOut || isRevivedAPRestricted(c, round) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
             tempAC: 0,
             ...(isRevivedAPRestricted(c, round) ? {} : { revivedNoAPUntilRound: undefined }),
           } : c);
@@ -2026,7 +2043,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const lastCompleted = completed[completed.length - 1];
         return {
           ...s,
-          initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor]),
+          initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
           characters: chars, currentRound: round, activeEntryId: entries[0].id,
           pendingCombatSkillActions: advancement.pendingActions,
           combatSkillReceipt: lastCompleted ? {
@@ -2066,7 +2083,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (nextActive?.characterId) {
         chars = chars.map(c => c.id === nextActive.characterId ? {
           ...c,
-          currentAP: c.isKnockedOut || isRevivedAPRestricted(c, s.currentRound) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]),
+          currentAP: c.isKnockedOut || isRevivedAPRestricted(c, s.currentRound) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
           tempAC: 0,
           ...(isRevivedAPRestricted(c, s.currentRound) ? {} : { revivedNoAPUntilRound: undefined }),
         } : c);
@@ -2075,7 +2092,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const lastCompleted = completed[completed.length - 1];
       return {
         ...s,
-        initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
         characters: chars, activeEntryId: nextActive?.id ?? null,
         pendingCombatSkillActions: advancement.pendingActions,
         combatSkillReceipt: lastCompleted ? {
@@ -2104,7 +2121,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? statusTick(c, [...BUILT_IN_ARMOR, ...s.customArmor]).character
           : c;
         if (out.id === firstChar) {
-          out = { ...out, currentAP: out.isKnockedOut || isRevivedAPRestricted(out, round) ? 0 : charMaxAP(out, [...BUILT_IN_ARMOR, ...s.customArmor]), tempAC: 0 };
+          out = { ...out, currentAP: out.isKnockedOut || isRevivedAPRestricted(out, round) ? 0 : charMaxAP(out, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs), tempAC: 0 };
         }
         return out;
       });
@@ -2115,7 +2132,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (firstChar) {
         chars = chars.map(c => c.id === firstChar ? {
           ...c,
-          currentAP: c.isKnockedOut || isRevivedAPRestricted(c, round) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor]),
+          currentAP: c.isKnockedOut || isRevivedAPRestricted(c, round) ? 0 : charMaxAP(c, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
           tempAC: 0,
           ...(isRevivedAPRestricted(c, round) ? {} : { revivedNoAPUntilRound: undefined }),
         } : c);
@@ -2139,7 +2156,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const lastCompleted = completed[completed.length - 1];
       return {
         ...s,
-        initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor]),
+        initiativeEntries: syncCombatSkillInitiative(entries, chars, [...BUILT_IN_ARMOR, ...s.customArmor], s.fallout3RadiationDebuffs),
         characters: chars, currentRound: round, activeEntryId: entries[0]?.id ?? null,
         pendingCombatSkillActions: advancement.pendingActions,
         combatSkillReceipt: lastCompleted ? {
@@ -2189,7 +2206,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const customArmor = s.customArmor.map(x => x.id === a.id ? normalizedArmor : x);
       const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
       const characters = s.characters.map(character => {
-        const maxAP = charMaxAP(character, allArmor);
+        const maxAP = charMaxAP(character, allArmor, s.fallout3RadiationDebuffs);
         return { ...character, currentAP: Math.min(character.currentAP, maxAP) };
       });
       return {
@@ -2199,7 +2216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
           const character = characters.find(candidate => candidate.id === entry.characterId);
           if (!character) return entry;
-           return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor));
+           return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor, false, s.fallout3RadiationDebuffs));
         })),
       };
     });
@@ -2209,7 +2226,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const customArmor = s.customArmor.filter(a => a.id !== id);
       const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
       const characters = s.characters.map(character => {
-        const maxAP = charMaxAP(character, allArmor);
+        const maxAP = charMaxAP(character, allArmor, s.fallout3RadiationDebuffs);
         return { ...character, currentAP: Math.min(character.currentAP, maxAP) };
       });
       return {
@@ -2219,7 +2236,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
           const character = characters.find(candidate => candidate.id === entry.characterId);
           if (!character) return entry;
-          return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor));
+          return syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor, false, s.fallout3RadiationDebuffs));
         })),
       };
     });
@@ -2285,12 +2302,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const adjustRadiation = useCallback((characterId: string, delta: number) => {
-    setState(s => ({
-      ...s,
-      characters: s.characters.map(character => character.id === characterId
-        ? { ...character, accumulatedRadiation: adjustRadiationValue(character.accumulatedRadiation ?? 0, delta) }
-        : character),
-    }));
+    setState(s => {
+      const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
+      const characters = s.characters.map(character => {
+        if (character.id !== characterId) return character;
+        const withRadiation = {
+          ...character,
+          accumulatedRadiation: adjustRadiationValue(character.accumulatedRadiation ?? 0, delta),
+        };
+        if (!s.fallout3RadiationDebuffs) return withRadiation;
+        const maxAP = charMaxAP(withRadiation, allArmor, true);
+        return { ...withRadiation, currentAP: Math.min(withRadiation.currentAP, maxAP) };
+      });
+      if (!s.fallout3RadiationDebuffs) return { ...s, characters };
+      return {
+        ...s,
+        characters,
+        initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
+          const character = characters.find(candidate => candidate.id === entry.characterId);
+          return character?.id === characterId
+            ? syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor, false, true))
+            : entry;
+        })),
+      };
+    });
+  }, []);
+
+  const setFallout3RadiationDebuffs = useCallback((enabled: boolean) => {
+    setState(s => {
+      const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
+      const characters = s.characters.map(character => {
+        const maxAP = charMaxAP(character, allArmor, enabled);
+        return { ...character, currentAP: Math.min(character.currentAP, maxAP) };
+      });
+      return {
+        ...s,
+        fallout3RadiationDebuffs: enabled,
+        characters,
+        initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry => {
+          const character = characters.find(candidate => candidate.id === entry.characterId);
+          return character
+            ? syncInitiativeEntrySheet(entry, resolveCharacterArmorSheet(character, allArmor, false, enabled))
+            : entry;
+        })),
+      };
+    });
   }, []);
 
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
@@ -2302,7 +2358,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...state,
       allWeapons, allArmor, allAmmo,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
-        applyDamage, healCharacter, adjustRadiation, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
+        applyDamage, healCharacter, adjustRadiation, setFallout3RadiationDebuffs, spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,

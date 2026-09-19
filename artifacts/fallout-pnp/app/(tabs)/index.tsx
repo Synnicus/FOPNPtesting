@@ -51,7 +51,12 @@ import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
-function resolveCombatSheet(character: Character, allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'], includeTempAC = true): ResolvedArmorSheet {
+function resolveCombatSheet(
+  character: Character,
+  allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'],
+  includeTempAC = true,
+  fallout3RadiationDebuffs = false,
+): ResolvedArmorSheet {
   const race = getRaceById(character.race);
   const sheet = resolveArmorAwareSheet({
     special: character.special,
@@ -72,6 +77,8 @@ function resolveCombatSheet(character: Character, allArmor: Parameters<typeof re
     gasResistance: character.gasResistance,
     poisonResistance: character.poisonResistance,
     electricityResistance: character.electricityResistance,
+    accumulatedRadiation: character.accumulatedRadiation,
+    fallout3RadiationDebuffs,
     equippedBodyArmorId: character.equippedBodyArmorId,
     equippedHelmetId: character.equippedHelmetId,
     allArmor,
@@ -466,9 +473,10 @@ function ProtectionBreakdownLines({
 }
 
 // ─── Character Picker Modal ───────────────────────────────────────────────────
-function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor }: {
+function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor, fallout3RadiationDebuffs }: {
   visible: boolean; onClose: () => void; onSelect: (id: string) => void;
   title: string; characters: Character[]; allWeapons: Weapon[]; allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'];
+  fallout3RadiationDebuffs: boolean;
 }) {
   const colors = useColors();
   return (
@@ -488,7 +496,7 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
             <FlatList data={characters} keyExtractor={c => c.id} renderItem={({ item: c }) => {
               const weapon = allWeapons.find(w => w.id === c.equippedWeaponId);
               const ammoState = c.weaponAmmoStates?.find(a => a.weaponId === c.equippedWeaponId);
-               const sheet = resolveCombatSheet(c, allArmor);
+               const sheet = resolveCombatSheet(c, allArmor, true, fallout3RadiationDebuffs);
               return (
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { onSelect(c.id); onClose(); }}>
                   <CharacterAvatar portrait={c.portrait} name={c.name} size={40} />
@@ -721,7 +729,7 @@ export default function CombatScreen() {
   const insets = useSafeAreaInsets();
   const app = useApp();
   const { characters, allWeapons, allArmor, allAmmo, applyDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
-    initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
+    initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt, fallout3RadiationDebuffs,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
   } = app;
@@ -845,8 +853,8 @@ export default function CombatScreen() {
     : null;
   // This is the authoritative combat sheet: equipped armor is resolved before
   // skills, SPECIAL-derived values, AC, and elemental resistances are consumed.
-  const attackerSheet = attacker ? resolveCombatSheet(attacker, allArmor) : null;
-  const defenderSheet = defender ? resolveCombatSheet(defender, allArmor) : null;
+  const attackerSheet = attacker ? resolveCombatSheet(attacker, allArmor, true, fallout3RadiationDebuffs) : null;
+  const defenderSheet = defender ? resolveCombatSheet(defender, allArmor, true, fallout3RadiationDebuffs) : null;
   // Empty hands still make a normal Unarmed attack. Treat them as the built-in
   // Fists and Feet profile without mutating the character's carried inventory.
   const activeWeapon = attacker
@@ -967,7 +975,7 @@ export default function CombatScreen() {
         return values;
       }, {})
     : {};
-  const completionHealSheet = completionHealActor ? resolveCombatSheet(completionHealActor, allArmor) : null;
+  const completionHealSheet = completionHealActor ? resolveCombatSheet(completionHealActor, allArmor, true, fallout3RadiationDebuffs) : null;
   const completionHealSkillValues: Partial<Record<SkillType, number>> = completionHealActor && completionHealSheet
     ? HEAL_FALLEN_SKILLS.reduce<Partial<Record<SkillType, number>>>((values, skill) => {
         const injuryDelta = (completionHealActor.injuries ?? [])
@@ -2246,7 +2254,7 @@ export default function CombatScreen() {
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
-                    const seq = resolveCombatSheet(c, allArmor).sequence;
+                    const seq = resolveCombatSheet(c, allArmor, true, fallout3RadiationDebuffs).sequence;
                     rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
                   });
                   setInitRolls(rolls);
@@ -2256,7 +2264,7 @@ export default function CombatScreen() {
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL ALL (1d10 + SEQ)</Text>
                 </TouchableOpacity>
                 {activeCharacters.filter(c => c.currentHp > 0).map(c => {
-                  const sheet = resolveCombatSheet(c, allArmor);
+                  const sheet = resolveCombatSheet(c, allArmor, true, fallout3RadiationDebuffs);
                   return (
                   <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <CharacterAvatar portrait={c.portrait} name={c.name} size={32} />
@@ -2287,7 +2295,7 @@ export default function CombatScreen() {
                   <TouchableOpacity style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: '#4a8c3f', flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
                     const entries: InitiativeEntry[] = activeCharacters.filter(c => c.currentHp > 0).map(c => {
                       // temp AC is turn-specific and starts separately at zero.
-                      const sheet = resolveCombatSheet(c, allArmor, false);
+                      const sheet = resolveCombatSheet(c, allArmor, false, fallout3RadiationDebuffs);
                       return ({
                       id: `init-${c.id}`,
                       characterId: c.id,
@@ -3533,8 +3541,8 @@ export default function CombatScreen() {
 
       </ScrollView>
 
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} />
-      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} />
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} fallout3RadiationDebuffs={fallout3RadiationDebuffs} />
+      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} fallout3RadiationDebuffs={fallout3RadiationDebuffs} />
       <CombatSkillModal
         visible={showCombatSkill}
         actor={completionHealAction ? completionHealActor : attacker}
@@ -3568,7 +3576,7 @@ export default function CombatScreen() {
         const c = characters.find(ch => ch.id === id);
         if (!c) return;
         // Snapshot resolved permanent armor AC; temp AC remains its own entry field.
-        const sheet = resolveCombatSheet(c, allArmor, false);
+        const sheet = resolveCombatSheet(c, allArmor, false, fallout3RadiationDebuffs);
         addInitiativeEntry({
           id: `init-${c.id}-${genId()}`,
           characterId: c.id,
@@ -3586,7 +3594,7 @@ export default function CombatScreen() {
           hasActed: false,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} />
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} fallout3RadiationDebuffs={fallout3RadiationDebuffs} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
       <CriticalHitModal
         visible={showCritModal}

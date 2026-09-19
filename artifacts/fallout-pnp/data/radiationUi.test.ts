@@ -46,6 +46,20 @@ test('normal and streamlined combat add resolved radiation without applying resi
   assert.doesNotMatch(streamlinedApply, /resolveRadiationAddition|radiationResistance|currentHp/);
 });
 
+test('combat sheets receive the campaign toggle and character radiation meter', () => {
+  assert.match(combatSource, /accumulatedRadiation: character\.accumulatedRadiation/);
+  assert.match(combatSource, /fallout3RadiationDebuffs,/);
+  assert.match(combatSource, /resolveCombatSheet\(attacker, allArmor, true, fallout3RadiationDebuffs\)/);
+  assert.match(combatSource, /resolveCombatSheet\(defender, allArmor, true, fallout3RadiationDebuffs\)/);
+  assert.match(combatSource, /resolveCombatSheet\(completionHealActor, allArmor, true, fallout3RadiationDebuffs\)/);
+});
+
+test('radiation changes resynchronize live initiative when optional penalties are enabled', () => {
+  assert.match(contextSource, /if \(!s\.fallout3RadiationDebuffs\) return \{ \.\.\.s, characters \}/);
+  assert.match(contextSource, /syncInitiativeEntrySheet\(entry, resolveCharacterArmorSheet\(character, allArmor, false, true\)\)/);
+  assert.match(contextSource, /sortInitiativeEntries\(s\.initiativeEntries\.map/);
+});
+
 test('area combat updates radiation independently from HP damage', () => {
   const areaUpdate = contextSource.slice(
     contextSource.indexOf('const characters = s.characters.map(c => {', contextSource.indexOf('const applyAreaAttack')),
@@ -57,6 +71,8 @@ test('area combat updates radiation independently from HP damage', () => {
     /accumulatedRadiation: adjustRadiationValue\(c\.accumulatedRadiation \?\? 0, result\.radiationExposure \?\? 0\)/,
   );
   assert.doesNotMatch(areaUpdate, /currentHp:[^\n]*radiation|resolveRadiationAddition/);
+  assert.match(contextSource, /const maxAP = charMaxAP\(updated, armor, true\)/);
+  assert.match(contextSource, /resolveCharacterArmorSheet\(updatedCharacter, armor, false, true\)/);
 });
 
 test('radiation meter is normalized on reload and persisted with campaign state', () => {

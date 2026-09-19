@@ -7,6 +7,17 @@ export interface RadiationSicknessEffect {
   threshold: number;
 }
 
+export interface Fallout3RadiationRule {
+  threshold: 0 | 150 | 300 | 500 | 750 | 1000;
+  statMods: {
+    strength?: number;
+    endurance?: number;
+    charisma?: number;
+    agility?: number;
+  };
+  fatal: boolean;
+}
+
 export function normalizeRadiation(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, Math.min(MAX_RADIATION, Math.round(value)))
@@ -40,6 +51,46 @@ export function radiationSicknessEffect(value: number): RadiationSicknessEffect 
     threshold,
     description: `Automatically active at ${radiation} radiation. Lower radiation below ${threshold} to downgrade or clear this effect.`,
   };
+}
+
+/** Optional Fallout 3-inspired house rules, kept separate from PnP 2.0 stages. */
+export function fallout3RadiationRule(value: number): Fallout3RadiationRule {
+  const radiation = normalizeRadiation(value);
+  if (radiation >= 1000) return {
+    threshold: 1000,
+    statMods: { strength: -3, agility: -3, endurance: -3, charisma: -2 },
+    fatal: true,
+  };
+  if (radiation >= 750) return {
+    threshold: 750,
+    statMods: { strength: -3, agility: -3, endurance: -3, charisma: -2 },
+    fatal: false,
+  };
+  if (radiation >= 500) return {
+    threshold: 500,
+    statMods: { strength: -2, agility: -2, endurance: -1 },
+    fatal: false,
+  };
+  if (radiation >= 300) return {
+    threshold: 300,
+    statMods: { strength: -1, agility: -1 },
+    fatal: false,
+  };
+  if (radiation >= 150) return {
+    threshold: 150,
+    statMods: { strength: -1 },
+    fatal: false,
+  };
+  return { threshold: 0, statMods: {}, fatal: false };
+}
+
+export function formatFallout3RadiationPenalties(value: number): string {
+  const labels: Record<keyof Fallout3RadiationRule['statMods'], string> = {
+    strength: 'STR', endurance: 'END', charisma: 'CHA', agility: 'AGI',
+  };
+  return Object.entries(fallout3RadiationRule(value).statMods)
+    .map(([key, modifier]) => `${labels[key as keyof typeof labels]} ${modifier}`)
+    .join(' · ');
 }
 
 export function resolveRadiationAddition(amount: number, resistance: number): number {
