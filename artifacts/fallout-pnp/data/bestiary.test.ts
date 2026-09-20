@@ -4,7 +4,9 @@ import { resolveArmorAwareSheet } from './armorEffects.ts';
 import {
   MANUAL_BESTIARY as BUILT_IN_BESTIARY,
   EXPECTED_MANUAL_BESTIARY_IDS,
+  normalizeCustomTemplateArmorClass,
   RESTORED_BESTIARY,
+  shouldMigrateSpawnedNpcArmorClass,
   spawnBestiaryTemplate,
 } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
@@ -252,6 +254,64 @@ test('restored humanoids derive AC while printed creatures retain manual AC', ()
     allArmor: BUILT_IN_ARMOR,
   });
   assert.equal(creatureSheet.armorClass, creatureTemplate.armorClass);
+});
+
+test('custom NPC armor is derived once and changes normally with Agility', () => {
+  const template = {
+    ...byId('brahmin'),
+    id: 'custom-armored-npc',
+    name: 'Custom Armored NPC',
+    isCustom: true,
+    special: { ...byId('brahmin').special, agility: 5 },
+    armorClass: 36,
+    equippedBodyArmorId: 'greater_banding',
+    equippedHelmetId: 'metal_helmet',
+    naturalAttacks: [],
+    equippedWeaponId: undefined,
+  };
+  const character = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, template.name, 'custom-npc');
+  assert.equal(character.usesDerivedArmorClass, true);
+
+  const resolve = (agility: number) => resolveArmorAwareSheet({
+    special: { ...character.special, agility },
+    skills: character.skills,
+    manualDerivedStats: character.manualDerivedStats,
+    usesDerivedArmorClass: character.usesDerivedArmorClass,
+    equippedBodyArmorId: character.equippedBodyArmorId,
+    equippedHelmetId: character.equippedHelmetId,
+    allArmor: BUILT_IN_ARMOR,
+  });
+  const agilityFive = resolve(5);
+  assert.equal(agilityFive.armorClass, 36);
+  assert.deepEqual(agilityFive.armorClassBreakdown, {
+    agility: 5, racial: 0, trait: 0, natural: 0, manual: 0,
+    bodyArmor: 25, helmet: 6, temporary: 0, effects: 0, perks: 0, minimum: 0,
+  });
+
+  const agilityEight = resolve(8);
+  assert.equal(agilityEight.armorClass, 39);
+  assert.equal(agilityEight.armorClassBreakdown.agility, 8);
+  assert.equal(agilityEight.armorClassBreakdown.manual, 0);
+});
+
+test('legacy custom templates and their spawned NPCs migrate to derived AC', () => {
+  const legacyTemplate = {
+    ...byId('brahmin'),
+    id: 'legacy-custom-template',
+    isCustom: true,
+    usesDerivedArmorClass: undefined,
+  };
+  assert.equal(normalizeCustomTemplateArmorClass(legacyTemplate).usesDerivedArmorClass, true);
+  assert.equal(shouldMigrateSpawnedNpcArmorClass({
+    type: 'npc',
+    bestiaryTemplateId: legacyTemplate.id,
+    usesDerivedArmorClass: undefined,
+  }, new Set([legacyTemplate.id])), true);
+  assert.equal(shouldMigrateSpawnedNpcArmorClass({
+    type: 'npc',
+    bestiaryTemplateId: 'brahmin',
+    usesDerivedArmorClass: undefined,
+  }, new Set()), false);
 });
 
 test('robot bestiary NPCs spawn as robots with complete poison resistance', () => {

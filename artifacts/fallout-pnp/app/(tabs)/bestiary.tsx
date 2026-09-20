@@ -272,7 +272,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     const t: BestiaryTemplate = {
       id: editTemplate?.id ?? genId(),
       name: name.trim(), category, description,
-      special, maxHp, armorClass: derivedAC, maxAP, sequence, skills,
+      special, maxHp, armorClass: derivedAC, usesDerivedArmorClass: true, maxAP, sequence, skills,
       equippedWeaponId: weaponId || undefined,
       equippedBodyArmorId: bodyArmorId || undefined,
       equippedHelmetId: helmetId || undefined,

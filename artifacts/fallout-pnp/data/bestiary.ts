@@ -361,6 +361,23 @@ export function getBestiaryById(id: string): BestiaryTemplate | undefined {
   return BUILT_IN_BESTIARY.find(template => template.id === id);
 }
 
+export function normalizeCustomTemplateArmorClass(template: BestiaryTemplate): BestiaryTemplate {
+  return { ...template, usesDerivedArmorClass: true };
+}
+
+export function shouldMigrateSpawnedNpcArmorClass(
+  character: Pick<Character, 'type' | 'bestiaryTemplateId' | 'usesDerivedArmorClass'>,
+  customTemplateIds: ReadonlySet<string>,
+): boolean {
+  if (character.type !== 'npc' || character.usesDerivedArmorClass !== undefined) return false;
+  const templateId = character.bestiaryTemplateId;
+  if (!templateId) return false;
+  const builtInTemplate = BUILT_IN_BESTIARY.find(template => template.id === templateId);
+  return customTemplateIds.has(templateId)
+    || !builtInTemplate
+    || builtInTemplate.usesDerivedArmorClass === true;
+}
+
 export function spawnBestiaryTemplate(
   template: BestiaryTemplate,
   allWeapons: readonly Weapon[],
@@ -393,7 +410,9 @@ export function spawnBestiaryTemplate(
     maxHp: template.maxHp,
     currentHp: template.maxHp,
     armorClass: template.armorClass,
-    usesDerivedArmorClass: template.usesDerivedArmorClass,
+    // Custom templates have always been authored from Agility + equipment.
+    // Older saves predate the explicit policy flag, so default them to derived.
+    usesDerivedArmorClass: template.isCustom === true ? true : template.usesDerivedArmorClass,
     tempAC: 0,
     maxAP: template.maxAP,
     currentAP: template.maxAP,

@@ -12,7 +12,11 @@ import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
-import { RESTORED_BESTIARY } from '@/data/bestiary';
+import {
+  normalizeCustomTemplateArmorClass,
+  RESTORED_BESTIARY,
+  shouldMigrateSpawnedNpcArmorClass,
+} from '@/data/bestiary';
 import { AP_COSTS } from '@/data/apCosts';
 import {
   advanceCombatSkillTurn,
@@ -319,6 +323,7 @@ function reconcileInitiativeCharacters(parsed: AppState): AppState {
 
 /** Add only newly introduced zero/default fields to persisted/imported data. */
 function normalizeArmorEffectsData(parsed: AppState): AppState {
+  const customTemplateIds = new Set((parsed.customBestiaryTemplates ?? []).map(template => template.id));
   const normalizeArmor = (armor: Armor): Armor => armor.effects
     ? armor
     : { ...armor, effects: { special: {}, skills: {} } };
@@ -347,10 +352,9 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     // Use durable template identity so edited/renamed humanoids migrate safely
     // without changing a coincidentally similar custom NPC.
     if (normalized.type === 'npc' && normalized.usesDerivedArmorClass === undefined) {
-      const template = RESTORED_BESTIARY.find(candidate => (
-        candidate.usesDerivedArmorClass && candidate.id === normalized.bestiaryTemplateId
-      ));
-      if (template) normalized = { ...normalized, usesDerivedArmorClass: true };
+      if (shouldMigrateSpawnedNpcArmorClass(normalized, customTemplateIds)) {
+        normalized = { ...normalized, usesDerivedArmorClass: true };
+      }
     }
     if (normalized.race === 'robot' && normalized.poisonResistance !== 100) {
       normalized = { ...normalized, poisonResistance: 100 };
@@ -364,7 +368,9 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     return normalized;
   };
   const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => ({
-    ...template,
+    ...normalizeCustomTemplateArmorClass(template),
+    // The custom creator stores its displayed Agility + equipment total in
+    // armorClass. Treat it as derived so equipped armor is not added twice.
     poisonResistance: template.poisonResistance ?? 0,
     sequence: template.sequence ?? template.special.perception * 2,
   });
