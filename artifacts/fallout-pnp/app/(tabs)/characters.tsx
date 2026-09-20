@@ -299,22 +299,38 @@ function HardcoreRadiationPreviewModal({ visible, enabled, onClose }: {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} testID="hardcore-radiation-preview-modal">
-      <View style={{ flex: 1, backgroundColor: '#000000bb', justifyContent: 'center', padding: 20 }}>
+      <View
+        accessibilityViewIsModal
+        accessibilityLabel="Hardcore radiation rules preview"
+        style={{ flex: 1, backgroundColor: '#000000bb', justifyContent: 'center', padding: 20 }}
+      >
         <View style={{ maxHeight: '88%', backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '88', overflow: 'hidden' }}>
           <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 5 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <Text style={{ flex: 1, fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>HARDCORE RADIATION</Text>
-              <TouchableOpacity accessibilityLabel="Close Hardcore radiation rules" testID="hardcore-radiation-preview-close" onPress={onClose} style={{ padding: 4 }}>
+              <Text accessibilityRole="header" style={{ flex: 1, fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>HARDCORE RADIATION</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Close Hardcore radiation rules preview"
+                accessibilityHint="Returns to the campaign controls without changing Hardcore radiation rules"
+                testID="hardcore-radiation-preview-close"
+                onPress={onClose}
+                style={{ padding: 4 }}
+              >
                 <Feather name="x" size={20} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+            <Text accessibilityLabel={`Optional campaign-wide SPECIAL penalties. Currently ${enabled ? 'enabled' : 'disabled'}.`} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
               Optional campaign-wide SPECIAL penalties · {enabled ? 'Currently enabled' : 'Currently disabled'}
             </Text>
           </View>
 
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: Math.max(16, insets.bottom), gap: 12 }}>
-            <View testID="hardcore-radiation-core-sickness" style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 4 }}>
+            <View
+              accessible
+              accessibilityLabel="Core Fallout PnP 2.0 radiation sickness. Sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation."
+              testID="hardcore-radiation-core-sickness"
+              style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 4 }}
+            >
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 0.7 }}>SEPARATE FROM CORE SICKNESS</Text>
               <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                 Fallout PnP 2.0 sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation. The optional penalties below use their own thresholds.
@@ -323,7 +339,13 @@ function HardcoreRadiationPreviewModal({ visible, enabled, onClose }: {
 
             <View style={{ gap: 7 }}>
               {thresholds.map(rule => (
-                <View key={rule.threshold} testID={`hardcore-radiation-threshold-${rule.threshold}`} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '0d', borderWidth: 1, borderColor: colors.destructive + '44', gap: 12 }}>
+                <View
+                  accessible
+                  accessibilityLabel={`${rule.threshold} rads. ${formatHardcoreRadiationPenalties(rule.threshold)}${rule.fatal ? '. Fatal, instant death' : ''}`}
+                  key={rule.threshold}
+                  testID={`hardcore-radiation-threshold-${rule.threshold}`}
+                  style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '0d', borderWidth: 1, borderColor: colors.destructive + '44', gap: 12 }}
+                >
                   <View style={{ width: 58 }}>
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{rule.threshold}</Text>
                     <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.7 }}>RADS</Text>
@@ -2400,7 +2422,9 @@ export default function CharactersScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: hardcoreRadiationRules ? colors.destructive : colors.border }}>
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel="Review Hardcore radiation thresholds"
+            accessibilityLabel={`Review Hardcore radiation thresholds. Currently ${hardcoreRadiationRules ? 'enabled' : 'disabled'}`}
+            accessibilityHint="Opens an explanation without changing the campaign setting"
+            accessibilityState={{ expanded: showHardcorePreview }}
             testID="hardcore-radiation-preview"
             onPress={() => setShowHardcorePreview(true)}
             style={{ flex: 1, padding: 12 }}
@@ -2415,7 +2439,9 @@ export default function CharactersScreen() {
           <TouchableOpacity
             accessibilityRole="switch"
             accessibilityLabel="Enable Hardcore radiation penalties"
+            accessibilityHint="Applies optional campaign-wide SPECIAL penalties"
             accessibilityState={{ checked: hardcoreRadiationRules }}
+            accessibilityValue={{ text: hardcoreRadiationRules ? 'Enabled' : 'Disabled' }}
             onPress={() => hardcoreRadiationRules ? setHardcoreRadiationRules(false) : setShowHardcoreWarning(true)}
             style={{ padding: 12 }}
           >

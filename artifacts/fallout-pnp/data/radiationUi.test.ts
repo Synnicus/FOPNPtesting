@@ -106,6 +106,22 @@ test('Hardcore preview open and close interactions never change the disabled cam
   assert.doesNotMatch(previewModal, /setHardcoreRadiationRules/);
 });
 
+test('Hardcore campaign controls announce their roles, state, and non-mutating preview behavior', () => {
+  const campaignControls = characterSource.slice(
+    characterSource.indexOf('testID="hardcore-radiation-preview"') - 400,
+    characterSource.indexOf('</View>', characterSource.indexOf('accessibilityRole="switch"')) + 20,
+  );
+
+  assert.match(campaignControls, /accessibilityRole="button"/);
+  assert.match(campaignControls, /accessibilityLabel=\{`Review Hardcore radiation thresholds\. Currently \$\{hardcoreRadiationRules \? 'enabled' : 'disabled'\}`\}/);
+  assert.match(campaignControls, /accessibilityHint="Opens an explanation without changing the campaign setting"/);
+  assert.match(campaignControls, /accessibilityState=\{\{ expanded: showHardcorePreview \}\}/);
+  assert.match(campaignControls, /accessibilityRole="switch"/);
+  assert.match(campaignControls, /accessibilityLabel="Enable Hardcore radiation penalties"/);
+  assert.match(campaignControls, /accessibilityState=\{\{ checked: hardcoreRadiationRules \}\}/);
+  assert.match(campaignControls, /accessibilityValue=\{\{ text: hardcoreRadiationRules \? 'Enabled' : 'Disabled' \}\}/);
+});
+
 test('Hardcore preview renders every shared non-zero threshold and keeps core sickness separate', () => {
   const previewComponent = characterSource.slice(
     characterSource.indexOf('function HardcoreRadiationPreviewModal'),
@@ -128,6 +144,21 @@ test('Hardcore preview renders every shared non-zero threshold and keeps core si
   assert.ok(coreExplanation >= 0 && coreExplanation < optionalThresholds);
   assert.match(previewComponent, /Fallout PnP 2\.0 sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation/);
   assert.match(previewComponent, /The optional penalties below use their own thresholds/);
+});
+
+test('Hardcore preview exposes a modal heading, separate core explanation, threshold labels, and close action', () => {
+  const previewComponent = characterSource.slice(
+    characterSource.indexOf('function HardcoreRadiationPreviewModal'),
+    characterSource.indexOf('// ─── Character Form Modal'),
+  );
+
+  assert.match(previewComponent, /accessibilityViewIsModal/);
+  assert.match(previewComponent, /accessibilityLabel="Hardcore radiation rules preview"/);
+  assert.match(previewComponent, /accessibilityRole="header"/);
+  assert.match(previewComponent, /accessibilityLabel="Core Fallout PnP 2\.0 radiation sickness\./);
+  assert.match(previewComponent, /accessibilityLabel=\{`\$\{rule\.threshold\} rads\. \$\{formatHardcoreRadiationPenalties\(rule\.threshold\)\}/);
+  assert.match(previewComponent, /accessibilityRole="button"[\s\S]*accessibilityLabel="Close Hardcore radiation rules preview"/);
+  assert.match(previewComponent, /accessibilityHint="Returns to the campaign controls without changing Hardcore radiation rules"/);
 });
 
 test('Hardcore preview remains scrollable within a compact mobile viewport', () => {
