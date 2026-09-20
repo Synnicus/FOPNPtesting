@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { URL } from 'node:url';
+import { HARDCORE_RADIATION_RULES } from './radiation.ts';
 
 const characterSource = readFileSync(new URL('../app/(tabs)/characters.tsx', import.meta.url), 'utf8');
 const combatSource = readFileSync(new URL('../app/(tabs)/index.tsx', import.meta.url), 'utf8');
@@ -86,4 +87,59 @@ test('radiation meter is normalized on reload and persisted with campaign state'
     contextSource,
     /const accumulatedRadiation = normalizeRadiation\(normalized\.accumulatedRadiation\)/,
   );
+});
+
+test('Hardcore preview open and close interactions never change the disabled campaign setting', () => {
+  const previewTrigger = characterSource.slice(
+    characterSource.indexOf('testID="hardcore-radiation-preview"'),
+    characterSource.indexOf('</TouchableOpacity>', characterSource.indexOf('testID="hardcore-radiation-preview"')),
+  );
+  assert.match(previewTrigger, /onPress=\{\(\) => setShowHardcorePreview\(true\)\}/);
+  assert.doesNotMatch(previewTrigger, /setHardcoreRadiationRules/);
+
+  const previewModal = characterSource.slice(
+    characterSource.indexOf('<HardcoreRadiationPreviewModal'),
+    characterSource.indexOf('/>', characterSource.indexOf('<HardcoreRadiationPreviewModal')),
+  );
+  assert.match(previewModal, /enabled=\{hardcoreRadiationRules\}/);
+  assert.match(previewModal, /onClose=\{\(\) => setShowHardcorePreview\(false\)\}/);
+  assert.doesNotMatch(previewModal, /setHardcoreRadiationRules/);
+});
+
+test('Hardcore preview renders every shared non-zero threshold and keeps core sickness separate', () => {
+  const previewComponent = characterSource.slice(
+    characterSource.indexOf('function HardcoreRadiationPreviewModal'),
+    characterSource.indexOf('// ─── Character Form Modal'),
+  );
+  const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0);
+
+  assert.match(previewComponent, /HARDCORE_RADIATION_RULES\.filter\(rule => rule\.threshold > 0\)\.reverse\(\)/);
+  assert.match(previewComponent, /thresholds\.map\(rule =>/);
+  for (const rule of thresholds) {
+    assert.match(
+      previewComponent,
+      /testID=\{`hardcore-radiation-threshold-\$\{rule\.threshold\}`\}/,
+      `shared ${rule.threshold}-rad threshold must remain represented by the preview row`,
+    );
+  }
+
+  const coreExplanation = previewComponent.indexOf('testID="hardcore-radiation-core-sickness"');
+  const optionalThresholds = previewComponent.indexOf('thresholds.map(rule =>');
+  assert.ok(coreExplanation >= 0 && coreExplanation < optionalThresholds);
+  assert.match(previewComponent, /Fallout PnP 2\.0 sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation/);
+  assert.match(previewComponent, /The optional penalties below use their own thresholds/);
+});
+
+test('Hardcore preview remains scrollable within a compact mobile viewport', () => {
+  const previewComponent = characterSource.slice(
+    characterSource.indexOf('function HardcoreRadiationPreviewModal'),
+    characterSource.indexOf('// ─── Character Form Modal'),
+  );
+
+  const compactViewport = { width: 400, height: 720 };
+  assert.ok(compactViewport.width <= 400 && compactViewport.height <= 720);
+  assert.match(previewComponent, /maxHeight: '88%'/);
+  assert.match(previewComponent, /<ScrollView contentContainerStyle=/);
+  assert.match(previewComponent, /paddingBottom: Math\.max\(16, insets\.bottom\)/);
+  assert.match(previewComponent, /testID="hardcore-radiation-preview-close"/);
 });

@@ -298,13 +298,13 @@ function HardcoreRadiationPreviewModal({ visible, enabled, onClose }: {
   const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0).reverse();
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} testID="hardcore-radiation-preview-modal">
       <View style={{ flex: 1, backgroundColor: '#000000bb', justifyContent: 'center', padding: 20 }}>
         <View style={{ maxHeight: '88%', backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '88', overflow: 'hidden' }}>
           <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 5 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <Text style={{ flex: 1, fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>HARDCORE RADIATION</Text>
-              <TouchableOpacity accessibilityLabel="Close Hardcore radiation rules" onPress={onClose} style={{ padding: 4 }}>
+              <TouchableOpacity accessibilityLabel="Close Hardcore radiation rules" testID="hardcore-radiation-preview-close" onPress={onClose} style={{ padding: 4 }}>
                 <Feather name="x" size={20} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
@@ -314,7 +314,7 @@ function HardcoreRadiationPreviewModal({ visible, enabled, onClose }: {
           </View>
 
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: Math.max(16, insets.bottom), gap: 12 }}>
-            <View style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 4 }}>
+            <View testID="hardcore-radiation-core-sickness" style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 4 }}>
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 0.7 }}>SEPARATE FROM CORE SICKNESS</Text>
               <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                 Fallout PnP 2.0 sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation. The optional penalties below use their own thresholds.
@@ -323,7 +323,7 @@ function HardcoreRadiationPreviewModal({ visible, enabled, onClose }: {
 
             <View style={{ gap: 7 }}>
               {thresholds.map(rule => (
-                <View key={rule.threshold} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '0d', borderWidth: 1, borderColor: colors.destructive + '44', gap: 12 }}>
+                <View key={rule.threshold} testID={`hardcore-radiation-threshold-${rule.threshold}`} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '0d', borderWidth: 1, borderColor: colors.destructive + '44', gap: 12 }}>
                   <View style={{ width: 58 }}>
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{rule.threshold}</Text>
                     <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.7 }}>RADS</Text>
