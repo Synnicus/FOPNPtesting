@@ -55,6 +55,7 @@ import {
   PORTRAIT_IMPORT_DIRECTORY_PREFIX,
 } from '@/data/portraitStorageCleanup';
 import { adjustRadiation as adjustRadiationValue, normalizeRadiation } from '@/data/radiation';
+import { normalizeKarmaFields } from '@/data/karma';
 
 function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
   if (Platform.OS === 'web') return;
@@ -252,7 +253,13 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
   const inventoryWeaponIds = character.inventoryWeaponIds ?? [...new Set([
     character.leftHandWeaponId, character.rightHandWeaponId, character.equippedWeaponId,
   ].filter((id): id is string => !!id))].slice(0, 5);
-  return { ...character, inventoryWeaponIds, weaponAmmoStates, armorConditionStates: normalizeArmorCondition(character.armorConditionStates) };
+  return {
+    ...character,
+    ...normalizeKarmaFields(character),
+    inventoryWeaponIds,
+    weaponAmmoStates,
+    armorConditionStates: normalizeArmorCondition(character.armorConditionStates),
+  };
 }
 
 // v4 — new damage types (N/L/F/P/E), DR added to armor, pilot skill, custom bestiary

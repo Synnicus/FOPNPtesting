@@ -2,9 +2,11 @@ import type {
   Armor,
   BestiaryTemplate,
   Character,
+  KarmaLogEntry,
   InitiativeEntry,
   Weapon,
 } from '../context/types.ts';
+import { applyKarmaAdjustment, isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -268,6 +270,34 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string');
 }
 
+function hasValidKarmaData(value: Record<string, unknown>): boolean {
+  const hasKarma = value.karma !== undefined;
+  const hasKarmaLog = value.karmaLog !== undefined;
+  const karma = value.karma;
+  if (hasKarma !== hasKarmaLog) return false;
+  if (hasKarma && (
+    typeof karma !== 'number'
+    || !Number.isSafeInteger(karma)
+    || karma < MIN_KARMA
+    || karma > MAX_KARMA
+  )) return false;
+
+  if (value.karmaLog === undefined) return true;
+  if (!Array.isArray(value.karmaLog)) return false;
+  const entries: unknown[] = value.karmaLog;
+  if (!entries.every(isKarmaLogEntry)) return false;
+  const validEntries = entries as KarmaLogEntry[];
+  if (new Set(validEntries.map(entry => entry.id)).size !== validEntries.length) return false;
+
+  let historyTotal = 0;
+  for (const entry of validEntries) {
+    const adjustment = applyKarmaAdjustment(historyTotal, entry.change);
+    if (!adjustment || adjustment.appliedChange !== entry.change) return false;
+    historyTotal = adjustment.karma;
+  }
+  return !hasKarma || historyTotal === karma;
+}
+
 function isCharacterRecord(value: unknown): value is Character {
   if (!isRecord(value)) return false;
   const numericFields = [
@@ -284,6 +314,7 @@ function isCharacterRecord(value: unknown): value is Character {
     && typeof value.name === 'string'
     && (value.type === 'pc' || value.type === 'npc')
     && typeof value.race === 'string'
+    && hasValidKarmaData(value)
     && numericFields.every(field => isFiniteNumber(value[field]))
     && (value.accumulatedRadiation === undefined
       || (isFiniteNumber(value.accumulatedRadiation)

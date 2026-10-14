@@ -192,6 +192,14 @@ export interface Injury {
   source: string;
 }
 
+export interface KarmaLogEntry {
+  id: string;
+  /** Actual signed change after applying the Fallout 3 Karma limits. */
+  change: number;
+  reason: string;
+  createdAt: number;
+}
+
 // ─── Weapon Ammo State ────────────────────────────────────────────────────────
 export interface WeaponAmmoState {
   weaponId: string;
@@ -279,6 +287,11 @@ export interface Character {
   level: number;
 
   xp: number;
+
+  /** Fallout 3-style Karma total, from −1000 to +1000. */
+  karma?: number;
+  /** Append-only history of signed Karma changes. */
+  karmaLog?: KarmaLogEntry[];
 
   portrait?: string;
   /** How the portrait image fits its frame ('cover' crops, 'contain' letterboxes). */

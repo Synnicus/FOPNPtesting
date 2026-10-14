@@ -191,6 +191,56 @@ test('portable characters accept legacy missing radiation and validate a present
   assert.equal(parseIndividualFile(JSON.stringify(invalid)).ok, false);
 });
 
+test('Karma totals and chronological logs survive individual and campaign portable exports', () => {
+  const karmaLog = [
+    { id: 'karma-1', change: 300, reason: 'Helped a settlement', createdAt: 1000 },
+    { id: 'karma-2', change: -50, reason: 'Stole supplies', createdAt: 2000 },
+  ];
+  const karmaCharacter = { ...character, karma: 250, karmaLog };
+
+  const characterExport = createCharacterBundle(karmaCharacter, [customWeapon], [customArmor]);
+  const parsedCharacter = parseIndividualFile(JSON.stringify(characterExport));
+  assert.equal(parsedCharacter.ok, true);
+  if (parsedCharacter.ok && parsedCharacter.kind === 'character') {
+    assert.equal(parsedCharacter.bundle.character.karma, 250);
+    assert.deepEqual(parsedCharacter.bundle.character.karmaLog, karmaLog);
+  }
+
+  const campaignExport = createCampaignBundle({ ...state, characters: [karmaCharacter] }, []);
+  const parsedCampaign = parseCampaignFile(JSON.stringify(campaignExport));
+  assert.equal(parsedCampaign.ok, true);
+  if (parsedCampaign.ok && parsedCampaign.source === 'portable') {
+    assert.equal(parsedCampaign.bundle.state.characters[0].karma, 250);
+    assert.deepEqual(parsedCampaign.bundle.state.characters[0].karmaLog, karmaLog);
+  }
+});
+
+test('portable imports accept legacy characters but reject invalid or inconsistent Karma data', () => {
+  const legacy = createCharacterBundle(character, [customWeapon], [customArmor]);
+  assert.equal('karma' in legacy.character, false);
+  assert.equal('karmaLog' in legacy.character, false);
+  assert.equal(parseIndividualFile(JSON.stringify(legacy)).ok, true);
+
+  const withKarma = createCharacterBundle({
+    ...character,
+    karma: 25,
+    karmaLog: [{ id: 'karma-1', change: 25, reason: 'Saved a traveler', createdAt: 1000 }],
+  }, [customWeapon], [customArmor]);
+  assert.equal(parseIndividualFile(JSON.stringify(withKarma)).ok, true);
+  assert.equal(parseIndividualFile(JSON.stringify({
+    ...withKarma,
+    character: { ...withKarma.character, karma: 26 },
+  })).ok, false);
+  assert.equal(parseIndividualFile(JSON.stringify({
+    ...withKarma,
+    character: { ...withKarma.character, karmaLog: [{ id: 'karma-1', change: 0, reason: '', createdAt: 1000 }] },
+  })).ok, false);
+  assert.equal(parseIndividualFile(JSON.stringify({
+    ...withKarma,
+    character: { ...withKarma.character, karma: 1001 },
+  })).ok, false);
+});
+
 test('unembedded portrait URIs are removed rather than exporting device or network dependencies', () => {
   const bundle = createCampaignBundle({
     ...state,

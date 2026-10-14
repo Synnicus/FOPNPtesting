@@ -16,6 +16,7 @@ import {
   DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
 } from '@/context/types';
 import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/EquipmentConditionPanel';
+import KarmaTracker from '@/components/KarmaTracker';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
@@ -72,6 +73,7 @@ function makeDefaultCharacter(): Character {
   const baseSkills = calcBaseSkills(special);
   return {
     id: genId(), name: '', type: 'pc', race: 'human', level: 1, xp: 0,
+    karma: 0, karmaLog: [],
     special, maxHp: calcMaxHP(special, 1), currentHp: calcMaxHP(special, 1),
     armorClass: calcBaseAC(special), tempAC: 0,
     maxAP: calcMaxAP(special), currentAP: calcMaxAP(special),
@@ -917,7 +919,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     onSave(recomputeDerived(char));
   };
 
-  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects'];
+  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects', 'Karma'];
   const INJURY_LOCATIONS: Injury['location'][] = ['head', 'eyes', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
   return (
@@ -1998,6 +2000,11 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 })
               )}
             </>
+          )}
+
+          {/* ── KARMA ── */}
+          {activeTab === 7 && (
+            <KarmaTracker character={char} onChange={updated => setChar(updated)} />
           )}
         </ScrollView>
         <ConfirmModal
