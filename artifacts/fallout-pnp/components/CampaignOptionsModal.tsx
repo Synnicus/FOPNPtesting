@@ -12,7 +12,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
-import colors from '@/constants/colors';
 import { THEME_SWATCHES } from '@/constants/colors';
 import {
   formatHardcoreRadiationPenalties,
@@ -70,6 +69,7 @@ function PreferenceSwitchRow({
         </Text>
       </View>
       <Switch
+        accessibilityRole="switch"
         accessibilityLabel={label}
         accessibilityHint={description}
         accessibilityState={{ checked: value }}
@@ -224,6 +224,12 @@ export default function CampaignOptionsModal({
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
 
+  const closeOptions = () => {
+    setShowHardcoreWarning(false);
+    setShowHardcorePreview(false);
+    onClose();
+  };
+
   const handleHardcoreToggle = (enabled: boolean) => {
     if (enabled) setShowHardcoreWarning(true);
     else setHardcoreRadiationRules(false);
@@ -233,7 +239,7 @@ export default function CampaignOptionsModal({
 
   return (
     <>
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose} testID="campaign-options-modal">
+      <Modal visible={visible} animationType="slide" onRequestClose={closeOptions} testID="campaign-options-modal">
         <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: palette.background }}>
           <View style={{
             flexDirection: 'row',
@@ -256,7 +262,7 @@ export default function CampaignOptionsModal({
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Close campaign options"
-              onPress={onClose}
+              onPress={closeOptions}
               style={{ padding: 6 }}
             >
               <Feather name="x" size={22} color={palette.mutedForeground} />
@@ -286,6 +292,7 @@ export default function CampaignOptionsModal({
                   </Text>
                 </View>
                 <Switch
+                  accessibilityRole="switch"
                   accessibilityLabel="Enable Hardcore radiation penalties"
                   accessibilityHint="Applies optional campaign-wide SPECIAL penalties"
                   accessibilityState={{ checked: hardcoreRadiationRules }}
@@ -346,7 +353,6 @@ export default function CampaignOptionsModal({
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                      {selected && <Feather name="check" size={18} color={theme.id === 'eastern' ? colors.dark.background : colors.dark.background} />}
                     </View>
                     <View style={{ flex: 1, gap: 3 }}>
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>

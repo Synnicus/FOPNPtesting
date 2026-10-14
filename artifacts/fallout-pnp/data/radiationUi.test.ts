@@ -108,10 +108,7 @@ test('Hardcore preview open and close interactions never change the disabled cam
 });
 
 test('Hardcore campaign controls live in options and announce their roles and state', () => {
-  const campaignControls = optionsSource.slice(
-    optionsSource.indexOf('testID="hardcore-radiation-preview"') - 1600,
-    optionsSource.indexOf('accessibilityRole="switch"'),
-  );
+  const campaignControls = optionsSource.slice(optionsSource.indexOf('export default function CampaignOptionsModal'));
 
   assert.doesNotMatch(characterSource, /HARDCORE RADIATION PENALTIES/);
   assert.match(campaignControls, /Gameplay Options/);
@@ -121,6 +118,7 @@ test('Hardcore campaign controls live in options and announce their roles and st
   assert.match(campaignControls, /accessibilityState=\{\{ expanded: showHardcorePreview \}\}/);
   assert.match(optionsSource, /accessibilityLabel="Enable Hardcore radiation penalties"/);
   assert.match(optionsSource, /accessibilityState=\{\{ checked: hardcoreRadiationRules \}\}/);
+  assert.match(optionsSource, /accessibilityRole="switch"/);
   assert.match(optionsSource, /onValueChange=\{handleHardcoreToggle\}/);
 });
 
