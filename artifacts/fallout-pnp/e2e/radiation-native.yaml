@@ -1,0 +1,102 @@
+# Run against an installed, launchable Android or iOS build (not the web preview).
+# Supply APP_ID and a unique TEST_NAME with maestro -e; do not clear app data on launch.
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn: "Characters"
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: character-radiation-meter
+    direction: DOWN
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- scrollUntilVisible:
+    element:
+      id: radiationResistance-increase
+    direction: DOWN
+- repeat:
+    times: 4
+    commands:
+      - tapOn:
+          id: radiationResistance-increase
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: UP
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- assertVisible: "Effective radiation resistance is 20%."
+- tapOn: "NO"
+- assertVisible:
+    id: character-radiation-meter
+    text: "100 / 1000"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- tapOn: "YES"
+- assertVisible:
+    id: character-radiation-meter
+    text: "180 / 1000"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-subtract
+- assertNotVisible: "Apply Radiation Resistance?"
+- assertVisible:
+    id: character-radiation-meter
+    text: "80 / 1000"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "200"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-subtract
+- assertNotVisible: "Apply Radiation Resistance?"
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "90"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- tapOn: "NO"
+- assertVisible:
+    id: character-radiation-meter
+    text: "90 / 1000"
+- tapOn:
+    id: character-save
+- assertVisible: ${TEST_NAME}
+- stopApp
+- launchApp
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: DOWN
+- tapOn: ${TEST_NAME}
+- scrollUntilVisible:
+    element:
+      id: character-radiation-meter
+    direction: DOWN
+- assertVisible:
+    id: character-radiation-meter
+    text: "90 / 1000"

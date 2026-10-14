@@ -13,3 +13,4 @@
 - [Fallout PnP Radiation](fallout-pnp-radiation.md) — accumulated radiation is a capped persistent meter, separate from HP; resolved combat exposure is already post-resistance
 - [Equipment condition](fallout-pnp-equipment-condition.md) — user confirmed five armor hits per box and whole-box weapons; helmet routing is GM policy, not a printed rule.
 - [Ammo combat breakdown placement](fallout-pnp-ammo-breakdown.md) — show ammo AC adjustments under chance to hit; keep DT bypass and DR changes in damage protection.
+- [Native regression verification](fallout-pnp-native-verification.md) — a browser preview cannot validate native modal or storage interactions; run device automation against an installed native build.

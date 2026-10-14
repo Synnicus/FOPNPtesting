@@ -8,6 +8,7 @@
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
     "test:rules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types data/*.test.ts",
+    "test:native:radiation": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Radiation regression $(date +%s)\" e2e/radiation-native.yaml",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

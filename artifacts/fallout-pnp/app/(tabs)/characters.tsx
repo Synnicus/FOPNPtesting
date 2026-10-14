@@ -929,7 +929,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
             {character ? 'EDIT CHARACTER' : 'NEW CHARACTER'}
           </Text>
-          <TouchableOpacity onPress={handleSave} disabled={!isValid}>
+          <TouchableOpacity testID="character-save" onPress={handleSave} disabled={!isValid}>
             <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: isValid ? colors.primary : colors.mutedForeground }}>SAVE</Text>
           </TouchableOpacity>
         </View>
@@ -1029,7 +1029,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               {/* Name */}
               <TextInput
                 style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: char.name.trim() ? colors.border : colors.destructive + '88', borderRadius: colors.radius, padding: 14, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 16 }}
-                placeholder="Character name*" placeholderTextColor={colors.mutedForeground}
+                placeholder="Character name*" placeholderTextColor={colors.mutedForeground} testID="character-name-input"
                 value={char.name} onChangeText={name => setChar(c => ({ ...c, name }))}
               />
 
@@ -1115,16 +1115,16 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               <View style={{ gap: 7 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>RADIATION</Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary }}>{char.accumulatedRadiation ?? 0} / {MAX_RADIATION}</Text>
+                  <Text testID="character-radiation-meter" style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary }}>{char.accumulatedRadiation ?? 0} / {MAX_RADIATION}</Text>
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: (char.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>{radiationSicknessLabel(char.accumulatedRadiation ?? 0)}</Text>
                 </View>
                 <View style={{ height: 7, borderRadius: 4, overflow: 'hidden', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
                   <View style={{ height: '100%', width: `${Math.min(100, (char.accumulatedRadiation ?? 0) / 10)}%`, backgroundColor: (char.accumulatedRadiation ?? 0) >= 600 ? colors.destructive : '#b6d43b' }} />
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TextInput style={{ flex: 1, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold' }} keyboardType="number-pad" placeholder="Amount" placeholderTextColor={colors.mutedForeground} value={radiationInput} onChangeText={text => setRadiationInput(text.replace(/[^0-9]/g, ''))} />
-                  <TouchableOpacity style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, -amount) })); setRadiationInput(''); }}><Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold' }}>SUBTRACT</Text></TouchableOpacity>
-                  <TouchableOpacity style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; if (amount > 0) setPendingRadiation(amount); }}><Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold' }}>ADD</Text></TouchableOpacity>
+                  <TextInput testID="character-radiation-amount" style={{ flex: 1, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold' }} keyboardType="number-pad" placeholder="Amount" placeholderTextColor={colors.mutedForeground} value={radiationInput} onChangeText={text => setRadiationInput(text.replace(/[^0-9]/g, ''))} />
+                  <TouchableOpacity testID="character-radiation-subtract" style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, -amount) })); setRadiationInput(''); }}><Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold' }}>SUBTRACT</Text></TouchableOpacity>
+                  <TouchableOpacity testID="character-radiation-add" style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; if (amount > 0) setPendingRadiation(amount); }}><Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold' }}>ADD</Text></TouchableOpacity>
                 </View>
               </View>
 
@@ -1144,7 +1144,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.max(natural, val - 5) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
                        <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: resolved >= 50 ? '#4a8c3f' : colors.foreground, minWidth: 45, textAlign: 'center' }}>{resolved}%</Text>
-                      <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(100, val + 5) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+                      <TouchableOpacity testID={`${key}-increase`} accessibilityLabel={`Increase ${label} resistance`} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(100, val + 5) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                   </View>
                 ))}
