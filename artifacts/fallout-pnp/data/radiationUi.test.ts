@@ -34,7 +34,7 @@ test('normal and streamlined combat add resolved radiation without applying resi
     combatSource.indexOf('const handleApplyDamage = useCallback'),
     combatSource.indexOf('// Apply a critical-hit table entry'),
   );
-  assert.match(normalApply, /if \(totalDamage > 0\) applyDamage\(defender\.id, totalDamage\)/);
+  assert.match(normalApply, /if \(totalDamage > 0\) applyCombatDamage\(attackReceipt\.current, defender\.id, totalDamage,/);
   assert.match(normalApply, /if \(totalRadiationExposure > 0\) adjustRadiation\(defender\.id, totalRadiationExposure\)/);
   assert.doesNotMatch(normalApply, /resolveRadiationAddition|radiationResistance/);
 
@@ -42,7 +42,7 @@ test('normal and streamlined combat add resolved radiation without applying resi
     combatSource.indexOf('setStreamlinedDmgResult({ perHit'),
     combatSource.indexOf('Haptics.notificationAsync', combatSource.indexOf('setStreamlinedDmgResult({ perHit')),
   );
-  assert.match(streamlinedApply, /if \(totalBurstDmg > 0\) applyDamage\(defender\.id, totalBurstDmg\)/);
+  assert.match(streamlinedApply, /if \(totalBurstDmg > 0\) applyCombatDamage\(attackReceipt\.current, defender\.id, totalBurstDmg, damagingHits\)/);
   assert.match(streamlinedApply, /if \(radiationExposure > 0\) adjustRadiation\(defender\.id, radiationExposure\)/);
   assert.doesNotMatch(streamlinedApply, /resolveRadiationAddition|radiationResistance|currentHp/);
 });

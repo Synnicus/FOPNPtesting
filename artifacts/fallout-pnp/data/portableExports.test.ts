@@ -89,6 +89,38 @@ const customArmor: Armor = {
   isCustom: true,
 };
 
+test('condition survives character/campaign bundles including unequipped custom armor', () => {
+  const wornCharacter = { ...character, equippedBodyArmorId: undefined,
+    armorConditionStates: [{ armorId: customArmor.id, hitSegments: 24 }],
+    weaponAmmoStates: [{ weaponId: customWeapon.id, currentAmmo: 4, conditionBoxes: 8 }],
+  };
+  const bundle = createCharacterBundle(wornCharacter, [customWeapon], [customArmor]);
+  assert.equal(bundle.customArmor[0].id, customArmor.id);
+  const parsed = parseIndividualFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.kind === 'character') {
+    assert.deepEqual(parsed.bundle.character.armorConditionStates, wornCharacter.armorConditionStates);
+    assert.deepEqual(parsed.bundle.character.weaponAmmoStates, wornCharacter.weaponAmmoStates);
+  }
+  const campaign = createCampaignBundle({ ...state, characters: [wornCharacter] }, []);
+  const loaded = parseCampaignFile(JSON.stringify(campaign));
+  assert.equal(loaded.ok, true);
+  if (loaded.ok && loaded.source === 'portable') assert.deepEqual(loaded.bundle.state.characters[0].armorConditionStates, wornCharacter.armorConditionStates);
+});
+
+test('portable imports reject invalid armor wear before mutation, while accepting older saves', () => {
+  const legacy = createCharacterBundle(character, [customWeapon], [customArmor]);
+  assert.equal(parseIndividualFile(JSON.stringify(legacy)).ok, true);
+  for (const hitSegments of [-1, 51, 1.5, '20']) {
+    const invalid = { ...legacy, character: { ...legacy.character,
+      armorConditionStates: [{ armorId: customArmor.id, hitSegments }] } };
+    assert.equal(parseIndividualFile(JSON.stringify(invalid)).ok, false);
+  }
+  const duplicate = { ...legacy, character: { ...legacy.character,
+    armorConditionStates: [{ armorId: customArmor.id, hitSegments: 20 }, { armorId: customArmor.id, hitSegments: 21 }] } };
+  assert.equal(parseIndividualFile(JSON.stringify(duplicate)).ok, false);
+});
+
 const state = {
   characters: [character, { ...character, id: 'character-2', name: 'Companion', portrait: undefined }],
   customWeapons: [customWeapon, unrelatedWeapon],

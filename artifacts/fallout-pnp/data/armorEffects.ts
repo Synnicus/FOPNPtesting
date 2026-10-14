@@ -16,6 +16,8 @@ import { calcBaseSkills } from './derived.ts';
 import { computeConditionModifiers } from './conditions.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 import { hardcoreRadiationRule } from './radiation.ts';
+import { wornArmor } from './armorCondition.ts';
+import type { ArmorConditionState } from '../context/types.ts';
 
 const SPECIAL_KEYS: (keyof SPECIALStats)[] = [
   'strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck',
@@ -123,6 +125,7 @@ export interface ArmorResolverInput {
   hardcoreRadiationRules?: boolean;
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;
+  armorConditionStates?: readonly ArmorConditionState[];
   allArmor: readonly Armor[];
 }
 
@@ -179,20 +182,7 @@ function armorClassPerkBonus(perks: ArmorResolverInput['perks']): number {
 
 /** Resolves sheet values from stored character data; it never writes to it. */
 export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmorSheet {
-  const bodyArmor = input.equippedBodyArmorId
-    ? input.allArmor.find(armor => armor.id === input.equippedBodyArmorId && armor.slot === 'body')
-    : undefined;
-  const selectedHelmet = input.equippedHelmetId
-    ? input.allArmor.find(armor => armor.id === input.equippedHelmetId && armor.slot === 'helmet')
-    : undefined;
-  // Integrated/prohibited suits and suit-only helmets are validated here, before
-  // any AC/protection/effect aggregation. The selected objects are untouched.
-  const helmet = bodyArmor?.integratedHelmet || bodyArmor?.prohibitsHelmet
-    ? undefined
-    : selectedHelmet?.compatibleBodyArmorIds
-      && (!bodyArmor || !selectedHelmet.compatibleBodyArmorIds.includes(bodyArmor.id))
-        ? undefined
-        : selectedHelmet;
+  const { bodyArmor, helmet } = wornArmor({ ...input, armorConditionStates: input.armorConditionStates ? [...input.armorConditionStates] : undefined }, input.allArmor);
   const armorEffects = aggregateArmorEffects(bodyArmor, helmet);
 
   // Trait → permanent Gain-X perk → bounded Night Person → active effects →

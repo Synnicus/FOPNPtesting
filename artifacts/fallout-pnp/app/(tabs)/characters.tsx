@@ -15,6 +15,7 @@ import {
   COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
   DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
 } from '@/context/types';
+import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/EquipmentConditionPanel';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
@@ -441,7 +442,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     poisonResistance: char.poisonResistance, electricityResistance: char.electricityResistance,
     accumulatedRadiation: char.accumulatedRadiation, hardcoreRadiationRules,
     equippedBodyArmorId: char.equippedBodyArmorId, equippedHelmetId: char.equippedHelmetId,
-    allArmor,
+    armorConditionStates: char.armorConditionStates, allArmor,
   }), [char, allArmor, race, tagRules.freeTagSkills, hardcoreRadiationRules]);
   const effectiveSkills = armorSheet.effectiveSkills;
   const radiationEffect = useMemo(
@@ -1583,16 +1584,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       )}
                     </View>
                     {(char.inventoryWeaponIds ?? []).length > 0 && (
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      <View style={{ gap: 6 }}>
                         {(char.inventoryWeaponIds ?? []).map(wid => {
                           const iw = allWeapons.find(w => w.id === wid);
                           const equipped = char.leftHandWeaponId === wid || char.rightHandWeaponId === wid;
                           return (
-                            <View key={wid} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 10, paddingRight: 6, paddingVertical: 5, backgroundColor: equipped ? colors.primary + '1a' : colors.secondary, borderRadius: 14, borderWidth: 1, borderColor: equipped ? colors.primary + '66' : colors.border }}>
+                            <View key={wid} style={{ gap: 6 }}><View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 10, paddingRight: 6, paddingVertical: 5, backgroundColor: equipped ? colors.primary + '1a' : colors.secondary, borderRadius: 14, borderWidth: 1, borderColor: equipped ? colors.primary + '66' : colors.border }}>
                               <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: equipped ? colors.primary : colors.foreground }}>{iw?.name ?? wid}</Text>
                               <TouchableOpacity onPress={() => removeFromInventory(wid)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                                 <Feather name="x" size={13} color={colors.mutedForeground} />
                               </TouchableOpacity>
+                            </View>
+                            {iw && <WeaponConditionMeter char={char} setChar={setChar} weapon={iw} />}
                             </View>
                           );
                         })}
@@ -1603,16 +1606,19 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               })()}
 
               {[
-                { label: 'BODY ARMOR', value: allArmor.find(a => a.id === char.equippedBodyArmorId)?.name ?? 'None', onPress: () => setShowBodyPick(true) },
-                { label: 'HELMET', value: allArmor.find(a => a.id === char.equippedHelmetId)?.name ?? 'None', onPress: () => setShowHelmetPick(true) },
-              ].map(({ label, value, onPress }) => (
-                <TouchableOpacity key={label} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={onPress}>
+                { label: 'BODY ARMOR', armor: allArmor.find(a => a.id === char.equippedBodyArmorId && a.slot === 'body'), value: allArmor.find(a => a.id === char.equippedBodyArmorId)?.name ?? 'None', onPress: () => setShowBodyPick(true) },
+                { label: 'HELMET', armor: allArmor.find(a => a.id === char.equippedHelmetId && a.slot === 'helmet'), value: allArmor.find(a => a.id === char.equippedHelmetId)?.name ?? 'None', onPress: () => setShowHelmetPick(true) },
+              ].map(({ label, value, onPress, armor }) => (
+                <React.Fragment key={label}>
+                <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={onPress}>
                   <View>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{label}</Text>
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground, marginTop: 2 }}>{value}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
+                <ArmorConditionMeter char={char} setChar={setChar} armor={armor} inactive={label === 'HELMET' && !!armor && armorSheet.helmet?.id !== armor.id} />
+                </React.Fragment>
               ))}
 
               {/* Cumulative protection summary: AC + per-type DT/DR from armor,
@@ -1691,6 +1697,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 return (
                   <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CUMULATIVE PROTECTION</Text>
+                    <Text style={{ fontSize: 10, lineHeight: 14, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Armor protection is shown after condition. Automatic wear counts damaging hits; area and ongoing exposures are GM adjustable (manual: five successful damaging hits).</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
                       <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary }}>AC {totalAC}</Text>
                       <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, flexShrink: 1 }}>{acParts.join(' ')}</Text>
@@ -1702,8 +1709,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                         return (
                           <View key={t.key} style={{ flexGrow: 1, minWidth: 58, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
                             <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{t.label}</Text>
-                            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>DT {dt}</Text>
-                            <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>DR {dr}%</Text>
+                            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>DT {Number(dt.toFixed(3))}</Text>
+                            <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>DR {Number(dr.toFixed(3))}%</Text>
                           </View>
                         );
                       })}
@@ -2176,7 +2183,8 @@ function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, on
     radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
     poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,
     accumulatedRadiation: character.accumulatedRadiation, hardcoreRadiationRules,
-    equippedBodyArmorId: character.equippedBodyArmorId, equippedHelmetId: character.equippedHelmetId, allArmor,
+    equippedBodyArmorId: character.equippedBodyArmorId, equippedHelmetId: character.equippedHelmetId,
+    armorConditionStates: character.armorConditionStates, allArmor,
   });
   const effSpecial = armorSheet.effectiveSpecial;
   const conditionModifiers = computeConditionModifiers(character);

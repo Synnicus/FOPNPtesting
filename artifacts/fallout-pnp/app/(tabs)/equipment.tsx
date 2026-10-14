@@ -13,7 +13,6 @@ import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
-import { CONDITION_BOXES_MAX, clampConditionBoxes, conditionLabel, conditionToHitPenalty, isWeaponJammed } from '@/data/condition';
 import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills } from '@/context/types';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -867,7 +866,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
 }
 
 // ─── Weapon Row ───────────────────────────────────────────────────────────────
-function WeaponRow({ weapon, onDelete, onEdit, onCopy, onCondition }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void; onCondition?: () => void }) {
+function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void }) {
   const colors = useColors();
   const modEffects = computeModEffects(weapon.mods);
   const modDefs = weapon.mods.map(id => WEAPON_MOD_DEFS.find(m => m.id === id)).filter((m): m is WeaponModDef => !!m);
@@ -919,11 +918,6 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy, onCondition }: { weapon: 
         )}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {onCondition && (
-          <TouchableOpacity onPress={onCondition} style={{ padding: 6 }}>
-            <Feather name="tool" size={16} color={colors.mutedForeground} />
-          </TouchableOpacity>
-        )}
         {onCopy && (
           <TouchableOpacity onPress={onCopy} style={{ padding: 6 }}>
             <Feather name="copy" size={16} color={colors.mutedForeground} />
@@ -1077,141 +1071,6 @@ function AmmoRow({ ammo, onCopy, onEdit, onDelete }: { ammo: AmmoType; onCopy?: 
   );
 }
 
-// ─── Weapon Condition Modal ─────────────────────────────────────────────────
-function WeaponConditionModal({ visible, weapon, onClose }: {
-  visible: boolean; weapon: Weapon | null; onClose: () => void;
-}) {
-  const colors = useColors();
-  const { characters, setWeaponCondition } = useApp();
-
-  // Characters who have this weapon equipped or in their ammo/condition states.
-  const owners = React.useMemo(() => {
-    if (!weapon) return [];
-    return characters.filter(c =>
-      c.equippedWeaponId === weapon.id ||
-      (c.weaponAmmoStates ?? []).some(a => a.weaponId === weapon.id)
-    );
-  }, [characters, weapon]);
-
-  const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!visible) return;
-    setSelectedCharId(owners[0]?.id ?? null);
-  }, [visible, weapon]);
-
-  const selectedChar = characters.find(c => c.id === selectedCharId) ?? null;
-  const currentFilled = weapon && selectedChar
-    ? clampConditionBoxes(selectedChar.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.conditionBoxes ?? 0)
-    : 0;
-
-  const setFilled = (n: number) => {
-    if (!weapon || !selectedChar) return;
-    Haptics.selectionAsync();
-    setWeaponCondition(selectedChar.id, weapon.id, clampConditionBoxes(n));
-  };
-
-  const penalty = conditionToHitPenalty(currentFilled);
-  const jammed = isWeaponJammed(currentFilled);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
-        <View style={{ maxHeight: '85%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>WEAPON CONDITION</Text>
-              {weapon && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>{weapon.name}</Text>}
-            </View>
-            <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
-          </View>
-
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
-            {owners.length === 0 ? (
-              <View style={{ alignItems: 'center', gap: 8, paddingVertical: 24 }}>
-                <Feather name="alert-circle" size={28} color={colors.mutedForeground} />
-                <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
-                  No character has this weapon equipped. Equip it on a character to track its condition.
-                </Text>
-              </View>
-            ) : (
-              <>
-                {/* Character picker */}
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CHARACTER</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {owners.map(c => {
-                    const active = c.id === selectedCharId;
-                    return (
-                      <TouchableOpacity key={c.id} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }} onPress={() => setSelectedCharId(c.id)}>
-                        <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: active ? colors.primaryForeground : colors.foreground }}>{c.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {selectedChar && (
-                  <>
-                    {/* Status */}
-                    <View style={{ backgroundColor: jammed ? colors.destructive + '22' : (penalty !== 0 ? '#c8941a22' : colors.secondary), borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: jammed ? colors.destructive : (penalty !== 0 ? colors.primary : colors.border), gap: 4 }}>
-                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: jammed ? colors.destructive : colors.primary, letterSpacing: 1 }}>
-                        {conditionLabel(currentFilled).toUpperCase()}
-                      </Text>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                        {currentFilled} / {CONDITION_BOXES_MAX} boxes filled
-                        {penalty !== 0 ? ` · ${penalty}% to hit` : ''}
-                        {jammed ? ' · Cannot fire' : ''}
-                      </Text>
-                    </View>
-
-                    {/* Visual boxes */}
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-                      {Array.from({ length: CONDITION_BOXES_MAX }).map((_, i) => {
-                        const filled = i < currentFilled;
-                        return (
-                          <TouchableOpacity
-                            key={i}
-                            onPress={() => setFilled(i + 1 === currentFilled ? i : i + 1)}
-                            style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 2, borderColor: filled ? (i >= 8 ? colors.destructive : colors.primary) : colors.border, backgroundColor: filled ? (i >= 8 ? colors.destructive : colors.primary) : 'transparent', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: filled ? colors.primaryForeground : colors.mutedForeground }}>{i + 1}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-
-                    {/* Steppers */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground, flex: 1 }}>Filled condition boxes</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setFilled(currentFilled - 1)}><Feather name="minus" size={16} color={colors.foreground} /></TouchableOpacity>
-                        <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 40, textAlign: 'center' }}>{currentFilled}</Text>
-                        <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setFilled(currentFilled + 1)}><Feather name="plus" size={16} color={colors.foreground} /></TouchableOpacity>
-                      </View>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity style={{ flex: 1, paddingVertical: 10, borderRadius: colors.radius, alignItems: 'center', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setFilled(0)}>
-                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>REPAIR (PRISTINE)</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={{ flex: 1, paddingVertical: 10, borderRadius: colors.radius, alignItems: 'center', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setFilled(CONDITION_BOXES_MAX)}>
-                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>JAM (BROKEN)</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      0 = pristine, {CONDITION_BOXES_MAX} = jammed. 8–9 boxes → −10% to hit; {CONDITION_BOXES_MAX} → the weapon cannot fire.
-                    </Text>
-                  </>
-                )}
-              </>
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 // ─── Equipment Screen ─────────────────────────────────────────────────────────
 export default function EquipmentScreen() {
   const colors = useColors();
@@ -1231,7 +1090,6 @@ export default function EquipmentScreen() {
   const [editingAmmo, setEditingAmmo] = useState<AmmoType | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all'>('all');
-  const [conditionWeapon, setConditionWeapon] = useState<Weapon | null>(null);
 
   const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
@@ -1345,7 +1203,6 @@ export default function EquipmentScreen() {
           renderItem={({ item }) => (
             <WeaponRow
               weapon={item}
-              onCondition={() => setConditionWeapon(item)}
               onCopy={() => openCopyWeapon(item)}
               onEdit={item.isCustom ? () => openEditWeapon(item) : undefined}
               onDelete={item.isCustom
@@ -1421,11 +1278,6 @@ export default function EquipmentScreen() {
           else addCustomAmmo(ammo);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
-      />
-      <WeaponConditionModal
-        visible={conditionWeapon !== null}
-        weapon={conditionWeapon}
-        onClose={() => setConditionWeapon(null)}
       />
     </View>
   );

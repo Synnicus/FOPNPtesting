@@ -195,6 +195,7 @@ function referencedCustomEquipment(
   const armorIds = new Set([
     character.equippedBodyArmorId,
     character.equippedHelmetId,
+    ...(character.armorConditionStates ?? []).map(state => state.armorId),
   ].filter((id): id is string => !!id));
 
   return {
@@ -301,6 +302,12 @@ function isCharacterRecord(value: unknown): value is Character {
       && typeof ammo.weaponId === 'string'
       && isFiniteNumber(ammo.currentAmmo)
       && isFiniteNumber(ammo.conditionBoxes))
+    && (value.armorConditionStates === undefined || (Array.isArray(value.armorConditionStates)
+      && value.armorConditionStates.every(state => isRecord(state)
+        && typeof state.armorId === 'string' && state.armorId.length > 0
+        && isFiniteNumber(state.hitSegments) && Number.isInteger(state.hitSegments)
+        && state.hitSegments >= 0 && state.hitSegments <= 50)
+      && new Set(value.armorConditionStates.map(state => (state as Record<string, unknown>).armorId)).size === value.armorConditionStates.length))
     && Array.isArray(value.injuries)
     && value.injuries.every(injury => isRecord(injury)
       && typeof injury.id === 'string'

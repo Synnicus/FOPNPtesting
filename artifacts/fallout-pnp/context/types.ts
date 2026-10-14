@@ -201,6 +201,12 @@ export interface WeaponAmmoState {
   ammoTypeId?: string;
 }
 
+export interface ArmorConditionState {
+  armorId: string;
+  /** Damaging hits: five hits fill one box, ten boxes maximum. */
+  hitSegments: number;
+}
+
 // ─── Active Effects (chems + other temporary effects; injuries stay in Injury[]) ─
 export interface ActiveEffect {
   id: string;
@@ -365,6 +371,7 @@ export interface Character {
 
   equippedHelmetId?: string;
 
+  armorConditionStates?: ArmorConditionState[];
   weaponAmmoStates: WeaponAmmoState[];
   /** Printed creature attacks, kept separate from carried/held equipment. */
 

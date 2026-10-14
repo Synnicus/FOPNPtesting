@@ -11,6 +11,8 @@ import { computeModEffects } from '@/data/mods';
 import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
+import { addArmorWear, normalizeArmorCondition, wornArmor } from '@/data/armorCondition';
+import { applyEquipmentDamage } from '@/data/equipmentDamage';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
 import {
   normalizeCustomTemplateArmorClass,
@@ -109,8 +111,7 @@ function statusTick(c: Character, allArmor: Armor[]): { character: Character; da
   const areaEffects = (knocked.areaEffects ?? []).flatMap(effect => {
     const raw = Array.from({ length: effect.damageDieCount }, () => Math.floor(Math.random() * effect.damageDie) + 1)
       .reduce((sum, roll) => sum + roll, effect.damageBonus);
-    const body = knocked.equippedBodyArmorId ? allArmor.find(a => a.id === knocked.equippedBodyArmorId) : undefined;
-    const helmet = knocked.equippedHelmetId ? allArmor.find(a => a.id === knocked.equippedHelmetId) : undefined;
+    const { bodyArmor: body, helmet } = wornArmor(knocked, allArmor);
     const cap = effect.damageType.charAt(0).toUpperCase() + effect.damageType.slice(1);
     const dt = ((body?.[`dt${cap}` as keyof Armor] as number) ?? 0) + ((helmet?.[`dt${cap}` as keyof Armor] as number) ?? 0);
     const dr = Math.min(90, ((body?.[`dr${cap}` as keyof Armor] as number) ?? 0) + ((helmet?.[`dr${cap}` as keyof Armor] as number) ?? 0));
@@ -157,6 +158,7 @@ function statusTick(c: Character, allArmor: Armor[]): { character: Character; da
     hardcoreRadiationRules,
     equippedBodyArmorId: c.equippedBodyArmorId,
     equippedHelmetId: c.equippedHelmetId,
+    armorConditionStates: c.armorConditionStates,
     allArmor,
   });
   // The manual removes every AC source except worn armor while a GM-timed
@@ -239,7 +241,6 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
       if (existing) weaponAmmoStates.push(existing);
       continue;
     }
-    if (weapon.magazineSize <= 0 && !existing) continue;
     weaponAmmoStates.push({
       weaponId,
       currentAmmo: existing?.currentAmmo ?? effectiveMagazineSize(weapon),
@@ -247,7 +248,10 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
       ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, allAmmo),
     });
   }
-  return { ...character, weaponAmmoStates };
+  const inventoryWeaponIds = character.inventoryWeaponIds ?? [...new Set([
+    character.leftHandWeaponId, character.rightHandWeaponId, character.equippedWeaponId,
+  ].filter((id): id is string => !!id))].slice(0, 5);
+  return { ...character, inventoryWeaponIds, weaponAmmoStates, armorConditionStates: normalizeArmorCondition(character.armorConditionStates) };
 }
 
 // v4 — new damage types (N/L/F/P/E), DR added to armor, pilot skill, custom bestiary
@@ -265,6 +269,8 @@ interface AppState {
   activeEntryId: string | null;
   /** Ephemeral receipt for the last atomic AoE transaction. */
   areaAttackReceipt?: { requestId: string; results: AreaResolution[] };
+  /** Recent attack transactions; duplicate UI submissions must not charge HP/wear twice. */
+  damageReceiptIds?: string[];
   /** Pending actions resolve only at the start of their actor's own turn. */
   pendingCombatSkillActions: TimedCombatSkillAction[];
   /** Ephemeral receipt for the latest timed skill or Heal Fallen transaction. */
@@ -419,6 +425,7 @@ interface AppContextValue extends AppState {
   moveCharacter: (characterId: string, targetCharacterId: string) => void;
 
   applyDamage: (characterId: string, damage: number) => void;
+  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string) => void;
   healCharacter: (characterId: string, amount: number) => void;
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
@@ -616,6 +623,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? { ...e, currentHp: Math.max(0, e.currentHp - damage) }
         : e),
     }));
+  }, []);
+
+  const applyCombatDamage = useCallback((requestId: string, characterId: string, damage: number, damagingHits: number, location?: string) => {
+    setState(s => applyEquipmentDamage(s, [...BUILT_IN_ARMOR, ...s.customArmor],
+      requestId, characterId, damage, damagingHits, location));
   }, []);
 
   const healCharacter = useCallback((characterId: string, amount: number) => {
@@ -845,8 +857,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const results = characterIds.flatMap(id => {
         const c = s.characters.find(char => char.id === id);
         if (!c) return [];
-        const body = c.equippedBodyArmorId ? armor.find(a => a.id === c.equippedBodyArmorId) : undefined;
-        const helmet = c.equippedHelmetId ? armor.find(a => a.id === c.equippedHelmetId) : undefined;
+        const { bodyArmor: body, helmet } = wornArmor(c, armor);
         const natural = c.naturalProtection;
         const cap = attack.damageType === 'normal' ? 'Normal'
           : attack.damageType === 'laser' ? 'Laser'
@@ -900,7 +911,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
           return out;
         }, {} as Record<'normal' | 'laser' | 'fire' | 'plasma' | 'explosion', { dt: number; dr: number }>);
-        return [resolveAreaTarget(attack, {
+        const result = resolveAreaTarget(attack, {
           id: c.id, name: c.name, endurance: armorSheet.effectiveSpecial.endurance,
           gasInhaledResistance: gasInhaled,
           gasContactResistance: gasContact,
@@ -909,7 +920,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           radiationResistance: armorSheet.radiationResistance,
           protectionByType,
           damageResistanceCap: c.manualDerivedStats ? 100 : 90,
-        }, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)])];
+        }, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)]);
+        if (attack.kind !== 'gasInhaled' && attack.kind !== 'gasContact' && result.damage > 0) {
+          result.notes.push('Armor condition: one damaging area exposure recorded on body armor (aggregate result). Adjust individual hits in Equipment if the GM rules otherwise.');
+        }
+        return [result];
       });
       const byId = new Map(results.map(r => [r.targetId, r]));
       const characters = s.characters.map(c => {
@@ -924,8 +939,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               damageBonus: result.ongoing.damageBonus, damageType: result.ongoing.damageType,
             }]
           : c.areaEffects;
+        const physicalExposure = attack.kind !== 'gasInhaled' && attack.kind !== 'gasContact';
         const updated = {
-          ...c,
+          ...addArmorWear(c, armor, physicalExposure && result.damage > 0 ? 1 : 0),
           currentHp: Math.max(0, c.currentHp - result.damage),
           accumulatedRadiation: adjustRadiationValue(c.accumulatedRadiation ?? 0, result.radiationExposure ?? 0),
           areaEffects,
@@ -1702,7 +1718,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...state,
       allWeapons, allArmor, allAmmo,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
-        applyDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
+        applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,

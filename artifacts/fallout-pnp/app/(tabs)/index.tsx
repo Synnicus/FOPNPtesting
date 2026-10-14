@@ -81,6 +81,7 @@ function resolveCombatSheet(
     hardcoreRadiationRules,
     equippedBodyArmorId: character.equippedBodyArmorId,
     equippedHelmetId: character.equippedHelmetId,
+    armorConditionStates: character.armorConditionStates,
     allArmor,
   });
   // During a timed or underfunded combat skill, only the AC printed on worn
@@ -728,7 +729,7 @@ export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const app = useApp();
-  const { characters, allWeapons, allArmor, allAmmo, applyDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt, hardcoreRadiationRules,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
@@ -773,6 +774,12 @@ export default function CombatScreen() {
   // Damage
   const [shotDamages, setShotDamages] = useState<(ShotDamage | null)[] | null>(null);
   const [damageApplied, setDamageApplied] = useState(false);
+  const attackReceipt = useRef('');
+  const attackApplied = useRef(false);
+  const beginAttack = () => {
+    attackReceipt.current = `hit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    attackApplied.current = false;
+  };
 
   // Crit state
   // isCrit: whether the primary shot is a critical hit this roll.
@@ -1262,6 +1269,7 @@ export default function CombatScreen() {
   // ATTACK AGAIN and the change-of-config effect below. Keeps attacker/defender/
   // weapon/modifier selections intact.
   const resetAttackState = useCallback(() => {
+    beginAttack();
     setTensFace(null);
     setUnitsFace(null);
     setPhysicalHitConfirmed(false);
@@ -1371,6 +1379,7 @@ export default function CombatScreen() {
     setRolling(true);
     setPhysicalHitConfirmed(false);
     const t = rollD10(); const u = rollD10();
+    beginAttack();
     setTensFace(t); setUnitsFace(u);
     setShotDamages(null); setDamageApplied(false);
     setPrimaryIsCrit(false); setAimedCritPart(null); setAimedCritApplied(false); setAimedCritNotes([]);
@@ -1430,6 +1439,7 @@ export default function CombatScreen() {
     setTensFace(null);
     setUnitsFace(null);
     setPhysicalHitConfirmed(true);
+    beginAttack();
     setShotDamages(null);
     setDamageApplied(false);
     setPrimaryIsCrit(false);
@@ -1461,6 +1471,7 @@ export default function CombatScreen() {
       return;
     }
     const confirmsHit = outcome === 'hit';
+    beginAttack();
     Haptics.notificationAsync(
       confirmsHit
         ? Haptics.NotificationFeedbackType.Success
@@ -1505,6 +1516,7 @@ export default function CombatScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const dice = Array.from({ length: burstShots }, () => Math.floor(Math.random() * 10));
+    beginAttack();
     setStreamlinedDice(dice);
     setStreamlinedRolled(true);
     setStreamlinedDmgResult(null);
@@ -1996,9 +2008,11 @@ export default function CombatScreen() {
   }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
 
   const handleApplyDamage = useCallback(() => {
-    if (!defender || (totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison)) return;
+    if (!defender || attackApplied.current || (totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison)) return;
+    attackApplied.current = true;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    if (totalDamage > 0) applyDamage(defender.id, totalDamage);
+    if (totalDamage > 0) applyCombatDamage(attackReceipt.current, defender.id, totalDamage,
+      shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined);
     if (totalRadiationExposure > 0) adjustRadiation(defender.id, totalRadiationExposure);
     if (hasAppliedPoison) applyPoisonExposure(appliedPoisonResults);
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
@@ -2006,7 +2020,7 @@ export default function CombatScreen() {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyDamage, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
+  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).
@@ -3181,6 +3195,8 @@ export default function CombatScreen() {
             </TouchableOpacity>
             {streamlinedRolled && streamlinedHits > 0 && weapon && !streamlinedDmgResult && (
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary }} onPress={() => {
+                if (attackApplied.current) return;
+                attackApplied.current = true;
                 const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
                 const protection = resolveDamageProtection({
                   baseDT: burstProt.dt,
@@ -3200,6 +3216,7 @@ export default function CombatScreen() {
                 const poisonResults: PoisonResistanceResult[] = [];
                 const componentBreakdown: string[] = [];
                 let radiationExposure = 0;
+                let damagingHits = 0;
                 const perHit = Array.from({ length: streamlinedHits }, (_, hitIndex) => {
                   const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
                   const ammoRolls = loadedAmmo && !loadedAmmo.components?.length && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
@@ -3238,13 +3255,14 @@ export default function CombatScreen() {
                   const hitPoisonResults = attackPoisons.map(poison =>
                     resolvePoisonResistance(poison, defenderSheet?.poisonResistance ?? 0, Math.floor(Math.random() * 100) + 1));
                   poisonResults.push(...hitPoisonResults);
+                  if (physicalDamage > 0) damagingHits += 1;
                   return physicalDamage + hitPoisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
                 });
                 const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
                 const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
                 setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage, componentBreakdown, radiationExposure });
                 if (defender) {
-                  if (totalBurstDmg > 0) applyDamage(defender.id, totalBurstDmg);
+                  if (totalBurstDmg > 0) applyCombatDamage(attackReceipt.current, defender.id, totalBurstDmg, damagingHits);
                     if (radiationExposure > 0) adjustRadiation(defender.id, radiationExposure);
                   applyPoisonExposure(poisonResults);
                 }
@@ -3431,6 +3449,7 @@ export default function CombatScreen() {
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <TextInput
                   value={damageOverride}
+                  editable={!damageApplied}
                   onChangeText={(value) => {
                     setDamageOverride(value.replace(/[^0-9]/g, ''));
                     setShotDamages(null);
@@ -3443,6 +3462,7 @@ export default function CombatScreen() {
                 />
                 {damageOverride !== '' && (
                   <TouchableOpacity
+                    disabled={damageApplied}
                     onPress={() => {
                       setDamageOverride('');
                       setShotDamages(null);
