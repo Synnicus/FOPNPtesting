@@ -9,6 +9,7 @@ import {
   armorOnlyArmorClass,
   canUseHealFallenSkill,
   getHealFallenSkillOptions,
+  getHealFallenAPCost,
   isHealFallenTarget,
   isRevivedAPRestricted,
   planTimedSkillAP,
@@ -16,6 +17,36 @@ import {
   type TimedCombatSkillAction,
   type CombatSkillCombatant,
 } from './combatSkills.ts';
+
+test('Heal Fallen uses Stat! ownership, not unrelated or unowned perks', () => {
+  assert.equal(getHealFallenAPCost({ perks: [] }), 10);
+  assert.equal(getHealFallenAPCost({ perks: [{ perkId: 'medic', rank: 1 }] }), 10);
+  assert.equal(getHealFallenAPCost({ perks: [{ perkId: 'stat', rank: 0 }] }), 10);
+  assert.equal(getHealFallenAPCost({ perks: [{ perkId: 'stat', rank: 1 }] }), 5);
+});
+
+for (const hasStat of [false, true]) {
+  const apCost = getHealFallenAPCost({ perks: hasStat ? [{ perkId: 'stat', rank: 1 }] : [] });
+  test(`Heal Fallen ${hasStat ? 'Stat!' : 'ordinary'} healer pays ${apCost} AP immediately when funded`, () => {
+    for (const availableAP of [apCost, apCost + 2]) {
+      assert.deepEqual(planTimedSkillAP({ availableAP, apCost, durationRounds: 1 }), {
+        valid: true, spentAP: apCost, underfunded: false, completionRoundOffset: 0, armorOnlyAC: false,
+      });
+    }
+  });
+  test(`Heal Fallen ${hasStat ? 'Stat!' : 'ordinary'} healer must confirm below ${apCost} AP`, () => {
+    for (let availableAP = 1; availableAP < apCost; availableAP++) {
+      const rejected = planTimedSkillAP({ availableAP, apCost, durationRounds: 1 });
+      assert.equal(rejected.valid, false);
+      assert.equal(rejected.spentAP, 0);
+      assert.match(rejected.reason!, new RegExp(`needs ${apCost} AP`));
+      assert.deepEqual(planTimedSkillAP({ availableAP, apCost, durationRounds: 1, confirmSpendAllRemaining: true }), {
+        valid: true, spentAP: availableAP, underfunded: true, completionRoundOffset: 1, armorOnlyAC: true,
+      });
+    }
+    assert.equal(planTimedSkillAP({ availableAP: 0, apCost, durationRounds: 1, confirmSpendAllRemaining: true }).valid, false);
+  });
+}
 
 test('Heal Fallen gates targets and medical skills by living versus robot type', () => {
   const living = { race: 'human' as const, isKnockedOut: true };

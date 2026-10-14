@@ -49,7 +49,7 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from '@/data/areaEffects';
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
-import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
+import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
 function resolveCombatSheet(
   character: Character,
@@ -4114,7 +4114,8 @@ function CombatSkillModal({ visible, actor, target, effectiveSkills, currentRoun
   const requestedAP = Math.max(1, ap);
   const underfunded = !!actor && requestedAP > actor.currentAP;
   const completionRound = currentRound + Math.max(rounds - 1, underfunded ? 1 : 0);
-  const healFallenUnderfunded = !!actor && actor.currentAP < HEAL_FALLEN_AP_COST;
+  const healFallenAPCost = actor ? getHealFallenAPCost(actor) : HEAL_FALLEN_AP_COST;
+  const healFallenUnderfunded = !!actor && actor.currentAP < healFallenAPCost;
   const delayedHealStart = !isCompletion && isUnconscious && healFallenUnderfunded;
   const canResolveOutcome = isCompletion || canStart;
   useEffect(() => {
@@ -4135,7 +4136,7 @@ function CombatSkillModal({ visible, actor, target, effectiveSkills, currentRoun
       skill: selectedSkill,
       method,
       roll: nextRoll,
-      ap: isCompletion ? 0 : HEAL_FALLEN_AP_COST,
+      ap: isCompletion ? 0 : healFallenAPCost,
       rounds: 1,
     });
   };
@@ -4253,7 +4254,7 @@ function CombatSkillModal({ visible, actor, target, effectiveSkills, currentRoun
                         <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>HEAL FALLEN</Text>
                         <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>On success: restore exactly 1 HP and remove unconsciousness. An underfunded action revives them at the healer’s next own turn (round {currentRound + 1}).</Text>
                       </View>
-                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{HEAL_FALLEN_AP_COST} AP</Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{healFallenAPCost} AP</Text>
                     </View>
                     {delayedHealStart && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
                       Armor-only AC applies through the delayed action — Agility and unused-AP AC do not apply.
@@ -4286,7 +4287,7 @@ function CombatSkillModal({ visible, actor, target, effectiveSkills, currentRoun
                   {!!selected.reminder && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{selected.reminder}</Text>}
                   <View style={{ flexDirection: 'row', gap: 7 }}>
                     <TouchableOpacity testID="combat-skill-roll-d100" disabled={!selected.valid || !!outcome || !canResolveOutcome} onPress={rollSkill} style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: selected.valid && !outcome && canResolveOutcome ? colors.primary : colors.border, opacity: selected.valid && !outcome && canResolveOutcome ? 1 : 0.5 }}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected.valid && !outcome && canResolveOutcome ? colors.primaryForeground : colors.mutedForeground }}>{isCompletion ? 'ROLL d100 · RESOLVE' : `ROLL d100 · ${HEAL_FALLEN_AP_COST} AP`}</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected.valid && !outcome && canResolveOutcome ? colors.primaryForeground : colors.mutedForeground }}>{isCompletion ? 'ROLL d100 · RESOLVE' : `ROLL d100 · ${healFallenAPCost} AP`}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity testID="combat-skill-auto-success" disabled={!selected.valid || !!outcome || !canResolveOutcome} onPress={() => resolveSkill('success', 'automaticSuccess')} style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, opacity: selected.valid && !outcome && canResolveOutcome ? 1 : 0.4 }}>
                       <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>AUTOMATIC SUCCESS</Text>

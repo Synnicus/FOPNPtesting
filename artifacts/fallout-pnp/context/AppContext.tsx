@@ -27,6 +27,7 @@ import {
   armorOnlyArmorClass,
   canUseHealFallenSkill,
   cancelPendingActionsForRemovedCharacters,
+  getHealFallenAPCost,
   isHealFallenTarget,
   isRevivedAPRestricted,
   planTimedSkillAP,
@@ -717,7 +718,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (s.pendingCombatSkillActions.some(action => action.actorId === actor.id)) return reject('This combatant already has a pending skill action.');
       if (!isHealFallenTarget(target)) return reject('Heal Fallen can only be used on an unconscious target.');
       if (!canUseHealFallenSkill(target, request.skill)) return reject(target.race === 'robot' ? 'Robots require Science or Repair for Heal Fallen.' : 'Living targets require First Aid or Doctor for Heal Fallen.');
-      const plan = planTimedSkillAP({ availableAP: actor.currentAP, apCost: AP_COSTS.HEAL_FALLEN, durationRounds: 1, confirmSpendAllRemaining: request.confirmSpendAllRemaining });
+      const apCost = getHealFallenAPCost(actor);
+      const plan = planTimedSkillAP({ availableAP: actor.currentAP, apCost, durationRounds: 1, confirmSpendAllRemaining: request.confirmSpendAllRemaining });
       if (!plan.valid) return reject(plan.reason ?? 'Heal Fallen cannot begin.');
       if (plan.completionRoundOffset > 0 && request.resolution) {
         return reject('Underfunded Heal Fallen resolves at the healer’s next own turn; do not supply an outcome yet.');
@@ -732,7 +734,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (request.resolution && !resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
       if (!plan.completionRoundOffset && !resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
       const completesOnRound = s.currentRound + plan.completionRoundOffset;
-      const action: TimedCombatSkillAction = { id: requestId, kind: 'healFallen', actorId: actor.id, targetId: target.id, skill: request.skill, label: 'Heal Fallen', startedRound: s.currentRound, completesOnRound, apCost: AP_COSTS.HEAL_FALLEN, spentAP: plan.spentAP, armorOnlyAC: plan.armorOnlyAC, resolution: resolution ?? undefined };
+      const action: TimedCombatSkillAction = { id: requestId, kind: 'healFallen', actorId: actor.id, targetId: target.id, skill: request.skill, label: 'Heal Fallen', startedRound: s.currentRound, completesOnRound, apCost, spentAP: plan.spentAP, armorOnlyAC: plan.armorOnlyAC, resolution: resolution ?? undefined };
       const updated = { ...actor, currentAP: actor.currentAP - plan.spentAP, combatDefenseSuppressed: plan.armorOnlyAC || actor.combatDefenseSuppressed };
       let characters = s.characters.map(c => c.id === actor.id ? updated : c);
       if (!plan.completionRoundOffset && resolution?.success) {

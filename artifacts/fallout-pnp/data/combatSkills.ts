@@ -3,6 +3,13 @@ import type { Character, PositionType, RaceType, SkillType } from '../context/ty
 /** The manual cost for helping an unconscious combatant (physical p. 27). */
 export const HEAL_FALLEN_AP_COST = 10;
 
+/** Stat! reduces Heal Fallen to 5 AP (printed manual p. 57). */
+export function getHealFallenAPCost(actor: Pick<Character, 'perks'>): number {
+  return actor.perks?.some(perk => perk.perkId === 'stat' && perk.rank > 0)
+    ? 5
+    : HEAL_FALLEN_AP_COST;
+}
+
 export type CombatSkillResolutionMethod = 'roll' | 'automaticSuccess' | 'automaticFailure';
 export interface CombatSkillResolutionInput {
   method: CombatSkillResolutionMethod;
@@ -51,7 +58,7 @@ export interface HealFallenRequest {
   skill: HealFallenSkill;
   /** Required for a fully funded action. Underfunded actions resolve next turn. */
   resolution?: CombatSkillResolutionInput;
-  /** Required when fewer than ten AP remain; all remaining AP are then spent. */
+  /** Required when fewer than the perk-aware AP cost remain; all remaining AP are then spent. */
   confirmSpendAllRemaining?: boolean;
 }
 export interface CompleteHealFallenRequest {
