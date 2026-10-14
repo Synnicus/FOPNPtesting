@@ -2911,7 +2911,23 @@ export default function CombatScreen() {
             {/* Formula breakdown */}
             <View style={{ paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border, gap: 2 }}>
               <FormulaLine label="Base skill" value={`${baseSkill}%`} color={colors.primary} />
-              {rangeMod !== 0 && <FormulaLine label="Range modifier" value={`${rangeMod >= 0 ? '+' : ''}${rangeMod}%`} color={rangeMod > 0 ? '#4a8c3f' : colors.destructive} />}
+              {loadedAmmo && ammoToHitAdjust !== 0 && (
+                <View style={{ paddingVertical: 2, gap: 1 }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                    {loadedAmmo.ignoresDT || /\bAP\b/i.test(loadedAmmo.name) ? 'AP Ammo' : 'Ammo'} · {loadedAmmo.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: ammoToHitAdjust > 0 ? '#4a8c3f' : colors.destructive }}>
+                    {ammoToHitAdjust > 0 ? '+' : ''}{ammoToHitAdjust}% chance to hit · target AC {loadedAmmo.acMod > 0 ? '+' : ''}{loadedAmmo.acMod}
+                  </Text>
+                </View>
+              )}
+              {rangeMod !== 0 && (
+                <FormulaLine
+                  label={`Range modifier · weapon range ${weapon ? effectiveRange : '—'}`}
+                  value={`${rangeMod >= 0 ? '+' : ''}${rangeMod}%`}
+                  color={rangeMod > 0 ? '#4a8c3f' : colors.destructive}
+                />
+              )}
               {effectiveLightPenalty !== 0 && <FormulaLine label={`Light penalty${perkBonuses.lightReduction > 0 ? ' (halved by perk)' : ''}`} value={`−${effectiveLightPenalty}%`} color={colors.destructive} />}
               {specialUnarmedAttack?.armorClassPiercing
                 ? <FormulaLine label="Armor Class (piercing technique)" value="IGNORED" color="#4a8c3f" />
