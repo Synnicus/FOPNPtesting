@@ -46,7 +46,55 @@ const colors = {
     input: '#1a1810',
   },
 
+  eastern: {
+    light: {
+      text: '#172014',
+      tint: '#397a44',
+      background: '#ecf0e7',
+      foreground: '#172014',
+      card: '#e1e9dd',
+      cardForeground: '#172014',
+      primary: '#397a44',
+      primaryForeground: '#f3f7e9',
+      secondary: '#d5e2d2',
+      secondaryForeground: '#162417',
+      muted: '#dfe7d8',
+      mutedForeground: '#56644e',
+      accent: '#4c8c50',
+      accentForeground: '#f3f7e9',
+      destructive: '#b83a28',
+      destructiveForeground: '#f0ead8',
+      border: '#b5c8ad',
+      input: '#d5e2d2',
+    },
+    dark: {
+      text: '#d8e8c2',
+      tint: '#a8d475',
+      background: '#07100a',
+      foreground: '#d8e8c2',
+      card: '#0e1b11',
+      cardForeground: '#d8e8c2',
+      primary: '#a8d475',
+      primaryForeground: '#07100a',
+      secondary: '#15261a',
+      secondaryForeground: '#a8d475',
+      muted: '#101d13',
+      mutedForeground: '#91a383',
+      accent: '#7cae58',
+      accentForeground: '#07100a',
+      destructive: '#d05f45',
+      destructiveForeground: '#f0e8d8',
+      border: '#27412b',
+      input: '#112117',
+    },
+  },
+
   radius: 6,
 };
+
+export const THEME_SWATCHES = {
+  western: '#c8941a',
+  eastern: '#a8d475',
+} as const;
 
 export default colors;

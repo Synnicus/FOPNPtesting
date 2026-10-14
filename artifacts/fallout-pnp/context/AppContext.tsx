@@ -56,6 +56,12 @@ import {
 } from '@/data/portraitStorageCleanup';
 import { adjustRadiation as adjustRadiationValue, normalizeRadiation } from '@/data/radiation';
 import { normalizeKarmaFields } from '@/data/karma';
+import {
+  DEFAULT_CAMPAIGN_OPTIONS,
+  normalizeCampaignOptions,
+  type CampaignOptions,
+  type CampaignVisualTheme,
+} from '@/data/campaignOptions';
 
 function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
   if (Platform.OS === 'web') return;
@@ -265,7 +271,7 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
 // v4 — new damage types (N/L/F/P/E), DR added to armor, pilot skill, custom bestiary
 const STORAGE_KEY = '@fallout_pnp_v4';
 
-interface AppState {
+interface AppState extends CampaignOptions {
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
@@ -412,6 +418,7 @@ function normalizePersistedState(parsed: AppState): AppState {
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   return {
     ...currentState,
+    ...normalizeCampaignOptions(normalized),
     hardcoreRadiationRules: normalized.hardcoreRadiationRules !== undefined
       ? normalized.hardcoreRadiationRules === true
       : legacyRadiationRules === true,
@@ -438,6 +445,9 @@ interface AppContextValue extends AppState {
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
   setHardcoreRadiationRules: (enabled: boolean) => void;
+  setVisualTheme: (theme: CampaignVisualTheme) => void;
+  setSystemSoundsEnabled: (enabled: boolean) => void;
+  setMusicEnabled: (enabled: boolean) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
   /** Start a GM-timed combat skill. See TimedSkillActionRequest for AP/round timing. */
@@ -513,6 +523,7 @@ const defaultState: AppState = {
   activeEntryId: null,
   pendingCombatSkillActions: [],
   hardcoreRadiationRules: false,
+  ...DEFAULT_CAMPAIGN_OPTIONS,
 };
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -1717,6 +1728,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const setVisualTheme = useCallback((visualTheme: CampaignVisualTheme) => {
+    setState(s => ({ ...s, visualTheme }));
+  }, []);
+
+  const setSystemSoundsEnabled = useCallback((systemSoundsEnabled: boolean) => {
+    setState(s => ({ ...s, systemSoundsEnabled }));
+  }, []);
+
+  const setMusicEnabled = useCallback((musicEnabled: boolean) => {
+    setState(s => ({ ...s, musicEnabled }));
+  }, []);
 
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...state.customArmor];
@@ -1729,6 +1751,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
         applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
+         setVisualTheme, setSystemSoundsEnabled, setMusicEnabled,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,

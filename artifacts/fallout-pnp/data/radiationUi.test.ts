@@ -5,6 +5,7 @@ import { URL } from 'node:url';
 import { HARDCORE_RADIATION_RULES } from './radiation.ts';
 
 const characterSource = readFileSync(new URL('../app/(tabs)/characters.tsx', import.meta.url), 'utf8');
+const optionsSource = readFileSync(new URL('../components/CampaignOptionsModal.tsx', import.meta.url), 'utf8');
 const combatSource = readFileSync(new URL('../app/(tabs)/index.tsx', import.meta.url), 'utf8');
 const contextSource = readFileSync(new URL('../context/AppContext.tsx', import.meta.url), 'utf8');
 
@@ -90,42 +91,43 @@ test('radiation meter is normalized on reload and persisted with campaign state'
 });
 
 test('Hardcore preview open and close interactions never change the disabled campaign setting', () => {
-  const previewTrigger = characterSource.slice(
-    characterSource.indexOf('testID="hardcore-radiation-preview"'),
-    characterSource.indexOf('</TouchableOpacity>', characterSource.indexOf('testID="hardcore-radiation-preview"')),
+  const previewTrigger = optionsSource.slice(
+    optionsSource.indexOf('testID="hardcore-radiation-preview"'),
+    optionsSource.indexOf('</TouchableOpacity>', optionsSource.indexOf('testID="hardcore-radiation-preview"')),
   );
   assert.match(previewTrigger, /onPress=\{\(\) => setShowHardcorePreview\(true\)\}/);
   assert.doesNotMatch(previewTrigger, /setHardcoreRadiationRules/);
 
-  const previewModal = characterSource.slice(
-    characterSource.indexOf('<HardcoreRadiationPreviewModal'),
-    characterSource.indexOf('/>', characterSource.indexOf('<HardcoreRadiationPreviewModal')),
+  const previewModal = optionsSource.slice(
+    optionsSource.indexOf('<HardcoreRadiationPreviewModal'),
+    optionsSource.indexOf('/>', optionsSource.indexOf('<HardcoreRadiationPreviewModal')),
   );
   assert.match(previewModal, /enabled=\{hardcoreRadiationRules\}/);
   assert.match(previewModal, /onClose=\{\(\) => setShowHardcorePreview\(false\)\}/);
   assert.doesNotMatch(previewModal, /setHardcoreRadiationRules/);
 });
 
-test('Hardcore campaign controls announce their roles, state, and non-mutating preview behavior', () => {
-  const campaignControls = characterSource.slice(
-    characterSource.indexOf('testID="hardcore-radiation-preview"') - 400,
-    characterSource.indexOf('</View>', characterSource.indexOf('accessibilityRole="switch"')) + 20,
+test('Hardcore campaign controls live in options and announce their roles and state', () => {
+  const campaignControls = optionsSource.slice(
+    optionsSource.indexOf('testID="hardcore-radiation-preview"') - 1600,
+    optionsSource.indexOf('accessibilityRole="switch"'),
   );
 
+  assert.doesNotMatch(characterSource, /HARDCORE RADIATION PENALTIES/);
+  assert.match(campaignControls, /Gameplay Options/);
   assert.match(campaignControls, /accessibilityRole="button"/);
   assert.match(campaignControls, /accessibilityLabel=\{`Review Hardcore radiation thresholds\. Currently \$\{hardcoreRadiationRules \? 'enabled' : 'disabled'\}`\}/);
   assert.match(campaignControls, /accessibilityHint="Opens an explanation without changing the campaign setting"/);
   assert.match(campaignControls, /accessibilityState=\{\{ expanded: showHardcorePreview \}\}/);
-  assert.match(campaignControls, /accessibilityRole="switch"/);
-  assert.match(campaignControls, /accessibilityLabel="Enable Hardcore radiation penalties"/);
-  assert.match(campaignControls, /accessibilityState=\{\{ checked: hardcoreRadiationRules \}\}/);
-  assert.match(campaignControls, /accessibilityValue=\{\{ text: hardcoreRadiationRules \? 'Enabled' : 'Disabled' \}\}/);
+  assert.match(optionsSource, /accessibilityLabel="Enable Hardcore radiation penalties"/);
+  assert.match(optionsSource, /accessibilityState=\{\{ checked: hardcoreRadiationRules \}\}/);
+  assert.match(optionsSource, /onValueChange=\{handleHardcoreToggle\}/);
 });
 
 test('Hardcore preview renders every shared non-zero threshold and keeps core sickness separate', () => {
-  const previewComponent = characterSource.slice(
-    characterSource.indexOf('function HardcoreRadiationPreviewModal'),
-    characterSource.indexOf('// ─── Character Form Modal'),
+  const previewComponent = optionsSource.slice(
+    optionsSource.indexOf('function HardcoreRadiationPreviewModal'),
+    optionsSource.indexOf('export default function CampaignOptionsModal'),
   );
   const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0);
 
@@ -147,9 +149,9 @@ test('Hardcore preview renders every shared non-zero threshold and keeps core si
 });
 
 test('Hardcore preview exposes a modal heading, separate core explanation, threshold labels, and close action', () => {
-  const previewComponent = characterSource.slice(
-    characterSource.indexOf('function HardcoreRadiationPreviewModal'),
-    characterSource.indexOf('// ─── Character Form Modal'),
+  const previewComponent = optionsSource.slice(
+    optionsSource.indexOf('function HardcoreRadiationPreviewModal'),
+    optionsSource.indexOf('export default function CampaignOptionsModal'),
   );
 
   assert.match(previewComponent, /accessibilityViewIsModal/);
@@ -158,13 +160,13 @@ test('Hardcore preview exposes a modal heading, separate core explanation, thres
   assert.match(previewComponent, /accessibilityLabel="Core Fallout PnP 2\.0 radiation sickness\./);
   assert.match(previewComponent, /accessibilityLabel=\{`\$\{rule\.threshold\} rads\. \$\{formatHardcoreRadiationPenalties\(rule\.threshold\)\}/);
   assert.match(previewComponent, /accessibilityRole="button"[\s\S]*accessibilityLabel="Close Hardcore radiation rules preview"/);
-  assert.match(previewComponent, /accessibilityHint="Returns to the campaign controls without changing Hardcore radiation rules"/);
+  assert.match(previewComponent, /accessibilityHint="Returns to campaign options without changing the setting"/);
 });
 
 test('Hardcore preview remains scrollable within a compact mobile viewport', () => {
-  const previewComponent = characterSource.slice(
-    characterSource.indexOf('function HardcoreRadiationPreviewModal'),
-    characterSource.indexOf('// ─── Character Form Modal'),
+  const previewComponent = optionsSource.slice(
+    optionsSource.indexOf('function HardcoreRadiationPreviewModal'),
+    optionsSource.indexOf('export default function CampaignOptionsModal'),
   );
 
   const compactViewport = { width: 400, height: 720 };

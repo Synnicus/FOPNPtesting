@@ -18,6 +18,7 @@ import * as Sharing from 'expo-sharing';
 
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import type { Armor, Character, Weapon } from '@/context/types';
 import { CRITICAL_HIT_TABLE } from '@/data/criticals';
 import {
@@ -179,6 +180,7 @@ export default function CampaignScreen() {
   const [importJson, setImportJson] = useState('');
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showCampaignOptions, setShowCampaignOptions] = useState(false);
   const [exportName, setExportName] = useState(defaultExportName());
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [conflictPrompt, setConflictPrompt] = useState<{
@@ -539,7 +541,19 @@ export default function CampaignScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2, marginBottom: 4 }}>CAMPAIGN</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CAMPAIGN</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Campaign options"
+            testID="campaign-options-button"
+            onPress={() => setShowCampaignOptions(true)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+          >
+            <Feather name="settings" size={15} color={colors.primary} />
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>OPTIONS</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 20 }}>
           Save and load campaign state as portable JSON
         </Text>
@@ -835,6 +849,11 @@ export default function CampaignScreen() {
           </View>
         </View>
       </Modal>
+
+      <CampaignOptionsModal
+        visible={showCampaignOptions}
+        onClose={() => setShowCampaignOptions(false)}
+      />
 
       {/* Import JSON Paste Modal (web + native fallback) */}
       <Modal visible={showImportModal} transparent animationType="slide" onRequestClose={() => setShowImportModal(false)}>

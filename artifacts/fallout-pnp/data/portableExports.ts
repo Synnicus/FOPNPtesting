@@ -7,6 +7,7 @@ import type {
   Weapon,
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
+import type { CampaignVisualTheme } from './campaignOptions.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -32,6 +33,9 @@ export interface CampaignStateSnapshot {
   areaAttackReceipt?: unknown;
   conditionSemanticsV2?: boolean;
   hardcoreRadiationRules?: boolean;
+  visualTheme?: CampaignVisualTheme;
+  systemSoundsEnabled?: boolean;
+  musicEnabled?: boolean;
   /** Legacy import alias retained so older campaign files remain compatible. */
   fallout3RadiationDebuffs?: boolean;
 }
@@ -246,7 +250,10 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
   if (!isRecord(value)) return false;
   return Array.isArray(value.characters)
     && Array.isArray(value.customWeapons ?? [])
-    && Array.isArray(value.customArmor ?? []);
+    && Array.isArray(value.customArmor ?? [])
+    && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
+    && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
+    && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean');
 }
 
 const SPECIAL_KEYS = [
@@ -431,7 +438,10 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && hasUniqueIds(value.initiativeEntries)
     && isFiniteNumber(value.currentRound)
     && typeof value.combatActive === 'boolean'
-    && (value.activeEntryId === null || typeof value.activeEntryId === 'string');
+    && (value.activeEntryId === null || typeof value.activeEntryId === 'string')
+    && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
+    && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
+    && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean');
 }
 
 function isCompletePortableCharacterBundle(value: unknown): value is PortableCharacterBundle {

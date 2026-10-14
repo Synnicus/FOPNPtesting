@@ -165,6 +165,53 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
+test('portable campaign exports round-trip theme and audio preferences', () => {
+  const bundle = createCampaignBundle({
+    ...state,
+    visualTheme: 'eastern',
+    systemSoundsEnabled: false,
+    musicEnabled: true,
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'portable') {
+    assert.equal(parsed.bundle.state.visualTheme, 'eastern');
+    assert.equal(parsed.bundle.state.systemSoundsEnabled, false);
+    assert.equal(parsed.bundle.state.musicEnabled, true);
+  }
+});
+
+test('legacy and portable campaigns without options remain accepted', () => {
+  const bundle = createCampaignBundle(state, []);
+  const { visualTheme: _theme, systemSoundsEnabled: _sounds, musicEnabled: _music, ...olderState } = bundle.state;
+  const portable = { ...bundle, state: olderState };
+  for (const file of [state, portable]) {
+    const parsed = parseCampaignFile(JSON.stringify(file));
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      const loadedState = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
+      assert.equal(loadedState.visualTheme, undefined);
+      assert.equal(loadedState.systemSoundsEnabled, undefined);
+      assert.equal(loadedState.musicEnabled, undefined);
+    }
+  }
+});
+
+test('campaign imports reject invalid visual theme and non-boolean audio options', () => {
+  const bundle = createCampaignBundle(state, []);
+  for (const invalidSettings of [
+    { visualTheme: 'northern' },
+    { systemSoundsEnabled: 'false' },
+    { musicEnabled: 0 },
+  ]) {
+    const parsed = parseCampaignFile(JSON.stringify({
+      ...bundle,
+      state: { ...bundle.state, ...invalidSettings },
+    }));
+    assert.equal(parsed.ok, false);
+  }
+});
+
 for (const { label, settings, expected } of [
   { label: 'enabled Hardcore rules', settings: { hardcoreRadiationRules: true }, expected: true },
   { label: 'disabled Hardcore rules', settings: { hardcoreRadiationRules: false }, expected: false },

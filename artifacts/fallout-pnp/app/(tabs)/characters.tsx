@@ -46,7 +46,7 @@ import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
-import { adjustRadiation, hardcoreRadiationRule, formatHardcoreRadiationPenalties, HARDCORE_RADIATION_RULES, MAX_RADIATION, radiationSicknessEffect, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
+import { adjustRadiation, hardcoreRadiationRule, formatHardcoreRadiationPenalties, MAX_RADIATION, radiationSicknessEffect, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -287,79 +287,6 @@ function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, onCa
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function HardcoreRadiationPreviewModal({ visible, enabled, onClose }: {
-  visible: boolean; enabled: boolean; onClose: () => void;
-}) {
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0).reverse();
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} testID="hardcore-radiation-preview-modal">
-      <View
-        accessibilityViewIsModal
-        accessibilityLabel="Hardcore radiation rules preview"
-        style={{ flex: 1, backgroundColor: '#000000bb', justifyContent: 'center', padding: 20 }}
-      >
-        <View style={{ maxHeight: '88%', backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '88', overflow: 'hidden' }}>
-          <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 5 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <Text accessibilityRole="header" style={{ flex: 1, fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>HARDCORE RADIATION</Text>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Close Hardcore radiation rules preview"
-                accessibilityHint="Returns to the campaign controls without changing Hardcore radiation rules"
-                testID="hardcore-radiation-preview-close"
-                onPress={onClose}
-                style={{ padding: 4 }}
-              >
-                <Feather name="x" size={20} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-            <Text accessibilityLabel={`Optional campaign-wide SPECIAL penalties. Currently ${enabled ? 'enabled' : 'disabled'}.`} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-              Optional campaign-wide SPECIAL penalties · {enabled ? 'Currently enabled' : 'Currently disabled'}
-            </Text>
-          </View>
-
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: Math.max(16, insets.bottom), gap: 12 }}>
-            <View
-              accessible
-              accessibilityLabel="Core Fallout PnP 2.0 radiation sickness. Sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation."
-              testID="hardcore-radiation-core-sickness"
-              style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, gap: 4 }}
-            >
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 0.7 }}>SEPARATE FROM CORE SICKNESS</Text>
-              <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                Fallout PnP 2.0 sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation. The optional penalties below use their own thresholds.
-              </Text>
-            </View>
-
-            <View style={{ gap: 7 }}>
-              {thresholds.map(rule => (
-                <View
-                  accessible
-                  accessibilityLabel={`${rule.threshold} rads. ${formatHardcoreRadiationPenalties(rule.threshold)}${rule.fatal ? '. Fatal, instant death' : ''}`}
-                  key={rule.threshold}
-                  testID={`hardcore-radiation-threshold-${rule.threshold}`}
-                  style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.destructive + '0d', borderWidth: 1, borderColor: colors.destructive + '44', gap: 12 }}
-                >
-                  <View style={{ width: 58 }}>
-                    <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{rule.threshold}</Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.7 }}>RADS</Text>
-                  </View>
-                  <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>
-                    {formatHardcoreRadiationPenalties(rule.threshold)}{rule.fatal ? ' · FATAL / INSTANT DEATH' : ''}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -2326,7 +2253,7 @@ function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, on
 export default function CharactersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter, allWeapons, allArmor, hardcoreRadiationRules, setHardcoreRadiationRules } = useApp();
+  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter, allWeapons, allArmor, hardcoreRadiationRules } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -2334,8 +2261,6 @@ export default function CharactersScreen() {
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
-  const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
-  const [showHardcorePreview, setShowHardcorePreview] = useState(false);
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
   const active = characters.filter(c => !c.inStorage && matchesSearch(c));
@@ -2434,37 +2359,6 @@ export default function CharactersScreen() {
           <TextInput style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }} placeholder="Search…" placeholderTextColor={colors.mutedForeground} value={search} onChangeText={setSearch} />
           {search ? <TouchableOpacity onPress={() => setSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: hardcoreRadiationRules ? colors.destructive : colors.border }}>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel={`Review Hardcore radiation thresholds. Currently ${hardcoreRadiationRules ? 'enabled' : 'disabled'}`}
-            accessibilityHint="Opens an explanation without changing the campaign setting"
-            accessibilityState={{ expanded: showHardcorePreview }}
-            testID="hardcore-radiation-preview"
-            onPress={() => setShowHardcorePreview(true)}
-            style={{ flex: 1, padding: 12 }}
-          >
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>HARDCORE RADIATION PENALTIES</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Optional campaign-wide SPECIAL penalties</Text>
-              <Feather name="info" size={12} color={colors.primary} />
-              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>REVIEW</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            accessibilityRole="switch"
-            accessibilityLabel="Enable Hardcore radiation penalties"
-            accessibilityHint="Applies optional campaign-wide SPECIAL penalties"
-            accessibilityState={{ checked: hardcoreRadiationRules }}
-            accessibilityValue={{ text: hardcoreRadiationRules ? 'Enabled' : 'Disabled' }}
-            onPress={() => hardcoreRadiationRules ? setHardcoreRadiationRules(false) : setShowHardcoreWarning(true)}
-            style={{ padding: 12 }}
-          >
-            <View style={{ width: 42, height: 24, borderRadius: 12, padding: 3, backgroundColor: hardcoreRadiationRules ? colors.destructive : colors.border, alignItems: hardcoreRadiationRules ? 'flex-end' : 'flex-start' }}>
-              <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff' }} />
-            </View>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {active.length === 0 && stored.length === 0 ? (
@@ -2520,22 +2414,6 @@ export default function CharactersScreen() {
           if (bioChar) updateCharacter({ ...bioChar, biography: next });
           setBioChar(null);
         }}
-      />
-
-      {/* Delete confirmation (cross-platform) */}
-      <ConfirmModal
-        visible={showHardcoreWarning}
-        title="OPTIONAL HARDCORE RULES"
-        message="Hardcore radiation penalties are optional house rules separate from Fallout PnP 2.0. Enabling them applies campaign-wide SPECIAL penalties based on current radiation; 1000 radiation is displayed as fatal/instant death."
-        confirmLabel="ENABLE"
-        onCancel={() => setShowHardcoreWarning(false)}
-        onConfirm={() => { setHardcoreRadiationRules(true); setShowHardcoreWarning(false); }}
-      />
-
-      <HardcoreRadiationPreviewModal
-        visible={showHardcorePreview}
-        enabled={hardcoreRadiationRules}
-        onClose={() => setShowHardcorePreview(false)}
       />
 
       <ConfirmModal
