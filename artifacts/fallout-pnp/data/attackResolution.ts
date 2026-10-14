@@ -238,6 +238,21 @@ export function resolveDamageProtection(
   };
 }
 
+/** Ammo-specific target protection effects for the damage explanation only. */
+export function describeAmmoProtectionModifier(
+  protection: Pick<DamageProtectionBreakdown, 'baseDT' | 'ammoIgnoresDT' | 'ammoDRModifier'>,
+  ammoName?: string,
+): string | null {
+  const effects: string[] = [];
+  if (protection.ammoIgnoresDT) effects.push(`ignores DT (${protection.baseDT} → 0)`);
+  if (protection.ammoDRModifier !== 0) {
+    const modifier = protection.ammoDRModifier;
+    effects.push(`DR ${modifier > 0 ? '+' : ''}${modifier}%`);
+  }
+  if (effects.length === 0) return null;
+  return `Ammo${ammoName ? ` — ${ammoName}` : ''}: ${effects.join(' · ')}`;
+}
+
 export function resolveDamagePipeline(input: DamagePipelineInput): DamagePipelineResult {
   const baseDamage = Math.max(
     0,

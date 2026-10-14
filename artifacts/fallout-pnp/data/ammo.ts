@@ -56,6 +56,27 @@ export interface AmmoReferenceEffects {
   poisonEffect?: string;
 }
 
+export interface AmmoAccuracyModifier {
+  category: 'AP Ammo' | 'Ammo';
+  chanceToHitAdjustment: number;
+  targetACModifier: number;
+  adjustmentText: string;
+}
+
+/** Convert the manual's target-AC modifier into its separately explained CtH effect. */
+export function describeAmmoAccuracyModifier(
+  ammo: Pick<AmmoType, 'name' | 'acMod' | 'ignoresDT'> | null | undefined,
+): AmmoAccuracyModifier | null {
+  if (!ammo || ammo.acMod === 0) return null;
+  const chanceToHitAdjustment = -ammo.acMod;
+  return {
+    category: ammo.ignoresDT || /\bAP\b/i.test(ammo.name) ? 'AP Ammo' : 'Ammo',
+    chanceToHitAdjustment,
+    targetACModifier: ammo.acMod,
+    adjustmentText: `${chanceToHitAdjustment > 0 ? '+' : ''}${chanceToHitAdjustment}% chance to hit · target AC ${ammo.acMod > 0 ? '+' : ''}${ammo.acMod}`,
+  };
+}
+
 export const AMMO_TYPES: AmmoType[] = [
   // ─── Basic / primitive ────────────────────────────────────────────
   { id: 'bb', name: 'BBs', value: 100, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 4, dmgBonus: 0, volume: 100 },

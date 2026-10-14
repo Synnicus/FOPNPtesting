@@ -23,14 +23,14 @@ import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
-import { AMMO_TYPES, getAmmoById, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
-import { computeDefensivePerkBonuses, resolveAmmoDamageComponents, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
+import { computeDefensivePerkBonuses, describeAmmoProtectionModifier, resolveAmmoDamageComponents, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
 import { computeConditionModifiers } from '@/data/conditions';
 import {
@@ -435,20 +435,15 @@ function ProtectionBreakdownLines({
   ammoName?: string;
 }) {
   const colors = useColors();
-  const ammoChangesProtection = protection.ammoIgnoresDT || protection.ammoDRModifier !== 0;
+  const ammoProtectionLine = describeAmmoProtectionModifier(protection, ammoName);
   return (
     <View style={{ gap: 2 }}>
       <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
         Base protection: DT {protection.baseDT} · DR {protection.baseDR}%
       </Text>
-      {ammoChangesProtection && (
+      {ammoProtectionLine && (
         <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
-          Ammo{ammoName ? ` — ${ammoName}` : ''}: {[
-            protection.ammoIgnoresDT ? `ignores DT (${protection.baseDT} → 0)` : '',
-            protection.ammoDRModifier !== 0
-              ? `DR ${protection.ammoDRModifier > 0 ? '+' : ''}${protection.ammoDRModifier}%`
-              : '',
-          ].filter(Boolean).join(' · ')}
+          {ammoProtectionLine}
         </Text>
       )}
       {protection.ignoredDT > 0 && !protection.ammoIgnoresDT && !protection.bypassesArmor && (
@@ -1130,7 +1125,8 @@ export default function CombatScreen() {
 
   // Ammo AC modifier lowers the TARGET's AC (manual: AP/HP rounds). acMod is
   // negative for armor-piercing → treat as a positive to-hit adjustment.
-  const ammoToHitAdjust = loadedAmmo ? -loadedAmmo.acMod : 0;
+  const ammoAccuracyModifier = describeAmmoAccuracyModifier(loadedAmmo);
+  const ammoToHitAdjust = ammoAccuracyModifier?.chanceToHitAdjustment ?? 0;
 
   // One Hander trait: +20% with one-handed weapons, −40% with two-handed.
   const weaponHands = weapon ? getWeaponHands(weapon) : 1;
@@ -2911,13 +2907,13 @@ export default function CombatScreen() {
             {/* Formula breakdown */}
             <View style={{ paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border, gap: 2 }}>
               <FormulaLine label="Base skill" value={`${baseSkill}%`} color={colors.primary} />
-              {loadedAmmo && ammoToHitAdjust !== 0 && (
+              {loadedAmmo && ammoAccuracyModifier && (
                 <View style={{ paddingVertical: 2, gap: 1 }}>
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                    {loadedAmmo.ignoresDT || /\bAP\b/i.test(loadedAmmo.name) ? 'AP Ammo' : 'Ammo'} · {loadedAmmo.name}
+                    {ammoAccuracyModifier.category} · {loadedAmmo.name}
                   </Text>
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: ammoToHitAdjust > 0 ? '#4a8c3f' : colors.destructive }}>
-                    {ammoToHitAdjust > 0 ? '+' : ''}{ammoToHitAdjust}% chance to hit · target AC {loadedAmmo.acMod > 0 ? '+' : ''}{loadedAmmo.acMod}
+                    {ammoAccuracyModifier.adjustmentText}
                   </Text>
                 </View>
               )}
