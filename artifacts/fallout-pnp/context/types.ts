@@ -290,7 +290,7 @@ export interface Character {
 
   /** Fallout 3-style Karma total, from −1000 to +1000. */
   karma?: number;
-  /** Append-only history of signed Karma changes. */
+  /** Chronological history of Karma changes and neutral actions; entries may be deleted. */
   karmaLog?: KarmaLogEntry[];
 
   portrait?: string;

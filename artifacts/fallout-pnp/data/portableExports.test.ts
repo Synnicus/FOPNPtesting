@@ -293,6 +293,7 @@ test('Karma totals and chronological logs survive individual and campaign portab
   const karmaLog = [
     { id: 'karma-1', change: 300, reason: 'Helped a settlement', createdAt: 1000 },
     { id: 'karma-2', change: -50, reason: 'Stole supplies', createdAt: 2000 },
+    { id: 'karma-3', change: 0, reason: 'Spared a traveler without changing Karma', createdAt: 3000 },
   ];
   const karmaCharacter = { ...character, karma: 250, karmaLog };
 
@@ -322,7 +323,10 @@ test('portable imports accept legacy characters but reject invalid or inconsiste
   const withKarma = createCharacterBundle({
     ...character,
     karma: 25,
-    karmaLog: [{ id: 'karma-1', change: 25, reason: 'Saved a traveler', createdAt: 1000 }],
+    karmaLog: [
+      { id: 'karma-1', change: 25, reason: 'Saved a traveler', createdAt: 1000 },
+      { id: 'karma-2', change: 0, reason: 'Allowed a traveler to pass', createdAt: 2000 },
+    ],
   }, [customWeapon], [customArmor]);
   assert.equal(parseIndividualFile(JSON.stringify(withKarma)).ok, true);
   assert.equal(parseIndividualFile(JSON.stringify({

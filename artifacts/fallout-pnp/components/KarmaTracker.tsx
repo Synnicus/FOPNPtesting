@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import type { Character } from '@/context/types';
 import {
@@ -8,6 +9,7 @@ import {
   karmaTitleFor,
   MAX_KARMA_REASON_LENGTH,
   parseKarmaAdjustment,
+  removeKarmaLogEntry,
 } from '@/data/karma';
 
 interface KarmaTrackerProps {
@@ -38,8 +40,34 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
       ? colors.destructive
       : colors.primary;
 
+  const deleteEntry = (entryId: string) => {
+    const updated = removeKarmaLogEntry(karmaLog, entryId);
+    if (!updated) return;
+    onChange({
+      ...character,
+      karma: updated.karma,
+      karmaLog: updated.karmaLog,
+    });
+  };
+
+  const confirmDeleteEntry = (entryId: string) => {
+    const title = 'Are you sure?';
+    const message = 'Delete this Karma history entry? The total will be recalculated from the remaining entries. This cannot be undone.';
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
+        deleteEntry(entryId);
+      }
+      return;
+    }
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteEntry(entryId) },
+    ]);
+  };
+
   const recordChange = () => {
-    if (!canRecord || !preview || parsedChange === null) return;
+    if (!canRecord || preview === null || parsedChange === null) return;
 
     const createdAt = Date.now();
     onChange({
@@ -94,14 +122,14 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
           RECORD KARMA CHANGE
         </Text>
         <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-          Enter a positive or negative whole number and why Karma changed. The total is limited to −1000 to +1000.
+          Enter a positive or negative whole number, or +0 to log a neutral action. Add an explanation. The total is limited to −1000 to +1000.
         </Text>
         <TextInput
           accessibilityLabel="Karma change amount"
           testID="karma-change-input"
           value={changeInput}
           onChangeText={setChangeInput}
-          placeholder="Change, e.g. +25 or -10"
+          placeholder="Change, e.g. +25, -10, or +0"
           placeholderTextColor={colors.mutedForeground}
           keyboardType="numbers-and-punctuation"
           returnKeyType="next"
@@ -118,7 +146,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
         />
         {changeInput.length > 0 && parsedChange === null && (
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
-            Enter a non-zero whole number, such as +25 or −10.
+            Enter a whole number, such as +25, −10, or +0.
           </Text>
         )}
         {parsedChange !== null && preview === null && (
@@ -193,14 +221,16 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
           </View>
         ) : (
           karmaLog.map(entry => {
-            const changeColor = entry.change > 0 ? '#4a8c3f' : colors.destructive;
+            const changeColor = entry.change > 0
+              ? '#4a8c3f'
+              : entry.change < 0
+                ? colors.destructive
+                : colors.mutedForeground;
             const date = new Date(entry.createdAt);
             const dateLabel = Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString();
             return (
               <View
                 key={entry.id}
-                accessible
-                accessibilityLabel={`${dateLabel}. ${entry.change > 0 ? 'Karma increased' : 'Karma decreased'} by ${Math.abs(entry.change)}. ${entry.reason}`}
                 testID={`karma-entry-${entry.id}`}
                 style={{
                   flexDirection: 'row',
@@ -213,7 +243,12 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
                   backgroundColor: colors.secondary,
                 }}
               >
-                <Text style={{ minWidth: 44, fontSize: 14, fontFamily: 'Inter_700Bold', color: changeColor }}>
+                <Text
+                  accessibilityLabel={entry.change === 0
+                    ? 'Neutral action recorded; Karma total unchanged'
+                    : `Karma ${entry.change > 0 ? 'increased' : 'decreased'} by ${Math.abs(entry.change)}`}
+                  style={{ minWidth: 44, fontSize: 14, fontFamily: 'Inter_700Bold', color: changeColor }}
+                >
                   {entry.change > 0 ? `+${entry.change}` : entry.change}
                 </Text>
                 <View style={{ flex: 1, gap: 4 }}>
@@ -224,6 +259,23 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
                     {dateLabel}
                   </Text>
                 </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete Karma log entry: ${entry.reason}`}
+                  accessibilityHint="Asks you to confirm before deleting this entry"
+                  testID={`karma-delete-entry-${entry.id}`}
+                  onPress={() => confirmDeleteEntry(entry.id)}
+                  style={{
+                    minWidth: 44,
+                    minHeight: 44,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: -6,
+                    marginRight: -5,
+                  }}
+                >
+                  <Feather name="trash-2" size={16} color={colors.destructive} />
+                </TouchableOpacity>
               </View>
             );
           })

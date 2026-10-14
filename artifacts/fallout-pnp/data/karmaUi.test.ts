@@ -20,4 +20,11 @@ test('Karma tab exposes an accessible adjustment form, derived title, and chrono
   assert.match(trackerSource, /karmaLog: \[[\s\S]*?change: preview\.appliedChange,[\s\S]*?reason: trimmedReason,[\s\S]*?createdAt,/);
   assert.match(trackerSource, /karmaLog\.map\(entry =>/);
   assert.match(trackerSource, /accessibilityLabel="Explanation for Karma change"/);
+  assert.match(trackerSource, /or \+0 to log a neutral action/);
+  assert.match(trackerSource, /Neutral action recorded; Karma total unchanged/);
+  assert.match(trackerSource, /testID=\{`karma-delete-entry-\$\{entry\.id\}`\}/);
+  assert.match(trackerSource, /accessibilityHint="Asks you to confirm before deleting this entry"/);
+  assert.match(trackerSource, /window\.confirm/);
+  assert.match(trackerSource, /Alert\.alert\(title, message, \[/);
+  assert.match(trackerSource, /removeKarmaLogEntry\(karmaLog, entryId\)/);
 });

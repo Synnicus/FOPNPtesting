@@ -8,6 +8,7 @@ import {
   KARMA_TITLE_ROWS,
   normalizeKarmaFields,
   parseKarmaAdjustment,
+  removeKarmaLogEntry,
 } from './karma.ts';
 
 test('Karma groups use Fallout 3 boundaries, including distinct Very Good and Very Evil bands', () => {
@@ -46,12 +47,13 @@ test('levels above the Fallout 3 title table use the level-30 row', () => {
   assert.equal(karmaTitleFor(0, 0), KARMA_TITLE_ROWS[0].neutral);
 });
 
-test('Karma adjustment input accepts only non-zero safe whole numbers', () => {
+test('Karma adjustment input accepts signed safe whole numbers, including zero', () => {
   assert.equal(parseKarmaAdjustment('+25'), 25);
   assert.equal(parseKarmaAdjustment('-10'), -10);
   assert.equal(parseKarmaAdjustment(' 5 '), 5);
-  assert.equal(parseKarmaAdjustment('0'), null);
-  assert.equal(parseKarmaAdjustment('-0'), null);
+  assert.equal(parseKarmaAdjustment('+0'), 0);
+  assert.equal(parseKarmaAdjustment('0'), 0);
+  assert.equal(parseKarmaAdjustment('-0'), 0);
   assert.equal(parseKarmaAdjustment('2.5'), null);
   assert.equal(parseKarmaAdjustment('1e2'), null);
   assert.equal(parseKarmaAdjustment('9007199254740992'), null);
@@ -63,8 +65,9 @@ test('Karma adjustments clamp at both limits and return the actual applied chang
   assert.deepEqual(applyKarmaAdjustment(990, 25), { karma: 1000, appliedChange: 10 });
   assert.deepEqual(applyKarmaAdjustment(-990, -25), { karma: -1000, appliedChange: -10 });
   assert.deepEqual(applyKarmaAdjustment(1000, -2000), { karma: -1000, appliedChange: -2000 });
+  assert.deepEqual(applyKarmaAdjustment(250, 0), { karma: 250, appliedChange: 0 });
+  assert.deepEqual(applyKarmaAdjustment(1000, 0), { karma: 1000, appliedChange: 0 });
   assert.equal(applyKarmaAdjustment(1000, 5), null);
-  assert.equal(applyKarmaAdjustment(0, 0), null);
   assert.equal(clampKarma(1200), 1000);
   assert.equal(clampKarma(-1200), -1000);
 });
@@ -74,10 +77,34 @@ test('legacy characters normalize to neutral Karma and new totals can be derived
   const history = [
     { id: 'first', change: 300, reason: 'Helped a settlement', createdAt: 1 },
     { id: 'second', change: -50, reason: 'Stole supplies', createdAt: 2 },
+    { id: 'neutral', change: 0, reason: 'Spared a traveler without changing Karma', createdAt: 3 },
   ];
   assert.deepEqual(normalizeKarmaFields({ karmaLog: history }), { karma: 250, karmaLog: history });
   assert.deepEqual(normalizeKarmaFields({
     karma: 250,
     karmaLog: [...history, { id: 'bad', change: 0, reason: '', createdAt: NaN }],
   }), { karma: 250, karmaLog: history });
+});
+
+test('deleting a Karma entry recalculates the total from the remaining log without mutating it', () => {
+  const history = [
+    { id: 'good', change: 300, reason: 'Helped a settlement', createdAt: 1 },
+    { id: 'neutral', change: 0, reason: 'Spared a traveler', createdAt: 2 },
+    { id: 'bad', change: -50, reason: 'Stole supplies', createdAt: 3 },
+  ];
+
+  assert.deepEqual(removeKarmaLogEntry(history, 'neutral'), {
+    karma: 250,
+    karmaLog: [history[0], history[2]],
+  });
+  assert.deepEqual(removeKarmaLogEntry(history, 'good'), {
+    karma: -50,
+    karmaLog: [history[1], history[2]],
+  });
+  assert.deepEqual(removeKarmaLogEntry(history, 'bad'), {
+    karma: 300,
+    karmaLog: [history[0], history[1]],
+  });
+  assert.equal(removeKarmaLogEntry(history, 'missing'), null);
+  assert.equal(history.length, 3);
 });

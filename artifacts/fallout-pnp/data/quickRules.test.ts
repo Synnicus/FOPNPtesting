@@ -1,76 +1,145 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { QUICK_RULES, searchQuickRules } from './quickRules.ts';
+import { QUICK_RULES } from './quickRules.ts';
+import {
+  allQuickRules,
+  countQuickRuleResults,
+  QUICK_RULE_SECTIONS,
+  searchQuickRuleSections,
+} from './manualRuleSections.ts';
 
-const expectedTopics = [
-  'Attack Roll',
-  'Range Penalty',
-  'Damage',
-  'Criticals',
-  'Critical Failure',
-  'Targeted Shot — Ranged',
-  'Targeted Shot — Melee',
-  'Positions',
-  'Weapon Condition',
-  'Action Points',
-  'Injuries',
-];
+test('manual reference follows the manual parts and major chapter hierarchy', () => {
+  assert.deepEqual(QUICK_RULE_SECTIONS.map(section => section.title), [
+    'Part I — Introduction',
+    'Part II — Character Creation',
+    'Part III — The Game',
+    'Part IV — The Fallout Universe: A Rough Guide',
+    'Part V — A Fallout Bestiary',
+    'Part VI — Arms, Armor, Equipment, and Vehicles',
+    'Appendices',
+  ]);
 
-test('searchable rule catalog keeps every existing quick-reference topic', () => {
-  assert.deepEqual(QUICK_RULES.map(rule => rule.title), expectedTopics);
-});
-
-test('every topic includes detailed text and a printed manual page reference', () => {
-  for (const rule of QUICK_RULES) {
-    assert.ok(rule.details.length > 0, `${rule.title} has detail text`);
-    assert.match(rule.manualPages, /\bp{1,2}\.\s*\d+/i, `${rule.title} has a page citation`);
+  const gameSubsections = QUICK_RULE_SECTIONS.find(section => section.id === 'the-game')?.subsections ?? [];
+  for (const expected of [
+    'Before Combat',
+    'Combat — Begins, Sequence, and Action',
+    'Combat — Attacking and To-Hit',
+    'Combat — Damage and Criticals',
+    'Combat — Continuing and Ending Combat',
+    'Vehicle Combat and Mechanics',
+    'Damage and Death',
+    'Life in the Wastes',
+    'The Art of the Thief',
+    'Advancement and Perks',
+  ]) {
+    assert.ok(gameSubsections.some(child => child.title === expected), `Part III includes ${expected}`);
   }
+});
 
-  assert.deepEqual(
-    Object.fromEntries(QUICK_RULES.map(rule => [rule.title, rule.manualPages])),
-    {
-      'Attack Roll': 'pp. 28–29',
-      'Range Penalty': 'p. 28',
-      Damage: 'p. 32',
-      Criticals: 'pp. 18, 33–34, 54',
-      'Critical Failure': 'p. 31',
-      'Targeted Shot — Ranged': 'p. 29',
-      'Targeted Shot — Melee': 'p. 29',
-      Positions: 'p. 27',
-      'Weapon Condition': 'pp. 23, 31',
-      'Action Points': 'pp. 25–28',
-      Injuries: 'pp. 41–42',
-    },
+test('all reference topics have unique IDs, details, and printed-page citations', () => {
+  const rules = allQuickRules();
+  assert.ok(rules.length >= 35, `expected broad rules coverage, got ${rules.length} topics`);
+  assert.equal(new Set(rules.map(item => item.id)).size, rules.length, 'rule IDs are unique');
+  assert.equal(
+    new Set(QUICK_RULE_SECTIONS.map(section => section.id)).size,
+    QUICK_RULE_SECTIONS.length,
+    'section IDs are unique',
   );
+  for (const section of QUICK_RULE_SECTIONS) {
+    assert.match(section.manualPages, /\bp{1,2}\.\s*\d+/i, `${section.title} has a page span`);
+    for (const child of section.subsections) {
+      assert.ok(child.rules.length > 0, `${child.title} has at least one rule entry`);
+      for (const item of child.rules) {
+        assert.ok(item.details.length > 0, `${item.title} has explanation text`);
+        assert.match(item.manualPages, /\bp{1,2}\.\s*\d+/i, `${item.title} has a printed page reference`);
+      }
+    }
+  }
 });
 
-test('search matches titles, keywords, explanations, and table entries', () => {
-  assert.ok(searchQuickRules('ranged').some(rule => rule.id === 'targeted-ranged'));
-  assert.ok(searchQuickRules('perception').some(rule => rule.id === 'range-penalty'));
-  assert.ok(searchQuickRules('miniature anvil').some(rule => rule.id === 'critical-failure'));
-  assert.ok(searchQuickRules('1d10 unconsciousness').some(rule => rule.id === 'criticals'));
+test('the expanded reference keeps all existing combat topics', () => {
+  const newIds = new Set(allQuickRules().map(item => item.id));
+  for (const item of QUICK_RULES) {
+    assert.ok(newIds.has(item.id), `existing quick rule ${item.title} remains available`);
+  }
 });
 
-test('multiple terms narrow results and matching ignores case and extra spaces', () => {
-  const matches = searchQuickRules('  TARGETED   EYES ');
-  assert.ok(matches.some(rule => rule.id === 'targeted-ranged'));
-  assert.ok(matches.some(rule => rule.id === 'targeted-melee'));
-  assert.ok(matches.every(rule => rule.title.includes('Targeted') || rule.id === 'criticals'));
+test('manual index terms for rules and tables are discoverable through search', () => {
+  const indexedTerms = [
+    'acid damage', 'advancement', 'ammo loading', 'armor condition', 'armor equipping',
+    'armor wearing', 'attacking', 'bartering', 'bestiary', 'blindness', 'burst mode',
+    'streamlined burst mode', 'carrying objects', 'combat', 'changing positions',
+    'chems withdrawal', 'cover modifiers', 'crashing', 'crippled limbs',
+    'critical failure', 'critical hits', 'damage formula', 'non-conventional weapons',
+    'death', 'deathclaw race', 'defending', 'double-shot weapons', 'dog race',
+    'doors', 'explosives', 'fire damage', 'gas damage', 'ghoul race', 'healing',
+    'healing in combat', 'human race', 'karma', 'karmic perks', 'knockdown',
+    'laying mines', 'light modifiers', 'mines', 'movement in combat', 'pilot roll',
+    'planting items', 'poison damage', 'radiation damage', 'random encounters',
+    'range modifiers', 'rate of fire', 'reading books', 'repairing armor',
+    'repairing weapons', 'robot healing', 'sequence', 'skill progression',
+    'skill list', 'skills in combat', 'sneaking', 'stealing', 'swimming',
+    'super-mutant race', 'tag skills',
+  ];
+  for (const term of indexedTerms) {
+    assert.ok(
+      searchQuickRuleSections(term).length > 0,
+      `manual index term "${term}" should find a reference entry`,
+    );
+  }
 });
 
-test('empty and unmatched searches have predictable results', () => {
-  assert.equal(searchQuickRules('   ').length, QUICK_RULES.length);
-  assert.deepEqual(searchQuickRules('no such wasteland rule'), []);
+test('search returns matching nested entries so results are visible under collapsed parents', () => {
+  const armor = searchQuickRuleSections('armor condition');
+  assert.ok(armor.some(result =>
+    result.section.id === 'the-game' &&
+    result.subsections.some(child =>
+      child.rules.some(item => item.id === 'armor-condition-rule'),
+    ),
+  ));
+
+  const crit = searchQuickRuleSections('critical hits 1d10');
+  const critSection = crit.find(result => result.section.id === 'the-game');
+  assert.ok(critSection?.subsections.some(child =>
+    child.rules.some(item => item.id === 'criticals'),
+  ));
+
+  const ammo = searchQuickRuleSections('AP ammo');
+  assert.ok(ammo.some(result => result.section.id === 'equipment-catalog'));
+  assert.ok(countQuickRuleResults(ammo) >= 1);
+  assert.equal(searchQuickRuleSections('unmatched wasteland phrase').length, 0);
 });
 
-test('Critical Hits and Critical Failure tables remain searchable in their detail topics', () => {
-  const criticals = QUICK_RULES.find(rule => rule.id === 'criticals');
-  const failures = QUICK_RULES.find(rule => rule.id === 'critical-failure');
-  assert.ok(criticals?.tables?.some(table => table.title === 'Critical Hits (1d10)' && table.rows.length === 10));
-  assert.ok(criticals?.tables?.some(table => table.title === 'Effects of targeted critical hits' && table.rows.length === 6));
-  assert.ok(failures?.tables?.some(table => table.title === 'Critical Failure (1d10)' && table.rows.length === 10));
-  assert.ok(searchQuickRules('More Criticals 5%').some(rule => rule.id === 'criticals'));
-  assert.ok(searchQuickRules('300% damage').some(rule => rule.id === 'criticals'));
-  assert.ok(searchQuickRules('weapon explodes').some(rule => rule.id === 'critical-failure'));
+test('core manual tables retain the key rows and values', () => {
+  const rules = allQuickRules();
+  const tables = rules.flatMap(item => item.tables ?? []);
+  const byTitle = (title: string) => tables.find(item => item.title === title);
+
+  assert.equal(byTitle('Secondary statistic rules')?.rows.length, 10);
+  assert.equal(byTitle('Starting skill formulas')?.rows.length, 19);
+  assert.equal(byTitle('Armor condition modifier')?.rows.length, 11);
+  assert.equal(byTitle('To-hit light modifiers')?.rows.length, 13);
+  assert.equal(byTitle('Radiation poisoning thresholds')?.rows.length, 6);
+  assert.equal(byTitle('XP required by level')?.rows.length, 22);
+  assert.equal(byTitle('Skill-point cost per 1 percentage point')?.rows.length, 6);
+  assert.equal(byTitle('Special unarmed techniques (manual pp. 19–20)')?.rows.length, 12);
+
+  const armorRows = byTitle('Armor condition modifier')?.rows ?? [];
+  assert.deepEqual(armorRows.slice(0, 5).map(row => row.values[0]), [
+    'None', 'None', 'None', 'None', '5%',
+  ]);
+  assert.equal(armorRows.at(-1)?.values[0], '60%');
+});
+
+test('major manual content outside the rules chapters stays clearly cross-referenced', () => {
+  assert.ok(searchQuickRuleSections('Bestiary creature catalog').some(result =>
+    result.section.id === 'bestiary',
+  ));
+  assert.ok(searchQuickRuleSections('equipment vehicle catalog').some(result =>
+    result.section.id === 'equipment-catalog',
+  ));
+  assert.ok(searchQuickRuleSections('appendix sample adventure').some(result =>
+    result.section.id === 'appendices',
+  ));
 });

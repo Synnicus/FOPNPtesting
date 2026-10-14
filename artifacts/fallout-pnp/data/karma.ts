@@ -73,18 +73,34 @@ export function parseKarmaAdjustment(input: string): number | null {
   const value = input.trim();
   if (!/^[+-]?\d+$/.test(value)) return null;
   const amount = Number(value);
-  return Number.isSafeInteger(amount) && amount !== 0 ? amount : null;
+  if (!Number.isSafeInteger(amount)) return null;
+  return amount === 0 ? 0 : amount;
 }
 
 export function applyKarmaAdjustment(
   currentValue: number,
   requestedChange: number,
 ): { karma: number; appliedChange: number } | null {
-  if (!Number.isSafeInteger(requestedChange) || requestedChange === 0) return null;
+  if (!Number.isSafeInteger(requestedChange)) return null;
   const current = clampKarma(currentValue);
+  if (requestedChange === 0) return { karma: current, appliedChange: 0 };
   const karma = clampKarma(current + requestedChange);
   const appliedChange = karma - current;
   return appliedChange === 0 ? null : { karma, appliedChange };
+}
+
+export function removeKarmaLogEntry(
+  karmaLog: readonly KarmaLogEntry[],
+  entryId: string,
+): { karma: number; karmaLog: KarmaLogEntry[] } | null {
+  const index = karmaLog.findIndex(entry => entry.id === entryId);
+  if (index < 0) return null;
+
+  const remainingEntries = [
+    ...karmaLog.slice(0, index),
+    ...karmaLog.slice(index + 1),
+  ];
+  return normalizeKarmaFields({ karmaLog: remainingEntries });
 }
 
 export function isKarmaLogEntry(value: unknown): value is KarmaLogEntry {
@@ -98,7 +114,6 @@ export function isKarmaLogEntry(value: unknown): value is KarmaLogEntry {
     && entry.reason.length <= MAX_KARMA_REASON_LENGTH
     && typeof entry.change === 'number'
     && Number.isSafeInteger(entry.change)
-    && entry.change !== 0
     && entry.change >= MIN_KARMA - MAX_KARMA
     && entry.change <= MAX_KARMA - MIN_KARMA
     && typeof entry.createdAt === 'number'

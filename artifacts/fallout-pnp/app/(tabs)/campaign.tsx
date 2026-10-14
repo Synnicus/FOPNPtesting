@@ -19,7 +19,7 @@ import * as Sharing from 'expo-sharing';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
-import QuickRulesReference from '@/components/QuickRulesReference';
+import QuickRulesReference from '@/components/ManualQuickRulesReference';
 import type { Armor, Character, Weapon } from '@/context/types';
 import {
   CampaignStateSnapshot,
