@@ -165,21 +165,72 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
-test('portable campaign exports migrate the legacy radiation flag and prefer Hardcore', () => {
-  const legacyBundle = createCampaignBundle({
-    ...state,
-    fallout3RadiationDebuffs: true,
-  }, []);
-  assert.equal(legacyBundle.state.hardcoreRadiationRules, true);
-  assert.equal('fallout3RadiationDebuffs' in legacyBundle.state, false);
+for (const { label, settings, expected } of [
+  { label: 'enabled Hardcore rules', settings: { hardcoreRadiationRules: true }, expected: true },
+  { label: 'disabled Hardcore rules', settings: { hardcoreRadiationRules: false }, expected: false },
+  { label: 'missing rules default to disabled', settings: {}, expected: false },
+  { label: 'enabled legacy Fallout 3 rules', settings: { fallout3RadiationDebuffs: true }, expected: true },
+  { label: 'disabled legacy Fallout 3 rules', settings: { fallout3RadiationDebuffs: false }, expected: false },
+  {
+    label: 'explicit Hardcore off overrides legacy on',
+    settings: { fallout3RadiationDebuffs: true, hardcoreRadiationRules: false },
+    expected: false,
+  },
+  {
+    label: 'explicit Hardcore on overrides legacy off',
+    settings: { fallout3RadiationDebuffs: false, hardcoreRadiationRules: true },
+    expected: true,
+  },
+]) {
+  test(`campaign export/import preserves radiation settings: ${label}`, async () => {
+    const asset = portraitAsset(character.id, 'image/jpeg', 'AQID');
+    assert.ok(asset);
+    const bundle = createCampaignBundle({ ...state, ...settings }, [asset]);
+    assert.equal(bundle.state.hardcoreRadiationRules, expected);
+    assert.equal('fallout3RadiationDebuffs' in bundle.state, false);
 
-  const explicitOffBundle = createCampaignBundle({
-    ...state,
-    fallout3RadiationDebuffs: true,
-    hardcoreRadiationRules: false,
-  }, []);
-  assert.equal(explicitOffBundle.state.hardcoreRadiationRules, false);
-  assert.equal('fallout3RadiationDebuffs' in explicitOffBundle.state, false);
+    const parsed = parseCampaignFile(JSON.stringify(bundle));
+    assert.ok(parsed.ok);
+    assert.equal(parsed.source, 'portable');
+    if (parsed.source !== 'portable') assert.fail('Expected a portable campaign');
+    assert.equal(parsed.bundle.state.hardcoreRadiationRules, expected);
+
+    const restored = await restoreCampaignPortraits(parsed.bundle, async image =>
+      `restored://${image.characterId}`);
+    assert.equal(restored.restored, 1);
+    assert.equal(restored.state.hardcoreRadiationRules, expected);
+    assert.equal(restored.state.characters[0].portrait, 'restored://character-1');
+  });
+}
+
+test('older raw and portable campaigns without radiation settings remain default-off', () => {
+  const { hardcoreRadiationRules: _rules, ...olderState } = createCampaignBundle(state, []).state;
+  const olderBundle = { ...createCampaignBundle(state, []), state: olderState };
+  for (const [source, file] of [['legacy', olderState], ['portable', olderBundle]] as const) {
+    assert.equal('hardcoreRadiationRules' in olderState, false);
+    assert.equal('fallout3RadiationDebuffs' in olderState, false);
+    const parsed = parseCampaignFile(JSON.stringify(file));
+    assert.ok(parsed.ok);
+    assert.equal(parsed.source, source);
+    const importedState = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
+    assert.equal(importedState.hardcoreRadiationRules ?? false, false);
+    assert.equal(createCampaignBundle(importedState, []).state.hardcoreRadiationRules, false);
+  }
+});
+
+test('radiation settings do not bypass malformed portable campaign validation', () => {
+  for (const hardcoreRadiationRules of [true, false]) {
+    const bundle = createCampaignBundle({ ...state, hardcoreRadiationRules }, []);
+    for (const characters of [[{ id: 'incomplete-character' }], [character, { ...character }]]) {
+      assert.deepEqual(parseCampaignFile(JSON.stringify({
+        ...bundle,
+        state: { ...bundle.state, characters },
+      })), {
+        ok: false,
+        error: 'The campaign export is incomplete or damaged.',
+      });
+    }
+  }
 });
 
 test('portable characters accept legacy missing radiation and validate a present meter', () => {
