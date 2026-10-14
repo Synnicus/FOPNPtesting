@@ -6,7 +6,7 @@ import type {
   InitiativeEntry,
   Weapon,
 } from '../context/types.ts';
-import { applyKarmaAdjustment, isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
+import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -272,9 +272,7 @@ function isStringArray(value: unknown): value is string[] {
 
 function hasValidKarmaData(value: Record<string, unknown>): boolean {
   const hasKarma = value.karma !== undefined;
-  const hasKarmaLog = value.karmaLog !== undefined;
   const karma = value.karma;
-  if (hasKarma !== hasKarmaLog) return false;
   if (hasKarma && (
     typeof karma !== 'number'
     || !Number.isSafeInteger(karma)
@@ -289,12 +287,8 @@ function hasValidKarmaData(value: Record<string, unknown>): boolean {
   const validEntries = entries as KarmaLogEntry[];
   if (new Set(validEntries.map(entry => entry.id)).size !== validEntries.length) return false;
 
-  let historyTotal = 0;
-  for (const entry of validEntries) {
-    const adjustment = applyKarmaAdjustment(historyTotal, entry.change);
-    if (!adjustment || adjustment.appliedChange !== entry.change) return false;
-    historyTotal = adjustment.karma;
-  }
+  const historyTotal = validEntries.reduce((total, entry) => total + entry.change, 0);
+  if (historyTotal < MIN_KARMA || historyTotal > MAX_KARMA) return false;
   return !hasKarma || historyTotal === karma;
 }
 
