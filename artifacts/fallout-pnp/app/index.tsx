@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Modal, Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useAudioPlayer } from 'expo-audio';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlagIcon } from '@/components/FlagIcon';
 import Animated, {
@@ -174,7 +174,7 @@ export default function MainMenuScreen() {
   const logoPnpSize = logoLineSize * 1.35;
   const flicker = useSharedValue(1);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     flicker.value = withRepeat(
       withSequence(
         withTiming(0.12, { duration: 60 }),
@@ -237,7 +237,7 @@ export default function MainMenuScreen() {
       if (cycleTimer) clearInterval(cycleTimer);
       stopBuzz();
     };
-  }, [flicker, neonBuzzPlayer, systemSoundsEnabled]);
+  }, [flicker, neonBuzzPlayer, systemSoundsEnabled]));
 
   const neonStyle = useAnimatedStyle(() => ({ opacity: flicker.value }));
 
