@@ -2278,8 +2278,8 @@ export default function CombatScreen() {
             {/* Setup modal inline */}
             {showInitSetup && !combatActive && (
               <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 10 }}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SET INITIATIVE ROLLS</Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Sequence = PER×2. Roll 1d10 and add Sequence for initiative. Unspent AP → tempAC each turn.</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, textAlign: 'center' }}>SET INITIATIVE ROLLS</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>{'Sequence = PER×2.\nRoll 1d10 and add Sequence for initiative.'}</Text>
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
