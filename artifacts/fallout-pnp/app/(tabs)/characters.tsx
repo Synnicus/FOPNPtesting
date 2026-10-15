@@ -2268,7 +2268,8 @@ export default function CharactersScreen() {
   const [showPremades, setShowPremades] = useState(false);
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
-  const [showHealAllConfirm, setShowHealAllConfirm] = useState(false);
+  const [healAllPrompt, setHealAllPrompt] = useState<'radiation' | 'confirm' | null>(null);
+  const [healAllIncludesRadiation, setHealAllIncludesRadiation] = useState(false);
   const [statusCleanupPrompt, setStatusCleanupPrompt] = useState<'injuries' | 'confirm' | null>(null);
   const [statusCleanupHealsInjuries, setStatusCleanupHealsInjuries] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
@@ -2293,13 +2294,27 @@ export default function CharactersScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const resetAllHp = () => {
+  const resetAllHp = (healRadiation: boolean) => {
     characters.filter(c => !c.inStorage).forEach(c => {
-      if (!isHealingBlocked(c) && (c.currentHp !== c.maxHp || c.isKnockedOut)) {
-        updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
+      const resetHp = !isHealingBlocked(c) && (c.currentHp !== c.maxHp || c.isKnockedOut);
+      const resetRad = healRadiation && (c.accumulatedRadiation ?? 0) > 0;
+      if (!resetHp && !resetRad) return;
+
+      const updated = { ...c };
+      if (resetHp) {
+        updated.currentHp = c.maxHp;
+        updated.isKnockedOut = false;
+        updated.knockOutRoundsLeft = 0;
       }
+      if (resetRad) updated.accumulatedRadiation = 0;
+      updateCharacter(updated);
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const chooseHealAllRadiation = (healRadiation: boolean) => {
+    setHealAllIncludesRadiation(healRadiation);
+    setHealAllPrompt('confirm');
   };
 
   const openStatusCleanupPrompt = () => {
@@ -2388,7 +2403,10 @@ export default function CharactersScreen() {
             accessibilityLabel="Heal All Characters"
             testID="heal-all-characters"
             style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }}
-            onPress={() => setShowHealAllConfirm(true)}
+            onPress={() => {
+              setHealAllIncludesRadiation(false);
+              setHealAllPrompt('radiation');
+            }}
           >
             <Ionicons name="heart-circle" size={13} color={colors.destructive} />
             <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.3 }}>Heal All Characters</Text>
@@ -2462,14 +2480,25 @@ export default function CharactersScreen() {
       />
 
       <ConfirmModal
-        visible={showHealAllConfirm}
+        visible={healAllPrompt === 'radiation'}
+        title="Also Heal Radiation?"
+        message="Should accumulated radiation also be cleared to 0 for all active characters?"
+        confirmLabel="CLEAR RADIATION"
+        cancelLabel="KEEP RADIATION"
+        onCancel={() => chooseHealAllRadiation(false)}
+        onConfirm={() => chooseHealAllRadiation(true)}
+      />
+      <ConfirmModal
+        visible={healAllPrompt === 'confirm'}
         title="Are you sure?"
-        message="This will restore all active characters to full HP. Characters in storage will not be changed."
+        message={healAllIncludesRadiation
+          ? 'This will restore active characters to full HP where healing is allowed and clear their accumulated radiation. Characters in storage will not be changed.'
+          : 'This will restore active characters to full HP where healing is allowed. Characters in storage will not be changed.'}
         confirmLabel="HEAL ALL"
-        onCancel={() => setShowHealAllConfirm(false)}
+        onCancel={() => setHealAllPrompt(null)}
         onConfirm={() => {
-          resetAllHp();
-          setShowHealAllConfirm(false);
+          resetAllHp(healAllIncludesRadiation);
+          setHealAllPrompt(null);
         }}
       />
       <ConfirmModal
