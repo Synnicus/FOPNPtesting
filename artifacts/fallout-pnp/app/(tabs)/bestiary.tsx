@@ -670,9 +670,11 @@ export default function BestiaryScreen() {
 
   // Combine built-in + custom templates
   const allTemplates = [...BUILT_IN_BESTIARY, ...customBestiaryTemplates];
+  const searchQuery = search.trim().toLowerCase();
+  const searchingAllCategories = searchQuery.length > 0;
   const filteredTemplates = allTemplates.filter(t => {
-    if (t.category !== activeCategory) return false;
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (!searchingAllCategories && t.category !== activeCategory) return false;
+    if (searchingAllCategories && !t.name.toLowerCase().includes(searchQuery)) return false;
     return true;
   });
 
@@ -737,16 +739,17 @@ export default function BestiaryScreen() {
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {BESTIARY_CATEGORIES.map(cat => {
               const count = allTemplates.filter(t => t.category === cat.id).length;
+              const isSelected = !searchingAllCategories && activeCategory === cat.id;
               return (
                 <TouchableOpacity
                   key={cat.id}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: activeCategory === cat.id ? colors.primary : colors.secondary, borderWidth: 1, borderColor: activeCategory === cat.id ? colors.primary : colors.border }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: isSelected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: isSelected ? colors.primary : colors.border }}
                   onPress={() => setActiveCategory(cat.id)}
                 >
-                  <Feather name={cat.icon as any} size={12} color={activeCategory === cat.id ? colors.primaryForeground : colors.mutedForeground} />
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: activeCategory === cat.id ? colors.primaryForeground : colors.mutedForeground }}>{cat.label}</Text>
-                  <View style={{ paddingHorizontal: 5, paddingVertical: 1, backgroundColor: activeCategory === cat.id ? 'rgba(0,0,0,0.3)' : colors.border + '88', borderRadius: 8 }}>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: activeCategory === cat.id ? colors.primaryForeground : colors.mutedForeground }}>{count}</Text>
+                  <Feather name={cat.icon as any} size={12} color={isSelected ? colors.primaryForeground : colors.mutedForeground} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: isSelected ? colors.primaryForeground : colors.mutedForeground }}>{cat.label}</Text>
+                  <View style={{ paddingHorizontal: 5, paddingVertical: 1, backgroundColor: isSelected ? 'rgba(0,0,0,0.3)' : colors.border + '88', borderRadius: 8 }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: isSelected ? colors.primaryForeground : colors.mutedForeground }}>{count}</Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -758,11 +761,13 @@ export default function BestiaryScreen() {
       {/* Template list */}
       {filteredTemplates.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 }}>
-          <Feather name={activeCategory === 'custom' ? 'plus-circle' : 'book-open'} size={48} color={colors.mutedForeground} />
+          <Feather name={searchingAllCategories ? 'search' : activeCategory === 'custom' ? 'plus-circle' : 'book-open'} size={48} color={colors.mutedForeground} />
           <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, textAlign: 'center' }}>
-            {activeCategory === 'custom' ? 'No custom NPCs yet.' : `No ${BESTIARY_CATEGORIES.find(c => c.id === activeCategory)?.label ?? ''} templates.`}
+            {searchingAllCategories
+              ? 'No Bestiary entries match your search.'
+              : activeCategory === 'custom' ? 'No custom NPCs yet.' : `No ${BESTIARY_CATEGORIES.find(c => c.id === activeCategory)?.label ?? ''} templates.`}
           </Text>
-          {activeCategory === 'custom' && (
+          {!searchingAllCategories && activeCategory === 'custom' && (
             <TouchableOpacity style={{ paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.primary, borderRadius: colors.radius }} onPress={() => { setEditingTemplate(null); setShowCustomForm(true); }}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>Create Custom NPC</Text>
             </TouchableOpacity>
