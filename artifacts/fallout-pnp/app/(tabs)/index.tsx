@@ -53,14 +53,6 @@ import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
-const DEFENDER_DAMAGE_TYPE_LABELS: Record<DamageType, string> = {
-  normal: 'NORM',
-  laser: 'LASER',
-  fire: 'FIRE',
-  plasma: 'PLASMA',
-  explosion: 'EXPL',
-};
-
 function resolveCombatSheet(
   character: Character,
   allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'],
@@ -755,6 +747,7 @@ export default function CombatScreen() {
   const [showRoundTracker, setShowRoundTracker] = useState(false);
   const [showInitSetup, setShowInitSetup] = useState(false);
   const [initRolls, setInitRolls] = useState<Record<string, number>>({});
+  const [excludedInitiativeIds, setExcludedInitiativeIds] = useState<string[]>([]);
   const [showAreaAttack, setShowAreaAttack] = useState(false);
 
   // Combatants
@@ -861,6 +854,7 @@ export default function CombatScreen() {
 
   // Non-storage characters — used for pickers and initiative setup
   const activeCharacters = characters.filter(c => !c.inStorage);
+  const initiativeSetupCharacters = activeCharacters.filter(c => c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
 
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
@@ -2217,7 +2211,7 @@ export default function CombatScreen() {
                   </>
                 )}
                 {!combatActive && (
-                  <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.primary, flexDirection: 'row', gap: 5, alignItems: 'center' }} onPress={() => setShowInitSetup(true)}>
+                  <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.primary, flexDirection: 'row', gap: 5, alignItems: 'center' }} onPress={() => { setExcludedInitiativeIds([]); setShowInitSetup(true); }}>
                     <Feather name="play" size={13} color={colors.primaryForeground} />
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>START COMBAT</Text>
                   </TouchableOpacity>
@@ -2283,7 +2277,7 @@ export default function CombatScreen() {
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>{'Sequence = PER×2.\nRoll 1d10 and add Sequence for initiative.'}</Text>
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
-                  activeCharacters.filter(c => c.currentHp > 0).forEach(c => {
+                  initiativeSetupCharacters.forEach(c => {
                     const seq = resolveCombatSheet(c, allArmor, true, hardcoreRadiationRules).sequence;
                     rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
                   });
@@ -2293,7 +2287,7 @@ export default function CombatScreen() {
                   <Feather name="refresh-cw" size={14} color={colors.primaryForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL ALL (1d10 + SEQ)</Text>
                 </TouchableOpacity>
-                {activeCharacters.filter(c => c.currentHp > 0).map(c => {
+                {initiativeSetupCharacters.map(c => {
                   const sheet = resolveCombatSheet(c, allArmor, true, hardcoreRadiationRules);
                   return (
                   <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -2307,23 +2301,31 @@ export default function CombatScreen() {
                       <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 36, textAlign: 'center' }}>{initRolls[c.id] ?? 10}</Text>
                       <TouchableOpacity style={{ width: 26, height: 26, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setInitRolls(prev => ({ ...prev, [c.id]: Math.min(50, (prev[c.id] ?? 10) + 1) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => {
-                       const seq = sheet.sequence;
-                      const roll = Math.floor(Math.random() * 10) + 1;
-                      setInitRolls(prev => ({ ...prev, [c.id]: roll + seq }));
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }}>
-                      <Feather name="refresh-cw" size={12} color={colors.foreground} />
+                    <TouchableOpacity
+                      testID={`remove-initiative-${c.id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${c.name} from initiative`}
+                      style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.destructive, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => setExcludedInitiativeIds(prev => prev.includes(c.id) ? prev : [...prev, c.id])}
+                    >
+                      <Feather name="x" size={15} color={colors.destructive} />
                     </TouchableOpacity>
                   </View>
                   );
                 })}
+                {initiativeSetupCharacters.length === 0 && (
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
+                    {activeCharacters.some(c => c.currentHp > 0)
+                      ? 'All living characters were removed. Cancel and reopen setup to restore them.'
+                      : 'No living characters are available for initiative.'}
+                  </Text>
+                )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TouchableOpacity style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowInitSetup(false)}>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: '#4a8c3f', flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
-                    const entries: InitiativeEntry[] = activeCharacters.filter(c => c.currentHp > 0).map(c => {
+                  <TouchableOpacity disabled={initiativeSetupCharacters.length === 0} style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: initiativeSetupCharacters.length > 0 ? '#4a8c3f' : colors.border, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
+                    const entries: InitiativeEntry[] = initiativeSetupCharacters.map(c => {
                       // temp AC is turn-specific and starts separately at zero.
                       const sheet = resolveCombatSheet(c, allArmor, false, hardcoreRadiationRules);
                       return ({
@@ -2343,10 +2345,10 @@ export default function CombatScreen() {
                       hasActed: false,
                     });
                     });
-                    if (entries.length > 0) { startCombat(entries); setShowInitSetup(false); setInitRolls({}); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
+                    if (entries.length > 0) { startCombat(entries); setShowInitSetup(false); setInitRolls({}); setExcludedInitiativeIds([]); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
                   }}>
-                    <Feather name="play" size={14} color="#fff" />
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: '#fff' }}>BEGIN COMBAT</Text>
+                    <Feather name="play" size={14} color={initiativeSetupCharacters.length > 0 ? '#fff' : colors.mutedForeground} />
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: initiativeSetupCharacters.length > 0 ? '#fff' : colors.mutedForeground }}>BEGIN COMBAT</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2525,7 +2527,7 @@ export default function CombatScreen() {
                       {' · '}<Text>DR</Text>{' '}{weapon ? `${displayProt.dr}%` : '—'}
                     </Text>
                     <Text style={{ fontSize: 8, lineHeight: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>
-                      <Text>VS.</Text>{' '}{weapon ? <Text>{DEFENDER_DAMAGE_TYPE_LABELS[weapon.damageType]}</Text> : '—'}
+                      <Text>VS.</Text>{' '}{weapon ? <Text>{DAMAGE_TYPE_NAMES[weapon.damageType]}</Text> : '—'}
                     </Text>
                     {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
                     <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
