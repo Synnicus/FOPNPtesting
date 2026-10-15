@@ -12,6 +12,7 @@ import {
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS, isMeleeWeapon, isRangedWeapon } from './weapons.ts';
 import { baseCritChance } from './criticals.ts';
+import { EMPTY_NATURAL_PROTECTION } from '../context/types.ts';
 
 const byId = (id: string) => {
   const template = BUILT_IN_BESTIARY.find(candidate => candidate.id === id);
@@ -292,6 +293,63 @@ test('custom NPC armor is derived once and changes normally with Agility', () =>
   assert.equal(agilityEight.armorClass, 39);
   assert.equal(agilityEight.armorClassBreakdown.agility, 8);
   assert.equal(agilityEight.armorClassBreakdown.manual, 0);
+});
+
+test('custom natural AC survives template serialization and spawning without double counting', () => {
+  for (const armored of [false, true]) {
+    const template = {
+      ...byId('brahmin'),
+      id: 'custom-natural-ac',
+      isCustom: true,
+      usesDerivedArmorClass: true,
+      special: { ...byId('brahmin').special, agility: 5 },
+      armorClass: 12 + (armored ? 31 : 0),
+      naturalProtection: { ...EMPTY_NATURAL_PROTECTION, armorClass: 7 },
+      equippedBodyArmorId: armored ? 'greater_banding' : undefined,
+      equippedHelmetId: armored ? 'metal_helmet' : undefined,
+    };
+    const restored = JSON.parse(JSON.stringify(template));
+    assert.equal(restored.naturalProtection.armorClass, 7);
+    const character = spawnBestiaryTemplate(restored, BUILT_IN_WEAPONS, 'Natural AC NPC', 'natural-ac-npc');
+    assert.equal(character.naturalProtection?.armorClass, 7);
+    assert.notEqual(character.naturalProtection, restored.naturalProtection);
+    const resolve = (agility: number) => resolveArmorAwareSheet({
+      special: { ...character.special, agility },
+      skills: character.skills,
+      manualDerivedStats: character.manualDerivedStats,
+      usesDerivedArmorClass: character.usesDerivedArmorClass,
+      naturalArmorClass: character.naturalProtection?.armorClass,
+      equippedBodyArmorId: character.equippedBodyArmorId,
+      equippedHelmetId: character.equippedHelmetId,
+      allArmor: BUILT_IN_ARMOR,
+    });
+    assert.equal(resolve(5).armorClass, template.armorClass);
+    assert.equal(resolve(5).armorClassBreakdown.natural, 7);
+    assert.equal(resolve(5).armorClassBreakdown.manual, 0);
+    assert.equal(resolve(8).armorClass, template.armorClass + 3);
+  }
+});
+
+test('legacy custom protection without natural AC resolves as zero', () => {
+  const { armorClass: _omitted, ...legacyProtection } = EMPTY_NATURAL_PROTECTION;
+  for (const naturalProtection of [undefined, legacyProtection]) {
+    const character = spawnBestiaryTemplate({
+      ...byId('brahmin'),
+      isCustom: true,
+      special: { ...byId('brahmin').special, agility: 5 },
+      naturalProtection,
+    }, BUILT_IN_WEAPONS, 'Legacy NPC', 'legacy-npc');
+    const sheet = resolveArmorAwareSheet({
+      special: character.special,
+      skills: character.skills,
+      manualDerivedStats: character.manualDerivedStats,
+      usesDerivedArmorClass: character.usesDerivedArmorClass,
+      naturalArmorClass: character.naturalProtection?.armorClass,
+      allArmor: BUILT_IN_ARMOR,
+    });
+    assert.equal(sheet.armorClass, 5);
+    assert.equal(sheet.armorClassBreakdown.natural, 0);
+  }
 });
 
 test('legacy custom templates and their spawned NPCs migrate to derived AC', () => {

@@ -242,8 +242,9 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
   const bodyArmorList = allArmor.filter(a => a.slot === 'body');
   const helmetList = allArmor.filter(a => a.slot === 'helmet');
 
-  // Derived AC = agility + armor acBonus (body + helmet)
-  const derivedAC = special.agility + (bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0);
+  // Natural AC is a separate contribution, included once in the preview total.
+  const naturalAC = naturalProtection.armorClass ?? 0;
+  const derivedAC = special.agility + naturalAC + (bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0);
 
   const setNP = (dtKey: keyof NaturalProtection, drKey: keyof NaturalProtection, field: 'dt' | 'dr', delta: number) => {
     setNaturalProtection(np => {
@@ -265,7 +266,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     pilot: 'Pilot',
   };
 
-  const hasNaturalProtection = NP_TYPES.some(t => (naturalProtection[t.dtKey] as number) > 0 || (naturalProtection[t.drKey] as number) > 0);
+  const hasNaturalProtection = naturalAC > 0 || NP_TYPES.some(t => (naturalProtection[t.dtKey] as number) > 0 || (naturalProtection[t.drKey] as number) > 0);
 
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Name required'); return; }
@@ -374,11 +375,11 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
                   </View>
                 ))}
 
-                {/* Derived AC (agility + armor acBonus) */}
+                {/* Derived AC (agility + natural + armor acBonus) */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
                   <View>
                     <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Armor Class (derived)</Text>
-                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AGI {special.agility} + armor {(bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0)}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AGI {special.agility} + natural {naturalAC} + armor {(bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0)}</Text>
                   </View>
                   <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary }}>{derivedAC}</Text>
                 </View>
@@ -487,9 +488,32 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
 
             {tab === 'protect' && (
               <>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>NATURAL PROTECTION (DT/DR)</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>NATURAL PROTECTION (AC/DT/DR)</Text>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                  Built-in armor for creatures like Deathclaws/Radscorpions. DT = flat reduction, DR = % resist. Stacks with equipped armor.
+                  Built-in armor for creatures like Deathclaws/Radscorpions. AC = Armor Class bonus, DT = flat reduction, DR = % resist. Stacks with equipped armor.
+                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_500Medium', color: colors.foreground, flex: 1 }}>Natural AC bonus</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Decrease natural AC bonus"
+                      accessibilityState={{ disabled: naturalAC === 0 }}
+                      disabled={naturalAC === 0}
+                      style={{ width: 44, height: 44, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => setNaturalProtection(np => ({ ...np, armorClass: Math.max(0, (np.armorClass ?? 0) - 1) }))}
+                    ><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
+                    <Text accessibilityLabel={`Natural AC bonus: ${naturalAC}`} style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary, minWidth: 32, textAlign: 'center' }}>{naturalAC}</Text>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Increase natural AC bonus"
+                      style={{ width: 44, height: 44, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => setNaturalProtection(np => ({ ...np, armorClass: (np.armorClass ?? 0) + 1 }))}
+                    ><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
+                  </View>
+                </View>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  Total AC: {derivedAC} (AGI {special.agility} + natural {naturalAC} + armor {(bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0)})
                 </Text>
                 {NP_TYPES.map(t => {
                   const dtVal = naturalProtection[t.dtKey] as number;
