@@ -2521,7 +2521,9 @@ export default function CombatScreen() {
                       <Text>AC {defenderAC}{!defender.combatDefenseSuppressed && defender.tempAC > 0 ? ` (+${defender.tempAC})` : ''}{!defender.combatDefenseSuppressed && defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}</Text>
                       {' · '}<Text>DT</Text>{' '}{weapon ? displayProt.dt : '—'}
                       {' · '}<Text>DR</Text>{' '}{weapon ? `${displayProt.dr}%` : '—'}
-                      {' · '}<Text>VS.</Text>{' '}{weapon ? <Text>{DEFENDER_DAMAGE_TYPE_LABELS[weapon.damageType]}</Text> : '—'}
+                    </Text>
+                    <Text style={{ fontSize: 8, lineHeight: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>
+                      <Text>VS.</Text>{' '}{weapon ? <Text>{DEFENDER_DAMAGE_TYPE_LABELS[weapon.damageType]}</Text> : '—'}
                     </Text>
                     {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
                     <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
