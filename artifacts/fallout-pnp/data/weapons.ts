@@ -400,7 +400,13 @@ export function formatWeaponAP(w: Weapon): string {
   const s = w.apSingle ?? 4;
   const t = w.apTargeted === null ? '—' : (w.apTargeted ?? 5);
   const b = w.apBurst === null ? '—' : (w.apBurst ?? 6);
-  return `S ${s} / T ${t} / B ${b}`;
+  return `Single ${s} / Target ${t} / Burst ${b}`;
+}
+
+/** Show capacity only for weapons with a positive ammo capacity. */
+export function formatWeaponCapacity(w: Pick<Weapon, 'magazineSize'>): string | null {
+  if (!Number.isFinite(w.magazineSize) || w.magazineSize <= 0) return null;
+  return `Holds ${w.magazineSize} ${w.magazineSize === 1 ? 'Round' : 'Rounds'}`;
 }
 
 export function computeModBonuses(modIds: string[]): { toHit: number; damage: number; range: number } {

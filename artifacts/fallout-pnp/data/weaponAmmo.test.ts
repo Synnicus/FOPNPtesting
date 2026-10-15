@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
-import { BUILT_IN_WEAPONS, weaponCategorySupportsAmmo } from './weapons.ts';
+import { BUILT_IN_WEAPONS, formatWeaponAP, formatWeaponCapacity, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
   const weapon = BUILT_IN_WEAPONS.find(candidate => candidate.id === id);
@@ -28,6 +28,18 @@ test('powered unarmed and melee weapons carry and consume their compatible ammun
 
   const punchGun = weaponById('punch_gun');
   assert.deepEqual([punchGun.damageDieCount, punchGun.damageDie, punchGun.damageBonus], [1, 4, 0]);
+});
+
+test('equipment capacity shows one-round weapons and hides capacity on non-ammo weapons', () => {
+  assert.equal(formatWeaponCapacity(weaponById('m79_grenade_rifle')), 'Holds 1 Round');
+  assert.equal(formatWeaponCapacity(weaponById('power_fist')), 'Holds 25 Rounds');
+  assert.equal(formatWeaponCapacity(weaponById('unarmed')), null);
+  assert.equal(formatWeaponCapacity(weaponById('super_sledge')), null);
+});
+
+test('equipment AP costs spell out the attack modes', () => {
+  assert.equal(formatWeaponAP(weaponById('unarmed')), 'Single 3 / Target 4 / Burst —');
+  assert.equal(formatWeaponAP(weaponById('m79_grenade_rifle')), 'Single 5 / Target — / Burst —');
 });
 
 test('custom melee and unarmed weapons may define compatible ammo', () => {

@@ -8,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
@@ -874,6 +874,7 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDel
   const ammoNames = (weapon.compatibleAmmo ?? [])
     .map(id => AMMO_TYPES.find(a => a.id === id)?.name)
     .filter((n): n is string => !!n);
+  const capacityLabel = formatWeaponCapacity(weapon);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 10 }}>
       <View style={{ flex: 1 }}>
@@ -889,13 +890,13 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDel
         </View>
         <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
           {formatWeaponDamage(weapon)} · {SKILL_LABELS[weapon.category] ?? weapon.category}
-          {weapon.magazineSize > 0 ? ` · Mag ${weapon.magazineSize}` : ' · Melee'}
+          {capacityLabel ? ` · ${capacityLabel}` : ''}
           {weapon.burstLimit > 1 ? ` · Burst ${weapon.burstLimit}` : ''}
           {weapon.isDoubleShot ? ' · Double' : ''}
           {` · Range ${weapon.rangeNormal}sq`}
         </Text>
         <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 2 }}>
-          AP {formatWeaponAP(weapon)}
+          AP COST: {formatWeaponAP(weapon)}
         </Text>
         {ammoNames.length > 0 && (
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
