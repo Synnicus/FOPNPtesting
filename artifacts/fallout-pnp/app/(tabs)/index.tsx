@@ -139,8 +139,6 @@ const TOTAL_DARKNESS_PENALTY = 200;
 
 const RANGED_SKILLS = new Set(['smallGuns', 'bigGuns', 'energyWeapons']);
 
-const DAMAGE_TYPE_ORDER: DamageType[] = ['normal', 'laser', 'fire', 'plasma', 'explosion'];
-
 const SPECIAL_UNARMED_GROUP_LABELS: Record<SpecialUnarmedGroup, string> = {
   primaryPunch: 'PRIMARY PUNCHES',
   secondaryPunch: 'SECONDARY PUNCHES',
@@ -866,6 +864,13 @@ export default function CombatScreen() {
         ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
         : allWeapons.find(w => w.id === 'unarmed') ?? null)
     : null;
+  const defenderWeapon = [
+    defender?.rightHandWeaponId,
+    defender?.equippedWeaponId,
+    defender?.leftHandWeaponId,
+  ]
+    .map(id => id ? allWeapons.find(candidate => candidate.id === id) : undefined)
+    .find((candidate): candidate is Weapon => !!candidate) ?? null;
   const naturalAttackWeapons = (attacker?.naturalAttacks ?? [])
     .map(attack => allWeapons.find(candidate => candidate.id === attack.weaponId))
     .filter((candidate): candidate is Weapon => !!candidate);
@@ -2154,12 +2159,6 @@ export default function CombatScreen() {
     damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
   });
 
-  // Compact DT/DR summary across all damage types for the defender info panel
-  const defenderProtSummary = DAMAGE_TYPE_ORDER.map(dt => {
-    const p = combinedProtectionFor(dt, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
-    return `${DAMAGE_TYPE_LABELS[dt]} ${p.dt}/${p.dr}%`;
-  }).join('  ');
-
   // Streamlined burst hit results
   const streamlinedHits = streamlinedDice.filter(d => d <= streamlinedHitThreshold && d > 0).length;
   const streamlinedMisses = streamlinedDice.length - streamlinedHits;
@@ -2446,89 +2445,99 @@ export default function CombatScreen() {
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>COMBATANTS</Text>
           <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 8 }}>
             {/* Attacker */}
-            <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: attacker ? colors.primary : colors.border, padding: 10, gap: 10, minHeight: 80 }} onPress={() => setShowAttackerPicker(true)}>
+            <TouchableOpacity style={{ flex: 1, minWidth: 0, flexDirection: 'column', alignItems: 'stretch', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: attacker ? colors.primary : colors.border, padding: 9, gap: 7, minHeight: 100 }} onPress={() => setShowAttackerPicker(true)}>
               {attacker ? (
                 <>
-                  <CharacterAvatar portrait={attacker.portrait} name={attacker.name} size={44} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{attacker.name}</Text>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 1 }}>{weapon ? weapon.name : 'No weapon'}</Text>
-                    {!!manualNaturalAttack?.notes && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{manualNaturalAttack.notes}</Text>}
-                    {weapon && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                    <CharacterAvatar portrait={attacker.portrait} name={attacker.name} size={36} />
+                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={2}>{attacker.name}</Text>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.primary }}>ATK</Text>
+                  </View>
+                  <View style={{ width: '100%', gap: 3 }}>
+                    <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_600SemiBold', color: colors.primary }} numberOfLines={1}>{weapon ? weapon.name : 'No weapon'}</Text>
+                    {!!manualNaturalAttack?.notes && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }} numberOfLines={1}>{manualNaturalAttack.notes}</Text>}
+                    {weapon && <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
                       Range: {effectiveRange}{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
                     </Text>}
-                    {attacker.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {attacker.knockOutRoundsLeft} turn(s)</Text>}
-                    {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP} · {attackerPos}</Text>}
+                    {attacker.special && <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
+                      AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP} · {attackerPos}
+                    </Text>}
+                    {attacker.isKnockedOut && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>KO · {attacker.knockOutRoundsLeft} turn(s)</Text>}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
-                      <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
+                      <Text key={i} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: '#f59e0b' }} numberOfLines={1}>⚠ {n}</Text>
                     ))}
-                    {/* Active chem effects (green) */}
                     {(attacker.effects ?? []).filter(e => e.isActive).map(e => (
-                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
-                        ⚗ {e.name}{describeEffectMods(e) ? ` — ${describeEffectMods(e)}` : ''}
+                      <Text key={e.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
+                        ⚗ {e.name}{describeEffectMods(e) ? ` · ${describeEffectMods(e)}` : ''}
                       </Text>
                     ))}
                     {computeConditionModifiers(attacker).active.map(condition => (
-                      <Text key={condition.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
-                        ⚠ {condition.name} — {condition.description}
+                      <Text key={condition.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
+                        ⚠ {condition.name} · {condition.description}
                       </Text>
                     ))}
                   </View>
                 </>
               ) : (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   <Feather name="plus-circle" size={22} color={colors.mutedForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Attacker</Text>
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.primary }}>ATK</Text>
                 </View>
               )}
-              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primary }}>ATK</Text>
             </TouchableOpacity>
 
             <Feather name="arrow-right" size={20} color={colors.mutedForeground} style={{ alignSelf: "center" }} />
 
             {/* Defender */}
-            <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: defender ? colors.destructive : colors.border, padding: 10, gap: 10, minHeight: 80 }} onPress={() => setShowDefenderPicker(true)}>
+            <TouchableOpacity style={{ flex: 1, minWidth: 0, flexDirection: 'column', alignItems: 'stretch', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: defender ? colors.destructive : colors.border, padding: 9, gap: 7, minHeight: 100 }} onPress={() => setShowDefenderPicker(true)}>
               {defender ? (
                 <>
-                  <CharacterAvatar portrait={defender.portrait} name={defender.name} size={44} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{defender.name}</Text>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive, marginTop: 1 }}>
-                      AC: {defenderAC}{!defender.combatDefenseSuppressed && defender.tempAC > 0 ? ` (+${defender.tempAC} temp)` : ''}{!defender.combatDefenseSuppressed && defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                    <CharacterAvatar portrait={defender.portrait} name={defender.name} size={36} />
+                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={2}>{defender.name}</Text>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.destructive }}>DEF</Text>
+                  </View>
+                  <View style={{ width: '100%', gap: 3 }}>
+                    <Text style={{ fontSize: 11, lineHeight: 14, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>
+                      AC {defenderAC}{!defender.combatDefenseSuppressed && defender.tempAC > 0 ? ` (+${defender.tempAC} temp)` : ''}{!defender.combatDefenseSuppressed && defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}
                     </Text>
-                    {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
-                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={2}>
-                      {defenderProtSummary}
+                    {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
+                      {defenderPos === 'standing' ? 'Standing' : defenderPos === 'crouching' ? 'Crouching' : 'Prone'}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${Math.min(defender.currentAP, defenderSheet?.maxAP ?? defender.maxAP)}/${defenderSheet?.maxAP ?? defender.maxAP}` : ''}
                     </Text>
-                    {defenderNatural && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>incl. natural protection</Text>}
-                    {(defenderShield.ac > 0 || defenderShield.prot) && <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.primary }}>🛡 incl. shield{defenderShield.ac > 0 ? ` (+${defenderShield.ac} AC)` : ''}</Text>}
-                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      Pos: {defenderPos}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${Math.min(defender.currentAP, defenderSheet?.maxAP ?? defender.maxAP)}/${defenderSheet?.maxAP ?? defender.maxAP}` : ''}
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold' }}>EQUIPPED WEAPON</Text> · {defenderWeapon?.name ?? 'None'}
                     </Text>
-                    {defender.isKnockedOut && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>💫 KO — {defender.knockOutRoundsLeft} turn(s)</Text>}
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold' }}>BODY ARMOR</Text> · {bodyArmor?.name ?? 'None'}
+                    </Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold' }}>HELMET</Text> · {helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'None')}
+                    </Text>
+                    {defender.isKnockedOut && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>KO · {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
-                      <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
+                      <Text key={i} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: '#f59e0b' }} numberOfLines={1}>⚠ {n}</Text>
                     ))}
-                    {/* Active chem effects (green) */}
                     {(defender.effects ?? []).filter(e => e.isActive).map(e => (
-                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
-                        ⚗ {e.name}{describeEffectMods(e) ? ` — ${describeEffectMods(e)}` : ''}
+                      <Text key={e.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }} numberOfLines={1}>
+                        ⚗ {e.name}{describeEffectMods(e) ? ` · ${describeEffectMods(e)}` : ''}
                       </Text>
                     ))}
                     {computeConditionModifiers(defender).active.map(condition => (
-                      <Text key={condition.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
-                        ⚠ {condition.name} — {condition.description}
+                      <Text key={condition.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
+                        ⚠ {condition.name} · {condition.description}
                       </Text>
                     ))}
                   </View>
                 </>
               ) : (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   <Feather name="plus-circle" size={22} color={colors.mutedForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Defender</Text>
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.destructive }}>DEF</Text>
                 </View>
               )}
-              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.destructive }}>DEF</Text>
             </TouchableOpacity>
           </View>
           {defender && <HPBar current={defender.currentHp} max={defender.maxHp} height={6} showText />}
