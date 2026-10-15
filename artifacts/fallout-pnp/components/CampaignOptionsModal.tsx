@@ -546,7 +546,7 @@ export default function CampaignOptionsModal({
             <SectionHeading title="Audio Options" />
             <PreferenceSwitchRow
               label="System sounds"
-              description="Includes the main menu neon buzz."
+              description="Includes the main menu neon buzz and button sound."
               value={systemSoundsEnabled}
               onValueChange={setSystemSoundsEnabled}
               testID="system-sounds-toggle"

@@ -167,6 +167,7 @@ export default function MainMenuScreen() {
   const { loaded, importCampaign, systemSoundsEnabled } = useApp();
   const { locale } = useLocalization();
   const neonBuzzPlayer = useAudioPlayer(require('../assets/neon-flicker-buzz.mp3'));
+  const menuButtonPlayer = useAudioPlayer(require('../assets/main-menu-button-press.mp3'));
   const [showOptions, setShowOptions] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showLanguages, setShowLanguages] = useState(false);
@@ -243,6 +244,15 @@ export default function MainMenuScreen() {
 
   const continueCampaign = () => {
     if (loaded) router.push('/(tabs)');
+  };
+
+  const handleMainMenuAction = (action: () => void) => {
+    if (systemSoundsEnabled) {
+      menuButtonPlayer.volume = 0.35;
+      void menuButtonPlayer.seekTo(0).catch(() => {});
+      menuButtonPlayer.play();
+    }
+    action();
   };
 
   const startNewCampaign = () => {
@@ -360,10 +370,10 @@ export default function MainMenuScreen() {
           </View>
 
           <View style={{ gap: 10 }}>
-            <MenuButton label="Continue" icon="play" primary onPress={continueCampaign} disabled={!loaded} testID="continue-campaign" />
-            <MenuButton label="New Campaign" icon="file-plus" onPress={startNewCampaign} disabled={!loaded} testID="new-campaign" />
-            <MenuButton label="Load Campaign" icon="folder" onPress={() => setShowLibrary(true)} disabled={!loaded} testID="open-campaign-library" />
-            <MenuButton label="Options" icon="settings" onPress={() => setShowOptions(true)} disabled={!loaded} testID="open-menu-options" />
+            <MenuButton label="Continue" icon="play" primary onPress={() => handleMainMenuAction(continueCampaign)} disabled={!loaded} testID="continue-campaign" />
+            <MenuButton label="New Campaign" icon="file-plus" onPress={() => handleMainMenuAction(startNewCampaign)} disabled={!loaded} testID="new-campaign" />
+            <MenuButton label="Load Campaign" icon="folder" onPress={() => handleMainMenuAction(() => setShowLibrary(true))} disabled={!loaded} testID="open-campaign-library" />
+            <MenuButton label="Options" icon="settings" onPress={() => handleMainMenuAction(() => setShowOptions(true))} disabled={!loaded} testID="open-menu-options" />
           </View>
         </View>
       </ScrollView>
