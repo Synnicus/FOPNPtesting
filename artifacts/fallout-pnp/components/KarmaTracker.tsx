@@ -39,6 +39,19 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
     && preview !== null
     && trimmedReason.length > 0
     && trimmedReason.length <= MAX_KARMA_REASON_LENGTH;
+  const recordDisabledReason = changeInput.trim().length === 0
+    ? 'Enter a non-zero whole-number change and a required explanation to enable recording.'
+    : parsedChange === null
+      ? 'Enter a non-zero whole number, such as plus 25 or minus 10.'
+      : parsedChange === 0
+        ? 'Enter a non-zero whole number. Zero does not create a Karma history entry.'
+        : preview === null
+          ? 'Karma is already at its limit for that adjustment.'
+          : trimmedReason.length === 0
+            ? 'Add an explanation to enable recording.'
+            : trimmedReason.length > MAX_KARMA_REASON_LENGTH
+              ? `Keep the explanation to ${MAX_KARMA_REASON_LENGTH} characters or fewer.`
+              : '';
   const groupColor = group === 'Good' || group === 'Very Good'
     ? '#4a8c3f'
     : group === 'Evil' || group === 'Very Evil'
@@ -96,7 +109,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
     <View style={{ gap: 14 }}>
       <View
         accessible
-        accessibilityLabel={`Karma ${karma}, ${group}. Title: ${title}.`}
+        accessibilityLabel={`Current Karma total: ${karma > 0 ? 'plus ' : karma < 0 ? 'minus ' : ''}${Math.abs(karma)}. Standing: ${group}. Level ${character.level} title: ${title}.`}
         testID="karma-summary"
         style={{
           alignItems: 'center',
@@ -131,6 +144,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
         </Text>
         <TextInput
           accessibilityLabel="Karma change amount"
+          accessibilityHint="Enter a positive or negative whole number. The amount cannot be zero."
           testID="karma-change-input"
           value={changeInput}
           onChangeText={setChangeInput}
@@ -169,6 +183,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
         </Text>
         <TextInput
           accessibilityLabel="Explanation for Karma change"
+          accessibilityHint={`Required. Explain why the Karma total changed. Up to ${MAX_KARMA_REASON_LENGTH} characters.`}
           testID="karma-reason-input"
           value={reason}
           onChangeText={setReason}
@@ -202,6 +217,8 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="Record Karma change"
+          accessibilityHint={canRecord ? 'Adds this signed amount and explanation to Karma history.' : recordDisabledReason}
+          accessibilityState={{ disabled: !canRecord }}
           testID="karma-record-change"
           disabled={!canRecord}
           onPress={recordChange}
@@ -217,6 +234,15 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
             ADD TO KARMA LOG
           </Text>
         </TouchableOpacity>
+        {!canRecord && (
+          <Text
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+            style={{ fontSize: 12, lineHeight: 18, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}
+          >
+            {recordDisabledReason}
+          </Text>
+        )}
       </View>
 
       <View style={{ gap: 9 }}>
@@ -230,7 +256,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
             </Text>
           </View>
         ) : (
-          karmaLog.map(entry => {
+          [...karmaLog].sort((a, b) => a.createdAt - b.createdAt).map(entry => {
             const changeColor = entry.change > 0
               ? '#4a8c3f'
               : entry.change < 0
@@ -253,21 +279,22 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
                   backgroundColor: colors.secondary,
                 }}
               >
-                <Text
-                  accessibilityLabel={entry.change === 0
-                    ? 'Neutral action recorded; Karma total unchanged'
-                    : `Karma ${entry.change > 0 ? 'increased' : 'decreased'} by ${Math.abs(entry.change)}`}
-                  style={{ minWidth: 44, fontSize: 14, fontFamily: 'Inter_700Bold', color: changeColor }}
+                <View
+                  accessible
+                  accessibilityLabel={`Karma change: ${entry.change > 0 ? 'plus' : entry.change < 0 ? 'minus' : 'zero'} ${Math.abs(entry.change)}. Explanation: ${entry.reason}. Date: ${dateLabel}.`}
+                  style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 11 }}
                 >
-                  {entry.change > 0 ? `+${entry.change}` : entry.change}
-                </Text>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text style={{ fontSize: 12, lineHeight: 17, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
-                    {entry.reason}
+                  <Text style={{ flexShrink: 0, minWidth: 44, fontSize: 14, fontFamily: 'Inter_700Bold', color: changeColor }}>
+                    {entry.change > 0 ? `+${entry.change}` : entry.change}
                   </Text>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                    {dateLabel}
-                  </Text>
+                  <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                    <Text style={{ fontSize: 12, lineHeight: 17, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+                      {entry.reason}
+                    </Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                      {dateLabel}
+                    </Text>
+                  </View>
                 </View>
                 <TouchableOpacity
                   accessibilityRole="button"

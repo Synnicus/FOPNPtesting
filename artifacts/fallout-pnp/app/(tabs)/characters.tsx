@@ -17,6 +17,7 @@ import {
   DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
 } from '@/context/types';
 import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/EquipmentConditionPanel';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import KarmaTracker from '@/components/KarmaTracker';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
@@ -901,7 +902,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           ))}
         </ScrollView>
 
-        <ScrollView
+        <KeyboardAwareScrollViewCompat
           style={{ flex: 1 }}
           contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 100, width: '100%', maxWidth: 820, alignSelf: 'center' }}
           keyboardShouldPersistTaps="handled"
@@ -1975,7 +1976,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           {activeTab === 7 && (
             <KarmaTracker character={char} onChange={updated => setChar(updated)} />
           )}
-        </ScrollView>
+        </KeyboardAwareScrollViewCompat>
         <ConfirmModal
           visible={pendingRadiation !== null}
           title="Apply Radiation Resistance?"
