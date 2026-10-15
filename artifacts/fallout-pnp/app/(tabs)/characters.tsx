@@ -1055,8 +1055,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TextInput testID="character-radiation-amount" style={{ flex: 1, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold' }} keyboardType="number-pad" placeholder="Amount" placeholderTextColor={colors.mutedForeground} value={radiationInput} onChangeText={text => setRadiationInput(text.replace(/[^0-9]/g, ''))} />
-                  <TouchableOpacity testID="character-radiation-subtract" style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, -amount) })); setRadiationInput(''); }}><Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold' }}>SUBTRACT</Text></TouchableOpacity>
-                  <TouchableOpacity testID="character-radiation-add" style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; if (amount > 0) setPendingRadiation(amount); }}><Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold' }}>ADD</Text></TouchableOpacity>
+                  <TouchableOpacity testID="character-radiation-subtract" accessibilityRole="button" accessibilityLabel="Subtract radiation" accessibilityHint="Subtracts the entered amount without applying radiation resistance." style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, -amount) })); setRadiationInput(''); }}><Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold' }}>SUBTRACT</Text></TouchableOpacity>
+                  <TouchableOpacity testID="character-radiation-add" accessibilityRole="button" accessibilityLabel="Add radiation" accessibilityHint="Choose whether to apply the character's cumulative resistance before adding radiation." style={{ paddingHorizontal: 14, justifyContent: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => { const amount = parseInt(radiationInput, 10) || 0; if (amount > 0) setPendingRadiation(amount); }}><Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold' }}>ADD</Text></TouchableOpacity>
                 </View>
               </View>
 
@@ -1945,9 +1945,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         <ConfirmModal
           visible={pendingRadiation !== null}
           title="Apply Radiation Resistance?"
-          message={`Effective radiation resistance is ${armorSheet.radiationResistance}%.`}
-          cancelLabel="NO"
-          confirmLabel="YES"
+          message={`Effective cumulative resistance is ${armorSheet.radiationResistance}%. Applying it would add ${pendingRadiation === null ? 0 : resolveRadiationAddition(pendingRadiation, armorSheet.radiationResistance)} instead of ${pendingRadiation ?? 0} radiation.`}
+          cancelLabel="ADD FULL AMOUNT"
+          confirmLabel="APPLY RESISTANCE"
           onCancel={() => { if (pendingRadiation !== null) setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, pendingRadiation) })); setPendingRadiation(null); setRadiationInput(''); }}
           onConfirm={() => { if (pendingRadiation !== null) setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, resolveRadiationAddition(pendingRadiation, armorSheet.radiationResistance)) })); setPendingRadiation(null); setRadiationInput(''); }}
         />

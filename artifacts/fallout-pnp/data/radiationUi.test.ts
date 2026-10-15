@@ -12,6 +12,10 @@ const contextSource = readFileSync(new URL('../context/AppContext.tsx', import.m
 test('character editor adds radiation with an optional single resistance adjustment', () => {
   assert.match(characterSource, /if \(amount > 0\) setPendingRadiation\(amount\)/);
   assert.match(characterSource, /title="Apply Radiation Resistance\?"/);
+  assert.match(characterSource, /cancelLabel="ADD FULL AMOUNT"/);
+  assert.match(characterSource, /confirmLabel="APPLY RESISTANCE"/);
+  assert.match(characterSource, /accessibilityLabel="Add radiation"/);
+  assert.match(characterSource, /accessibilityLabel="Subtract radiation"/);
   assert.match(
     characterSource,
     /onCancel=\{\(\) => \{ if \(pendingRadiation !== null\) setChar\(c => \(\{ \.\.\.c, accumulatedRadiation: adjustRadiation\(c\.accumulatedRadiation \?\? 0, pendingRadiation\) \}\)\)/,

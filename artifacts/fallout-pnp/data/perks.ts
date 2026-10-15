@@ -4,6 +4,7 @@ import { computePerkStatBonuses } from './effects';
 import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './effectiveRules';
 import { breakTheRulesWaivesRequirements } from './breakTheRules';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks';
+import { RAD_RESIST_PERK_BONUSES } from './radiation';
 
 export type PerkCategory = 'combat' | 'defense' | 'utility' | 'social' | 'survival' | 'racial';
 
@@ -26,6 +27,7 @@ export interface PerkCombatEffect {
   // DT/DR ignore
   ignoreDT?: number;
   damageResistBonus?: number;
+  radiationResistBonus?: number;
   // AP economy
   attackAPDiscount?: number;
   /** Permanent maximum AP gained per rank (Action Boy/Girl). */
@@ -469,7 +471,7 @@ export const PERKS: Perk[] = [
     minLevel: 10, maxRanks: 2, minEND: 6,
     requiresRace: ['deathclaw'],
     requirements: { level: 10, stats: { endurance: 6 } },
-    combatEffect: { combatNote: '+15% to all resistances except fire, per rank' },
+    combatEffect: { radiationResistBonus: RAD_RESIST_PERK_BONUSES.hide_of_scars, combatNote: '+15% to all resistances except fire, per rank' },
   },
   {
     id: 'hit_the_deck', name: 'Hit the Deck!', category: 'defense',
@@ -872,7 +874,7 @@ export const PERKS: Perk[] = [
     minLevel: 12, maxRanks: 2, minEND: 1,
     requiresRace: ['superMutant'],
     requirements: { level: 12 },
-    combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.tough_hide, combatNote: '+15 AC, +10% all resistances per rank' },
+    combatEffect: { ...UNCONDITIONAL_ARMOR_CLASS_PERKS.tough_hide, radiationResistBonus: RAD_RESIST_PERK_BONUSES.tough_hide, combatNote: '+15 AC, +10% all resistances per rank' },
   },
   {
     id: 'toughness', name: 'Toughness', category: 'defense',

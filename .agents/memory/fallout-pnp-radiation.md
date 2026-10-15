@@ -9,4 +9,4 @@ A separate campaign-wide Hardcore ruleset may be enabled explicitly. It is defau
 
 **Why:** The user wants PnP 2.0 sickness labels to remain narrative-only and clearly distinguished from optional Hardcore mechanics. Deriving sickness prevents stale state, while a separate opt-in layer avoids silently changing the base rules.
 
-**How to apply:** Manual additions may optionally use effective resistance. Combat outputs are already post-resistance. Show PnP sickness stages at 200/400/600/800/1000. Apply optional penalties at 150/300/500/750/1000 only when the campaign toggle is enabled, through the shared effective-sheet resolver.
+**How to apply:** Manual additions may optionally use effective resistance, including the character's racial/base resistance, resistance traits, applicable perks, active effects, and worn equipment; cap at 100%. Combat outputs are already post-resistance. Show PnP sickness stages at 200/400/600/800/1000. Apply optional penalties at 150/300/500/750/1000 only when the campaign toggle is enabled, through the shared effective-sheet resolver.

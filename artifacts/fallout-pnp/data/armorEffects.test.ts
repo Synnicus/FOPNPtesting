@@ -29,6 +29,22 @@ test('armor effects stack body and helmet and retain explicit source attribution
   ]);
 });
 
+test('effective radiation resistance includes base, trait, resistance perks, active effects, and worn armor', () => {
+  const body = { ...armor('clothing'), id: 'radiation-test-armor', effects: { radiationResistance: 5 } };
+  const result = resolveArmorAwareSheet({
+    special,
+    skills,
+    radiationResistance: 10,
+    traits: ['glowing_one'],
+    perks: [{ perkId: 'hide_of_scars', rank: 1 }, { perkId: 'tough_hide', rank: 1 }],
+    effects: [{ isActive: true, radResistMod: 3 }],
+    equippedBodyArmorId: body.id,
+    allArmor: [body],
+  });
+
+  assert.equal(result.radiationResistance, 93);
+});
+
 test('resolver neither mutates stored objects nor bakes armor into an unequipped sheet', () => {
   const storedSpecial = { ...special };
   const storedSkills = { ...skills };

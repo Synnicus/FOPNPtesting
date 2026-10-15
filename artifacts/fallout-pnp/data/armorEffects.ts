@@ -15,7 +15,7 @@ import {
 import { calcBaseSkills } from './derived.ts';
 import { computeConditionModifiers } from './conditions.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
-import { hardcoreRadiationRule } from './radiation.ts';
+import { hardcoreRadiationRule, perkRadiationResistanceBonus } from './radiation.ts';
 import { wornArmor } from './armorCondition.ts';
 import type { ArmorConditionState } from '../context/types.ts';
 
@@ -288,7 +288,15 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     carryWeight: calculateCarryWeight(effectiveSpecial.strength, input.traits),
     gasResistance: clamp(numeric(input.gasResistance) + armorEffects.gasResistance, 0, 100),
     poisonResistance: clamp(numeric(input.poisonResistance) + poisonEffectMod + armorEffects.poisonResistance, 0, 100),
-    radiationResistance: clamp(numeric(input.radiationResistance) + (hasTrait(input.traits, 'glowing_one') ? 50 : 0) + radEffectMod + armorEffects.radiationResistance, 0, 100),
+    radiationResistance: clamp(
+      numeric(input.radiationResistance)
+        + (hasTrait(input.traits, 'glowing_one') ? 50 : 0)
+        + radEffectMod
+        + armorEffects.radiationResistance
+        + perkRadiationResistanceBonus(input.perks),
+      0,
+      100,
+    ),
     electricityResistance: clamp(numeric(input.electricityResistance) + armorEffects.electricityResistance, 0, 100),
     ignoresLightPenalties: Boolean(bodyArmor?.ignoresLightPenalties || helmet?.ignoresLightPenalties),
   };

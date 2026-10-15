@@ -1,5 +1,21 @@
 export const MAX_RADIATION = 1000;
 
+/** Per-rank perk bonuses explicitly described as applying to all resistances. */
+export const RAD_RESIST_PERK_BONUSES: Readonly<Record<string, number>> = Object.freeze({
+  hide_of_scars: 15,
+  tough_hide: 10,
+});
+
+export function perkRadiationResistanceBonus(
+  perks: readonly { perkId: string; rank?: number }[] | undefined,
+): number {
+  return (perks ?? []).reduce((total, perk) => {
+    const bonus = RAD_RESIST_PERK_BONUSES[perk.perkId] ?? 0;
+    const rank = typeof perk.rank === 'number' ? Math.max(0, perk.rank) : 1;
+    return total + bonus * rank;
+  }, 0);
+}
+
 export interface RadiationSicknessEffect {
   id: 'radiation-sickness';
   name: string;
