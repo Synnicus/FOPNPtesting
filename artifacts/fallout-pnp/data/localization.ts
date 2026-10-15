@@ -124,6 +124,8 @@ export function translateText(value: string, locale: AppLocale = activeLocale): 
   if (themeName !== undefined) return `${leading}${themeName}${trailing}`;
   const healingLabel = translateHealAllLabel(key, locale);
   if (healingLabel !== undefined) return `${leading}${healingLabel}${trailing}`;
+  const cleanupLabel = translateStatusCleanupLabel(key, locale);
+  if (cleanupLabel !== undefined) return `${leading}${cleanupLabel}${trailing}`;
   const trackerLabel = translateRoundTrackerLabel(key, locale);
   if (trackerLabel !== undefined) return `${leading}${trackerLabel}${trailing}`;
   for (const pattern of compiledPatterns(locale)) {
@@ -253,6 +255,123 @@ const healAllLabels: Partial<Record<AppLocale, Record<string, string>>> = {
 
 function translateHealAllLabel(key: string, locale: AppLocale): string | undefined {
   return healAllLabels[locale]?.[key];
+}
+
+const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = {
+  fr: {
+    'Remove All Status Effects': 'Supprimer tous les effets de statut',
+    'Also Heal Injuries?': 'Soigner aussi les blessures ?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Faut-il aussi soigner les blessures, comme les membres cassés ? Elles resteront dans le dossier du personnage, mais seront marquées comme inactives.',
+    'KEEP INJURIES': 'GARDER LES BLESSURES',
+    'HEAL INJURIES': 'SOIGNER LES BLESSURES',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Cela supprime les effets temporaires (poison, inconscience, drogues, sevrage et dangers persistants) de tous les personnages actifs. Les personnages stockés, les PV, les radiations, l’armure et les effets des atouts restent inchangés.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Cela supprime les effets temporaires et désactive toutes les blessures des personnages actifs. Les personnages stockés, les PV, les radiations, l’armure et les effets des atouts restent inchangés.',
+    'REMOVE ALL EFFECTS': 'SUPPRIMER TOUS LES EFFETS',
+  },
+  it: {
+    'Remove All Status Effects': 'Rimuovi tutti gli effetti di stato',
+    'Also Heal Injuries?': 'Curare anche le ferite?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Vuoi curare anche ferite come gli arti rotti? Le voci resteranno nella scheda del personaggio ma saranno contrassegnate come inattive.',
+    'KEEP INJURIES': 'MANTIENI LE FERITE',
+    'HEAL INJURIES': 'CURA LE FERITE',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Rimuove gli effetti temporanei (veleno, incoscienza, droghe, astinenza e pericoli persistenti) da tutti i personaggi attivi. Personaggi archiviati, PF, radiazioni, armatura ed effetti dei talenti non cambiano.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Rimuove gli effetti temporanei e disattiva tutte le ferite dei personaggi attivi. Personaggi archiviati, PF, radiazioni, armatura ed effetti dei talenti non cambiano.',
+    'REMOVE ALL EFFECTS': 'RIMUOVI TUTTI GLI EFFETTI',
+  },
+  de: {
+    'Remove All Status Effects': 'Alle Statuseffekte entfernen',
+    'Also Heal Injuries?': 'Auch alle Verletzungen heilen?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Sollen auch Verletzungen wie gebrochene Gliedmaßen geheilt werden? Die Einträge bleiben erhalten, werden aber als inaktiv markiert.',
+    'KEEP INJURIES': 'VERLETZUNGEN BEHALTEN',
+    'HEAL INJURIES': 'VERLETZUNGEN HEILEN',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Dies entfernt vorübergehende Effekte (Gift, Bewusstlosigkeit, Drogenwirkungen, Entzug und anhaltende Gefahren) von allen aktiven Charakteren. Eingelagerte Charaktere, TP, Strahlung, Rüstung und Vorteile bleiben unverändert.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Dies entfernt vorübergehende Effekte und deaktiviert alle Verletzungen aktiver Charaktere. Eingelagerte Charaktere, TP, Strahlung, Rüstung und Vorteile bleiben unverändert.',
+    'REMOVE ALL EFFECTS': 'ALLE EFFEKTE ENTFERNEN',
+  },
+  'es-ES': {
+    'Remove All Status Effects': 'Eliminar todos los efectos de estado',
+    'Also Heal Injuries?': '¿Curar también las heridas?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '¿También quieres curar heridas como miembros rotos? Se conservarán en la ficha, pero quedarán marcadas como inactivas.',
+    'KEEP INJURIES': 'MANTENER HERIDAS',
+    'HEAL INJURIES': 'CURAR HERIDAS',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Elimina los efectos temporales (veneno, inconsciencia, drogas, abstinencia y peligros persistentes) de todos los personajes activos. Los personajes guardados, los PV, la radiación, la armadura y las ventajas no cambian.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Elimina los efectos temporales y desactiva todas las heridas de los personajes activos. Los personajes guardados, los PV, la radiación, la armadura y las ventajas no cambian.',
+    'REMOVE ALL EFFECTS': 'ELIMINAR TODOS LOS EFECTOS',
+  },
+  'es-MX': {
+    'Remove All Status Effects': 'Eliminar todos los efectos de estado',
+    'Also Heal Injuries?': '¿Curar también las heridas?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '¿También quieres curar heridas como extremidades rotas? Se conservarán en la ficha, pero quedarán marcadas como inactivas.',
+    'KEEP INJURIES': 'CONSERVAR HERIDAS',
+    'HEAL INJURIES': 'CURAR HERIDAS',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Elimina los efectos temporales (veneno, inconsciencia, drogas, abstinencia y peligros persistentes) de todos los personajes activos. Los personajes guardados, los PV, la radiación, la armadura y las ventajas no cambian.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Elimina los efectos temporales y desactiva todas las heridas de los personajes activos. Los personajes guardados, los PV, la radiación, la armadura y las ventajas no cambian.',
+    'REMOVE ALL EFFECTS': 'ELIMINAR TODOS LOS EFECTOS',
+  },
+  ja: {
+    'Remove All Status Effects': 'すべての状態効果を解除',
+    'Also Heal Injuries?': '負傷も治しますか？',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '骨折などの負傷も治しますか？記録は残り、非アクティブとして表示されます。',
+    'KEEP INJURIES': '負傷を残す',
+    'HEAL INJURIES': '負傷を治す',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'すべての使用中キャラクターから一時的な効果（毒、気絶、薬物効果、離脱症状、継続中の危険）を解除します。保管中のキャラクター、HP、放射線量、装備、Perkの効果は変更されません。',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': '使用中の全キャラクターから一時的な効果を解除し、負傷をすべて非アクティブにします。保管中のキャラクター、HP、放射線量、装備、Perkの効果は変更されません。',
+    'REMOVE ALL EFFECTS': 'すべての効果を解除',
+  },
+  pl: {
+    'Remove All Status Effects': 'Usuń wszystkie efekty statusu',
+    'Also Heal Injuries?': 'Czy wyleczyć też rany?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Czy wyleczyć także rany, takie jak złamane kończyny? Wpisy pozostaną w karcie, ale zostaną oznaczone jako nieaktywne.',
+    'KEEP INJURIES': 'ZOSTAW RANY',
+    'HEAL INJURIES': 'WYLECZ RANY',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Usuwa tymczasowe efekty (truciznę, nieprzytomność, działanie narkotyków, odstawienie i trwające zagrożenia) ze wszystkich aktywnych postaci. Postacie w schowku, PW, promieniowanie, pancerz i efekty atutów pozostają bez zmian.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Usuwa tymczasowe efekty i dezaktywuje wszystkie rany aktywnych postaci. Postacie w schowku, PW, promieniowanie, pancerz i efekty atutów pozostają bez zmian.',
+    'REMOVE ALL EFFECTS': 'USUŃ WSZYSTKIE EFEKTY',
+  },
+  'pt-BR': {
+    'Remove All Status Effects': 'Remover todos os efeitos de status',
+    'Also Heal Injuries?': 'Curar também os ferimentos?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Também deseja curar ferimentos como membros quebrados? Os registros serão mantidos, mas marcados como inativos.',
+    'KEEP INJURIES': 'MANTER FERIMENTOS',
+    'HEAL INJURIES': 'CURAR FERIMENTOS',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Remove os efeitos temporários (veneno, inconsciência, efeitos de drogas, abstinência e perigos contínuos) de todos os personagens ativos. Personagens armazenados, HP, radiação, armadura e efeitos de vantagens não serão alterados.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Remove os efeitos temporários e desativa todos os ferimentos dos personagens ativos. Personagens armazenados, HP, radiação, armadura e efeitos de vantagens não serão alterados.',
+    'REMOVE ALL EFFECTS': 'REMOVER TODOS OS EFEITOS',
+  },
+  ru: {
+    'Remove All Status Effects': 'Убрать все эффекты состояния',
+    'Also Heal Injuries?': 'Также вылечить ранения?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Вылечить также ранения, например переломы? Записи останутся, но будут помечены как неактивные.',
+    'KEEP INJURIES': 'ОСТАВИТЬ РАНЕНИЯ',
+    'HEAL INJURIES': 'ВЫЛЕЧИТЬ РАНЕНИЯ',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Удаляет временные эффекты (яд, потерю сознания, действие препаратов, абстиненцию и продолжающиеся опасности) у всех активных персонажей. Персонажи в хранилище, ОЗ, радиация, броня и эффекты перков не изменятся.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': 'Удаляет временные эффекты и отключает все ранения активных персонажей. Персонажи в хранилище, ОЗ, радиация, броня и эффекты перков не изменятся.',
+    'REMOVE ALL EFFECTS': 'УБРАТЬ ВСЕ ЭФФЕКТЫ',
+  },
+  'zh-Hans': {
+    'Remove All Status Effects': '移除所有状态效果',
+    'Also Heal Injuries?': '同时治愈所有伤势？',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '是否同时治愈骨折等伤势？记录会保留，但会标记为未生效。',
+    'KEEP INJURIES': '保留伤势',
+    'HEAL INJURIES': '治愈伤势',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': '移除所有启用角色的临时效果（中毒、昏迷、药物效果、戒断反应和持续危害）。储存角色、生命值、辐射值、护甲和专长效果不会改变。',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': '移除所有启用角色的临时效果，并将所有伤势标记为未生效。储存角色、生命值、辐射值、护甲和专长效果不会改变。',
+    'REMOVE ALL EFFECTS': '移除所有效果',
+  },
+  'zh-Hant': {
+    'Remove All Status Effects': '移除所有狀態效果',
+    'Also Heal Injuries?': '同時治癒所有傷勢？',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '是否同時治癒骨折等傷勢？記錄會保留，但會標記為未生效。',
+    'KEEP INJURIES': '保留傷勢',
+    'HEAL INJURIES': '治癒傷勢',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': '移除所有啟用角色的暫時效果（中毒、昏迷、藥物效果、戒斷反應和持續危害）。儲存角色、生命值、輻射值、護甲和專長效果不會改變。',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.': '移除所有啟用角色的暫時效果，並將所有傷勢標記為未生效。儲存角色、生命值、輻射值、護甲和專長效果不會改變。',
+    'REMOVE ALL EFFECTS': '移除所有效果',
+  },
+};
+
+function translateStatusCleanupLabel(key: string, locale: AppLocale): string | undefined {
+  return statusCleanupLabels[locale]?.[key];
 }
 
 const roundTrackerLabels: Partial<Record<AppLocale, string>> = {

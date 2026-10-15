@@ -32,6 +32,7 @@ import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
+import { clearTemporaryCharacterEffects } from '@/data/statusEffects';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
 import { poisonEffectName } from '@/data/poisonEffects';
@@ -2268,6 +2269,8 @@ export default function CharactersScreen() {
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
   const [showHealAllConfirm, setShowHealAllConfirm] = useState(false);
+  const [statusCleanupPrompt, setStatusCleanupPrompt] = useState<'injuries' | 'confirm' | null>(null);
+  const [statusCleanupHealsInjuries, setStatusCleanupHealsInjuries] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
@@ -2296,6 +2299,24 @@ export default function CharactersScreen() {
         updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
       }
     });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const openStatusCleanupPrompt = () => {
+    setStatusCleanupHealsInjuries(false);
+    setStatusCleanupPrompt('injuries');
+  };
+
+  const chooseStatusCleanupInjuries = (healInjuries: boolean) => {
+    setStatusCleanupHealsInjuries(healInjuries);
+    setStatusCleanupPrompt('confirm');
+  };
+
+  const removeAllStatusEffects = () => {
+    characters
+      .filter(character => !character.inStorage)
+      .forEach(character => updateCharacter(clearTemporaryCharacterEffects(character, statusCleanupHealsInjuries)));
+    setStatusCleanupPrompt(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -2361,16 +2382,26 @@ export default function CharactersScreen() {
           <TextInput style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }} placeholder="Search…" placeholderTextColor={colors.mutedForeground} value={search} onChangeText={setSearch} />
           {search ? <TouchableOpacity onPress={() => setSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Heal All Characters"
             testID="heal-all-characters"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }}
             onPress={() => setShowHealAllConfirm(true)}
           >
-            <Ionicons name="heart-circle" size={14} color={colors.destructive} />
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.5 }}>Heal All Characters</Text>
+            <Ionicons name="heart-circle" size={13} color={colors.destructive} />
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.3 }}>Heal All Characters</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Remove All Status Effects"
+            testID="remove-all-status-effects"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }}
+            onPress={openStatusCleanupPrompt}
+          >
+            <Feather name="x-circle" size={13} color={colors.destructive} />
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.3 }}>Remove All Status Effects</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -2440,6 +2471,25 @@ export default function CharactersScreen() {
           resetAllHp();
           setShowHealAllConfirm(false);
         }}
+      />
+      <ConfirmModal
+        visible={statusCleanupPrompt === 'injuries'}
+        title="Also Heal Injuries?"
+        message="Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive."
+        confirmLabel="HEAL INJURIES"
+        cancelLabel="KEEP INJURIES"
+        onCancel={() => chooseStatusCleanupInjuries(false)}
+        onConfirm={() => chooseStatusCleanupInjuries(true)}
+      />
+      <ConfirmModal
+        visible={statusCleanupPrompt === 'confirm'}
+        title="Are you sure?"
+        message={statusCleanupHealsInjuries
+          ? 'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.'
+          : 'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.'}
+        confirmLabel="REMOVE ALL EFFECTS"
+        onCancel={() => setStatusCleanupPrompt(null)}
+        onConfirm={removeAllStatusEffects}
       />
 
       <ConfirmModal
