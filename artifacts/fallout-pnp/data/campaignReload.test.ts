@@ -1,0 +1,181 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
+import test from 'node:test';
+import { URL } from 'node:url';
+import React from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import ts from 'typescript';
+import type { BestiaryTemplate, Character } from '../context/types.ts';
+import { MANUAL_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
+import { BUILT_IN_ARMOR } from './armor.ts';
+import { BUILT_IN_WEAPONS } from './weapons.ts';
+import { resolveArmorAwareSheet } from './armorEffects.ts';
+
+const STORAGE_KEY = '@fallout_pnp_v4';
+
+test('AsyncStorage campaign reload repairs legacy custom NPC AC without changing printed AC', async () => {
+  const brahmin = MANUAL_BESTIARY.find(template => template.id === 'brahmin')!;
+  const legacyTemplate: BestiaryTemplate = {
+    ...brahmin,
+    id: 'legacy-custom-armored',
+    name: 'Legacy Armored NPC',
+    isCustom: true,
+    usesDerivedArmorClass: undefined,
+    special: { ...brahmin.special, agility: 5 },
+    armorClass: 36,
+    equippedBodyArmorId: 'greater_banding',
+    equippedHelmetId: 'metal_helmet',
+  };
+  // Spawning now sets the policy, so explicitly remove it to represent an old save.
+  const legacyNpc = spawnBestiaryTemplate(legacyTemplate, BUILT_IN_WEAPONS, legacyTemplate.name, 'legacy-npc');
+  delete legacyNpc.usesDerivedArmorClass;
+  const printedNpc = spawnBestiaryTemplate(brahmin, BUILT_IN_WEAPONS, 'Printed Brahmin', 'printed-npc');
+  delete printedNpc.usesDerivedArmorClass;
+  const fixture = {
+    characters: [legacyNpc, printedNpc],
+    customBestiaryTemplates: [legacyTemplate],
+    customWeapons: [],
+    customArmor: [],
+    customAmmo: [],
+    initiativeEntries: [],
+  };
+  const raw = JSON.stringify(fixture);
+  assert.equal(raw.includes('usesDerivedArmorClass'), false, 'fixture must predate the AC policy');
+  assert.equal(legacyNpc.bestiaryTemplateId, legacyTemplate.id);
+  assert.equal(legacyNpc.manualDerivedStats?.armorClass, 36);
+
+  // Only the native boundaries are substituted. React effects, JSON parsing,
+  // AppProvider normalization, context consumers and save-back all run normally.
+  const storage = new Map([[STORAGE_KEY, raw]]);
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const storageUrl = 'test:campaign-storage';
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier === '@react-native-async-storage/async-storage') {
+        return { url: storageUrl, shortCircuit: true };
+      }
+      if (specifier === 'react-native' || specifier === 'expo-file-system') {
+        return { url: `test:${specifier}`, shortCircuit: true };
+      }
+      if (specifier.startsWith('@/')) {
+        const url = new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href;
+        return nextResolve(url, context);
+      }
+      if (specifier.startsWith('.') && !/\.[a-z]+$/i.test(specifier)) {
+        return nextResolve(`${specifier}.ts`, context);
+      }
+      return nextResolve(specifier, context);
+    },
+    load(url, context, nextLoad) {
+      if (url === storageUrl) {
+        return {
+          format: 'module', shortCircuit: true,
+          source: 'export default globalThis.__campaignReloadStorage;',
+        };
+      }
+      if (url === 'test:react-native') {
+        return { format: 'module', shortCircuit: true, source: "export const Platform = { OS: 'web' };" };
+      }
+      if (url === 'test:expo-file-system') {
+        return { format: 'module', shortCircuit: true, source: 'export class Directory {} export const Paths = {};' };
+      }
+      // Match Metro's removal of type-only imports in legacy .ts modules too.
+      if (url.startsWith(new URL('../', import.meta.url).href) && /\.tsx?$/.test(url)) {
+        return {
+          format: 'module', shortCircuit: true,
+          source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
+            compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React },
+          }).outputText,
+        };
+      }
+      return nextLoad(url, context);
+    },
+  });
+  const globals = globalThis as typeof globalThis & {
+    IS_REACT_ACT_ENVIRONMENT?: boolean;
+    __campaignReloadStorage?: {
+      getItem(key: string): Promise<string | null>;
+      setItem(key: string, value: string): Promise<void>;
+    };
+  };
+  const previousActEnvironment = globals.IS_REACT_ACT_ENVIRONMENT;
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+  globals.__campaignReloadStorage = {
+    async getItem(key) {
+      reads.push(key);
+      return storage.get(key) ?? null;
+    },
+    async setItem(key, value) {
+      writes.push(key);
+      storage.set(key, value);
+    },
+  };
+  let renderer: ReactTestRenderer | undefined;
+  try {
+    const { AppProvider, useApp } = await import('../context/AppContext.tsx');
+    let campaign: ReturnType<typeof useApp> | undefined;
+    function Consumer() {
+      campaign = useApp();
+      return null;
+    }
+    const mount = async () => {
+      await act(async () => {
+        renderer = create(React.createElement(AppProvider, null, React.createElement(Consumer)));
+      });
+      assert.ok(campaign);
+      return campaign;
+    };
+    const sheet = (character: Character) => resolveArmorAwareSheet({
+      special: character.special,
+      skills: character.skills,
+      manualDerivedStats: character.manualDerivedStats,
+      usesDerivedArmorClass: character.usesDerivedArmorClass,
+      naturalArmorClass: character.naturalProtection?.armorClass,
+      equippedBodyArmorId: character.equippedBodyArmorId,
+      equippedHelmetId: character.equippedHelmetId,
+      allArmor: BUILT_IN_ARMOR,
+    });
+    // Prove the fixture would reproduce the reported inflated total without repair.
+    assert.equal(sheet(legacyNpc).armorClass, 67);
+
+    for (const reload of ['legacy load', 'repaired save reload']) {
+      const restored = await mount();
+      assert.equal(restored.customBestiaryTemplates.length, 1, reload);
+      const template = restored.customBestiaryTemplates[0];
+      assert.equal(template.usesDerivedArmorClass, true, `${reload}: template repaired`);
+      const npc = restored.characters.find(character => character.id === legacyNpc.id)!;
+      assert.ok(npc, `${reload}: linked NPC restored`);
+      assert.equal(npc.bestiaryTemplateId, template.id);
+      assert.equal(npc.usesDerivedArmorClass, true, `${reload}: NPC repaired`);
+      const resolved = sheet(npc);
+      assert.equal(resolved.armorClass, 36, reload);
+      assert.equal(resolved.armorClassBreakdown.agility, 5);
+      assert.equal(resolved.armorClassBreakdown.bodyArmor, 25);
+      assert.equal(resolved.armorClassBreakdown.helmet, 6);
+      assert.equal(resolved.armorClassBreakdown.manual, 0);
+      const freshSpawn = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, 'After reload', 'fresh-npc');
+      assert.equal(sheet(freshSpawn).armorClass, 36, `${reload}: repaired template spawns correctly`);
+
+      const printed = restored.characters.find(character => character.id === printedNpc.id)!;
+      assert.ok(printed, `${reload}: printed creature restored`);
+      assert.notEqual(printed.usesDerivedArmorClass, true);
+      assert.equal(printed.manualDerivedStats?.armorClass, brahmin.armorClass);
+      assert.equal(sheet(printed).armorClass, brahmin.armorClass, `${reload}: printed AC unchanged`);
+      await act(async () => renderer!.unmount());
+      renderer = undefined;
+    }
+    assert.deepEqual(reads, [STORAGE_KEY, STORAGE_KEY]);
+    assert.deepEqual(writes, [STORAGE_KEY, STORAGE_KEY]);
+    const saved = JSON.parse(storage.get(STORAGE_KEY)!);
+    assert.equal(saved.customBestiaryTemplates[0].usesDerivedArmorClass, true);
+    assert.equal(saved.characters[0].usesDerivedArmorClass, true);
+  } finally {
+    if (renderer) await act(async () => renderer!.unmount());
+    hooks.deregister();
+    delete globals.__campaignReloadStorage;
+    if (previousActEnvironment === undefined) delete globals.IS_REACT_ACT_ENVIRONMENT;
+    else globals.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+  }
+});
