@@ -157,6 +157,9 @@ function LanguagePicker({
   );
 }
 
+const NEON_FLICKER_FADE_MS = 460;
+const NEON_FLICKER_CYCLE_MS = 4100;
+
 export default function MainMenuScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -194,7 +197,7 @@ export default function MainMenuScreen() {
       fadeTimer = undefined;
       neonBuzzPlayer.pause();
       neonBuzzPlayer.volume = 0;
-      void neonBuzzPlayer.seekTo(0);
+      void neonBuzzPlayer.seekTo(0).catch(() => {});
     };
     const playBuzz = () => {
       if (cancelled || !systemSoundsEnabled) return;
@@ -210,13 +213,13 @@ export default function MainMenuScreen() {
         neonBuzzPlayer.play();
         const startedAt = Date.now();
         fadeTimer = setInterval(() => {
-          const progress = Math.min(1, (Date.now() - startedAt) / 900);
+          const progress = Math.min(1, (Date.now() - startedAt) / NEON_FLICKER_FADE_MS);
           neonBuzzPlayer.volume = 0.2 * (1 - progress);
           if (progress >= 1) {
             if (fadeTimer) clearInterval(fadeTimer);
             fadeTimer = undefined;
             neonBuzzPlayer.pause();
-            void neonBuzzPlayer.seekTo(0);
+            void neonBuzzPlayer.seekTo(0).catch(() => {});
           }
         }, 40);
       })();
@@ -224,7 +227,7 @@ export default function MainMenuScreen() {
 
     if (systemSoundsEnabled) {
       playBuzz();
-      cycleTimer = setInterval(playBuzz, 4100);
+      cycleTimer = setInterval(playBuzz, NEON_FLICKER_CYCLE_MS);
     } else {
       stopBuzz();
     }
