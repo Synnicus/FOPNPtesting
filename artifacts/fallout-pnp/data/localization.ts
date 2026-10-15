@@ -124,6 +124,8 @@ export function translateText(value: string, locale: AppLocale = activeLocale): 
   if (themeName !== undefined) return `${leading}${themeName}${trailing}`;
   const healingLabel = translateHealAllLabel(key, locale);
   if (healingLabel !== undefined) return `${leading}${healingLabel}${trailing}`;
+  const trackerLabel = translateRoundTrackerLabel(key, locale);
+  if (trackerLabel !== undefined) return `${leading}${trackerLabel}${trailing}`;
   for (const pattern of compiledPatterns(locale)) {
     const match = key.match(pattern.regex);
     if (!match) continue;
@@ -251,4 +253,22 @@ const healAllLabels: Partial<Record<AppLocale, Record<string, string>>> = {
 
 function translateHealAllLabel(key: string, locale: AppLocale): string | undefined {
   return healAllLabels[locale]?.[key];
+}
+
+const roundTrackerLabels: Partial<Record<AppLocale, string>> = {
+  fr: 'INITIATIVE / SUIVI DES TOURS',
+  it: 'INIZIATIVA / TRACCIATORE ROUND',
+  de: 'INITIATIVE / RUNDENÜBERSICHT',
+  'es-ES': 'INICIATIVA / SEGUIMIENTO DE RONDAS',
+  'es-MX': 'INICIATIVA / SEGUIMIENTO DE RONDAS',
+  ja: 'イニシアチブ / ラウンド管理',
+  pl: 'INICJATYWA / ŚLEDZENIE RUND',
+  'pt-BR': 'INICIATIVA / RASTREADOR DE RODADAS',
+  ru: 'ИНИЦИАТИВА / ОТСЛЕЖИВАНИЕ РАУНДОВ',
+  'zh-Hans': '先攻 / 回合追踪',
+  'zh-Hant': '先攻 / 回合追蹤',
+};
+
+function translateRoundTrackerLabel(key: string, locale: AppLocale): string | undefined {
+  return key === 'INITIATIVE / ROUND TRACKER' ? roundTrackerLabels[locale] : undefined;
 }

@@ -2188,10 +2188,10 @@ export default function CombatScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>COMBAT CALCULATOR</Text>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? '#4a8c3f33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? '#4a8c3f' : colors.border }} onPress={() => setShowRoundTracker(v => !v)}>
+          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 150, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? '#4a8c3f33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? '#4a8c3f' : colors.border }} onPress={() => setShowRoundTracker(v => !v)}>
             <Feather name="clock" size={13} color={combatActive ? '#4a8c3f' : colors.mutedForeground} />
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: combatActive ? '#4a8c3f' : colors.mutedForeground }}>
-              {combatActive ? `R${currentRound}` : 'ROUNDS'}
+            <Text style={{ flexShrink: 1, textAlign: 'center', fontSize: 11, fontFamily: 'Inter_700Bold', color: combatActive ? '#4a8c3f' : colors.mutedForeground }}>
+              {combatActive ? `R${currentRound}` : 'INITIATIVE / ROUND TRACKER'}
             </Text>
           </TouchableOpacity>
         </View>
