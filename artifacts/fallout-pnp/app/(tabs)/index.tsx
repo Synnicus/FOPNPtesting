@@ -3601,7 +3601,7 @@ export default function CombatScreen() {
           </View>
         )}
 
-        {damageApplied && (
+        {shotDamages !== null && (
           <TouchableOpacity
             testID="combat-back-to-top"
             accessibilityRole="button"
