@@ -2267,6 +2267,7 @@ export default function CharactersScreen() {
   const [showPremades, setShowPremades] = useState(false);
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
+  const [showHealAllConfirm, setShowHealAllConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
@@ -2290,7 +2291,7 @@ export default function CharactersScreen() {
   };
 
   const resetAllHp = () => {
-    characters.forEach(c => {
+    characters.filter(c => !c.inStorage).forEach(c => {
       if (!isHealingBlocked(c) && (c.currentHp !== c.maxHp || c.isKnockedOut)) {
         updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
       }
@@ -2347,10 +2348,6 @@ export default function CharactersScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CHARACTERS</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }} onPress={resetAllHp}>
-              <Ionicons name="heart-circle" size={14} color={colors.destructive} />
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>RESET HP</Text>
-            </TouchableOpacity>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66' }} onPress={() => setShowPremades(true)}>
               <Feather name="users" size={14} color={colors.primary} />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>PREMADE</Text>
@@ -2365,6 +2362,18 @@ export default function CharactersScreen() {
           <Feather name="search" size={16} color={colors.mutedForeground} />
           <TextInput style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }} placeholder="Search…" placeholderTextColor={colors.mutedForeground} value={search} onChangeText={setSearch} />
           {search ? <TouchableOpacity onPress={() => setSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Heal All Characters"
+            testID="heal-all-characters"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive + '66' }}
+            onPress={() => setShowHealAllConfirm(true)}
+          >
+            <Ionicons name="heart-circle" size={14} color={colors.destructive} />
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.5 }}>Heal All Characters</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -2420,6 +2429,18 @@ export default function CharactersScreen() {
         onClose={next => {
           if (bioChar) updateCharacter({ ...bioChar, biography: next });
           setBioChar(null);
+        }}
+      />
+
+      <ConfirmModal
+        visible={showHealAllConfirm}
+        title="Are you sure?"
+        message="This will restore all active characters to full HP. Characters in storage will not be changed."
+        confirmLabel="HEAL ALL"
+        onCancel={() => setShowHealAllConfirm(false)}
+        onConfirm={() => {
+          resetAllHp();
+          setShowHealAllConfirm(false);
         }}
       />
 

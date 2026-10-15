@@ -414,15 +414,15 @@ export default function CampaignOptionsModal({
             <SectionHeading title="Theme Options" />
             <View accessibilityRole="radiogroup" accessibilityLabel="Color theme" style={{ gap: 9 }}>
               {([
-                { id: 'western', title: 'Western', description: 'Fallout: New Vegas amber' },
-                { id: 'eastern', title: 'Eastern', description: 'Fallout 3 Pip-Boy green' },
+                { id: 'western', title: 'Western Amber' },
+                { id: 'eastern', title: 'Eastern Green' },
               ] as const).map(theme => {
                 const selected = visualTheme === theme.id;
                 return (
                   <TouchableOpacity
                     key={theme.id}
                     accessibilityRole="radio"
-                    accessibilityLabel={`${theme.title} theme. ${theme.description}`}
+                    accessibilityLabel={theme.title}
                     accessibilityState={{ checked: selected }}
                     testID={`theme-option-${theme.id}`}
                     onPress={() => chooseTheme(theme.id)}
@@ -446,12 +446,9 @@ export default function CampaignOptionsModal({
                       justifyContent: 'center',
                     }}>
                     </View>
-                    <View style={{ flex: 1, gap: 3 }}>
+                    <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
                         {theme.title}
-                      </Text>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-                        {theme.description}
                       </Text>
                     </View>
                     <Feather

@@ -2195,8 +2195,6 @@ export default function CombatScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, letterSpacing: 0.5, marginBottom: 4 }}>Fallout PnP · Base − Range − Light − AC − Cover ± Mods − Shot</Text>
-
         {/* ─── Round Tracker ─── */}
         {showRoundTracker && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: combatActive ? '#4a8c3f88' : colors.border, padding: 14, gap: 10 }}>

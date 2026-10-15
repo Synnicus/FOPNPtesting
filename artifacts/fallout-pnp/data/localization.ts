@@ -112,8 +112,18 @@ export function translateText(value: string, locale: AppLocale = activeLocale): 
   const core = value.slice(leading.length, endIndex);
   const key = normalizeText(core);
   if (!key) return value;
-  const exact = translations[locale]?.[key] ?? supplementalTranslations[locale]?.[key] ?? languageSettingsTranslations[locale]?.[key];
+  const legacyKey = key === 'Pipe Rifle' ? 'Pipe Rife' : undefined;
+  const exact = translations[locale]?.[key]
+    ?? supplementalTranslations[locale]?.[key]
+    ?? languageSettingsTranslations[locale]?.[key]
+    ?? (legacyKey ? translations[locale]?.[legacyKey] : undefined);
   if (exact !== undefined) return `${leading}${exact}${trailing}`;
+  const capacity = translateWeaponCapacityLabel(key, locale);
+  if (capacity !== undefined) return `${leading}${capacity}${trailing}`;
+  const themeName = translateThemeName(key, locale);
+  if (themeName !== undefined) return `${leading}${themeName}${trailing}`;
+  const healingLabel = translateHealAllLabel(key, locale);
+  if (healingLabel !== undefined) return `${leading}${healingLabel}${trailing}`;
   for (const pattern of compiledPatterns(locale)) {
     const match = key.match(pattern.regex);
     if (!match) continue;
@@ -123,4 +133,122 @@ export function translateText(value: string, locale: AppLocale = activeLocale): 
     return `${leading}${translated}${trailing}`;
   }
   return value;
+}
+
+const weaponCapacityLabels: Partial<Record<AppLocale, {
+  fixed: (count: string) => string;
+  variable: string;
+  missing: string;
+}>> = {
+  fr: { fixed: count => `Contient ${count} cartouche${count === '1' ? '' : 's'}`, variable: 'La capacité varie selon le réservoir.', missing: 'Capacité non définie' },
+  it: { fixed: count => `Contiene ${count} colpi`, variable: 'La capacità varia in base al serbatoio.', missing: 'Capacità non impostata' },
+  de: { fixed: count => `Fasst ${count} Schuss`, variable: 'Die Kapazität variiert je nach Tank.', missing: 'Kapazität nicht festgelegt' },
+  'es-ES': { fixed: count => `Contiene ${count} ${count === '1' ? 'cartucho' : 'cartuchos'}`, variable: 'La capacidad varía según el depósito.', missing: 'Capacidad no definida' },
+  'es-MX': { fixed: count => `Contiene ${count} ${count === '1' ? 'cartucho' : 'cartuchos'}`, variable: 'La capacidad varía según el tanque.', missing: 'Capacidad no definida' },
+  ja: { fixed: count => `${count}発装填`, variable: '装填数はタンクによって異なります。', missing: '容量未設定' },
+  pl: { fixed: count => `Pojemność: ${count} szt.`, variable: 'Pojemność zależy od zbiornika.', missing: 'Pojemność nieustawiona' },
+  'pt-BR': { fixed: count => `Contém ${count} ${count === '1' ? 'cartucho' : 'cartuchos'}`, variable: 'A capacidade varia conforme o tanque.', missing: 'Capacidade não definida' },
+  ru: { fixed: count => `Вместимость: ${count} шт.`, variable: 'Вместимость зависит от бака.', missing: 'Вместимость не задана' },
+  'zh-Hans': { fixed: count => `可容纳 ${count} 发`, variable: '容量因燃料罐而异。', missing: '容量未设置' },
+  'zh-Hant': { fixed: count => `可容納 ${count} 發`, variable: '容量因燃料罐而異。', missing: '容量未設定' },
+};
+
+function translateWeaponCapacityLabel(key: string, locale: AppLocale): string | undefined {
+  const labels = weaponCapacityLabels[locale];
+  if (!labels) return undefined;
+  if (key === 'Holds a variable number of rounds') return labels.variable;
+  if (key === 'Capacity not set') return labels.missing;
+  const fixedCapacity = key.match(/^Holds (\d+) Rounds?$/);
+  return fixedCapacity ? labels.fixed(fixedCapacity[1]) : undefined;
+}
+
+const themeNames: Partial<Record<AppLocale, Record<string, string>>> = {
+  fr: { 'Western Amber': 'Ambre de l’Ouest', 'Eastern Green': 'Vert de l’Est' },
+  it: { 'Western Amber': 'Ambra occidentale', 'Eastern Green': 'Verde orientale' },
+  de: { 'Western Amber': 'Westliches Amber', 'Eastern Green': 'Östliches Grün' },
+  'es-ES': { 'Western Amber': 'Ámbar occidental', 'Eastern Green': 'Verde oriental' },
+  'es-MX': { 'Western Amber': 'Ámbar occidental', 'Eastern Green': 'Verde oriental' },
+  ja: { 'Western Amber': '西部のアンバー', 'Eastern Green': '東部のグリーン' },
+  pl: { 'Western Amber': 'Zachodni bursztyn', 'Eastern Green': 'Wschodnia zieleń' },
+  'pt-BR': { 'Western Amber': 'Âmbar do Oeste', 'Eastern Green': 'Verde do Leste' },
+  ru: { 'Western Amber': 'Западный янтарь', 'Eastern Green': 'Восточная зелень' },
+  'zh-Hans': { 'Western Amber': '西部琥珀', 'Eastern Green': '东部绿色' },
+  'zh-Hant': { 'Western Amber': '西部琥珀', 'Eastern Green': '東部綠色' },
+};
+
+function translateThemeName(key: string, locale: AppLocale): string | undefined {
+  return themeNames[locale]?.[key];
+}
+
+const healAllLabels: Partial<Record<AppLocale, Record<string, string>>> = {
+  fr: {
+    'Heal All Characters': 'Soigner tous les personnages',
+    'Are you sure?': 'Êtes-vous sûr ?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Tous les personnages actifs seront soignés au maximum de leurs PV. Les personnages en stockage ne seront pas modifiés.',
+    'HEAL ALL': 'TOUT SOIGNER',
+  },
+  it: {
+    'Heal All Characters': 'Cura tutti i personaggi',
+    'Are you sure?': 'Sei sicuro?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Tutti i personaggi attivi torneranno ai PF massimi. I personaggi in deposito non verranno modificati.',
+    'HEAL ALL': 'CURA TUTTI',
+  },
+  de: {
+    'Heal All Characters': 'Alle Charaktere heilen',
+    'Are you sure?': 'Bist du sicher?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Alle aktiven Charaktere werden auf ihre maximalen TP geheilt. Charaktere im Lager bleiben unverändert.',
+    'HEAL ALL': 'ALLE HEILEN',
+  },
+  'es-ES': {
+    'Heal All Characters': 'Curar a todos los personajes',
+    'Are you sure?': '¿Estás seguro?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Todos los personajes activos recuperarán todos sus PV. Los personajes guardados no cambiarán.',
+    'HEAL ALL': 'CURAR A TODOS',
+  },
+  'es-MX': {
+    'Heal All Characters': 'Curar a todos los personajes',
+    'Are you sure?': '¿Estás seguro?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Todos los personajes activos recuperarán todos sus PV. Los personajes guardados no cambiarán.',
+    'HEAL ALL': 'CURAR A TODOS',
+  },
+  ja: {
+    'Heal All Characters': '全キャラクターを回復',
+    'Are you sure?': 'よろしいですか？',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': '有効なキャラクター全員のHPを最大まで回復します。保管中のキャラクターは変更されません。',
+    'HEAL ALL': '全員を回復',
+  },
+  pl: {
+    'Heal All Characters': 'Wylecz wszystkie postacie',
+    'Are you sure?': 'Czy na pewno?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Wszystkie aktywne postacie odzyskają pełne PW. Postacie w magazynie pozostaną bez zmian.',
+    'HEAL ALL': 'WYLECZ WSZYSTKICH',
+  },
+  'pt-BR': {
+    'Heal All Characters': 'Curar todos os personagens',
+    'Are you sure?': 'Tem certeza?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Todos os personagens ativos voltarão ao HP máximo. Os personagens no armazenamento não serão alterados.',
+    'HEAL ALL': 'CURAR TODOS',
+  },
+  ru: {
+    'Heal All Characters': 'Вылечить всех персонажей',
+    'Are you sure?': 'Вы уверены?',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': 'Все активные персонажи восстановят здоровье до максимума. Персонажи в хранилище не изменятся.',
+    'HEAL ALL': 'ВЫЛЕЧИТЬ ВСЕХ',
+  },
+  'zh-Hans': {
+    'Heal All Characters': '治疗所有角色',
+    'Are you sure?': '确定吗？',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': '所有启用角色的生命值将恢复至最大值。储存中的角色不会受到影响。',
+    'HEAL ALL': '治疗全部',
+  },
+  'zh-Hant': {
+    'Heal All Characters': '治療所有角色',
+    'Are you sure?': '確定嗎？',
+    'This will restore all active characters to full HP. Characters in storage will not be changed.': '所有啟用角色的生命值將恢復至最大值。儲存中的角色不會受到影響。',
+    'HEAL ALL': '治療全部',
+  },
+};
+
+function translateHealAllLabel(key: string, locale: AppLocale): string | undefined {
+  return healAllLabels[locale]?.[key];
 }

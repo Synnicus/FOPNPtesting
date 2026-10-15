@@ -113,6 +113,8 @@ export interface Weapon {
   burstLimit: number;
   isDoubleShot: boolean;
   magazineSize: number;
+  /** Describes ammo capacity when the manual does not give a fixed round count. */
+  ammoCapacityNote?: 'variesByTank';
   weight: number;
   minStr: number;
   rangeNormal: number;

@@ -44,6 +44,35 @@ test('Pipe Rifle is spelled correctly and displays its one-round capacity', () =
   assert.equal(formatWeaponCapacity(pipeRifle), 'Holds 1 Round');
 });
 
+test('manual capacities are visible for every ammo-using built-in weapon', () => {
+  const expectedCapacities: Record<string, number> = {
+    wooden_bow: 1,
+    wooden_crossbow: 1,
+    composite_hunting_bow: 1,
+    composite_hunting_crossbow: 1,
+    '38_special_snubnose_revolver': 6,
+    fn_fal: 20,
+    handk_g11_e: 50,
+    m2_60mm_portable_mortar: 1,
+    ps_22_51mm_mortar: 1,
+    law_80_rocket_launcher: 1,
+    rocket_launcher: 1,
+  };
+  for (const [weaponId, capacity] of Object.entries(expectedCapacities)) {
+    const weapon = weaponById(weaponId);
+    assert.equal(weapon.magazineSize, capacity, weapon.name);
+    assert.equal(formatWeaponCapacity(weapon), `Holds ${capacity} ${capacity === 1 ? 'Round' : 'Rounds'}`, weapon.name);
+  }
+  for (const weapon of BUILT_IN_WEAPONS.filter(candidate => (candidate.compatibleAmmo?.length ?? 0) > 0)) {
+    assert.notEqual(formatWeaponCapacity(weapon), null, `${weapon.name} must show its ammo capacity`);
+  }
+  assert.equal(formatWeaponCapacity(weaponById('flamer')), 'Holds a variable number of rounds');
+});
+
+test('ammo-using custom weapons with no configured capacity show that it is missing', () => {
+  assert.equal(formatWeaponCapacity({ magazineSize: 0, compatibleAmmo: ['custom-ammo'] }), 'Capacity not set');
+});
+
 test('equipment AP costs spell out the attack modes', () => {
   assert.equal(formatWeaponAP(weaponById('unarmed')), 'Single 3 / Target 4 / Burst —');
   assert.equal(formatWeaponAP(weaponById('m79_grenade_rifle')), 'Single 5 / Target — / Burst —');
