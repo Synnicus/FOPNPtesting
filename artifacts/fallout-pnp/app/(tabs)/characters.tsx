@@ -1028,9 +1028,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 6 }}>LEVEL</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => applyLevel(char.level - 1)}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
+                    <TouchableOpacity testID="character-level-decrease" style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => applyLevel(char.level - 1)}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
                     <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary, flex: 1, textAlign: 'center' }}>{char.level}</Text>
-                    <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => applyLevel(char.level + 1)}><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
+                    <TouchableOpacity testID="character-level-increase" style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => applyLevel(char.level + 1)}><Feather name="plus" size={14} color={colors.foreground} /></TouchableOpacity>
                   </View>
                 </View>
                 {/* XP typeable field */}

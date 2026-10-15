@@ -34,7 +34,11 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
   const parsedChange = parseKarmaAdjustment(changeInput);
   const preview = parsedChange === null ? null : applyKarmaAdjustment(karma, parsedChange);
   const trimmedReason = reason.trim();
-  const canRecord = preview !== null && trimmedReason.length > 0 && trimmedReason.length <= MAX_KARMA_REASON_LENGTH;
+  const canRecord = parsedChange !== null
+    && parsedChange !== 0
+    && preview !== null
+    && trimmedReason.length > 0
+    && trimmedReason.length <= MAX_KARMA_REASON_LENGTH;
   const groupColor = group === 'Good' || group === 'Very Good'
     ? '#4a8c3f'
     : group === 'Evil' || group === 'Very Evil'
@@ -123,14 +127,14 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
           RECORD KARMA CHANGE
         </Text>
         <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-          Enter a positive or negative whole number, or +0 to log a neutral action. Add an explanation. The total is limited to −1000 to +1000.
+          Enter a non-zero positive or negative whole number. Add an explanation. The total is limited to −1000 to +1000.
         </Text>
         <TextInput
           accessibilityLabel="Karma change amount"
           testID="karma-change-input"
           value={changeInput}
           onChangeText={setChangeInput}
-          placeholder="Change, e.g. +25, -10, or +0"
+          placeholder="Change, e.g. +25 or -10"
           placeholderTextColor={colors.mutedForeground}
           keyboardType="numbers-and-punctuation"
           returnKeyType="next"
@@ -147,7 +151,12 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
         />
         {changeInput.length > 0 && parsedChange === null && (
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
-            Enter a whole number, such as +25, −10, or +0.
+            Enter a non-zero whole number, such as +25 or −10.
+          </Text>
+        )}
+        {parsedChange === 0 && (
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+            Enter a non-zero whole number. Zero does not create a Karma history entry.
           </Text>
         )}
         {parsedChange !== null && preview === null && (

@@ -1,0 +1,118 @@
+# Run against an installed, launchable Android or iOS build (not the web preview).
+# Supply APP_ID and a unique TEST_NAME with maestro -e; do not clear app data on launch.
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn: "Characters"
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}
+- hideKeyboard
+- tapOn: "KARMA"
+- assertVisible: "No Karma changes recorded. This character starts at 0 (Neutral)."
+- assertVisible: "Wasteland Dweller"
+
+# Invalid and zero adjustments must not add entries.
+- tapOn:
+    id: karma-change-input
+- inputText: "not-a-number"
+- tapOn:
+    id: karma-reason-input
+- inputText: "Invalid adjustment"
+- hideKeyboard
+- assertVisible: "Enter a non-zero whole number"
+- assertVisible: "KARMA HISTORY (0)"
+- tapOn:
+    id: karma-change-input
+- eraseText: 30
+- inputText: "0"
+- tapOn:
+    id: karma-reason-input
+- eraseText: 30
+- inputText: "Zero adjustment"
+- hideKeyboard
+- assertVisible: "Zero does not create a Karma history entry."
+- assertVisible: "KARMA HISTORY (0)"
+
+# Positive and negative entries keep their order and explanations.
+- tapOn:
+    id: karma-change-input
+- eraseText: 30
+- inputText: "+300"
+- tapOn:
+    id: karma-reason-input
+- eraseText: 30
+- inputText: "Helped a settlement"
+- hideKeyboard
+- tapOn:
+    id: karma-record-change
+- assertVisible: "+300"
+- assertVisible: "Helped a settlement"
+- assertVisible: "KARMA HISTORY (1)"
+
+- tapOn:
+    id: karma-change-input
+- inputText: "-50"
+- tapOn:
+    id: karma-reason-input
+- inputText: "Returned stolen supplies"
+- hideKeyboard
+- tapOn:
+    id: karma-record-change
+- assertVisible: "-50"
+- assertVisible: "Returned stolen supplies"
+- assertVisible: "KARMA HISTORY (2)"
+
+# At the cap, only the remaining +750 points are recorded.
+- tapOn:
+    id: karma-change-input
+- inputText: "+1000"
+- tapOn:
+    id: karma-reason-input
+- inputText: "Protected the settlement"
+- hideKeyboard
+- assertVisible: "Only +750 will be applied"
+- tapOn:
+    id: karma-record-change
+- assertVisible: "+750"
+- assertVisible: "KARMA HISTORY (3)"
+- assertVisible: "Wasteland Guardian"
+
+# The title follows the new level, and the character name is unchanged.
+- tapOn: "BASICS"
+- tapOn:
+    id: character-level-increase
+- tapOn: "KARMA"
+- assertVisible: "Wasteland Martyr"
+- tapOn:
+    id: character-save
+- assertVisible: ${TEST_NAME}
+
+# Cold app restart must preserve the total, title, history order, and entries.
+- stopApp
+- launchApp
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: DOWN
+- tapOn: ${TEST_NAME}
+- tapOn: "KARMA"
+- assertVisible: "1000"
+- assertVisible: "Wasteland Martyr"
+- assertVisible: "KARMA HISTORY (3)"
+- scrollUntilVisible:
+    element: "Helped a settlement"
+    direction: DOWN
+- assertVisible: "+300"
+- assertVisible: "Helped a settlement"
+- scrollUntilVisible:
+    element: "Returned stolen supplies"
+    direction: DOWN
+- assertVisible: "-50"
+- assertVisible: "Returned stolen supplies"
+- scrollUntilVisible:
+    element: "Protected the settlement"
+    direction: DOWN
+- assertVisible: "+750"
+- assertVisible: "Protected the settlement"
