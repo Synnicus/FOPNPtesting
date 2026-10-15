@@ -8,6 +8,7 @@ export type CampaignVisualTheme = 'western' | 'eastern';
 export interface CampaignOptions {
   visualTheme: CampaignVisualTheme;
   systemSoundsEnabled: boolean;
+  combatSoundsEnabled: boolean;
   musicEnabled: boolean;
   mutantGhoulRadiationRules: boolean;
   ghoulRadiationHealingOption: GhoulRadiationHealingOption;
@@ -16,6 +17,7 @@ export interface CampaignOptions {
 export const DEFAULT_CAMPAIGN_OPTIONS: CampaignOptions = {
   visualTheme: 'western',
   systemSoundsEnabled: true,
+  combatSoundsEnabled: true,
   musicEnabled: true,
   mutantGhoulRadiationRules: false,
   ghoulRadiationHealingOption: 1,
@@ -30,6 +32,9 @@ export function normalizeCampaignOptions(value: unknown): CampaignOptions {
     systemSoundsEnabled: typeof options.systemSoundsEnabled === 'boolean'
       ? options.systemSoundsEnabled
       : DEFAULT_CAMPAIGN_OPTIONS.systemSoundsEnabled,
+    combatSoundsEnabled: typeof options.combatSoundsEnabled === 'boolean'
+      ? options.combatSoundsEnabled
+      : DEFAULT_CAMPAIGN_OPTIONS.combatSoundsEnabled,
     musicEnabled: typeof options.musicEnabled === 'boolean'
       ? options.musicEnabled
       : DEFAULT_CAMPAIGN_OPTIONS.musicEnabled,

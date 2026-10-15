@@ -16,6 +16,7 @@ import * as Sharing from 'expo-sharing';
 
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import QuickRulesReference from '@/components/ManualQuickRulesReference';
 import type { Armor, Character, Weapon } from '@/context/types';
@@ -179,6 +180,7 @@ export default function CampaignScreen() {
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCampaignOptions, setShowCampaignOptions] = useState(false);
+  const [showCampaignLibrary, setShowCampaignLibrary] = useState(false);
   const [exportName, setExportName] = useState(defaultExportName());
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [conflictPrompt, setConflictPrompt] = useState<{
@@ -546,7 +548,7 @@ export default function CampaignScreen() {
               accessibilityRole="button"
               accessibilityLabel="Main Menu"
               testID="campaign-main-menu-button"
-              onPress={() => router.replace('/')}
+              onPress={() => router.replace('/main-menu')}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
             >
               <Feather name="home" size={14} color={colors.primary} />
@@ -563,6 +565,18 @@ export default function CampaignScreen() {
             >
               <Feather name="settings" size={15} color={colors.primary} />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>OPTIONS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Save Campaign"
+              testID="campaign-save-button"
+              onPress={() => setShowCampaignLibrary(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+            >
+              <Feather name="save" size={14} color={colors.primary} />
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.7, textTransform: 'uppercase' }}>
+                Save Campaign
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -830,6 +844,11 @@ export default function CampaignScreen() {
       <CampaignOptionsModal
         visible={showCampaignOptions}
         onClose={() => setShowCampaignOptions(false)}
+      />
+      <CampaignLibraryModal
+        visible={showCampaignLibrary}
+        onClose={() => setShowCampaignLibrary(false)}
+        onCampaignLoaded={() => setShowCampaignLibrary(false)}
       />
 
       {/* Import JSON Paste Modal (web + native fallback) */}

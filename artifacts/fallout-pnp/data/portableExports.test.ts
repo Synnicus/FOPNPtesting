@@ -170,6 +170,7 @@ test('portable campaign exports round-trip theme, audio, and mutant radiation pr
     ...state,
     visualTheme: 'eastern',
     systemSoundsEnabled: false,
+    combatSoundsEnabled: false,
     musicEnabled: true,
     mutantGhoulRadiationRules: true,
     ghoulRadiationHealingOption: 3,
@@ -179,6 +180,7 @@ test('portable campaign exports round-trip theme, audio, and mutant radiation pr
   if (parsed.ok && parsed.source === 'portable') {
     assert.equal(parsed.bundle.state.visualTheme, 'eastern');
     assert.equal(parsed.bundle.state.systemSoundsEnabled, false);
+    assert.equal(parsed.bundle.state.combatSoundsEnabled, false);
     assert.equal(parsed.bundle.state.musicEnabled, true);
     assert.equal(parsed.bundle.state.mutantGhoulRadiationRules, true);
     assert.equal(parsed.bundle.state.ghoulRadiationHealingOption, 3);
@@ -190,6 +192,7 @@ test('legacy and portable campaigns without options remain accepted', () => {
   const {
     visualTheme: _theme,
     systemSoundsEnabled: _sounds,
+    combatSoundsEnabled: _combatSounds,
     musicEnabled: _music,
     mutantGhoulRadiationRules: _mutantRadiation,
     ghoulRadiationHealingOption: _ghoulHealing,
@@ -203,6 +206,7 @@ test('legacy and portable campaigns without options remain accepted', () => {
       const loadedState = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
       assert.equal(loadedState.visualTheme, undefined);
       assert.equal(loadedState.systemSoundsEnabled, undefined);
+      assert.equal(loadedState.combatSoundsEnabled, undefined);
       assert.equal(loadedState.musicEnabled, undefined);
       assert.equal(loadedState.mutantGhoulRadiationRules, undefined);
       assert.equal(loadedState.ghoulRadiationHealingOption, undefined);
@@ -215,6 +219,7 @@ test('campaign imports reject invalid theme, audio, and mutant radiation options
   for (const invalidSettings of [
     { visualTheme: 'northern' },
     { systemSoundsEnabled: 'false' },
+    { combatSoundsEnabled: 1 },
     { musicEnabled: 0 },
     { mutantGhoulRadiationRules: 'yes' },
     { ghoulRadiationHealingOption: 5 },

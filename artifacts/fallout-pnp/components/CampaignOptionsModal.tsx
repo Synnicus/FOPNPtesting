@@ -257,6 +257,8 @@ export default function CampaignOptionsModal({
     setVisualTheme,
     systemSoundsEnabled,
     setSystemSoundsEnabled,
+    combatSoundsEnabled,
+    setCombatSoundsEnabled,
     musicEnabled,
     setMusicEnabled,
   } = useApp();
@@ -544,10 +546,17 @@ export default function CampaignOptionsModal({
             <SectionHeading title="Audio Options" />
             <PreferenceSwitchRow
               label="System sounds"
-              description="Saved for future audio support. No system sounds play yet."
+              description="Includes the main menu neon buzz."
               value={systemSoundsEnabled}
               onValueChange={setSystemSoundsEnabled}
               testID="system-sounds-toggle"
+            />
+            <PreferenceSwitchRow
+              label="Combat Sounds"
+              description="Reserved for future combat sound effects. No combat sounds play yet."
+              value={combatSoundsEnabled}
+              onValueChange={setCombatSoundsEnabled}
+              testID="combat-sounds-toggle"
             />
             <PreferenceSwitchRow
               label="Music"

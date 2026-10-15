@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useAudioPlayer } from 'expo-audio';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlagIcon } from '@/components/FlagIcon';
@@ -160,8 +161,9 @@ export default function MainMenuScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const { loaded, importCampaign } = useApp();
+  const { loaded, importCampaign, systemSoundsEnabled } = useApp();
   const { locale } = useLocalization();
+  const neonBuzzPlayer = useAudioPlayer(require('../assets/neon-flicker-buzz.mp3'));
   const [showOptions, setShowOptions] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showLanguages, setShowLanguages] = useState(false);
@@ -172,17 +174,67 @@ export default function MainMenuScreen() {
   useEffect(() => {
     flicker.value = withRepeat(
       withSequence(
-        withTiming(0.73, { duration: 90 }),
-        withTiming(1, { duration: 120 }),
-        withTiming(0.9, { duration: 65 }),
-        withTiming(1, { duration: 280 }),
-        withTiming(0.96, { duration: 55 }),
-        withTiming(1, { duration: 2500 }),
+        withTiming(0.12, { duration: 60 }),
+        withTiming(0.92, { duration: 55 }),
+        withTiming(0.02, { duration: 30 }),
+        withTiming(1, { duration: 40 }),
+        withTiming(0.32, { duration: 55 }),
+        withTiming(1, { duration: 220 }),
+        withTiming(1, { duration: 3640 }),
       ),
       -1,
       false,
     );
-  }, [flicker]);
+
+    let cycleTimer: ReturnType<typeof setInterval> | undefined;
+    let fadeTimer: ReturnType<typeof setInterval> | undefined;
+    let cancelled = false;
+    const stopBuzz = () => {
+      if (fadeTimer) clearInterval(fadeTimer);
+      fadeTimer = undefined;
+      neonBuzzPlayer.pause();
+      neonBuzzPlayer.volume = 0;
+      void neonBuzzPlayer.seekTo(0);
+    };
+    const playBuzz = () => {
+      if (cancelled || !systemSoundsEnabled) return;
+      if (fadeTimer) clearInterval(fadeTimer);
+      void (async () => {
+        try {
+          await neonBuzzPlayer.seekTo(0);
+        } catch {
+          return;
+        }
+        if (cancelled) return;
+        neonBuzzPlayer.volume = 0.2;
+        neonBuzzPlayer.play();
+        const startedAt = Date.now();
+        fadeTimer = setInterval(() => {
+          const progress = Math.min(1, (Date.now() - startedAt) / 900);
+          neonBuzzPlayer.volume = 0.2 * (1 - progress);
+          if (progress >= 1) {
+            if (fadeTimer) clearInterval(fadeTimer);
+            fadeTimer = undefined;
+            neonBuzzPlayer.pause();
+            void neonBuzzPlayer.seekTo(0);
+          }
+        }, 40);
+      })();
+    };
+
+    if (systemSoundsEnabled) {
+      playBuzz();
+      cycleTimer = setInterval(playBuzz, 4100);
+    } else {
+      stopBuzz();
+    }
+
+    return () => {
+      cancelled = true;
+      if (cycleTimer) clearInterval(cycleTimer);
+      stopBuzz();
+    };
+  }, [flicker, neonBuzzPlayer, systemSoundsEnabled]);
 
   const neonStyle = useAnimatedStyle(() => ({ opacity: flicker.value }));
 

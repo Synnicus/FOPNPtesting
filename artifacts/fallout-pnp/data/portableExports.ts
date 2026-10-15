@@ -38,6 +38,7 @@ export interface CampaignStateSnapshot {
   ghoulRadiationHealingOption?: GhoulRadiationHealingOption;
   visualTheme?: CampaignVisualTheme;
   systemSoundsEnabled?: boolean;
+  combatSoundsEnabled?: boolean;
   musicEnabled?: boolean;
   /** Legacy import alias retained so older campaign files remain compatible. */
   fallout3RadiationDebuffs?: boolean;
@@ -256,6 +257,7 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
     && Array.isArray(value.customArmor ?? [])
     && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
+    && (value.combatSoundsEnabled === undefined || typeof value.combatSoundsEnabled === 'boolean')
     && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
@@ -450,6 +452,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && (value.activeEntryId === null || typeof value.activeEntryId === 'string')
     && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
+    && (value.combatSoundsEnabled === undefined || typeof value.combatSoundsEnabled === 'boolean')
     && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined

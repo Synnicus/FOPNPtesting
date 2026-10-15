@@ -493,6 +493,7 @@ interface AppContextValue extends AppState {
   setGhoulRadiationHealingOption: (option: GhoulRadiationHealingOption) => void;
   setVisualTheme: (theme: CampaignVisualTheme) => void;
   setSystemSoundsEnabled: (enabled: boolean) => void;
+  setCombatSoundsEnabled: (enabled: boolean) => void;
   setMusicEnabled: (enabled: boolean) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
@@ -1920,6 +1921,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, systemSoundsEnabled }));
   }, []);
 
+  const setCombatSoundsEnabled = useCallback((combatSoundsEnabled: boolean) => {
+    setState(s => ({ ...s, combatSoundsEnabled }));
+  }, []);
+
   const setMusicEnabled = useCallback((musicEnabled: boolean) => {
     setState(s => ({ ...s, musicEnabled }));
   }, []);
@@ -1937,7 +1942,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
         setMutantGhoulRadiationRules, setGhoulRadiationHealingOption,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
-         setVisualTheme, setSystemSoundsEnabled, setMusicEnabled,
+          setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,

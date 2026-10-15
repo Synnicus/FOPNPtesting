@@ -14,10 +14,12 @@ test('campaign options preserve explicit preferences and normalize invalid value
   assert.deepEqual(normalizeCampaignOptions({
     visualTheme: 'eastern',
     systemSoundsEnabled: false,
+    combatSoundsEnabled: false,
     musicEnabled: false,
   }), {
     visualTheme: 'eastern',
     systemSoundsEnabled: false,
+    combatSoundsEnabled: false,
     musicEnabled: false,
     mutantGhoulRadiationRules: false,
     ghoulRadiationHealingOption: 1,
@@ -25,6 +27,7 @@ test('campaign options preserve explicit preferences and normalize invalid value
   assert.deepEqual(normalizeCampaignOptions({
     visualTheme: 'unknown',
     systemSoundsEnabled: 'off',
+    combatSoundsEnabled: 'off',
     musicEnabled: null,
   }), DEFAULT_CAMPAIGN_OPTIONS);
 });
