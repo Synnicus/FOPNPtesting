@@ -162,7 +162,7 @@ function LanguagePicker({
 
 const NEON_FLICKER_FADE_MS = 460;
 const NEON_FLICKER_CYCLE_MS = 4100;
-const CONTINUE_SOUND_DURATION_FALLBACK_MS = 3605;
+const CONTINUE_SOUND_DURATION_MS = 5225;
 
 export default function MainMenuScreen() {
   const colors = useColors();
@@ -284,10 +284,7 @@ export default function MainMenuScreen() {
   const handleContinue = () => {
     if (!loaded || isContinueTransitioning) return;
 
-    const soundDurationMs = Math.max(
-      1,
-      Math.round((continueButtonPlayer.duration || CONTINUE_SOUND_DURATION_FALLBACK_MS / 1000) * 1000),
-    );
+    const soundDurationMs = CONTINUE_SOUND_DURATION_MS;
     if (systemSoundsEnabled) {
       continueButtonPlayer.volume = 0.35;
       void continueButtonPlayer.seekTo(0).catch(() => {});
