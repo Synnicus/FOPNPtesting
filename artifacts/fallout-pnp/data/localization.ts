@@ -43,6 +43,19 @@ const translations: Partial<Record<AppLocale, Record<string, string>>> = {
   fr, it, de, 'es-ES': esES, 'es-MX': esMX, ja, pl, 'pt-BR': ptBR, ru,
   'zh-Hans': zhHans, 'zh-Hant': zhHant,
 };
+const supplementalTranslations: Partial<Record<AppLocale, Record<string, string>>> = {
+  fr: { 'No Armor': 'Aucune armure', 'No Weapon': 'Aucune arme' },
+  it: { 'No Armor': 'Nessuna armatura', 'No Weapon': 'Nessuna arma' },
+  de: { 'No Armor': 'Keine Rüstung', 'No Weapon': 'Keine Waffe' },
+  'es-ES': { 'No Armor': 'Sin armadura', 'No Weapon': 'Sin arma' },
+  'es-MX': { 'No Armor': 'Sin armadura', 'No Weapon': 'Sin arma' },
+  ja: { 'No Armor': '防具なし', 'No Weapon': '武器なし' },
+  pl: { 'No Armor': 'Brak pancerza', 'No Weapon': 'Brak broni' },
+  'pt-BR': { 'No Armor': 'Sem armadura', 'No Weapon': 'Sem arma' },
+  ru: { 'No Armor': 'Без брони', 'No Weapon': 'Без оружия' },
+  'zh-Hans': { 'No Armor': '无护甲', 'No Weapon': '无武器' },
+  'zh-Hant': { 'No Armor': '無護甲', 'No Weapon': '無武器' },
+};
 const dynamicPatterns: Partial<Record<AppLocale, Record<string, string>>> = {
   fr: patternsFr, it: patternsIt, de: patternsDe, 'es-ES': patternsEsES,
   'es-MX': patternsEsMX, ja: patternsJa, pl: patternsPl, 'pt-BR': patternsPtBR,
@@ -99,7 +112,7 @@ export function translateText(value: string, locale: AppLocale = activeLocale): 
   const core = value.slice(leading.length, endIndex);
   const key = normalizeText(core);
   if (!key) return value;
-  const exact = translations[locale]?.[key] ?? languageSettingsTranslations[locale]?.[key];
+  const exact = translations[locale]?.[key] ?? supplementalTranslations[locale]?.[key] ?? languageSettingsTranslations[locale]?.[key];
   if (exact !== undefined) return `${leading}${exact}${trailing}`;
   for (const pattern of compiledPatterns(locale)) {
     const match = key.match(pattern.regex);

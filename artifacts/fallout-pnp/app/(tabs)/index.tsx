@@ -2470,8 +2470,7 @@ export default function CombatScreen() {
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     <CharacterAvatar portrait={attacker.portrait} name={attacker.name} size={36} />
-                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={2}>{attacker.name}</Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.primary }}>ATK</Text>
+                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{attacker.name}</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
                     <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_600SemiBold', color: colors.primary }} numberOfLines={1}>{weapon ? weapon.name : 'No weapon'}</Text>
@@ -2515,8 +2514,7 @@ export default function CombatScreen() {
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     <CharacterAvatar portrait={defender.portrait} name={defender.name} size={36} />
-                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={2}>{defender.name}</Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.destructive }}>DEF</Text>
+                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{defender.name}</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
                     <Text style={{ fontSize: 8, lineHeight: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>
@@ -2527,11 +2525,11 @@ export default function CombatScreen() {
                     </Text>
                     {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
                     <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
-                      {defenderPos === 'standing' ? 'Standing' : defenderPos === 'crouching' ? 'Crouching' : 'Prone'}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${Math.min(defender.currentAP, defenderSheet?.maxAP ?? defender.maxAP)}/${defenderSheet?.maxAP ?? defender.maxAP}` : ''}
+                      {defenderPos === 'standing' ? 'Standing' : defenderPos === 'crouching' ? 'Crouching' : 'Prone'}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp}` : ''}
                     </Text>
-                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{defenderWeapon?.name ?? 'None'}</Text>
-                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{bodyArmor?.name ?? 'None'}</Text>
-                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'None')}</Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{defenderWeapon?.name ?? 'No Weapon'}</Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{bodyArmor?.name ?? 'No Armor'}</Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'No Helmet')}</Text>
                     {defender.isKnockedOut && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>KO · {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: '#f59e0b' }} numberOfLines={1}>⚠ {n}</Text>
