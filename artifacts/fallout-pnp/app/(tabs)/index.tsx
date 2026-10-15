@@ -34,7 +34,7 @@ import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { computeDefensivePerkBonuses, describeAmmoProtectionModifier, resolveAmmoDamageComponents, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
 import { getRaceById } from '@/data/races';
-import { computeConditionModifiers } from '@/data/conditions';
+import { computeConditionModifiers, type ConditionDefinition } from '@/data/conditions';
 import {
   fastShotAppliesToSkill,
 } from '@/data/effectiveRules';
@@ -213,7 +213,8 @@ function shortAmmoName(name: string): string {
 // One-line summary of what an active effect changes (for combat cards).
 function describeEffectMods(e: {
   statMods?: Partial<Record<string, number>>; acMod?: number; drMod?: number;
-  apMod?: number; sequenceMod?: number;
+  apMod?: number; sequenceMod?: number; radResistMod?: number;
+  poisonResistMod?: number; healingRateMod?: number;
 }): string {
   const bits: string[] = [];
   for (const [k, v] of Object.entries(e.statMods ?? {})) {
@@ -223,7 +224,17 @@ function describeEffectMods(e: {
   if (e.drMod) bits.push(`DR ${e.drMod > 0 ? '+' : ''}${e.drMod}%`);
   if (e.apMod) bits.push(`AP ${e.apMod > 0 ? '+' : ''}${e.apMod}`);
   if (e.sequenceMod) bits.push(`SEQ ${e.sequenceMod > 0 ? '+' : ''}${e.sequenceMod}`);
+  if (e.radResistMod) bits.push(`RAD RES ${e.radResistMod > 0 ? '+' : ''}${e.radResistMod}%`);
+  if (e.poisonResistMod) bits.push(`POISON RES ${e.poisonResistMod > 0 ? '+' : ''}${e.poisonResistMod}%`);
+  if (e.healingRateMod) bits.push(`HEAL RATE ${e.healingRateMod > 0 ? '+' : ''}${e.healingRateMod}`);
   return bits.join(', ');
+}
+
+function describeCombatConditionStatMods(condition: ConditionDefinition): string {
+  return Object.entries(condition.statMods)
+    .filter(([, value]) => value !== undefined && value !== 0)
+    .map(([stat, value]) => `${stat.slice(0, 3).toUpperCase()} ${value! > 0 ? '+' : ''}${value}`)
+    .join(', ');
 }
 
 function notify(title: string, message?: string) {
@@ -2494,11 +2505,16 @@ export default function CombatScreen() {
                         ⚗ {e.name}{describeEffectMods(e) ? ` · ${describeEffectMods(e)}` : ''}
                       </Text>
                     ))}
-                    {computeConditionModifiers(attacker).active.map(condition => (
-                      <Text key={condition.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
-                        ⚠ {condition.name} · {condition.description}
-                      </Text>
-                    ))}
+                    {computeConditionModifiers(attacker).active.map(condition => {
+                      const statMods = describeCombatConditionStatMods(condition);
+                      return (
+                        <Text key={condition.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
+                          ⚠ <Text>{condition.name}</Text>
+                          {statMods ? ` · ${statMods}` : ''}
+                          {condition.blocksHealing && <><Text> · </Text><Text>Healing blocked</Text></>}
+                        </Text>
+                      );
+                    })}
                   </View>
                 </>
               ) : (
@@ -2545,11 +2561,16 @@ export default function CombatScreen() {
                         ⚗ {e.name}{describeEffectMods(e) ? ` · ${describeEffectMods(e)}` : ''}
                       </Text>
                     ))}
-                    {computeConditionModifiers(defender).active.map(condition => (
-                      <Text key={condition.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
-                        ⚠ {condition.name} · {condition.description}
-                      </Text>
-                    ))}
+                    {computeConditionModifiers(defender).active.map(condition => {
+                      const statMods = describeCombatConditionStatMods(condition);
+                      return (
+                        <Text key={condition.id} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }} numberOfLines={2}>
+                          ⚠ <Text>{condition.name}</Text>
+                          {statMods ? ` · ${statMods}` : ''}
+                          {condition.blocksHealing && <><Text> · </Text><Text>Healing blocked</Text></>}
+                        </Text>
+                      );
+                    })}
                   </View>
                 </>
               ) : (
