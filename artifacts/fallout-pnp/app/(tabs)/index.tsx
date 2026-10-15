@@ -53,6 +53,14 @@ import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
+const DEFENDER_DAMAGE_TYPE_LABELS: Record<DamageType, string> = {
+  normal: 'NORM',
+  laser: 'LASER',
+  fire: 'FIRE',
+  plasma: 'PLASMA',
+  explosion: 'EXPL',
+};
+
 function resolveCombatSheet(
   character: Character,
   allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'],
@@ -469,10 +477,11 @@ function ProtectionBreakdownLines({
 }
 
 // ─── Character Picker Modal ───────────────────────────────────────────────────
-function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor, hardcoreRadiationRules }: {
+function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor, hardcoreRadiationRules, clearRole, onClear }: {
   visible: boolean; onClose: () => void; onSelect: (id: string) => void;
   title: string; characters: Character[]; allWeapons: Weapon[]; allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'];
   hardcoreRadiationRules: boolean;
+  clearRole?: 'Attacker' | 'Defender'; onClear?: () => void;
 }) {
   const colors = useColors();
   return (
@@ -483,6 +492,17 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
             <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{title}</Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
+          {onClear && clearRole && (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+              onPress={() => { onClear(); onClose(); }}
+            >
+              <Feather name="x-circle" size={18} color={colors.destructive} />
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>
+                <Text>CLEAR</Text><Text> · </Text><Text style={{ textTransform: 'uppercase' }}>{clearRole}</Text>
+              </Text>
+            </TouchableOpacity>
+          )}
           {characters.length === 0 ? (
             <View style={{ padding: 40, alignItems: 'center', gap: 12 }}>
               <Feather name="users" size={40} color={colors.mutedForeground} />
@@ -2499,22 +2519,19 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.destructive }}>DEF</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
-                    <Text style={{ fontSize: 11, lineHeight: 14, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>
-                      AC {defenderAC}{!defender.combatDefenseSuppressed && defender.tempAC > 0 ? ` (+${defender.tempAC} temp)` : ''}{!defender.combatDefenseSuppressed && defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}
+                    <Text style={{ fontSize: 8, lineHeight: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>
+                      <Text>AC {defenderAC}{!defender.combatDefenseSuppressed && defender.tempAC > 0 ? ` (+${defender.tempAC})` : ''}{!defender.combatDefenseSuppressed && defenderAgiAcDelta > 0 ? ` (−${defenderAgiAcDelta} ${defenderPos})` : ''}</Text>
+                      {' · '}<Text>DT</Text>{' '}{weapon ? displayProt.dt : '—'}
+                      {' · '}<Text>DR</Text>{' '}{weapon ? `${displayProt.dr}%` : '—'}
+                      {' · '}<Text>VS.</Text>{' '}{weapon ? <Text>{DEFENDER_DAMAGE_TYPE_LABELS[weapon.damageType]}</Text> : '—'}
                     </Text>
                     {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={2}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
                     <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
                       {defenderPos === 'standing' ? 'Standing' : defenderPos === 'crouching' ? 'Crouching' : 'Prone'}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp} · AP ${Math.min(defender.currentAP, defenderSheet?.maxAP ?? defender.maxAP)}/${defenderSheet?.maxAP ?? defender.maxAP}` : ''}
                     </Text>
-                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>
-                      <Text style={{ fontFamily: 'Inter_600SemiBold' }}>EQUIPPED WEAPON</Text> · {defenderWeapon?.name ?? 'None'}
-                    </Text>
-                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>
-                      <Text style={{ fontFamily: 'Inter_600SemiBold' }}>BODY ARMOR</Text> · {bodyArmor?.name ?? 'None'}
-                    </Text>
-                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>
-                      <Text style={{ fontFamily: 'Inter_600SemiBold' }}>HELMET</Text> · {helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'None')}
-                    </Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{defenderWeapon?.name ?? 'None'}</Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{bodyArmor?.name ?? 'None'}</Text>
+                    <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={1}>{helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'None')}</Text>
                     {defender.isKnockedOut && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }} numberOfLines={1}>KO · {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_400Regular', color: '#f59e0b' }} numberOfLines={1}>⚠ {n}</Text>
@@ -3584,8 +3601,8 @@ export default function CombatScreen() {
 
       </ScrollView>
 
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
-      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} onClear={() => setAttackerId(null)} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
+      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} onClear={() => setDefenderId(null)} clearRole="Defender" title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
       <CombatSkillModal
         visible={showCombatSkill}
         actor={completionHealAction ? completionHealActor : attacker}
