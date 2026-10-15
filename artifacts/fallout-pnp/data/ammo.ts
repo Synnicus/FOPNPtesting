@@ -128,7 +128,7 @@ export const AMMO_TYPES: AmmoType[] = [
   { id: 'rocket_explosive', name: 'Rocket (Explosive)', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 6, dmgDie: 8, dmgBonus: 0, volume: 10 },
   { id: 'rocket_ap', name: 'Rocket (AP)', value: 2500, acMod: -10, drMod: 0, ignoresDT: true, dmgDieCount: 6, dmgDie: 6, dmgBonus: 0, volume: 10 },
   { id: 'rocket_emp', name: 'Rocket (EMP)', value: 3000, acMod: 0, drMod: 0, dmgDieCount: 3, dmgDie: 20, dmgBonus: 0, volume: 10, notes: 'Non-biological targets only.' },
-  { id: 'tow_ii_rocket', name: 'TOW-II Rocket', value: 5000, acMod: -20, drMod: -20, ignoresDT: true, dmgDieCount: 10, dmgDie: 10, dmgBonus: 200, volume: 5 },
+  { id: 'tow_ii_rocket', name: 'TOW-II Rocket', value: 5000, acMod: -20, drMod: -20, ignoresDT: true, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 5, notes: 'Damage is listed on the TOW-II Missile Defense System, not the rocket.' },
 
   // ─── Ordinance: grenades for launchers & mortars ──────────────────
   { id: '40mm_frag', name: '40mm Fragmentation Grenade', value: 1000, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 12, dmgBonus: 22, volume: 5, notes: '1d6 Conc., 1d6 Frag.' },
