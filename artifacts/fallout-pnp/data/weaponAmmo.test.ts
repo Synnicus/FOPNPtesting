@@ -37,6 +37,13 @@ test('equipment capacity shows one-round weapons and hides capacity on non-ammo 
   assert.equal(formatWeaponCapacity(weaponById('super_sledge')), null);
 });
 
+test('Pipe Rifle is spelled correctly and displays its one-round capacity', () => {
+  const pipeRifle = weaponById('pipe_pistol');
+  assert.equal(pipeRifle.name, 'Pipe Rifle');
+  assert.equal(pipeRifle.magazineSize, 1);
+  assert.equal(formatWeaponCapacity(pipeRifle), 'Holds 1 Round');
+});
+
 test('equipment AP costs spell out the attack modes', () => {
   assert.equal(formatWeaponAP(weaponById('unarmed')), 'Single 3 / Target 4 / Burst —');
   assert.equal(formatWeaponAP(weaponById('m79_grenade_rifle')), 'Single 5 / Target — / Burst —');
