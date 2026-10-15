@@ -26,7 +26,6 @@ function ManualTable({ table }: { table: QuickRuleTable }) {
     >
       <Text accessibilityRole="header" style={{
         fontSize: 12,
-        lineHeight: 17,
         fontFamily: 'Inter_700Bold',
         color: colors.primary,
       }}>
@@ -52,21 +51,18 @@ function ManualTable({ table }: { table: QuickRuleTable }) {
             gap: 3,
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+          <View style={{ gap: 4 }}>
             <Text style={{
-              width: 104,
               fontSize: 11,
-              lineHeight: 16,
               fontFamily: 'Inter_700Bold',
               color: colors.foreground,
             }}>
               {row.label}
             </Text>
-            <View style={{ flex: 1, gap: 2 }}>
+            <View style={{ gap: 2 }}>
               {row.values.map((value, valueIndex) => (
                 <Text key={`${valueIndex}-${value}`} style={{
                   fontSize: 11,
-                  lineHeight: 16,
                   fontFamily: 'Inter_600SemiBold',
                   color: colors.primary,
                 }}>
@@ -77,9 +73,7 @@ function ManualTable({ table }: { table: QuickRuleTable }) {
           </View>
           {row.description ? (
             <Text style={{
-              marginLeft: 112,
               fontSize: 11,
-              lineHeight: 16,
               fontFamily: 'Inter_400Regular',
               color: colors.mutedForeground,
             }}>
@@ -109,7 +103,6 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
       <View style={{ gap: 3 }}>
         <Text accessibilityRole="header" style={{
           fontSize: 13,
-          lineHeight: 18,
           fontFamily: 'Inter_700Bold',
           color: colors.foreground,
         }}>
@@ -117,7 +110,6 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
         </Text>
         <Text style={{
           fontSize: 11,
-          lineHeight: 16,
           fontFamily: 'Inter_600SemiBold',
           color: colors.mutedForeground,
         }}>
@@ -130,7 +122,6 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
           testID={`quick-rule-detail-paragraph-${rule.id}-${index + 1}`}
           style={{
             fontSize: 12,
-            lineHeight: 19,
             fontFamily: 'Inter_400Regular',
             color: colors.foreground,
           }}
@@ -188,7 +179,6 @@ export default function ManualQuickRulesReference() {
         </Text>
         <Text style={{
           fontSize: 11,
-          lineHeight: 16,
           fontFamily: 'Inter_400Regular',
           color: colors.mutedForeground,
         }}>
@@ -214,13 +204,14 @@ export default function ManualQuickRulesReference() {
           testID="quick-rules-search"
           value={query}
           onChangeText={setQuery}
-          placeholder="Search rules, keywords, or values…"
+          placeholder="Search…"
           placeholderTextColor={colors.mutedForeground}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
           style={{
             flex: 1,
+            minWidth: 0,
             paddingVertical: 10,
             fontSize: 13,
             fontFamily: 'Inter_400Regular',
@@ -276,7 +267,6 @@ export default function ManualQuickRulesReference() {
           </Text>
           <Text style={{
             fontSize: 11,
-            lineHeight: 16,
             fontFamily: 'Inter_400Regular',
             color: colors.mutedForeground,
             textAlign: 'center',
@@ -320,10 +310,9 @@ export default function ManualQuickRulesReference() {
                   }}
                 >
                   <Feather name="book-open" size={15} color={colors.primary} />
-                  <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                     <Text style={{
                       fontSize: 12,
-                      lineHeight: 17,
                       fontFamily: 'Inter_700Bold',
                       color: colors.foreground,
                     }}>
@@ -344,7 +333,6 @@ export default function ManualQuickRulesReference() {
                     <Text style={{
                       paddingHorizontal: 4,
                       fontSize: 11,
-                      lineHeight: 16,
                       fontFamily: 'Inter_400Regular',
                       color: colors.mutedForeground,
                     }}>
@@ -385,14 +373,18 @@ export default function ManualQuickRulesReference() {
                           >
                             <Text style={{
                               flex: 1,
+                              minWidth: 0,
+                              flexShrink: 1,
                               fontSize: 11,
-                              lineHeight: 16,
                               fontFamily: 'Inter_700Bold',
                               color: colors.foreground,
                             }}>
                               {child.title}
                             </Text>
                             <Text style={{
+                              flexShrink: 1,
+                              maxWidth: '30%',
+                              textAlign: 'right',
                               fontSize: 9,
                               fontFamily: 'Inter_600SemiBold',
                               color: colors.mutedForeground,

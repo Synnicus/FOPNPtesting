@@ -29,7 +29,6 @@ function RuleTable({ table }: { table: QuickRuleTable }) {
     >
       <Text accessibilityRole="header" style={{
         fontSize: 12,
-        lineHeight: 17,
         fontFamily: 'Inter_700Bold',
         color: colors.primary,
       }}>
@@ -58,23 +57,20 @@ function RuleTable({ table }: { table: QuickRuleTable }) {
               gap: 3,
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+            <View style={{ gap: 4 }}>
               <Text style={{
-                width: 74,
                 fontSize: 11,
-                lineHeight: 16,
                 fontFamily: 'Inter_700Bold',
                 color: colors.foreground,
               }}>
                 {row.label}
               </Text>
-              <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ gap: 2 }}>
                 {values.map((value, valueIndex) => (
                   <Text
                     key={`${valueIndex}-${value}`}
                     style={{
                       fontSize: 11,
-                      lineHeight: 16,
                       fontFamily: 'Inter_600SemiBold',
                       color: colors.primary,
                     }}
@@ -86,9 +82,7 @@ function RuleTable({ table }: { table: QuickRuleTable }) {
             </View>
             {row.description ? (
               <Text style={{
-                marginLeft: 84,
                 fontSize: 11,
-                lineHeight: 16,
                 fontFamily: 'Inter_400Regular',
                 color: colors.mutedForeground,
               }}>
@@ -124,27 +118,27 @@ function RuleDetailModal({
         accessibilityViewIsModal
         style={{
           flex: 1,
+          minHeight: 0,
           paddingTop: insets.top,
           backgroundColor: colors.background,
         }}
       >
         <View style={{
           flexDirection: 'row',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: 12,
-          paddingHorizontal: 16,
+          paddingHorizontal: 12,
           paddingVertical: 13,
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
           backgroundColor: colors.card,
         }}>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0, paddingTop: 5 }}>
             <Text
               accessibilityRole="header"
               accessibilityLabel={rule?.title ?? 'Rule details'}
               style={{
                 fontSize: 16,
-                lineHeight: 21,
                 fontFamily: 'Inter_700Bold',
                 letterSpacing: 0.8,
                 color: colors.primary,
@@ -168,13 +162,21 @@ function RuleDetailModal({
             accessibilityHint="Returns to Quick Rules search"
             testID="quick-rule-detail-close"
             onPress={onClose}
-            style={{ padding: 7 }}
+            hitSlop={8}
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 7,
+            }}
           >
             <Feather name="x" size={22} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
 
         <ScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={{
             padding: 16,
             paddingBottom: Math.max(24, insets.bottom + 24),
@@ -184,7 +186,6 @@ function RuleDetailModal({
         >
           <Text style={{
             fontSize: 14,
-            lineHeight: 21,
             fontFamily: 'Inter_600SemiBold',
             color: colors.foreground,
           }}>
@@ -197,7 +198,6 @@ function RuleDetailModal({
               testID={`quick-rule-detail-paragraph-${index + 1}`}
               style={{
                 fontSize: 14,
-                lineHeight: 22,
                 fontFamily: 'Inter_400Regular',
                 color: colors.foreground,
               }}
@@ -246,11 +246,11 @@ function RuleDetailModal({
 
 export default function QuickRulesReference() {
   const colors = useColors();
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [selectedRule, setSelectedRule] = useState<QuickRule | null>(null);
   const results = useMemo(() => searchQuickRules(query), [query]);
-  const twoColumns = width >= 360;
+  const twoColumns = width >= 430 && fontScale <= 1.2;
 
   return (
     <View
@@ -276,7 +276,6 @@ export default function QuickRulesReference() {
         </Text>
         <Text style={{
           fontSize: 11,
-          lineHeight: 16,
           fontFamily: 'Inter_400Regular',
           color: colors.mutedForeground,
         }}>
@@ -302,13 +301,14 @@ export default function QuickRulesReference() {
           testID="quick-rules-search"
           value={query}
           onChangeText={setQuery}
-          placeholder="Search rules or keywords…"
+          placeholder="Search…"
           placeholderTextColor={colors.mutedForeground}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
           style={{
             flex: 1,
+            minWidth: 0,
             paddingVertical: 10,
             fontSize: 13,
             fontFamily: 'Inter_400Regular',
@@ -364,7 +364,6 @@ export default function QuickRulesReference() {
           </Text>
           <Text style={{
             fontSize: 11,
-            lineHeight: 16,
             fontFamily: 'Inter_400Regular',
             color: colors.mutedForeground,
             textAlign: 'center',
@@ -399,18 +398,14 @@ export default function QuickRulesReference() {
                 <Text style={{
                   flex: 1,
                   fontSize: 12,
-                  lineHeight: 16,
                   fontFamily: 'Inter_700Bold',
                   color: colors.foreground,
                 }}>
                   {rule.title}
                 </Text>
               </View>
-              <Text
-                numberOfLines={2}
-                style={{
+              <Text style={{
                   fontSize: 10,
-                  lineHeight: 14,
                   fontFamily: 'Inter_400Regular',
                   color: colors.mutedForeground,
                 }}
