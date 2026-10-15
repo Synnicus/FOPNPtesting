@@ -1,3 +1,5 @@
+import type { Character } from '../context/types.ts';
+
 // ─── Weapon Condition — Fallout PnP 2.0 manual ───────────────────────────────
 // Every weapon has 10 condition boxes. `conditionBoxes` in WeaponAmmoState
 // counts FILLED boxes (0 = pristine, 10 = jammed/broken).
@@ -33,4 +35,33 @@ export function conditionLabel(filledBoxes: number): string {
   if (f >= 8) return 'Poor (−10% to hit)';
   if (f >= 4) return 'Worn';
   return 'Good';
+}
+
+type ConditionSemanticsState = {
+  conditionSemanticsV2?: boolean;
+  characters?: Character[];
+};
+
+/** Mark newly-created state as using filled-box condition semantics. */
+export function markConditionSemanticsV2<T extends object>(state: T): T & { conditionSemanticsV2: true } {
+  return { ...state, conditionSemanticsV2: true };
+}
+
+/** One-time migration from legacy 0–5 remaining boxes to current 0–10 filled boxes. */
+export function migrateConditionSemantics<T extends ConditionSemanticsState>(
+  parsed: T,
+): T & { conditionSemanticsV2: true } {
+  if (parsed.conditionSemanticsV2) return parsed as T & { conditionSemanticsV2: true };
+  const migrate = (character: Character): Character => ({
+    ...character,
+    weaponAmmoStates: (character.weaponAmmoStates ?? []).map(state => ({
+      ...state,
+      conditionBoxes: Math.max(0, Math.min(10, (5 - Math.max(0, Math.min(5, state.conditionBoxes ?? 5))) * 2)),
+    })),
+  });
+  return {
+    ...parsed,
+    characters: (parsed.characters ?? []).map(migrate),
+    conditionSemanticsV2: true,
+  } as T & { conditionSemanticsV2: true };
 }

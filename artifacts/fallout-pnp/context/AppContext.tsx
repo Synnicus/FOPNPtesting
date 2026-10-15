@@ -6,7 +6,7 @@ import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIA
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
-import { clampConditionBoxes, CONDITION_BOXES_MAX } from '@/data/condition';
+import { clampConditionBoxes, CONDITION_BOXES_MAX, markConditionSemanticsV2, migrateConditionSemantics } from '@/data/condition';
 import { computeModEffects } from '@/data/mods';
 import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
@@ -297,21 +297,6 @@ interface AppState extends CampaignOptions {
   hardcoreRadiationRules: boolean;
 }
 
-/** One-time migration: legacy conditionBoxes counted REMAINING boxes (0–5,
- *  5 = pristine). New semantics count FILLED boxes (0–10, 0 = pristine).
- *  Map remaining r → filled (5 − r) × 2. */
-function migrateConditionSemantics(parsed: AppState): AppState {
-  if (parsed.conditionSemanticsV2) return parsed;
-  const migrate = (c: Character): Character => ({
-    ...c,
-    weaponAmmoStates: (c.weaponAmmoStates ?? []).map(s => ({
-      ...s,
-      conditionBoxes: Math.max(0, Math.min(10, (5 - Math.max(0, Math.min(5, s.conditionBoxes ?? 5))) * 2)),
-    })),
-  });
-  return { ...parsed, characters: (parsed.characters ?? []).map(migrate), conditionSemanticsV2: true };
-}
-
 function reconcileInitiativeCharacters(parsed: AppState): AppState {
   const currentRound = parsed.currentRound ?? 1;
   const characters = (parsed.characters ?? []).map(character => ({
@@ -511,7 +496,7 @@ interface AppContextValue extends AppState {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const defaultState: AppState = {
+const defaultState: AppState = markConditionSemanticsV2({
   characters: [],
   customWeapons: [],
   customArmor: [],
@@ -524,7 +509,7 @@ const defaultState: AppState = {
   pendingCombatSkillActions: [],
   hardcoreRadiationRules: false,
   ...DEFAULT_CAMPAIGN_OPTIONS,
-};
+});
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -562,7 +547,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addCharacter = useCallback((char: Character) => {
     setState(s => ({
-      ...s,
+      ...markConditionSemanticsV2(s),
       characters: [
         ...s.characters,
         normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo]),
