@@ -6,6 +6,9 @@ import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlagIcon } from '@/components/FlagIcon';
 import Animated, {
+  cancelAnimation,
+  Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -159,11 +162,12 @@ function LanguagePicker({
 
 const NEON_FLICKER_FADE_MS = 460;
 const NEON_FLICKER_CYCLE_MS = 4100;
+const CONTINUE_SOUND_DURATION_FALLBACK_MS = 3605;
 
 export default function MainMenuScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { loaded, importCampaign, systemSoundsEnabled } = useApp();
   const { locale } = useLocalization();
   const neonBuzzPlayer = useAudioPlayer(require('../assets/neon-flicker-buzz.mp3'));
@@ -172,11 +176,17 @@ export default function MainMenuScreen() {
   const [showOptions, setShowOptions] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showLanguages, setShowLanguages] = useState(false);
+  const [isContinueTransitioning, setIsContinueTransitioning] = useState(false);
   const logoLineSize = Math.min(50, Math.max(32, (windowWidth - 80) / 7));
   const logoPnpSize = logoLineSize * 1.35;
   const flicker = useSharedValue(1);
+  const shutterProgress = useSharedValue(0);
+  const transitionFlicker = useSharedValue(0);
 
   useFocusEffect(useCallback(() => {
+    setIsContinueTransitioning(false);
+    shutterProgress.value = 0;
+    transitionFlicker.value = 0;
     flicker.value = withRepeat(
       withSequence(
         withTiming(0.12, { duration: 60 }),
@@ -238,10 +248,25 @@ export default function MainMenuScreen() {
       cancelled = true;
       if (cycleTimer) clearInterval(cycleTimer);
       stopBuzz();
+      cancelAnimation(flicker);
+      cancelAnimation(shutterProgress);
+      cancelAnimation(transitionFlicker);
     };
-  }, [flicker, neonBuzzPlayer, systemSoundsEnabled]));
+  }, [flicker, neonBuzzPlayer, shutterProgress, systemSoundsEnabled, transitionFlicker]));
 
   const neonStyle = useAnimatedStyle(() => ({ opacity: flicker.value }));
+  const shutterCoverStyle = useAnimatedStyle(() => ({
+    height: shutterProgress.value * windowHeight,
+  }));
+  const shutterEdgeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: shutterProgress.value * windowHeight }],
+  }));
+  const shutterGlowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: shutterProgress.value * windowHeight }],
+  }));
+  const transitionFlickerStyle = useAnimatedStyle(() => ({
+    opacity: transitionFlicker.value,
+  }));
 
   const continueCampaign = () => {
     if (loaded) router.push('/(tabs)');
@@ -254,6 +279,54 @@ export default function MainMenuScreen() {
       soundPlayer.play();
     }
     action();
+  };
+
+  const handleContinue = () => {
+    if (!loaded || isContinueTransitioning) return;
+
+    const soundDurationMs = Math.max(
+      1,
+      Math.round((continueButtonPlayer.duration || CONTINUE_SOUND_DURATION_FALLBACK_MS / 1000) * 1000),
+    );
+    if (systemSoundsEnabled) {
+      continueButtonPlayer.volume = 0.35;
+      void continueButtonPlayer.seekTo(0).catch(() => {});
+      continueButtonPlayer.play();
+    }
+
+    const sweepIn = Math.round(soundDurationMs * 0.18);
+    const shutterRecoil = Math.round(soundDurationMs * 0.06);
+    const sweepAcross = Math.round(soundDurationMs * 0.21);
+    const sweepRecoil = Math.round(soundDurationMs * 0.06);
+    const lastSweep = Math.round(soundDurationMs * 0.21);
+    const lastRecoil = Math.round(soundDurationMs * 0.06);
+    const finalClose = Math.max(
+      1,
+      soundDurationMs - sweepIn - shutterRecoil - sweepAcross - sweepRecoil - lastSweep - lastRecoil,
+    );
+
+    setIsContinueTransitioning(true);
+    shutterProgress.value = 0;
+    transitionFlicker.value = 0;
+    transitionFlicker.value = withSequence(
+      withTiming(0.3, { duration: 80 }),
+      withTiming(0, { duration: 65 }),
+      withTiming(0.24, { duration: 70 }),
+      withTiming(0, { duration: 110 }),
+      withTiming(0.16, { duration: 80 }),
+      withTiming(0, { duration: Math.max(1, soundDurationMs - 405) }),
+    );
+    shutterProgress.value = withSequence(
+      withTiming(0.3, { duration: sweepIn, easing: Easing.linear }),
+      withTiming(0.17, { duration: shutterRecoil, easing: Easing.linear }),
+      withTiming(0.58, { duration: sweepAcross, easing: Easing.linear }),
+      withTiming(0.45, { duration: sweepRecoil, easing: Easing.linear }),
+      withTiming(0.82, { duration: lastSweep, easing: Easing.linear }),
+      withTiming(0.68, { duration: lastRecoil, easing: Easing.linear }),
+      withTiming(1, { duration: finalClose, easing: Easing.linear }, finished => {
+        if (finished) runOnJS(continueCampaign)();
+      }),
+    );
   };
 
   const startNewCampaign = () => {
@@ -371,10 +444,10 @@ export default function MainMenuScreen() {
           </View>
 
           <View style={{ gap: 10 }}>
-            <MenuButton label="Continue" icon="play" primary onPress={() => handleMainMenuAction(continueCampaign, continueButtonPlayer)} disabled={!loaded} testID="continue-campaign" />
-            <MenuButton label="New Campaign" icon="file-plus" onPress={() => handleMainMenuAction(startNewCampaign)} disabled={!loaded} testID="new-campaign" />
-            <MenuButton label="Load Campaign" icon="folder" onPress={() => handleMainMenuAction(() => setShowLibrary(true))} disabled={!loaded} testID="open-campaign-library" />
-            <MenuButton label="Options" icon="settings" onPress={() => handleMainMenuAction(() => setShowOptions(true))} disabled={!loaded} testID="open-menu-options" />
+            <MenuButton label="Continue" icon="play" primary onPress={handleContinue} disabled={!loaded || isContinueTransitioning} testID="continue-campaign" />
+            <MenuButton label="New Campaign" icon="file-plus" onPress={() => handleMainMenuAction(startNewCampaign)} disabled={!loaded || isContinueTransitioning} testID="new-campaign" />
+            <MenuButton label="Load Campaign" icon="folder" onPress={() => handleMainMenuAction(() => setShowLibrary(true))} disabled={!loaded || isContinueTransitioning} testID="open-campaign-library" />
+            <MenuButton label="Options" icon="settings" onPress={() => handleMainMenuAction(() => setShowOptions(true))} disabled={!loaded || isContinueTransitioning} testID="open-menu-options" />
           </View>
         </View>
       </ScrollView>
@@ -393,6 +466,69 @@ export default function MainMenuScreen() {
         }}
       />
       <LanguagePicker visible={showLanguages} onClose={() => setShowLanguages(false)} />
+      {isContinueTransitioning && (
+        <View
+          pointerEvents="auto"
+          testID="continue-shutter-transition"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            zIndex: 20,
+            elevation: 20,
+            overflow: 'hidden',
+          }}
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.foreground },
+              shutterCoverStyle,
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              {
+                position: 'absolute',
+                top: -2,
+                left: 0,
+                right: 0,
+                height: 4,
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOpacity: 0.7,
+                shadowRadius: 12,
+              },
+              shutterEdgeStyle,
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              {
+                position: 'absolute',
+                top: -8,
+                left: 0,
+                right: 0,
+                height: 14,
+                backgroundColor: colors.primary,
+                opacity: 0.18,
+              },
+              shutterGlowStyle,
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.foreground },
+              transitionFlickerStyle,
+            ]}
+          />
+        </View>
+      )}
     </View>
   );
 }
