@@ -103,7 +103,7 @@ test('Hardcore preview open and close interactions never change the disabled cam
     optionsSource.indexOf('/>', optionsSource.indexOf('<HardcoreRadiationPreviewModal')),
   );
   assert.match(previewModal, /enabled=\{hardcoreRadiationRules\}/);
-  assert.match(previewModal, /onClose=\{\(\) => setShowHardcorePreview\(false\)\}/);
+  assert.match(previewModal, /onClose=\{closeHardcorePreview\}/);
   assert.doesNotMatch(previewModal, /setHardcoreRadiationRules/);
 });
 
@@ -122,12 +122,23 @@ test('Hardcore campaign controls live in options and announce their roles and st
   assert.match(optionsSource, /onValueChange=\{handleHardcoreToggle\}/);
 });
 
-test('Hardcore preview renders every shared non-zero threshold and keeps core sickness separate', () => {
+test('Hardcore preview moves native accessibility focus in and back to its trigger', () => {
   const previewComponent = optionsSource.slice(
     optionsSource.indexOf('function HardcoreRadiationPreviewModal'),
     optionsSource.indexOf('export default function CampaignOptionsModal'),
   );
+  const optionsScreen = optionsSource.slice(optionsSource.indexOf('export default function CampaignOptionsModal'));
   const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0);
+
+  assert.match(previewComponent, /if \(!visible \|\| Platform\.OS === 'web'\) return/);
+  assert.match(previewComponent, /findNodeHandle\(headingRef\.current\)/);
+  assert.match(previewComponent, /AccessibilityInfo\.setAccessibilityFocus\(headingNode\)/);
+  assert.match(previewComponent, /ref=\{headingRef\}[\s\S]*accessibilityRole="header"/);
+  assert.match(optionsScreen, /accessibilityElementsHidden=\{showHardcorePreview\}/);
+  assert.match(optionsScreen, /importantForAccessibility=\{showHardcorePreview \? 'no-hide-descendants' : 'auto'\}/);
+  assert.match(optionsScreen, /ref=\{previewTriggerRef\}[\s\S]*testID="hardcore-radiation-preview"/);
+  assert.match(optionsScreen, /findNodeHandle\(previewTriggerRef\.current\)/);
+  assert.match(optionsScreen, /AccessibilityInfo\.setAccessibilityFocus\(triggerNode\)/);
 
   assert.match(previewComponent, /HARDCORE_RADIATION_RULES\.filter\(rule => rule\.threshold > 0\)\.reverse\(\)/);
   assert.match(previewComponent, /thresholds\.map\(rule =>/);

@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  findNodeHandle,
   Modal,
   ScrollView,
   Switch,
+  Platform,
   View,
 } from 'react-native';
 import { LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
@@ -95,7 +98,17 @@ function HardcoreRadiationPreviewModal({
 }) {
   const palette = useColors();
   const insets = useSafeAreaInsets();
+  const headingRef = useRef<View>(null);
   const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0).reverse();
+
+  useEffect(() => {
+    if (!visible || Platform.OS === 'web') return;
+    const focusTimeout = setTimeout(() => {
+      const headingNode = findNodeHandle(headingRef.current);
+      if (headingNode !== null) AccessibilityInfo.setAccessibilityFocus(headingNode);
+    }, 350);
+    return () => clearTimeout(focusTimeout);
+  }, [visible]);
 
   return (
     <Modal
@@ -120,7 +133,13 @@ function HardcoreRadiationPreviewModal({
         }}>
           <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: palette.border, gap: 5 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <Text accessibilityRole="header" style={{
+              <View
+                ref={headingRef}
+                accessible
+                accessibilityRole="header"
+                accessibilityLabel="Hardcore radiation rules preview"
+              >
+                <Text accessible={false} style={{
                 flex: 1,
                 fontSize: 16,
                 fontFamily: 'Inter_700Bold',
@@ -128,7 +147,8 @@ function HardcoreRadiationPreviewModal({
                 letterSpacing: 1,
               }}>
                 HARDCORE RADIATION
-              </Text>
+                </Text>
+              </View>
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Close Hardcore radiation rules preview"
@@ -225,10 +245,31 @@ export default function CampaignOptionsModal({
   const { locale, setLocale } = useLocalization();
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
+  const previewTriggerRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
+  const previewCloseFocusTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeHardcorePreview = () => {
+    setShowHardcorePreview(false);
+    if (Platform.OS === 'web') return;
+    if (previewCloseFocusTimeout.current !== null) clearTimeout(previewCloseFocusTimeout.current);
+    previewCloseFocusTimeout.current = setTimeout(() => {
+      const triggerNode = findNodeHandle(previewTriggerRef.current);
+      if (triggerNode !== null) AccessibilityInfo.setAccessibilityFocus(triggerNode);
+      previewCloseFocusTimeout.current = null;
+    }, 350);
+  };
+
+  useEffect(() => () => {
+    if (previewCloseFocusTimeout.current !== null) clearTimeout(previewCloseFocusTimeout.current);
+  }, []);
 
   const closeOptions = () => {
     setShowHardcoreWarning(false);
     setShowHardcorePreview(false);
+    if (previewCloseFocusTimeout.current !== null) {
+      clearTimeout(previewCloseFocusTimeout.current);
+      previewCloseFocusTimeout.current = null;
+    }
     onClose();
   };
 
@@ -242,7 +283,11 @@ export default function CampaignOptionsModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" onRequestClose={closeOptions} testID="campaign-options-modal">
-        <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: palette.background }}>
+        <View
+          style={{ flex: 1, paddingTop: insets.top, backgroundColor: palette.background }}
+          accessibilityElementsHidden={showHardcorePreview}
+          importantForAccessibility={showHardcorePreview ? 'no-hide-descendants' : 'auto'}
+        >
           <View style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -306,6 +351,7 @@ export default function CampaignOptionsModal({
                 />
               </View>
               <TouchableOpacity
+                ref={previewTriggerRef}
                 accessibilityRole="button"
                 accessibilityLabel={`Review Hardcore radiation thresholds. Currently ${hardcoreRadiationRules ? 'enabled' : 'disabled'}`}
                 accessibilityHint="Opens an explanation without changing the campaign setting"
@@ -493,7 +539,7 @@ export default function CampaignOptionsModal({
       <HardcoreRadiationPreviewModal
         visible={showHardcorePreview}
         enabled={hardcoreRadiationRules}
-        onClose={() => setShowHardcorePreview(false)}
+        onClose={closeHardcorePreview}
       />
     </>
   );
