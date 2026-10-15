@@ -3,6 +3,7 @@ import { Modal, Platform, ScrollView, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlagIcon } from '@/components/FlagIcon';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -15,23 +16,8 @@ import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import { useApp } from '@/context/AppContext';
 import { useLocalization } from '@/context/LocalizationContext';
-import { APP_LANGUAGES, translateText, type AppLocale } from '@/data/localization';
+import { APP_LANGUAGES, translateText } from '@/data/localization';
 import { useColors } from '@/hooks/useColors';
-
-const LANGUAGE_FLAGS: Record<AppLocale, string> = {
-  en: '🇺🇸',
-  fr: '🇫🇷',
-  it: '🇮🇹',
-  de: '🇩🇪',
-  'es-ES': '🇪🇸',
-  'es-MX': '🇲🇽',
-  ja: '🇯🇵',
-  pl: '🇵🇱',
-  'pt-BR': '🇧🇷',
-  ru: '🇷🇺',
-  'zh-Hant': '🇹🇼',
-  'zh-Hans': '🇨🇳',
-};
 
 function MenuButton({
   label,
@@ -155,7 +141,7 @@ function LanguagePicker({
                     backgroundColor: colors.secondary,
                   }}
                 >
-                  <Text style={{ fontSize: 19 }}>{LANGUAGE_FLAGS[language.locale]}</Text>
+                  <FlagIcon locale={language.locale} size={24} outline={colors.border} />
                   <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
                     {language.label}
                   </Text>
@@ -253,7 +239,7 @@ export default function MainMenuScreen() {
           backgroundColor: colors.card,
         }}
       >
-        <Text style={{ fontSize: 20 }}>{LANGUAGE_FLAGS[locale]}</Text>
+        <FlagIcon locale={locale} size={26} outline={colors.border} />
         <Feather name="chevron-down" size={12} color={colors.primary} />
       </TouchableOpacity>
 
@@ -271,20 +257,8 @@ export default function MainMenuScreen() {
           <View style={{
             alignItems: 'center',
             justifyContent: 'center',
-            minHeight: 212,
-            paddingHorizontal: 18,
-            paddingVertical: 23,
-            borderWidth: 1,
-            borderColor: colors.primary,
-            borderRadius: colors.radius + 4,
-            backgroundColor: colors.card,
-            shadowColor: colors.primary,
-            shadowOpacity: 0.18,
-            shadowRadius: 22,
-            shadowOffset: { width: 0, height: 0 },
+              paddingVertical: 12,
           }}>
-            <View style={{ position: 'absolute', left: 16, right: 16, top: 12, height: 1, backgroundColor: colors.primary, opacity: 0.2 }} />
-            <View style={{ position: 'absolute', left: 16, right: 16, bottom: 12, height: 1, backgroundColor: colors.primary, opacity: 0.2 }} />
             <Animated.View style={[{ alignItems: 'center', gap: 1 }, neonStyle]}>
               <Text style={{
                 fontSize: 32,
@@ -325,15 +299,6 @@ export default function MainMenuScreen() {
                 CALCULATOR
               </Text>
             </Animated.View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 }}>
-              <View style={{ width: 20, height: 1, backgroundColor: colors.border }} />
-              <Text style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 2 }}>
-                Campaign management system
-              </Text>
-              <View style={{ width: 20, height: 1, backgroundColor: colors.border }} />
-            </View>
-            <View style={{ position: 'absolute', top: 32, left: 26, width: 3, height: 3, borderRadius: 2, backgroundColor: colors.primary, opacity: 0.42 }} />
-            <View style={{ position: 'absolute', bottom: 38, right: 28, width: 2, height: 2, borderRadius: 2, backgroundColor: colors.primary, opacity: 0.28 }} />
           </View>
 
           <View style={{ gap: 10 }}>
