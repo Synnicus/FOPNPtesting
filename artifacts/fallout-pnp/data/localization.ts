@@ -58,7 +58,7 @@ const supplementalTranslations: Partial<Record<AppLocale, Record<string, string>
 };
 const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>>> = {
   fr: {
-    Continue: 'Continuer', 'New Campaign': 'Nouvelle campagne', 'Load Campaign': 'Charger une campagne',
+    Continue: 'Continuer', 'Main Menu': 'Menu principal', 'New Campaign': 'Nouvelle campagne', 'Load Campaign': 'Charger une campagne',
     Options: 'Options', 'Campaign management system': 'Système de gestion de campagne',
     'Choose a language': 'Choisir une langue', 'Campaign Library': 'Bibliothèque de campagnes',
     'Saved JSON campaigns stay on this device.': 'Les campagnes JSON enregistrées restent sur cet appareil.',
@@ -84,7 +84,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Commencer une nouvelle campagne',
   },
   it: {
-    Continue: 'Continua', 'New Campaign': 'Nuova campagna', 'Load Campaign': 'Carica campagna',
+    Continue: 'Continua', 'Main Menu': 'Menu principale', 'New Campaign': 'Nuova campagna', 'Load Campaign': 'Carica campagna',
     Options: 'Opzioni', 'Campaign management system': 'Sistema di gestione delle campagne',
     'Choose a language': 'Scegli una lingua', 'Campaign Library': 'Archivio campagne',
     'Saved JSON campaigns stay on this device.': 'Le campagne JSON salvate restano su questo dispositivo.',
@@ -110,7 +110,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Inizia nuova campagna',
   },
   de: {
-    Continue: 'Fortfahren', 'New Campaign': 'Neue Kampagne', 'Load Campaign': 'Kampagne laden',
+    Continue: 'Fortfahren', 'Main Menu': 'Hauptmenü', 'New Campaign': 'Neue Kampagne', 'Load Campaign': 'Kampagne laden',
     Options: 'Optionen', 'Campaign management system': 'Kampagnenverwaltungssystem',
     'Choose a language': 'Sprache auswählen', 'Campaign Library': 'Kampagnenbibliothek',
     'Saved JSON campaigns stay on this device.': 'Gespeicherte JSON-Kampagnen bleiben auf diesem Gerät.',
@@ -136,7 +136,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Neue Kampagne starten',
   },
   'es-ES': {
-    Continue: 'Continuar', 'New Campaign': 'Nueva campaña', 'Load Campaign': 'Cargar campaña',
+    Continue: 'Continuar', 'Main Menu': 'Menú principal', 'New Campaign': 'Nueva campaña', 'Load Campaign': 'Cargar campaña',
     Options: 'Opciones', 'Campaign management system': 'Sistema de gestión de campañas',
     'Choose a language': 'Elegir idioma', 'Campaign Library': 'Biblioteca de campañas',
     'Saved JSON campaigns stay on this device.': 'Las campañas JSON guardadas permanecen en este dispositivo.',
@@ -162,7 +162,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Iniciar campaña nueva',
   },
   'es-MX': {
-    Continue: 'Continuar', 'New Campaign': 'Nueva campaña', 'Load Campaign': 'Cargar campaña',
+    Continue: 'Continuar', 'Main Menu': 'Menú principal', 'New Campaign': 'Nueva campaña', 'Load Campaign': 'Cargar campaña',
     Options: 'Opciones', 'Campaign management system': 'Sistema de gestión de campañas',
     'Choose a language': 'Elegir idioma', 'Campaign Library': 'Biblioteca de campañas',
     'Saved JSON campaigns stay on this device.': 'Las campañas JSON guardadas se quedan en este dispositivo.',
@@ -188,7 +188,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Iniciar campaña nueva',
   },
   ja: {
-    Continue: '続ける', 'New Campaign': '新しいキャンペーン', 'Load Campaign': 'キャンペーンを読み込む',
+    Continue: '続ける', 'Main Menu': 'メインメニュー', 'New Campaign': '新しいキャンペーン', 'Load Campaign': 'キャンペーンを読み込む',
     Options: 'オプション', 'Campaign management system': 'キャンペーン管理システム',
     'Choose a language': '言語を選択', 'Campaign Library': 'キャンペーンライブラリ',
     'Saved JSON campaigns stay on this device.': '保存したJSONキャンペーンはこの端末に保存されます。',
@@ -214,7 +214,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': '新しいキャンペーンを開始',
   },
   pl: {
-    Continue: 'Kontynuuj', 'New Campaign': 'Nowa kampania', 'Load Campaign': 'Wczytaj kampanię',
+    Continue: 'Kontynuuj', 'Main Menu': 'Menu główne', 'New Campaign': 'Nowa kampania', 'Load Campaign': 'Wczytaj kampanię',
     Options: 'Opcje', 'Campaign management system': 'System zarządzania kampanią',
     'Choose a language': 'Wybierz język', 'Campaign Library': 'Biblioteka kampanii',
     'Saved JSON campaigns stay on this device.': 'Zapisane kampanie JSON pozostają na tym urządzeniu.',
@@ -240,7 +240,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Rozpocznij nową kampanię',
   },
   'pt-BR': {
-    Continue: 'Continuar', 'New Campaign': 'Nova campanha', 'Load Campaign': 'Carregar campanha',
+    Continue: 'Continuar', 'Main Menu': 'Menu principal', 'New Campaign': 'Nova campanha', 'Load Campaign': 'Carregar campanha',
     Options: 'Opções', 'Campaign management system': 'Sistema de gerenciamento de campanha',
     'Choose a language': 'Escolha um idioma', 'Campaign Library': 'Biblioteca de campanhas',
     'Saved JSON campaigns stay on this device.': 'As campanhas JSON salvas ficam neste dispositivo.',
@@ -266,7 +266,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Iniciar nova campanha',
   },
   ru: {
-    Continue: 'Продолжить', 'New Campaign': 'Новая кампания', 'Load Campaign': 'Загрузить кампанию',
+    Continue: 'Продолжить', 'Main Menu': 'Главное меню', 'New Campaign': 'Новая кампания', 'Load Campaign': 'Загрузить кампанию',
     Options: 'Настройки', 'Campaign management system': 'Система управления кампанией',
     'Choose a language': 'Выберите язык', 'Campaign Library': 'Библиотека кампаний',
     'Saved JSON campaigns stay on this device.': 'Сохранённые кампании JSON остаются на этом устройстве.',
@@ -292,7 +292,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': 'Начать новую кампанию',
   },
   'zh-Hans': {
-    Continue: '继续', 'New Campaign': '新建战役', 'Load Campaign': '加载战役',
+    Continue: '继续', 'Main Menu': '主菜单', 'New Campaign': '新建战役', 'Load Campaign': '加载战役',
     Options: '选项', 'Campaign management system': '战役管理系统',
     'Choose a language': '选择语言', 'Campaign Library': '战役库',
     'Saved JSON campaigns stay on this device.': '保存的 JSON 战役保留在此设备上。',
@@ -318,7 +318,7 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Start New Campaign': '开始新战役',
   },
   'zh-Hant': {
-    Continue: '繼續', 'New Campaign': '建立新戰役', 'Load Campaign': '載入戰役',
+    Continue: '繼續', 'Main Menu': '主選單', 'New Campaign': '建立新戰役', 'Load Campaign': '載入戰役',
     Options: '選項', 'Campaign management system': '戰役管理系統',
     'Choose a language': '選擇語言', 'Campaign Library': '戰役庫',
     'Saved JSON campaigns stay on this device.': '已儲存的 JSON 戰役會保留在此裝置。',

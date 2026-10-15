@@ -238,9 +238,11 @@ function HardcoreRadiationPreviewModal({
 export default function CampaignOptionsModal({
   visible,
   onClose,
+  hideLanguageOptions = false,
 }: {
   visible: boolean;
   onClose: () => void;
+  hideLanguageOptions?: boolean;
 }) {
   const palette = useColors();
   const insets = useSafeAreaInsets();
@@ -441,49 +443,53 @@ export default function CampaignOptionsModal({
               </View>
             )}
 
-            <SectionHeading title="Language" />
-            <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground, marginBottom: 2 }}>
-              Choose the language used for the app interface, built-in rules, and catalogs.
-            </Text>
-            <View accessibilityRole="radiogroup" accessibilityLabel="Language" style={{ gap: 7 }}>
-              {APP_LANGUAGES.map(language => {
-                const selected = locale === language.locale;
-                return (
-                  <TouchableOpacity
-                    key={language.locale}
-                    accessibilityRole="radio"
-                    accessibilityLabel={language.label}
-                    accessibilityState={{ checked: selected }}
-                    testID={`language-option-${language.locale}`}
-                    onPress={() => setLocale(language.locale)}
-                    style={{
-                      minHeight: 46,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 12,
-                      paddingHorizontal: 13,
-                      paddingVertical: 9,
-                      borderWidth: selected ? 2 : 1,
-                      borderColor: selected ? palette.primary : palette.border,
-                      borderRadius: palette.radius,
-                      backgroundColor: palette.secondary,
-                    }}
-                  >
-                    <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
-                      {language.label}
-                    </Text>
-                    <Feather
-                      name={selected ? 'check-circle' : 'circle'}
-                      size={18}
-                      color={selected ? palette.primary : palette.mutedForeground}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-              Names and notes you enter stay in the language you wrote them.
-            </Text>
+            {!hideLanguageOptions && (
+              <>
+                <SectionHeading title="Language" />
+                <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground, marginBottom: 2 }}>
+                  Choose the language used for the app interface, built-in rules, and catalogs.
+                </Text>
+                <View accessibilityRole="radiogroup" accessibilityLabel="Language" style={{ gap: 7 }}>
+                  {APP_LANGUAGES.map(language => {
+                    const selected = locale === language.locale;
+                    return (
+                      <TouchableOpacity
+                        key={language.locale}
+                        accessibilityRole="radio"
+                        accessibilityLabel={language.label}
+                        accessibilityState={{ checked: selected }}
+                        testID={`language-option-${language.locale}`}
+                        onPress={() => setLocale(language.locale)}
+                        style={{
+                          minHeight: 46,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                          paddingHorizontal: 13,
+                          paddingVertical: 9,
+                          borderWidth: selected ? 2 : 1,
+                          borderColor: selected ? palette.primary : palette.border,
+                          borderRadius: palette.radius,
+                          backgroundColor: palette.secondary,
+                        }}
+                      >
+                        <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
+                          {language.label}
+                        </Text>
+                        <Feather
+                          name={selected ? 'check-circle' : 'circle'}
+                          size={18}
+                          color={selected ? palette.primary : palette.mutedForeground}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                  Names and notes you enter stay in the language you wrote them.
+                </Text>
+              </>
+            )}
 
             <SectionHeading title="Theme Options" />
             <View accessibilityRole="radiogroup" accessibilityLabel="Color theme" style={{ gap: 9 }}>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { router } from 'expo-router';
 import {
   Modal,
   Platform,
@@ -538,18 +539,32 @@ export default function CampaignScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 8, marginBottom: 4 }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>CAMPAIGN</Text>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Campaign options"
-            testID="campaign-options-button"
-            onPress={() => setShowCampaignOptions(true)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
-          >
-            <Feather name="settings" size={15} color={colors.primary} />
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>OPTIONS</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Main Menu"
+              testID="campaign-main-menu-button"
+              onPress={() => router.replace('/')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+            >
+              <Feather name="home" size={14} color={colors.primary} />
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.7, textTransform: 'uppercase' }}>
+                Main Menu
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Campaign options"
+              testID="campaign-options-button"
+              onPress={() => setShowCampaignOptions(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+            >
+              <Feather name="settings" size={15} color={colors.primary} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>OPTIONS</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 20 }}>
           Save and load campaign state as portable JSON

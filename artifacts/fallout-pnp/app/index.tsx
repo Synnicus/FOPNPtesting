@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Platform, ScrollView, View } from 'react-native';
+import { Modal, Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -159,11 +159,14 @@ function LanguagePicker({
 export default function MainMenuScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { loaded, importCampaign } = useApp();
   const { locale } = useLocalization();
   const [showOptions, setShowOptions] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showLanguages, setShowLanguages] = useState(false);
+  const logoLineSize = Math.min(50, Math.max(32, (windowWidth - 80) / 7));
+  const logoPnpSize = logoLineSize * 1.35;
   const flicker = useSharedValue(1);
 
   useEffect(() => {
@@ -257,43 +260,43 @@ export default function MainMenuScreen() {
           <View style={{
             alignItems: 'center',
             justifyContent: 'center',
-              paddingVertical: 12,
+              paddingVertical: 10,
           }}>
-            <Animated.View style={[{ alignItems: 'center', gap: 1 }, neonStyle]}>
+            <Animated.View style={[{ alignItems: 'center', gap: 0 }, neonStyle]}>
               <Text style={{
-                fontSize: 32,
-                lineHeight: 37,
-                fontFamily: 'Inter_700Bold',
+                fontSize: logoPnpSize,
+                lineHeight: logoPnpSize * 1.15,
+                fontFamily: 'Monoton_400Regular',
                 color: colors.primary,
-                letterSpacing: 8,
+                letterSpacing: 4,
                 textShadowColor: colors.primary,
-                textShadowRadius: 11,
+                textShadowRadius: 16,
                 textShadowOffset: { width: 0, height: 0 },
               }}>
                 PNP
               </Text>
               <Text style={{
-                fontSize: 19,
-                lineHeight: 27,
-                fontFamily: 'Inter_700Bold',
+                fontSize: logoLineSize * 0.88,
+                lineHeight: logoLineSize * 1.05,
+                fontFamily: 'Monoton_400Regular',
                 color: colors.primary,
                 letterSpacing: 2,
                 textAlign: 'center',
                 textShadowColor: colors.primary,
-                textShadowRadius: 8,
+                textShadowRadius: 12,
                 textShadowOffset: { width: 0, height: 0 },
               }}>
                 COMBAT
               </Text>
               <Text style={{
-                fontSize: 19,
-                lineHeight: 27,
-                fontFamily: 'Inter_700Bold',
+                fontSize: logoLineSize,
+                lineHeight: logoLineSize * 1.05,
+                fontFamily: 'Monoton_400Regular',
                 color: colors.primary,
-                letterSpacing: 2,
+                letterSpacing: 0.25,
                 textAlign: 'center',
                 textShadowColor: colors.primary,
-                textShadowRadius: 8,
+                textShadowRadius: 12,
                 textShadowOffset: { width: 0, height: 0 },
               }}>
                 CALCULATOR
@@ -310,7 +313,11 @@ export default function MainMenuScreen() {
         </View>
       </ScrollView>
 
-      <CampaignOptionsModal visible={showOptions} onClose={() => setShowOptions(false)} />
+      <CampaignOptionsModal
+        visible={showOptions}
+        onClose={() => setShowOptions(false)}
+        hideLanguageOptions
+      />
       <CampaignLibraryModal
         visible={showLibrary}
         onClose={() => setShowLibrary(false)}
