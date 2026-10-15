@@ -321,6 +321,8 @@ export interface Character {
   currentHp: number;
   /** Accumulated radiation exposure. This never modifies HP automatically. */
   accumulatedRadiation?: number;
+  /** Unused absorbed radiation points carried toward the next optional ghoul-healing point. */
+  ghoulRadiationHealingRemainder?: number;
 
   armorClass: number;
 
@@ -440,6 +442,8 @@ export interface BestiaryTemplate {
   id: string;
   name: string;
   category: BestiaryCategory;
+  /** Explicit biological race for built-in templates where category is broader than race. */
+  race?: RaceType;
   description?: string;
   isCustom?: boolean;
 

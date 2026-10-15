@@ -165,12 +165,14 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
-test('portable campaign exports round-trip theme and audio preferences', () => {
+test('portable campaign exports round-trip theme, audio, and mutant radiation preferences', () => {
   const bundle = createCampaignBundle({
     ...state,
     visualTheme: 'eastern',
     systemSoundsEnabled: false,
     musicEnabled: true,
+    mutantGhoulRadiationRules: true,
+    ghoulRadiationHealingOption: 3,
   }, []);
   const parsed = parseCampaignFile(JSON.stringify(bundle));
   assert.equal(parsed.ok, true);
@@ -178,12 +180,21 @@ test('portable campaign exports round-trip theme and audio preferences', () => {
     assert.equal(parsed.bundle.state.visualTheme, 'eastern');
     assert.equal(parsed.bundle.state.systemSoundsEnabled, false);
     assert.equal(parsed.bundle.state.musicEnabled, true);
+    assert.equal(parsed.bundle.state.mutantGhoulRadiationRules, true);
+    assert.equal(parsed.bundle.state.ghoulRadiationHealingOption, 3);
   }
 });
 
 test('legacy and portable campaigns without options remain accepted', () => {
   const bundle = createCampaignBundle(state, []);
-  const { visualTheme: _theme, systemSoundsEnabled: _sounds, musicEnabled: _music, ...olderState } = bundle.state;
+  const {
+    visualTheme: _theme,
+    systemSoundsEnabled: _sounds,
+    musicEnabled: _music,
+    mutantGhoulRadiationRules: _mutantRadiation,
+    ghoulRadiationHealingOption: _ghoulHealing,
+    ...olderState
+  } = bundle.state;
   const portable = { ...bundle, state: olderState };
   for (const file of [state, portable]) {
     const parsed = parseCampaignFile(JSON.stringify(file));
@@ -193,16 +204,20 @@ test('legacy and portable campaigns without options remain accepted', () => {
       assert.equal(loadedState.visualTheme, undefined);
       assert.equal(loadedState.systemSoundsEnabled, undefined);
       assert.equal(loadedState.musicEnabled, undefined);
+      assert.equal(loadedState.mutantGhoulRadiationRules, undefined);
+      assert.equal(loadedState.ghoulRadiationHealingOption, undefined);
     }
   }
 });
 
-test('campaign imports reject invalid visual theme and non-boolean audio options', () => {
+test('campaign imports reject invalid theme, audio, and mutant radiation options', () => {
   const bundle = createCampaignBundle(state, []);
   for (const invalidSettings of [
     { visualTheme: 'northern' },
     { systemSoundsEnabled: 'false' },
     { musicEnabled: 0 },
+    { mutantGhoulRadiationRules: 'yes' },
+    { ghoulRadiationHealingOption: 5 },
   ]) {
     const parsed = parseCampaignFile(JSON.stringify({
       ...bundle,

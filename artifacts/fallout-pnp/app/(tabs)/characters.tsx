@@ -49,7 +49,19 @@ import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
-import { adjustRadiation, hardcoreRadiationRule, formatHardcoreRadiationPenalties, MAX_RADIATION, radiationSicknessEffect, radiationSicknessLabel, resolveRadiationAddition } from '@/data/radiation';
+import {
+  adjustRadiation,
+  applyRadiationGain,
+  ghoulRadiationHealingDivisor,
+  hardcoreRadiationRule,
+  formatHardcoreRadiationPenalties,
+  isRadiationResistanceLocked,
+  MAX_RADIATION,
+  radiationSicknessEffect,
+  radiationSicknessLabel,
+  resolveRadiationAddition,
+  type GhoulRadiationHealingOption,
+} from '@/data/radiation';
 
 // ─── Perk ids that are actually traits in the manual; hide from perk browser
 //     but do NOT delete saved Character.perks entries or remove lookup/effects.
@@ -302,7 +314,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { allWeapons, allArmor, hardcoreRadiationRules } = useApp();
+  const {
+    allWeapons, allArmor, hardcoreRadiationRules,
+    mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  } = useApp();
   const [char, setChar] = useState<Character>(character ?? makeDefaultCharacter());
   const [activeTab, setActiveTab] = useState(0);
   const [specialPoolTotal, setSpecialPoolTotal] = useState(40);
@@ -373,14 +388,23 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     radiationResistance: char.radiationResistance, gasResistance: char.gasResistance,
     poisonResistance: char.poisonResistance, electricityResistance: char.electricityResistance,
     accumulatedRadiation: char.accumulatedRadiation, hardcoreRadiationRules,
+    raceId: char.race, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     equippedBodyArmorId: char.equippedBodyArmorId, equippedHelmetId: char.equippedHelmetId,
     armorConditionStates: char.armorConditionStates, allArmor,
-  }), [char, allArmor, race, tagRules.freeTagSkills, hardcoreRadiationRules]);
+  }), [
+    char, allArmor, race, tagRules.freeTagSkills, hardcoreRadiationRules,
+    mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  ]);
   const effectiveSkills = armorSheet.effectiveSkills;
   const radiationEffect = useMemo(
-    () => radiationSicknessEffect(char.accumulatedRadiation ?? 0),
-    [char.accumulatedRadiation],
+    () => radiationSicknessEffect(char.accumulatedRadiation ?? 0, armorSheet.radiationSicknessImmune),
+    [char.accumulatedRadiation, armorSheet.radiationSicknessImmune],
   );
+  const ghoulNaturalRadiationZero = armorSheet.ghoulRadiationHealingDivisor !== null;
+  const radiationResistanceLocked = isRadiationResistanceLocked(char.race, {
+    mutantGhoulRadiationRules,
+    ghoulRadiationHealingOption,
+  }) || ghoulNaturalRadiationZero;
   const lockedTagCount = useMemo(
     () => ALL_SKILLS.filter(sk => !canChangeSkillTag(char.skills[sk], baseSkills[sk])).length,
     [char.skills, baseSkills],
@@ -1048,7 +1072,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>RADIATION</Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text testID="character-radiation-meter" style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary }}>{char.accumulatedRadiation ?? 0} / {MAX_RADIATION}</Text>
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: (char.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>{radiationSicknessLabel(char.accumulatedRadiation ?? 0)}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: !armorSheet.radiationSicknessImmune && (char.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>{radiationSicknessLabel(char.accumulatedRadiation ?? 0, armorSheet.radiationSicknessImmune)}</Text>
                 </View>
                 <View style={{ height: 7, borderRadius: 4, overflow: 'hidden', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
                   <View style={{ height: '100%', width: `${Math.min(100, (char.accumulatedRadiation ?? 0) / 10)}%`, backgroundColor: (char.accumulatedRadiation ?? 0) >= 600 ? colors.destructive : '#b6d43b' }} />
@@ -1064,19 +1088,29 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               <View style={{ gap: 8 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>ELEMENTAL RESISTANCES</Text>
                 {[
-                  { label: 'Radiation', val: char.radiationResistance, resolved: armorSheet.radiationResistance, key: 'radiationResistance' as const, natural: race.naturalDR },
+                  {
+                    label: 'Radiation',
+                    val: ghoulNaturalRadiationZero ? 0 : char.radiationResistance,
+                    resolved: armorSheet.radiationResistance,
+                    key: 'radiationResistance' as const,
+                    natural: ghoulNaturalRadiationZero ? 0 : race.naturalDR,
+                    locked: radiationResistanceLocked,
+                    ruleLabel: isRadiationResistanceLocked(char.race, { mutantGhoulRadiationRules, ghoulRadiationHealingOption })
+                      ? ' (locked at 100% by optional rule)'
+                      : ghoulNaturalRadiationZero ? ' (natural 0% by optional rule)' : '',
+                  },
                   { label: 'Gas', val: char.gasResistance, resolved: armorSheet.gasResistance, key: 'gasResistance' as const, natural: race.naturalGasDR },
                   { label: 'Poison', val: char.poisonResistance ?? 0, resolved: armorSheet.poisonResistance, key: 'poisonResistance' as const, natural: 0 },
                   { label: 'Electricity', val: char.electricityResistance, resolved: armorSheet.electricityResistance, key: 'electricityResistance' as const, natural: race.naturalElecDR },
-                ].map(({ label, val, resolved, key, natural }) => (
+                ].map(({ label, val, resolved, key, natural, locked, ruleLabel }) => (
                   <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: colors.foreground }}>{label}{natural !== 0 ? ` (base ${natural}% from race)` : ''}</Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: colors.foreground }}>{label}{ruleLabel ?? (natural !== 0 ? ` (base ${natural}% from race)` : '')}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TouchableOpacity style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.max(natural, val - 5) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
+                      <TouchableOpacity disabled={locked} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', opacity: locked ? 0.35 : 1 }} onPress={() => setChar(c => ({ ...c, [key]: Math.max(natural, val - 5) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
                        <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: resolved >= 50 ? '#4a8c3f' : colors.foreground, minWidth: 45, textAlign: 'center' }}>{resolved}%</Text>
-                      <TouchableOpacity testID={`${key}-increase`} accessibilityLabel={`Increase ${label} resistance`} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(100, val + 5) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
+                       <TouchableOpacity disabled={locked} testID={`${key}-increase`} accessibilityLabel={`Increase ${label} resistance`} accessibilityState={{ disabled: !!locked }} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', opacity: locked ? 0.35 : 1 }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(100, val + 5) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                   </View>
                 ))}
@@ -1948,8 +1982,27 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           message={`Effective cumulative resistance is ${armorSheet.radiationResistance}%. Applying it would add ${pendingRadiation === null ? 0 : resolveRadiationAddition(pendingRadiation, armorSheet.radiationResistance)} instead of ${pendingRadiation ?? 0} radiation.`}
           cancelLabel="ADD FULL AMOUNT"
           confirmLabel="APPLY RESISTANCE"
-          onCancel={() => { if (pendingRadiation !== null) setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, pendingRadiation) })); setPendingRadiation(null); setRadiationInput(''); }}
-          onConfirm={() => { if (pendingRadiation !== null) setChar(c => ({ ...c, accumulatedRadiation: adjustRadiation(c.accumulatedRadiation ?? 0, resolveRadiationAddition(pendingRadiation, armorSheet.radiationResistance)) })); setPendingRadiation(null); setRadiationInput(''); }}
+          onCancel={() => {
+            if (pendingRadiation !== null) setChar(c => ({
+              ...c,
+              ...applyRadiationGain(c, pendingRadiation, c.maxHp, armorSheet.ghoulRadiationHealingDivisor),
+            }));
+            setPendingRadiation(null);
+            setRadiationInput('');
+          }}
+          onConfirm={() => {
+            if (pendingRadiation !== null) setChar(c => ({
+              ...c,
+              ...applyRadiationGain(
+                c,
+                resolveRadiationAddition(pendingRadiation, armorSheet.radiationResistance),
+                c.maxHp,
+                armorSheet.ghoulRadiationHealingDivisor,
+              ),
+            }));
+            setPendingRadiation(null);
+            setRadiationInput('');
+          }}
         />
 
         <ConfirmModal
@@ -2103,9 +2156,11 @@ function PremadePickerModal({ visible, onClose, onPick }: {
 }
 
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor }: {
+function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
   hardcoreRadiationRules: boolean;
+  mutantGhoulRadiationRules: boolean;
+  ghoulRadiationHealingOption: GhoulRadiationHealingOption;
   onBio: () => void; onToggleStorage: () => void; onResetHp: () => void;
   onMoveUp: () => void; onMoveDown: () => void; canMoveUp: boolean; canMoveDown: boolean;
   allWeapons: { id: string; name: string }[];
@@ -2130,6 +2185,7 @@ function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, on
     radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
     poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,
     accumulatedRadiation: character.accumulatedRadiation, hardcoreRadiationRules,
+    raceId: character.race, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     equippedBodyArmorId: character.equippedBodyArmorId, equippedHelmetId: character.equippedHelmetId,
     armorConditionStates: character.armorConditionStates, allArmor,
   });
@@ -2166,10 +2222,10 @@ function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, on
             Carry {armorSheet.carryWeight + computePerkDerivedBonuses(character.perks, character.level).carryWeight} lb
             {(character.traits ?? []).includes('night_person') ? ` · Night Person ${(character.nightPersonPeriod ?? 'day').toUpperCase()}` : ''}
           </Text>
-          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: (character.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>
-            RAD {character.accumulatedRadiation ?? 0}/{MAX_RADIATION} · {radiationSicknessLabel(character.accumulatedRadiation ?? 0)}
+          <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: !armorSheet.radiationSicknessImmune && (character.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>
+            RAD {character.accumulatedRadiation ?? 0}/{MAX_RADIATION} · {radiationSicknessLabel(character.accumulatedRadiation ?? 0, armorSheet.radiationSicknessImmune)}
           </Text>
-          {hardcoreRadiationRules && hardcoreRadiationRule(character.accumulatedRadiation ?? 0).threshold > 0 && (
+          {hardcoreRadiationRules && !armorSheet.radiationSicknessImmune && hardcoreRadiationRule(character.accumulatedRadiation ?? 0).threshold > 0 && (
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
               {hardcoreRadiationRule(character.accumulatedRadiation ?? 0).fatal
                 ? 'HARDCORE RULE: FATAL — INSTANT DEATH'
@@ -2266,7 +2322,10 @@ function CharacterCard({ character, hardcoreRadiationRules, onEdit, onDelete, on
 export default function CharactersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter, allWeapons, allArmor, hardcoreRadiationRules } = useApp();
+  const {
+    characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter,
+    allWeapons, allArmor, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
@@ -2368,6 +2427,8 @@ export default function CharactersScreen() {
         allWeapons={allWeapons}
         allArmor={allArmor}
         hardcoreRadiationRules={hardcoreRadiationRules}
+        mutantGhoulRadiationRules={mutantGhoulRadiationRules}
+        ghoulRadiationHealingOption={ghoulRadiationHealingOption}
         onEdit={() => { setEditingChar(item); setShowForm(true); }}
         onBio={() => setBioChar(item)}
         onToggleStorage={() => toggleStorage(item)}

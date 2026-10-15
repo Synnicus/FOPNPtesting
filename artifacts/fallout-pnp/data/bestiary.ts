@@ -5,6 +5,7 @@ import type {
   Character,
   CharacterSkills,
   NaturalProtection,
+  RaceType,
   SPECIALStats,
   Weapon,
 } from '../context/types.ts';
@@ -29,6 +30,7 @@ interface ManualEntry {
   id: string;
   name: string;
   category?: 'beast' | 'mutant';
+  race?: RaceType;
   description: string;
   hp: number;
   sequence: number;
@@ -68,6 +70,7 @@ function manualTemplate(entry: ManualEntry): BestiaryTemplate {
     id: entry.id,
     name: entry.name,
     category: entry.category ?? 'beast',
+    race: entry.race,
     description: entry.description,
     special: engineSpecial(entry.sequence, entry.ap),
     maxHp: entry.hp,
@@ -291,7 +294,7 @@ export const MANUAL_BESTIARY: BestiaryTemplate[] = [
     attacks: [{ weaponId: 'dog_bite', hitChance: 80, notes: 'Roll against DEX to avoid knockdown' }],
   }),
   manualTemplate({
-    id: 'deathclaw', name: 'Deathclaw',
+    id: 'deathclaw', name: 'Deathclaw', race: 'deathclaw',
     description: 'Large, intelligent mutated lizard with foot-long claws.',
     hp: 70, sequence: 10, ap: 10, xp: 800, criticalChance: 9, ac: 25,
     protection: natural([4, 0, 4, 0, 4], [40, 0, 40, 0, 40]),
@@ -348,6 +351,10 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
   ...RESTORED_BESTIARY,
 ];
 
+export function getBuiltInBestiaryRace(templateId: string): RaceType | undefined {
+  return BUILT_IN_BESTIARY.find(template => template.id === templateId)?.race;
+}
+
 export const BESTIARY_CATEGORIES: { id: BestiaryCategory; label: string; icon: string }[] = [
   { id: 'human', label: 'Human', icon: 'user' },
   { id: 'ghoul', label: 'Ghoul', icon: 'cloud' },
@@ -403,7 +410,7 @@ export function spawnBestiaryTemplate(
     id,
     name,
     type: 'npc',
-    race: template.category === 'robot' ? 'robot' : 'customRace',
+    race: template.race ?? (template.category === 'robot' ? 'robot' : 'customRace'),
     level: 1,
     xp: 0,
     special: { ...template.special },

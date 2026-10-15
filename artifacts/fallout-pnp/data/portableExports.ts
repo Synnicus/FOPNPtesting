@@ -8,6 +8,7 @@ import type {
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 import type { CampaignVisualTheme } from './campaignOptions.ts';
+import type { GhoulRadiationHealingOption } from './radiation.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -33,6 +34,8 @@ export interface CampaignStateSnapshot {
   areaAttackReceipt?: unknown;
   conditionSemanticsV2?: boolean;
   hardcoreRadiationRules?: boolean;
+  mutantGhoulRadiationRules?: boolean;
+  ghoulRadiationHealingOption?: GhoulRadiationHealingOption;
   visualTheme?: CampaignVisualTheme;
   systemSoundsEnabled?: boolean;
   musicEnabled?: boolean;
@@ -253,7 +256,13 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
     && Array.isArray(value.customArmor ?? [])
     && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
-    && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean');
+    && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
+    && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
+    && (value.ghoulRadiationHealingOption === undefined
+      || value.ghoulRadiationHealingOption === 1
+      || value.ghoulRadiationHealingOption === 2
+      || value.ghoulRadiationHealingOption === 3
+      || value.ghoulRadiationHealingOption === 4);
 }
 
 const SPECIAL_KEYS = [
@@ -441,7 +450,13 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && (value.activeEntryId === null || typeof value.activeEntryId === 'string')
     && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
-    && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean');
+    && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
+    && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
+    && (value.ghoulRadiationHealingOption === undefined
+      || value.ghoulRadiationHealingOption === 1
+      || value.ghoulRadiationHealingOption === 2
+      || value.ghoulRadiationHealingOption === 3
+      || value.ghoulRadiationHealingOption === 4);
 }
 
 function isCompletePortableCharacterBundle(value: unknown): value is PortableCharacterBundle {

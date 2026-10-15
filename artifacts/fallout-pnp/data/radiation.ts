@@ -1,5 +1,85 @@
 export const MAX_RADIATION = 1000;
 
+export type GhoulRadiationHealingOption = 1 | 2 | 3 | 4;
+
+export interface MutantGhoulRadiationRuleState {
+  mutantGhoulRadiationRules: boolean;
+  ghoulRadiationHealingOption: GhoulRadiationHealingOption;
+}
+
+export interface RadiationGainState {
+  accumulatedRadiation?: number;
+  currentHp: number;
+  ghoulRadiationHealingRemainder?: number;
+}
+
+export interface RadiationGainResult {
+  accumulatedRadiation: number;
+  currentHp: number;
+  ghoulRadiationHealingRemainder?: number;
+}
+
+export function normalizeGhoulRadiationHealingOption(value: unknown): GhoulRadiationHealingOption {
+  return value === 2 || value === 3 || value === 4 ? value : 1;
+}
+
+export function ghoulRadiationHealingDivisor(
+  race: string,
+  rules: MutantGhoulRadiationRuleState,
+): number | null {
+  if (!rules.mutantGhoulRadiationRules || race !== 'ghoul') return null;
+  switch (normalizeGhoulRadiationHealingOption(rules.ghoulRadiationHealingOption)) {
+    case 2: return 10;
+    case 3: return 3;
+    case 4: return 1;
+    default: return null;
+  }
+}
+
+export function isRadiationSicknessImmune(
+  race: string,
+  rules: MutantGhoulRadiationRuleState,
+): boolean {
+  return rules.mutantGhoulRadiationRules
+    && (race === 'superMutant' || race === 'deathclaw' || race === 'ghoul');
+}
+
+export function isRadiationResistanceLocked(
+  race: string,
+  rules: MutantGhoulRadiationRuleState,
+): boolean {
+  if (!rules.mutantGhoulRadiationRules) return false;
+  return race === 'superMutant'
+    || race === 'deathclaw'
+    || (race === 'ghoul' && normalizeGhoulRadiationHealingOption(rules.ghoulRadiationHealingOption) === 1);
+}
+
+/** Apply only newly added radiation to the meter and ghoul healing progress.
+ * The accepted amount is capped by the meter before healing is awarded. */
+export function applyRadiationGain(
+  current: RadiationGainState,
+  delta: number,
+  maxHp: number,
+  healingDivisor: number | null,
+): RadiationGainResult {
+  const previousRadiation = normalizeRadiation(current.accumulatedRadiation);
+  const accumulatedRadiation = adjustRadiation(previousRadiation, delta);
+  const newlyAccumulated = Math.max(0, accumulatedRadiation - previousRadiation);
+  if (!healingDivisor || newlyAccumulated === 0) {
+    return {
+      ...current,
+      accumulatedRadiation,
+    };
+  }
+  const progress = Math.max(0, Math.floor(current.ghoulRadiationHealingRemainder ?? 0)) + newlyAccumulated;
+  const healing = Math.floor(progress / healingDivisor);
+  return {
+    accumulatedRadiation,
+    currentHp: Math.min(maxHp, Math.max(0, current.currentHp + healing)),
+    ghoulRadiationHealingRemainder: progress % healingDivisor,
+  };
+}
+
 /** Per-rank perk bonuses explicitly described as applying to all resistances. */
 export const RAD_RESIST_PERK_BONUSES: Readonly<Record<string, number>> = Object.freeze({
   hide_of_scars: 15,
@@ -49,7 +129,8 @@ export function normalizeRadiation(value: unknown): number {
     : 0;
 }
 
-export function radiationSicknessLabel(value: number): string {
+export function radiationSicknessLabel(value: number, immune = false): string {
+  if (immune) return 'Radiation-Immune';
   const radiation = normalizeRadiation(value);
   if (radiation >= 1000) return 'Fatal Radiation Sickness';
   if (radiation >= 800) return 'Deadly Radiation Sickness';
@@ -61,7 +142,8 @@ export function radiationSicknessLabel(value: number): string {
 
 /** Radiation sickness is derived from the meter, never stored or dismissed
  * independently, so imports and saves cannot contain a stale sickness stage. */
-export function radiationSicknessEffect(value: number): RadiationSicknessEffect | null {
+export function radiationSicknessEffect(value: number, immune = false): RadiationSicknessEffect | null {
+  if (immune) return null;
   const radiation = normalizeRadiation(value);
   const threshold = radiation >= 1000 ? 1000
     : radiation >= 800 ? 800

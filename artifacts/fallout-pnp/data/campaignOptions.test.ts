@@ -19,10 +19,27 @@ test('campaign options preserve explicit preferences and normalize invalid value
     visualTheme: 'eastern',
     systemSoundsEnabled: false,
     musicEnabled: false,
+    mutantGhoulRadiationRules: false,
+    ghoulRadiationHealingOption: 1,
   });
   assert.deepEqual(normalizeCampaignOptions({
     visualTheme: 'unknown',
     systemSoundsEnabled: 'off',
     musicEnabled: null,
+  }), DEFAULT_CAMPAIGN_OPTIONS);
+});
+
+test('campaign options persist the mutant radiation toggle and selected Ghoul rule', () => {
+  assert.deepEqual(normalizeCampaignOptions({
+    mutantGhoulRadiationRules: true,
+    ghoulRadiationHealingOption: 3,
+  }), {
+    ...DEFAULT_CAMPAIGN_OPTIONS,
+    mutantGhoulRadiationRules: true,
+    ghoulRadiationHealingOption: 3,
+  });
+  assert.deepEqual(normalizeCampaignOptions({
+    mutantGhoulRadiationRules: 'on',
+    ghoulRadiationHealingOption: 9,
   }), DEFAULT_CAMPAIGN_OPTIONS);
 });

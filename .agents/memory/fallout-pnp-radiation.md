@@ -10,3 +10,9 @@ A separate campaign-wide Hardcore ruleset may be enabled explicitly. It is defau
 **Why:** The user wants PnP 2.0 sickness labels to remain narrative-only and clearly distinguished from optional Hardcore mechanics. Deriving sickness prevents stale state, while a separate opt-in layer avoids silently changing the base rules.
 
 **How to apply:** Manual additions may optionally use effective resistance, including the character's racial/base resistance, resistance traits, applicable perks, active effects, and worn equipment; cap at 100%. Combat outputs are already post-resistance. Show PnP sickness stages at 200/400/600/800/1000. Apply optional penalties at 150/300/500/750/1000 only when the campaign toggle is enabled, through the shared effective-sheet resolver.
+
+The optional Mutant/Ghoul Radiation Immunity/Healing campaign rule is default-off. When enabled, Super Mutants and Deathclaws, plus Ghouls using healing option 1, have 100% radiation resistance and no radiation-sickness penalties. Ghoul options 2–4 set natural resistance to 0% but still include armor and other resistance sources; they heal 1 HP per 10, 3, or 1 radiation actually accumulated, respectively. Half-Mutants are unchanged.
+
+**Why:** The user requested these settings as a lore-friendly optional deviation from the core rules. Applying Ghoul healing after resistance and only to newly accepted meter points preserves armor protection and avoids retroactive healing or double-counting post-resistance combat results.
+
+**How to apply:** Route all radiation gains through the shared accumulation/healing helper. Count only the amount accepted below the 1000-rad cap, carry partial healing thresholds across separate gains, and suppress Hardcore sickness penalties for immune races.

@@ -18,11 +18,11 @@ test('character editor adds radiation with an optional single resistance adjustm
   assert.match(characterSource, /accessibilityLabel="Subtract radiation"/);
   assert.match(
     characterSource,
-    /onCancel=\{\(\) => \{ if \(pendingRadiation !== null\) setChar\(c => \(\{ \.\.\.c, accumulatedRadiation: adjustRadiation\(c\.accumulatedRadiation \?\? 0, pendingRadiation\) \}\)\)/,
+    /onCancel=\{\(\) => \{\s*if \(pendingRadiation !== null\) setChar\(c => \(\{\s*\.\.\.c,\s*\.\.\.applyRadiationGain\(c, pendingRadiation, c\.maxHp, armorSheet\.ghoulRadiationHealingDivisor\)/,
   );
   assert.match(
     characterSource,
-    /onConfirm=\{\(\) => \{ if \(pendingRadiation !== null\) setChar\(c => \(\{ \.\.\.c, accumulatedRadiation: adjustRadiation\(c\.accumulatedRadiation \?\? 0, resolveRadiationAddition\(pendingRadiation, armorSheet\.radiationResistance\)\) \}\)\)/,
+    /applyRadiationGain\(\s*c,\s*resolveRadiationAddition\(pendingRadiation, armorSheet\.radiationResistance\)/,
   );
 });
 
@@ -55,14 +55,14 @@ test('normal and streamlined combat add resolved radiation without applying resi
 test('combat sheets receive the campaign toggle and character radiation meter', () => {
   assert.match(combatSource, /accumulatedRadiation: character\.accumulatedRadiation/);
   assert.match(combatSource, /hardcoreRadiationRules,/);
-  assert.match(combatSource, /resolveCombatSheet\(attacker, allArmor, true, hardcoreRadiationRules\)/);
-  assert.match(combatSource, /resolveCombatSheet\(defender, allArmor, true, hardcoreRadiationRules\)/);
-  assert.match(combatSource, /resolveCombatSheet\(completionHealActor, allArmor, true, hardcoreRadiationRules\)/);
+  assert.match(combatSource, /resolveCombatSheet\(\s*attacker,\s*allArmor,\s*true,\s*hardcoreRadiationRules,\s*mutantGhoulRadiationRules,\s*ghoulRadiationHealingOption/);
+  assert.match(combatSource, /resolveCombatSheet\(\s*defender,\s*allArmor,\s*true,\s*hardcoreRadiationRules,\s*mutantGhoulRadiationRules,\s*ghoulRadiationHealingOption/);
+  assert.match(combatSource, /resolveCombatSheet\(\s*completionHealActor,\s*allArmor,\s*true,\s*hardcoreRadiationRules,\s*mutantGhoulRadiationRules,\s*ghoulRadiationHealingOption/);
 });
 
 test('radiation changes resynchronize live initiative when optional penalties are enabled', () => {
   assert.match(contextSource, /if \(!s\.hardcoreRadiationRules\) return \{ \.\.\.s, characters \}/);
-  assert.match(contextSource, /syncInitiativeEntrySheet\(entry, resolveCharacterArmorSheet\(character, allArmor, false, true\)\)/);
+  assert.match(contextSource, /resolveCharacterArmorSheet\(\s*character,\s*allArmor,\s*false,\s*true,\s*s\.mutantGhoulRadiationRules,\s*s\.ghoulRadiationHealingOption/);
   assert.match(contextSource, /sortInitiativeEntries\(s\.initiativeEntries\.map/);
 });
 
@@ -72,13 +72,10 @@ test('area combat updates radiation independently from HP damage', () => {
     contextSource.indexOf('const initiativeEntries = s.initiativeEntries.map', contextSource.indexOf('const applyAreaAttack')),
   );
   assert.match(areaUpdate, /currentHp: Math\.max\(0, c\.currentHp - result\.damage\)/);
-  assert.match(
-    areaUpdate,
-    /accumulatedRadiation: adjustRadiationValue\(c\.accumulatedRadiation \?\? 0, result\.radiationExposure \?\? 0\)/,
-  );
+  assert.match(areaUpdate, /applyCharacterRadiationGain\([\s\S]*result\.radiationExposure \?\? 0/);
   assert.doesNotMatch(areaUpdate, /currentHp:[^\n]*radiation|resolveRadiationAddition/);
-  assert.match(contextSource, /const maxAP = charMaxAP\(updated, armor, true\)/);
-  assert.match(contextSource, /resolveCharacterArmorSheet\(updatedCharacter, armor, false, true\)/);
+  assert.match(contextSource, /charMaxAP\(\s*updated,\s*armor,\s*true,\s*s\.mutantGhoulRadiationRules,\s*s\.ghoulRadiationHealingOption/);
+  assert.match(contextSource, /resolveCharacterArmorSheet\(\s*updatedCharacter,\s*armor,\s*false,\s*true,\s*s\.mutantGhoulRadiationRules,\s*s\.ghoulRadiationHealingOption/);
 });
 
 test('radiation meter is normalized on reload and persisted with campaign state', () => {

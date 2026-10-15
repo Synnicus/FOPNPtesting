@@ -213,5 +213,13 @@ const RESTORED_BESTIARY_ENTRIES: BestiaryTemplate[] = [
 export const RESTORED_BESTIARY: BestiaryTemplate[] = RESTORED_BESTIARY_ENTRIES.map(template => (
   template.category === 'robot'
     ? template
-    : { ...template, armorClass: 0, usesDerivedArmorClass: true }
+    : {
+        ...template,
+        ...(template.category === 'ghoul' ? { race: 'ghoul' as const } : {}),
+        ...(template.id.startsWith('super_mutant_') || template.id === 'nightkin'
+          ? { race: 'superMutant' as const }
+          : {}),
+        armorClass: 0,
+        usesDerivedArmorClass: true,
+      }
 ));

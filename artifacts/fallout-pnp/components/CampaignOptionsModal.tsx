@@ -19,6 +19,7 @@ import { THEME_SWATCHES } from '@/constants/colors';
 import {
   formatHardcoreRadiationPenalties,
   HARDCORE_RADIATION_RULES,
+  type GhoulRadiationHealingOption,
 } from '@/data/radiation';
 import type { CampaignVisualTheme } from '@/data/campaignOptions';
 import { APP_LANGUAGES } from '@/data/localization';
@@ -86,6 +87,17 @@ function PreferenceSwitchRow({
     </View>
   );
 }
+
+const GHOUL_RADIATION_RULE_OPTIONS: {
+  value: GhoulRadiationHealingOption;
+  label: string;
+  description: string;
+}[] = [
+  { value: 1, label: 'Option 1 · Immune, no healing', description: 'Ghouls have 100% radiation resistance and gain no healing from radiation (Fallout 1 & 2).' },
+  { value: 2, label: 'Option 2 · 1 HP per 10 rads', description: 'Ghouls heal 1 HP for every 10 radiation points they absorb (Fallout 3 and New Vegas).' },
+  { value: 3, label: 'Option 3 · 1 HP per 3 rads', description: 'Ghouls heal 1 HP for every 3 radiation points they absorb (official Fallout tabletop).' },
+  { value: 4, label: 'Option 4 · 1 HP per rad', description: 'Ghouls heal 1 HP for every radiation point they absorb.' },
+];
 
 function HardcoreRadiationPreviewModal({
   visible,
@@ -235,6 +247,10 @@ export default function CampaignOptionsModal({
   const {
     hardcoreRadiationRules,
     setHardcoreRadiationRules,
+    mutantGhoulRadiationRules,
+    setMutantGhoulRadiationRules,
+    ghoulRadiationHealingOption,
+    setGhoulRadiationHealingOption,
     visualTheme,
     setVisualTheme,
     systemSoundsEnabled,
@@ -366,6 +382,64 @@ export default function CampaignOptionsModal({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            <PreferenceSwitchRow
+              label="Mutant/Ghoul Radiation Immunity/Healing"
+              description="Optional lore-friendly rule: Super Mutants, Ghouls, and Deathclaws do not suffer radiation sickness. Choose how radiation affects Ghoul healing below."
+              value={mutantGhoulRadiationRules}
+              onValueChange={setMutantGhoulRadiationRules}
+              testID="mutant-ghoul-radiation-toggle"
+            />
+            {mutantGhoulRadiationRules && (
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Ghoul radiation healing rules"
+                style={{ gap: 7, marginTop: 2 }}
+              >
+                {GHOUL_RADIATION_RULE_OPTIONS.map(option => {
+                  const selected = ghoulRadiationHealingOption === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      accessibilityRole="radio"
+                      accessibilityLabel={option.label}
+                      accessibilityHint={option.description}
+                      accessibilityState={{ checked: selected }}
+                      testID={`ghoul-radiation-option-${option.value}`}
+                      onPress={() => setGhoulRadiationHealingOption(option.value)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'flex-start',
+                        gap: 11,
+                        padding: 12,
+                        borderWidth: selected ? 2 : 1,
+                        borderColor: selected ? palette.primary : palette.border,
+                        borderRadius: palette.radius,
+                        backgroundColor: palette.secondary,
+                      }}
+                    >
+                      <Feather
+                        name={selected ? 'check-circle' : 'circle'}
+                        size={17}
+                        color={selected ? palette.primary : palette.mutedForeground}
+                        style={{ marginTop: 1 }}
+                      />
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
+                          {option.label}
+                        </Text>
+                        <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                          {option.description}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+                <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                  Super Mutants, Deathclaws, and Option 1 Ghouls are locked at 100% resistance. Options 2–4 set Ghouls' natural resistance to 0% so they can absorb radiation; worn armor and other protection still reduce it. Healing uses radiation that actually accumulates, up to the meter's 1000-rad cap.
+                </Text>
+              </View>
+            )}
 
             <SectionHeading title="Language" />
             <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground, marginBottom: 2 }}>

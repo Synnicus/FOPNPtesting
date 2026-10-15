@@ -58,6 +58,8 @@ function resolveCombatSheet(
   allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'],
   includeTempAC = true,
   hardcoreRadiationRules = false,
+  mutantGhoulRadiationRules = false,
+  ghoulRadiationHealingOption: 1 | 2 | 3 | 4 = 1,
 ): ResolvedArmorSheet {
   const race = getRaceById(character.race);
   const sheet = resolveArmorAwareSheet({
@@ -81,6 +83,9 @@ function resolveCombatSheet(
     electricityResistance: character.electricityResistance,
     accumulatedRadiation: character.accumulatedRadiation,
     hardcoreRadiationRules,
+    raceId: character.race,
+    mutantGhoulRadiationRules,
+    ghoulRadiationHealingOption,
     equippedBodyArmorId: character.equippedBodyArmorId,
     equippedHelmetId: character.equippedHelmetId,
     armorConditionStates: character.armorConditionStates,
@@ -480,10 +485,12 @@ function ProtectionBreakdownLines({
 }
 
 // ─── Character Picker Modal ───────────────────────────────────────────────────
-function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor, hardcoreRadiationRules, clearRole, onClear }: {
+function CharacterPickerModal({ visible, onClose, onSelect, title, characters, allWeapons, allArmor, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption, clearRole, onClear }: {
   visible: boolean; onClose: () => void; onSelect: (id: string) => void;
   title: string; characters: Character[]; allWeapons: Weapon[]; allArmor: Parameters<typeof resolveArmorAwareSheet>[0]['allArmor'];
   hardcoreRadiationRules: boolean;
+  mutantGhoulRadiationRules: boolean;
+  ghoulRadiationHealingOption: 1 | 2 | 3 | 4;
   clearRole?: 'Attacker' | 'Defender'; onClear?: () => void;
 }) {
   const colors = useColors();
@@ -515,7 +522,9 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
             <FlatList data={characters} keyExtractor={c => c.id} renderItem={({ item: c }) => {
               const weapon = allWeapons.find(w => w.id === c.equippedWeaponId);
               const ammoState = c.weaponAmmoStates?.find(a => a.weaponId === c.equippedWeaponId);
-               const sheet = resolveCombatSheet(c, allArmor, true, hardcoreRadiationRules);
+               const sheet = resolveCombatSheet(
+                 c, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+               );
               return (
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => { onSelect(c.id); onClose(); }}>
                   <CharacterAvatar portrait={c.portrait} name={c.name} size={40} />
@@ -749,7 +758,8 @@ export default function CombatScreen() {
   const app = useApp();
   const combatScrollRef = useRef<ScrollView>(null);
   const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
-    initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt, hardcoreRadiationRules,
+    initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
+    hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
   } = app;
@@ -881,8 +891,12 @@ export default function CombatScreen() {
     : null;
   // This is the authoritative combat sheet: equipped armor is resolved before
   // skills, SPECIAL-derived values, AC, and elemental resistances are consumed.
-  const attackerSheet = attacker ? resolveCombatSheet(attacker, allArmor, true, hardcoreRadiationRules) : null;
-  const defenderSheet = defender ? resolveCombatSheet(defender, allArmor, true, hardcoreRadiationRules) : null;
+  const attackerSheet = attacker ? resolveCombatSheet(
+    attacker, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  ) : null;
+  const defenderSheet = defender ? resolveCombatSheet(
+    defender, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  ) : null;
   // Empty hands still make a normal Unarmed attack. Treat them as the built-in
   // Fists and Feet profile without mutating the character's carried inventory.
   const activeWeapon = attacker
@@ -1010,7 +1024,9 @@ export default function CombatScreen() {
         return values;
       }, {})
     : {};
-  const completionHealSheet = completionHealActor ? resolveCombatSheet(completionHealActor, allArmor, true, hardcoreRadiationRules) : null;
+  const completionHealSheet = completionHealActor ? resolveCombatSheet(
+    completionHealActor, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  ) : null;
   const completionHealSkillValues: Partial<Record<SkillType, number>> = completionHealActor && completionHealSheet
     ? HEAL_FALLEN_SKILLS.reduce<Partial<Record<SkillType, number>>>((values, skill) => {
         const injuryDelta = (completionHealActor.injuries ?? [])
@@ -2282,7 +2298,9 @@ export default function CombatScreen() {
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   initiativeSetupCharacters.forEach(c => {
-                    const seq = resolveCombatSheet(c, allArmor, true, hardcoreRadiationRules).sequence;
+                    const seq = resolveCombatSheet(
+                      c, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+                    ).sequence;
                     rolls[c.id] = Math.floor(Math.random() * 10) + 1 + seq;
                   });
                   setInitRolls(rolls);
@@ -2292,7 +2310,9 @@ export default function CombatScreen() {
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>ROLL ALL (1d10 + SEQ)</Text>
                 </TouchableOpacity>
                 {initiativeSetupCharacters.map(c => {
-                  const sheet = resolveCombatSheet(c, allArmor, true, hardcoreRadiationRules);
+                  const sheet = resolveCombatSheet(
+                    c, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+                  );
                   return (
                   <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <CharacterAvatar portrait={c.portrait} name={c.name} size={32} />
@@ -2331,7 +2351,9 @@ export default function CombatScreen() {
                   <TouchableOpacity disabled={initiativeSetupCharacters.length === 0} style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: initiativeSetupCharacters.length > 0 ? '#4a8c3f' : colors.border, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
                     const entries: InitiativeEntry[] = initiativeSetupCharacters.map(c => {
                       // temp AC is turn-specific and starts separately at zero.
-                      const sheet = resolveCombatSheet(c, allArmor, false, hardcoreRadiationRules);
+                      const sheet = resolveCombatSheet(
+                        c, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+                      );
                       return ({
                       id: `init-${c.id}`,
                       characterId: c.id,
@@ -3632,8 +3654,8 @@ export default function CombatScreen() {
 
       </ScrollView>
 
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} onClear={() => setAttackerId(null)} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
-      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} onClear={() => setDefenderId(null)} clearRole="Defender" title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} onClear={() => setAttackerId(null)} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} onClear={() => setDefenderId(null)} clearRole="Defender" title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <CombatSkillModal
         visible={showCombatSkill}
         actor={completionHealAction ? completionHealActor : attacker}
@@ -3667,7 +3689,9 @@ export default function CombatScreen() {
         const c = characters.find(ch => ch.id === id);
         if (!c) return;
         // Snapshot resolved permanent armor AC; temp AC remains its own entry field.
-        const sheet = resolveCombatSheet(c, allArmor, false, hardcoreRadiationRules);
+        const sheet = resolveCombatSheet(
+          c, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+        );
         addInitiativeEntry({
           id: `init-${c.id}-${genId()}`,
           characterId: c.id,
@@ -3685,7 +3709,7 @@ export default function CombatScreen() {
           hasActed: false,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} />
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
       <CriticalHitModal
         visible={showCritModal}

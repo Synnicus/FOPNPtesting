@@ -15,7 +15,14 @@ import {
 import { calcBaseSkills } from './derived.ts';
 import { computeConditionModifiers } from './conditions.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
-import { hardcoreRadiationRule, perkRadiationResistanceBonus } from './radiation.ts';
+import {
+  ghoulRadiationHealingDivisor,
+  hardcoreRadiationRule,
+  isRadiationResistanceLocked,
+  isRadiationSicknessImmune,
+  perkRadiationResistanceBonus,
+  type GhoulRadiationHealingOption,
+} from './radiation.ts';
 import { wornArmor } from './armorCondition.ts';
 import type { ArmorConditionState } from '../context/types.ts';
 
@@ -123,6 +130,9 @@ export interface ArmorResolverInput {
   electricityResistance?: number;
   accumulatedRadiation?: number;
   hardcoreRadiationRules?: boolean;
+  raceId?: string;
+  mutantGhoulRadiationRules?: boolean;
+  ghoulRadiationHealingOption?: GhoulRadiationHealingOption;
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;
   armorConditionStates?: readonly ArmorConditionState[];
@@ -161,6 +171,8 @@ export interface ResolvedArmorSheet {
   radiationResistance: number;
   electricityResistance: number;
   ignoresLightPenalties: boolean;
+  radiationSicknessImmune: boolean;
+  ghoulRadiationHealingDivisor: number | null;
 }
 
 function hasTrait(traits: readonly string[] | undefined, trait: string): boolean {
@@ -184,6 +196,13 @@ function armorClassPerkBonus(perks: ArmorResolverInput['perks']): number {
 export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmorSheet {
   const { bodyArmor, helmet } = wornArmor({ ...input, armorConditionStates: input.armorConditionStates ? [...input.armorConditionStates] : undefined }, input.allArmor);
   const armorEffects = aggregateArmorEffects(bodyArmor, helmet);
+  const radiationRules = {
+    mutantGhoulRadiationRules: input.mutantGhoulRadiationRules ?? false,
+    ghoulRadiationHealingOption: input.ghoulRadiationHealingOption ?? 1,
+  };
+  const radiationSicknessImmune = isRadiationSicknessImmune(input.raceId ?? '', radiationRules);
+  const ghoulHealingDivisor = ghoulRadiationHealingDivisor(input.raceId ?? '', radiationRules);
+  const radiationResistanceLocked = isRadiationResistanceLocked(input.raceId ?? '', radiationRules);
 
   // Trait → permanent Gain-X perk → bounded Night Person → active effects →
   // armor. This retains the existing intentional trait/perk/chem ordering.
@@ -214,7 +233,7 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     radEffectMod += numeric(effect.radResistMod);
     poisonEffectMod += numeric(effect.poisonResistMod);
   }
-  if (input.hardcoreRadiationRules) {
+  if (input.hardcoreRadiationRules && !radiationSicknessImmune) {
     const radiationMods = hardcoreRadiationRule(input.accumulatedRadiation ?? 0).statMods;
     for (const [key, modifier] of Object.entries(radiationMods)) {
       effectiveSpecial[key as keyof SPECIALStats] += numeric(modifier);
@@ -288,8 +307,8 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     carryWeight: calculateCarryWeight(effectiveSpecial.strength, input.traits),
     gasResistance: clamp(numeric(input.gasResistance) + armorEffects.gasResistance, 0, 100),
     poisonResistance: clamp(numeric(input.poisonResistance) + poisonEffectMod + armorEffects.poisonResistance, 0, 100),
-    radiationResistance: clamp(
-      numeric(input.radiationResistance)
+    radiationResistance: radiationResistanceLocked ? 100 : clamp(
+      (ghoulHealingDivisor !== null ? 0 : numeric(input.radiationResistance))
         + (hasTrait(input.traits, 'glowing_one') ? 50 : 0)
         + radEffectMod
         + armorEffects.radiationResistance
@@ -299,5 +318,7 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     ),
     electricityResistance: clamp(numeric(input.electricityResistance) + armorEffects.electricityResistance, 0, 100),
     ignoresLightPenalties: Boolean(bodyArmor?.ignoresLightPenalties || helmet?.ignoresLightPenalties),
+    radiationSicknessImmune,
+    ghoulRadiationHealingDivisor: ghoulHealingDivisor,
   };
 }
