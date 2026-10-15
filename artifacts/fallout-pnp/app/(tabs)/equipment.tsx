@@ -1148,7 +1148,7 @@ export default function EquipmentScreen() {
           >
             <Feather name="plus" size={14} color={colors.primaryForeground} />
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
-              {tab === 'weapons' ? 'WEAPON' : tab === 'armor' ? 'ARMOR' : 'AMMO'}
+              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'armor' ? 'ARMOR' : 'AMMO'}
             </Text>
           </TouchableOpacity>
         </View>
