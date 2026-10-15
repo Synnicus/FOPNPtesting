@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FlatList, Image, Modal, PanResponder, Platform, ScrollView, Text,
-  TextInput, TouchableOpacity, View, useWindowDimensions,
+  FlatList, Image, Modal, PanResponder, Platform, ScrollView,
+  View, useWindowDimensions,
 } from 'react-native';
+import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
@@ -25,6 +26,7 @@ import {
   computePerkDerivedBonuses, brutishHulkExtraHP,
 } from '@/data/derived';
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
+import { translateText } from '@/data/localization';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
 import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
@@ -1950,7 +1952,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           message={(() => {
             const owned = char.perks.find(p => p.perkId === perkRefundId);
             const perk = perkRefundId ? getPerkById(perkRefundId) : undefined;
-            return `Remove all ${owned?.rank ?? 0} rank${(owned?.rank ?? 0) === 1 ? '' : 's'} of ${perk?.name ?? 'this perk'} and refund ${(owned?.rank ?? 0)} perk point${(owned?.rank ?? 0) === 1 ? '' : 's'}?`;
+            const rank = owned?.rank ?? 0;
+            const isSingular = rank === 1;
+            const rankLabel = translateText(isSingular ? 'rank' : 'ranks');
+            const pointLabel = translateText(isSingular ? 'perk point' : 'perk points');
+            const perkName = translateText(perk?.name ?? 'this perk');
+            return `Remove ${rank} ${rankLabel} of ${perkName} and refund ${rank} ${pointLabel}?`;
           })()}
           confirmLabel="REFUND ALL"
           onCancel={() => setPerkRefundId(null)}

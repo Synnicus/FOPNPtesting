@@ -16,3 +16,4 @@
 - [Native regression verification](fallout-pnp-native-verification.md) — a browser preview cannot validate native modal or storage interactions; run device automation against an installed native build.
 - [Generic Karma titles](fallout-pnp-karma-titles.md) — replace “Vault” with “Wasteland” when adapting Fallout 3 titles, as requested for generic characters.
 - [Manual rules-reference scope](fallout-pnp-manual-reference.md) — organize all manual rules/tables by its sections; keep item and creature catalogs in their app tabs.
+- [Fallout PnP localization](fallout-pnp-localization.md) — language choice is device-local, separate from campaigns; player-authored names and notes stay unchanged.

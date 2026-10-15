@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
+import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
 import type { QuickRule, QuickRuleTable } from '@/data/quickRules';
 import {

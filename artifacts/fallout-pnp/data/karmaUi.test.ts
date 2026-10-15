@@ -24,7 +24,7 @@ test('Karma tab exposes an accessible adjustment form, derived title, and chrono
   assert.match(trackerSource, /Neutral action recorded; Karma total unchanged/);
   assert.match(trackerSource, /testID=\{`karma-delete-entry-\$\{entry\.id\}`\}/);
   assert.match(trackerSource, /accessibilityHint="Asks you to confirm before deleting this entry"/);
-  assert.match(trackerSource, /window\.confirm/);
+  assert.match(trackerSource, /localizedConfirm\(title, message\)/);
   assert.match(trackerSource, /Alert\.alert\(title, message, \[/);
   assert.match(trackerSource, /removeKarmaLogEntry\(karmaLog, entryId\)/);
 });

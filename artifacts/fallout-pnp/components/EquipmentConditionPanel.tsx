@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
+import { LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import type { Armor, Character, Weapon, WeaponAmmoState } from '@/context/types';

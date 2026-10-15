@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Alert, FlatList, Modal, Platform, ScrollView, Text,
-  TextInput, TouchableOpacity, View,
+  FlatList, Modal, Platform, ScrollView, View,
 } from 'react-native';
+import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -673,7 +673,7 @@ export default function BestiaryScreen() {
     // Alert.alert with buttons is a silent no-op on react-native-web — use
     // window.confirm there so the delete button actually works in the browser.
     if (Platform.OS === 'web') {
-      if (window.confirm(`Remove ${t.name} from the bestiary?`)) removeCustomBestiaryTemplate(t.id);
+      if (localizedConfirm(`Remove ${t.name} from the bestiary?`)) removeCustomBestiaryTemplate(t.id);
       return;
     }
     Alert.alert('Delete NPC', `Remove ${t.name} from the bestiary?`, [

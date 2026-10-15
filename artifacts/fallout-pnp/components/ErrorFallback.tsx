@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import {
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { LocalizedPressable as Pressable, LocalizedText as Text } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { Feather } from '@expo/vector-icons';

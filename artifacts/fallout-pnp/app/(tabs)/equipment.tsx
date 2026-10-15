@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Alert, FlatList, Modal, Platform, ScrollView, Text,
-  TextInput, TouchableOpacity, View,
+  FlatList, Modal, Platform, ScrollView, View,
 } from 'react-native';
+import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -1116,7 +1116,7 @@ export default function EquipmentScreen() {
   const confirmDelete = (name: string, onDelete: () => void) => {
     // React Native Web does not implement Alert.alert action buttons.
     if (Platform.OS === 'web') {
-      if (window.confirm(`Delete ${name}?`)) onDelete();
+      if (localizedConfirm(`Delete ${name}?`)) onDelete();
       return;
     }
     Alert.alert('Delete', `Delete ${name}?`, [

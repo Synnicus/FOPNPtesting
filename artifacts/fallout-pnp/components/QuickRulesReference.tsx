@@ -2,12 +2,10 @@ import React, { useMemo, useState } from 'react';
 import {
   Modal,
   ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 

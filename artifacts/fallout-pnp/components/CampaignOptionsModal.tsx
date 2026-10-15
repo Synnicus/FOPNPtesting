@@ -3,14 +3,14 @@ import {
   Modal,
   ScrollView,
   Switch,
-  Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import { LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApp } from '@/context/AppContext';
+import { useLocalization } from '@/context/LocalizationContext';
 import { useColors } from '@/hooks/useColors';
 import { THEME_SWATCHES } from '@/constants/colors';
 import {
@@ -18,6 +18,7 @@ import {
   HARDCORE_RADIATION_RULES,
 } from '@/data/radiation';
 import type { CampaignVisualTheme } from '@/data/campaignOptions';
+import { APP_LANGUAGES } from '@/data/localization';
 
 function SectionHeading({ title }: { title: string }) {
   const palette = useColors();
@@ -221,6 +222,7 @@ export default function CampaignOptionsModal({
     musicEnabled,
     setMusicEnabled,
   } = useApp();
+  const { locale, setLocale } = useLocalization();
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
 
@@ -318,6 +320,50 @@ export default function CampaignOptionsModal({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            <SectionHeading title="Language" />
+            <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground, marginBottom: 2 }}>
+              Choose the language used for the app interface, built-in rules, and catalogs.
+            </Text>
+            <View accessibilityRole="radiogroup" accessibilityLabel="Language" style={{ gap: 7 }}>
+              {APP_LANGUAGES.map(language => {
+                const selected = locale === language.locale;
+                return (
+                  <TouchableOpacity
+                    key={language.locale}
+                    accessibilityRole="radio"
+                    accessibilityLabel={language.label}
+                    accessibilityState={{ checked: selected }}
+                    testID={`language-option-${language.locale}`}
+                    onPress={() => setLocale(language.locale)}
+                    style={{
+                      minHeight: 46,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      paddingHorizontal: 13,
+                      paddingVertical: 9,
+                      borderWidth: selected ? 2 : 1,
+                      borderColor: selected ? palette.primary : palette.border,
+                      borderRadius: palette.radius,
+                      backgroundColor: palette.secondary,
+                    }}
+                  >
+                    <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
+                      {language.label}
+                    </Text>
+                    <Feather
+                      name={selected ? 'check-circle' : 'circle'}
+                      size={18}
+                      color={selected ? palette.primary : palette.mutedForeground}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+              Names and notes you enter stay in the language you wrote them.
+            </Text>
 
             <SectionHeading title="Theme Options" />
             <View accessibilityRole="radiogroup" accessibilityLabel="Color theme" style={{ gap: 9 }}>

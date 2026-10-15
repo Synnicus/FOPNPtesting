@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, View } from 'react-native';
+import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import type { Character } from '@/context/types';
@@ -54,7 +55,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
     const title = 'Are you sure?';
     const message = 'Delete this Karma history entry? The total will be recalculated from the remaining entries. This cannot be undone.';
     if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
+      if (localizedConfirm(title, message)) {
         deleteEntry(entryId);
       }
       return;

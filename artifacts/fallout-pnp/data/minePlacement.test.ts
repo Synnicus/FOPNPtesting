@@ -15,7 +15,7 @@ test('placement confirmation shows effective Traps and delegates the roll to the
   assert.match(handler, /attackerSheet\.effectiveSkills\.traps/);
   assert.match(handler, /roll for the GM/);
   assert.match(handler, /does not roll Traps automatically or assume success/);
-  assert.match(handler, /if \(window\.confirm\(message\)\) confirm\(\)/);
+  assert.match(handler, /if \(localizedConfirm\(message\)\) confirm\(\)/);
   assert.match(handler, /style: 'cancel'/);
   assert.match(handler, /spendAP\(attacker\.id, AP_COSTS\.LAYING_MINE\)/);
   assert.doesNotMatch(handler, /Math\.random|rollDie|rollD10/);

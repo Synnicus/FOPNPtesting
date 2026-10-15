@@ -1,6 +1,8 @@
 import {
-  Alert, FlatList, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
+  FlatList, Modal, Platform, ScrollView, View,
 } from 'react-native';
+import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
+import { getActiveLocale, translateText } from '@/data/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
@@ -227,7 +229,7 @@ function describeEffectMods(e: {
 }
 
 function notify(title: string, message?: string) {
-  if (Platform.OS === 'web') window.alert(message ? `${title}\n\n${message}` : title);
+  if (Platform.OS === 'web') window.alert(message ? `${translateText(title, getActiveLocale())}\n\n${translateText(message, getActiveLocale())}` : translateText(title, getActiveLocale()));
   else Alert.alert(title, message);
 }
 
@@ -1923,7 +1925,7 @@ export default function CombatScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     };
     if (Platform.OS === 'web') {
-      if (window.confirm(message)) cancel();
+      if (localizedConfirm(message)) cancel();
     } else {
       Alert.alert('Cancel Pending Skill?', message, [
         { text: 'Keep Action', style: 'cancel' },
@@ -1948,7 +1950,7 @@ export default function CombatScreen() {
       }
     };
     if (Platform.OS === 'web') {
-      if (window.confirm(message)) confirm();
+      if (localizedConfirm(message)) confirm();
     } else {
       Alert.alert('Lay Mine — 6 AP', message, [
         { text: 'Cancel', style: 'cancel' },
@@ -2388,7 +2390,7 @@ export default function CombatScreen() {
                               const remove = () => removeAreaEffect(entryChar.id, effect.id);
                               const message = 'Confirm the acid was washed off with water or chemicals the GM ruled appropriate.';
                               if (Platform.OS === 'web') {
-                                if (window.confirm(message)) remove();
+                                if (localizedConfirm(message)) remove();
                               } else {
                                 Alert.alert('GM: Acid Removed?', message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm Removed', onPress: remove }]);
                               }
@@ -4171,7 +4173,7 @@ function CombatSkillModal({ visible, actor, target, effectiveSkills, currentRoun
     const message = `${generalLabel} needs ${requestedAP} AP, but ${actor.name} has ${actor.currentAP}. Spend all remaining AP? Only equipped-armor AC applies until their next turn.`;
     const confirm = () => onResolve({ ...request, spendAllRemaining: true });
     if (Platform.OS === 'web') {
-      if (window.confirm(message)) confirm();
+      if (localizedConfirm(message)) confirm();
     } else {
       Alert.alert('Underfunded GM Skill', message, [
         { text: 'Cancel', style: 'cancel' },
