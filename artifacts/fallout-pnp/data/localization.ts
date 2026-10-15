@@ -44,17 +44,17 @@ const translations: Partial<Record<AppLocale, Record<string, string>>> = {
   'zh-Hans': zhHans, 'zh-Hant': zhHant,
 };
 const supplementalTranslations: Partial<Record<AppLocale, Record<string, string>>> = {
-  fr: { 'No Armor': 'Aucune armure', 'No Weapon': 'Aucune arme' },
-  it: { 'No Armor': 'Nessuna armatura', 'No Weapon': 'Nessuna arma' },
-  de: { 'No Armor': 'Keine Rüstung', 'No Weapon': 'Keine Waffe' },
-  'es-ES': { 'No Armor': 'Sin armadura', 'No Weapon': 'Sin arma' },
-  'es-MX': { 'No Armor': 'Sin armadura', 'No Weapon': 'Sin arma' },
-  ja: { 'No Armor': '防具なし', 'No Weapon': '武器なし' },
-  pl: { 'No Armor': 'Brak pancerza', 'No Weapon': 'Brak broni' },
-  'pt-BR': { 'No Armor': 'Sem armadura', 'No Weapon': 'Sem arma' },
-  ru: { 'No Armor': 'Без брони', 'No Weapon': 'Без оружия' },
-  'zh-Hans': { 'No Armor': '无护甲', 'No Weapon': '无武器' },
-  'zh-Hant': { 'No Armor': '無護甲', 'No Weapon': '無武器' },
+  fr: { 'No Armor': 'Aucune armure', 'No Weapon': 'Aucune arme', 'NEW CHARACTER': 'NOUVEAU PERSONNAGE' },
+  it: { 'No Armor': 'Nessuna armatura', 'No Weapon': 'Nessuna arma', 'NEW CHARACTER': 'NUOVO PERSONAGGIO' },
+  de: { 'No Armor': 'Keine Rüstung', 'No Weapon': 'Keine Waffe', 'NEW CHARACTER': 'NEUER CHARAKTER' },
+  'es-ES': { 'No Armor': 'Sin armadura', 'No Weapon': 'Sin arma', 'NEW CHARACTER': 'NUEVO PERSONAJE' },
+  'es-MX': { 'No Armor': 'Sin armadura', 'No Weapon': 'Sin arma', 'NEW CHARACTER': 'NUEVO PERSONAJE' },
+  ja: { 'No Armor': '防具なし', 'No Weapon': '武器なし', 'NEW CHARACTER': '新しいキャラクター' },
+  pl: { 'No Armor': 'Brak pancerza', 'No Weapon': 'Brak broni', 'NEW CHARACTER': 'NOWA POSTAĆ' },
+  'pt-BR': { 'No Armor': 'Sem armadura', 'No Weapon': 'Sem arma', 'NEW CHARACTER': 'NOVO PERSONAGEM' },
+  ru: { 'No Armor': 'Без брони', 'No Weapon': 'Без оружия', 'NEW CHARACTER': 'НОВЫЙ ПЕРСОНАЖ' },
+  'zh-Hans': { 'No Armor': '无护甲', 'No Weapon': '无武器', 'NEW CHARACTER': '新角色' },
+  'zh-Hant': { 'No Armor': '無護甲', 'No Weapon': '無武器', 'NEW CHARACTER': '新角色' },
 };
 const dynamicPatterns: Partial<Record<AppLocale, Record<string, string>>> = {
   fr: patternsFr, it: patternsIt, de: patternsDe, 'es-ES': patternsEsES,

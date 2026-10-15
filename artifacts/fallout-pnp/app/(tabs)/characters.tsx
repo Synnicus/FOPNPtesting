@@ -2374,7 +2374,7 @@ export default function CharactersScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }} onPress={() => { setEditingChar(null); setShowForm(true); }}>
               <Feather name="plus" size={14} color={colors.primaryForeground} />
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>NEW</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>NEW CHARACTER</Text>
             </TouchableOpacity>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, gap: 8 }}>
@@ -2382,7 +2382,7 @@ export default function CharactersScreen() {
           <TextInput style={{ flex: 1, paddingVertical: 8, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }} placeholder="Search…" placeholderTextColor={colors.mutedForeground} value={search} onChangeText={setSearch} />
           {search ? <TouchableOpacity onPress={() => setSearch('')}><Feather name="x" size={16} color={colors.mutedForeground} /></TouchableOpacity> : null}
         </View>
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Heal All Characters"
