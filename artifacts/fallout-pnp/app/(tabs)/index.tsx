@@ -744,6 +744,7 @@ export default function CombatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const app = useApp();
+  const combatScrollRef = useRef<ScrollView>(null);
   const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt, hardcoreRadiationRules,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
@@ -2185,7 +2186,7 @@ export default function CombatScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={combatScrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>COMBAT CALCULATOR</Text>
           <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 150, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? '#4a8c3f33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? '#4a8c3f' : colors.border }} onPress={() => setShowRoundTracker(v => !v)}>
@@ -3598,6 +3599,19 @@ export default function CombatScreen() {
               </>
             )}
           </View>
+        )}
+
+        {damageApplied && (
+          <TouchableOpacity
+            testID="combat-back-to-top"
+            accessibilityRole="button"
+            accessibilityLabel="Back to top"
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: colors.primary }}
+            onPress={() => combatScrollRef.current?.scrollTo({ y: 0, animated: true })}
+          >
+            <Feather name="arrow-up" size={16} color={colors.primaryForeground} />
+            <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>BACK TO TOP</Text>
+          </TouchableOpacity>
         )}
 
       </ScrollView>
