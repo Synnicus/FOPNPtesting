@@ -6,7 +6,7 @@ import { URL } from 'node:url';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import ts from 'typescript';
-import type { BestiaryTemplate, Character } from '../context/types.ts';
+import type { BestiaryTemplate, Character, InitiativeEntry } from '../context/types.ts';
 import { MANUAL_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
@@ -14,7 +14,7 @@ import { resolveArmorAwareSheet } from './armorEffects.ts';
 
 const STORAGE_KEY = '@fallout_pnp_v4';
 
-test('AsyncStorage campaign reload repairs legacy custom NPC AC without changing printed AC', async () => {
+test('AppProvider campaign storage lifecycle', async (t) => {
   const brahmin = MANUAL_BESTIARY.find(template => template.id === 'brahmin')!;
   const legacyTemplate: BestiaryTemplate = {
     ...brahmin,
@@ -171,6 +171,189 @@ test('AsyncStorage campaign reload repairs legacy custom NPC AC without changing
     const saved = JSON.parse(storage.get(STORAGE_KEY)!);
     assert.equal(saved.customBestiaryTemplates[0].usesDerivedArmorClass, true);
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
+
+    for (const hasStat of [false, true]) {
+      for (const outcome of ['success', 'failure', 'cancel'] as const) {
+        for (const roundAdvance of ['nextTurn', 'nextRound'] as const) {
+          await t.test(`${hasStat ? 'Stat!' : 'ordinary'} delayed healer: reload, ${roundAdvance}, reload, ${outcome}`, async () => {
+            storage.clear();
+            campaign = undefined;
+            await mount();
+            const current = () => {
+              assert.ok(campaign);
+              return campaign;
+            };
+            const healer: Character = {
+              ...spawnBestiaryTemplate(legacyTemplate, BUILT_IN_WEAPONS, 'Healer', 'healer'),
+              race: 'human',
+              bestiaryTemplateId: undefined,
+              naturalProtection: undefined,
+              manualDerivedStats: undefined,
+              special: {
+                strength: 5, perception: 5, endurance: 5, charisma: 5,
+                intelligence: 5, agility: 5, luck: 5,
+              },
+              skills: { ...legacyTemplate.skills, firstAid: 50 },
+              perks: hasStat ? [{ perkId: 'stat', rank: 1 }] : [],
+              currentHp: 20, maxHp: 20, currentAP: 7, maxAP: 7,
+              tempAC: 0, isKnockedOut: false, knockOutRoundsLeft: 0,
+            };
+            const other: Character = { ...healer, id: 'other', name: 'Other', perks: [] };
+            const target: Character = {
+              ...other, id: 'target', name: 'Fallen', currentHp: 0,
+              currentAP: 0, position: 'prone', isKnockedOut: true, knockOutRoundsLeft: 10,
+            };
+            const characters = [other, healer, target];
+            const entries: InitiativeEntry[] = characters.map((character, index) => ({
+              id: `entry-${character.id}`, characterId: character.id, name: character.name,
+              initiative: 30 - index * 10, sequence: 10,
+              currentAP: character.currentAP, maxAP: 7,
+              currentHp: character.currentHp, maxHp: character.maxHp,
+              armorClass: 36, tempAC: 0, position: character.position,
+              hasActed: false, isActive: false,
+            }));
+            const change = async (operation: () => unknown) => {
+              await act(async () => { operation(); });
+            };
+            const actor = () => current().characters.find(c => c.id === healer.id)!;
+            const fallen = () => current().characters.find(c => c.id === target.id)!;
+            const actorEntry = () => current().initiativeEntries.find(e => e.characterId === healer.id)!;
+            const targetEntry = () => current().initiativeEntries.find(e => e.characterId === target.id)!;
+            const stored = () => JSON.parse(storage.get(STORAGE_KEY)!);
+            const reload = async () => {
+              const before = JSON.parse(current().exportCampaign());
+              const readsBefore = reads.length;
+              await change(() => renderer!.unmount());
+              renderer = undefined;
+              campaign = undefined;
+              await mount();
+              assert.equal(reads.length, readsBefore + 1);
+              assert.deepEqual(current().pendingCombatSkillActions, before.pendingCombatSkillActions);
+              assert.equal(current().currentRound, before.currentRound);
+              assert.equal(current().activeEntryId, before.activeEntryId);
+              assert.equal(current().combatActive, true);
+            };
+            const assertActor = (ap: number, suppressed: boolean) => {
+              assert.equal(actor().currentAP, ap, 'character AP');
+              assert.equal(actorEntry().currentAP, ap, 'initiative AP');
+              assert.equal(!!actor().combatDefenseSuppressed, suppressed);
+              assert.equal(actorEntry().armorClass, suppressed ? 31 : 36, 'armor-only vs Agility + armor');
+              assert.equal(stored().characters.find((c: Character) => c.id === healer.id).currentAP, ap);
+              assert.equal(stored().initiativeEntries.find((e: InitiativeEntry) => e.characterId === healer.id).currentAP, ap);
+            };
+            const assertUnconscious = () => {
+              assert.equal(fallen().isKnockedOut, true);
+              assert.equal(fallen().currentHp, 0);
+              assert.equal(fallen().currentAP, 0);
+              assert.equal(fallen().position, 'prone');
+              assert.equal(fallen().revivedNoAPUntilRound, undefined);
+              assert.equal(targetEntry().currentHp, 0);
+              assert.equal(targetEntry().currentAP, 0);
+            };
+            try {
+              await change(() => characters.forEach(c => current().addCharacter(c)));
+              await change(() => current().startCombat(entries));
+              await change(() => current().nextTurn());
+              assert.equal(current().activeEntryId, 'entry-healer');
+              await change(() => current().spendAP(healer.id, 4));
+              assert.equal(actor().currentAP, 3);
+              let actionId = '';
+              await change(() => {
+                actionId = current().resolveHealFallen({
+                  actorId: healer.id, targetId: target.id, skill: 'firstAid',
+                  confirmSpendAllRemaining: true,
+                });
+              });
+              const expectedAction = {
+                id: actionId, kind: 'healFallen', actorId: healer.id, targetId: target.id,
+                skill: 'firstAid', label: 'Heal Fallen', startedRound: 1, completesOnRound: 2,
+                apCost: hasStat ? 5 : 10, spentAP: 3, armorOnlyAC: true,
+              };
+              assert.deepEqual(stored().pendingCombatSkillActions, [expectedAction]);
+              assert.equal(current().combatSkillReceipt?.status, 'pending');
+              assert.equal(current().combatSkillReceipt?.spentAP, 3);
+              assertActor(0, true);
+              assertUnconscious();
+
+              // This is a fresh provider reading its predecessor's saved JSON,
+              // not an import into an already-running provider.
+              await reload();
+              assertActor(0, true);
+              assertUnconscious();
+              await change(() => current().completeHealFallen({
+                actionId, resolution: { method: 'automaticSuccess' },
+              }));
+              assert.equal(current().combatSkillReceipt?.status, 'rejected');
+              assert.equal(current().pendingCombatSkillActions.length, 1);
+              assertActor(0, true);
+              assertUnconscious();
+
+              await change(() => current().nextTurn()); // target, same round
+              assertActor(0, true);
+              await change(() => current()[roundAdvance]()); // other, new round
+              assert.equal(current().currentRound, 2);
+              assert.equal(current().activeEntryId, 'entry-other');
+              assertActor(0, true);
+              assert.equal(current().pendingCombatSkillActions[0].readyToResolve, undefined);
+              await reload(); // Round rollover must not count as the healer's turn.
+              assertActor(0, true);
+              await change(() => current().nextTurn());
+              assert.equal(current().activeEntryId, 'entry-healer');
+              assertActor(7, false); // Normal own-turn refill, no carried AP debt.
+              assert.equal(actor().tempAC, 0);
+              assert.equal(actorEntry().tempAC, 0);
+              assert.deepEqual(stored().pendingCombatSkillActions, [{ ...expectedAction, readyToResolve: true }]);
+              assertUnconscious();
+              // Spend some newly refreshed AP to make refunds or resets visible.
+              await change(() => current().spendAP(healer.id, 2));
+              await reload();
+              assertActor(5, false);
+              assertUnconscious();
+              assert.equal(current().pendingCombatSkillActions[0].readyToResolve, true);
+
+              await change(() => outcome === 'cancel'
+                ? current().cancelCombatSkillAction(actionId)
+                : current().completeHealFallen({
+                  actionId, resolution: { method: 'roll', roll: outcome === 'success' ? 1 : 100 },
+                }));
+              assert.equal(current().combatSkillReceipt?.status, 'completed');
+              assert.equal(current().combatSkillReceipt?.spentAP, 0, 'completion/cancellation never charges again');
+              assert.equal(current().combatSkillReceipt?.success, outcome === 'success');
+              assert.deepEqual(current().pendingCombatSkillActions, []);
+              assert.deepEqual(stored().pendingCombatSkillActions, []);
+              assertActor(5, false);
+              await reload();
+              assertActor(5, false);
+              assert.deepEqual(current().pendingCombatSkillActions, []);
+              if (outcome === 'success') {
+                assert.equal(fallen().isKnockedOut, false);
+                assert.equal(fallen().knockOutRoundsLeft, 0);
+                assert.equal(fallen().currentHp, 1);
+                assert.equal(fallen().revivedNoAPUntilRound, 2);
+                assert.equal(fallen().position, 'prone');
+                assert.equal(targetEntry().currentHp, 1);
+                await change(() => current().nextTurn());
+                assert.equal(fallen().currentAP, 0, 'revived target gets no AP in the healing round');
+                assert.equal(targetEntry().currentAP, 0);
+              } else {
+                assertUnconscious();
+              }
+              const targetBeforeRetry = { ...fallen() };
+              const apBeforeRetry = actor().currentAP;
+              await change(() => current().completeHealFallen({
+                actionId, resolution: { method: 'automaticSuccess' },
+              }));
+              assert.equal(current().combatSkillReceipt?.status, 'rejected');
+              assert.equal(actor().currentAP, apBeforeRetry, 'replaying a finished action does not charge AP');
+              assert.deepEqual(fallen(), targetBeforeRetry, 'replaying a finished action cannot revive again');
+            } finally {
+              if (renderer) await change(() => renderer!.unmount());
+              renderer = undefined;
+            }
+          });
+        }
+      }
+    }
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
     hooks.deregister();
