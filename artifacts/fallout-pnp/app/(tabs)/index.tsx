@@ -50,7 +50,7 @@ import {
 } from '@/data/specialUnarmedAttacks';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from '@/data/areaEffects';
-import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
+import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
 const DEFENDER_DAMAGE_TYPE_LABELS: Record<DamageType, string> = {
@@ -2474,6 +2474,9 @@ export default function CombatScreen() {
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
                     <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_600SemiBold', color: colors.primary }} numberOfLines={1}>{weapon ? weapon.name : 'No weapon'}</Text>
+                    {weapon && <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_600SemiBold', color: colors.primary }} numberOfLines={1}>
+                      {DAMAGE_TYPE_NAMES[weapon.damageType]} · {weapon.damageDieCount}d{weapon.damageDie}{weapon.damageBonus !== 0 ? (weapon.damageBonus > 0 ? `+${weapon.damageBonus}` : `${weapon.damageBonus}`) : ''}
+                    </Text>}
                     {!!manualNaturalAttack?.notes && <Text style={{ fontSize: 9, lineHeight: 12, fontFamily: 'Inter_600SemiBold', color: colors.primary }} numberOfLines={1}>{manualNaturalAttack.notes}</Text>}
                     {weapon && <Text style={{ fontSize: 10, lineHeight: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={1}>
                       Range: {effectiveRange}{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
