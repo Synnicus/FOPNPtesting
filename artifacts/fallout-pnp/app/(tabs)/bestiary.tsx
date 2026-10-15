@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   FlatList, Modal, Platform, ScrollView, View,
 } from 'react-native';
@@ -667,13 +668,27 @@ export default function BestiaryScreen() {
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<BestiaryTemplate | null>(null);
   const [search, setSearch] = useState('');
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const { manualSearch, manualAll } = useLocalSearchParams<{
+    manualSearch?: string;
+    manualAll?: string;
+  }>();
+
+  useEffect(() => {
+    if (!manualSearch && manualAll !== 'true') return;
+
+    const nextSearch = typeof manualSearch === 'string' ? manualSearch : '';
+    setSearch(nextSearch);
+    setShowAllCategories(!nextSearch && manualAll === 'true');
+    router.setParams({ manualSearch: '', manualAll: '' });
+  }, [manualAll, manualSearch]);
 
   // Combine built-in + custom templates
   const allTemplates = [...BUILT_IN_BESTIARY, ...customBestiaryTemplates];
   const searchQuery = search.trim().toLowerCase();
   const searchingAllCategories = searchQuery.length > 0;
   const filteredTemplates = allTemplates.filter(t => {
-    if (!searchingAllCategories && t.category !== activeCategory) return false;
+    if (!searchingAllCategories && !showAllCategories && t.category !== activeCategory) return false;
     if (searchingAllCategories && !t.name.toLowerCase().includes(searchQuery)) return false;
     return true;
   });
@@ -737,14 +752,23 @@ export default function BestiaryScreen() {
         {/* Category tabs */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', gap: 6 }}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityState={{ selected: showAllCategories && !searchingAllCategories }}
+              testID="bestiary-category-all"
+              style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: showAllCategories && !searchingAllCategories ? colors.primary : colors.secondary, borderWidth: 1, borderColor: showAllCategories && !searchingAllCategories ? colors.primary : colors.border }}
+              onPress={() => { setSearch(''); setShowAllCategories(true); }}
+            >
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: showAllCategories && !searchingAllCategories ? colors.primaryForeground : colors.mutedForeground }}>ALL</Text>
+            </TouchableOpacity>
             {BESTIARY_CATEGORIES.map(cat => {
               const count = allTemplates.filter(t => t.category === cat.id).length;
-              const isSelected = !searchingAllCategories && activeCategory === cat.id;
+              const isSelected = !searchingAllCategories && !showAllCategories && activeCategory === cat.id;
               return (
                 <TouchableOpacity
                   key={cat.id}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: isSelected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: isSelected ? colors.primary : colors.border }}
-                  onPress={() => setActiveCategory(cat.id)}
+                  onPress={() => { setActiveCategory(cat.id); setShowAllCategories(false); }}
                 >
                   <Feather name={cat.icon as any} size={12} color={isSelected ? colors.primaryForeground : colors.mutedForeground} />
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: isSelected ? colors.primaryForeground : colors.mutedForeground }}>{cat.label}</Text>

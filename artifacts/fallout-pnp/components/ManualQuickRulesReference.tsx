@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { View } from 'react-native';
 import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
+import { getManualCatalogDestinations, type ManualCatalogDestination } from '@/data/manualCatalogNavigation';
 import type { QuickRule, QuickRuleTable } from '@/data/quickRules';
 import {
   countQuickRuleResults,
@@ -86,8 +88,30 @@ function ManualTable({ table }: { table: QuickRuleTable }) {
   );
 }
 
+function openCatalog(destination: ManualCatalogDestination) {
+  if (destination.screen === 'equipment') {
+    router.navigate({
+      pathname: '/(tabs)/equipment',
+      params: {
+        manualTab: destination.tab,
+        manualCategory: destination.category,
+      },
+    });
+    return;
+  }
+
+  router.navigate({
+    pathname: '/(tabs)/bestiary',
+    params: {
+      manualSearch: destination.search,
+      manualAll: destination.allEntries ? 'true' : undefined,
+    },
+  });
+}
+
 function RuleEntry({ rule }: { rule: QuickRule }) {
   const colors = useColors();
+  const catalogDestinations = getManualCatalogDestinations(rule.id);
   return (
     <View
       testID={`quick-rule-entry-${rule.id}`}
@@ -129,6 +153,40 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
           {paragraph}
         </Text>
       ))}
+      {catalogDestinations.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+          {catalogDestinations.map((destination, index) => (
+            <TouchableOpacity
+              key={`${destination.screen}-${destination.label}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${destination.label} in the ${destination.screen === 'equipment' ? 'Equipment' : 'Bestiary'} tab`}
+              testID={`quick-rule-catalog-link-${rule.id}-${index + 1}`}
+              onPress={() => openCatalog(destination)}
+              style={{
+                minHeight: 40,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 11,
+                paddingVertical: 8,
+                borderRadius: colors.radius,
+                borderWidth: 1,
+                borderColor: colors.primary + '66',
+                backgroundColor: colors.secondary,
+              }}
+            >
+              <Feather name="arrow-up-right" size={13} color={colors.primary} />
+              <Text style={{
+                fontSize: 11,
+                fontFamily: 'Inter_700Bold',
+                color: colors.primary,
+              }}>
+                {destination.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
       {rule.tables?.map(item => <ManualTable key={item.title} table={item} />)}
       <Text
         accessibilityLabel={`Fallout PnP 2.0 manual, ${rule.manualPages}`}

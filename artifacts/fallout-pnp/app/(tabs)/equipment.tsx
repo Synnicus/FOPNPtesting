@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   FlatList, Modal, Platform, ScrollView, View,
 } from 'react-native';
@@ -1091,6 +1092,28 @@ export default function EquipmentScreen() {
   const [editingAmmo, setEditingAmmo] = useState<AmmoType | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all'>('all');
+  const { manualTab, manualCategory, manualSearch } = useLocalSearchParams<{
+    manualTab?: string;
+    manualCategory?: string;
+    manualSearch?: string;
+  }>();
+
+  useEffect(() => {
+    if (!manualTab) return;
+
+    if (manualTab === 'weapons' || manualTab === 'armor' || manualTab === 'ammo') {
+      setTab(manualTab);
+      setSearch(typeof manualSearch === 'string' ? manualSearch : '');
+      if (
+        manualTab === 'weapons'
+        && (manualCategory === 'all' || WEAPON_CATEGORY_ORDER.includes(manualCategory as WeaponCategory))
+      ) {
+        setCategoryFilter(manualCategory as WeaponCategory | 'all');
+      }
+    }
+
+    router.setParams({ manualTab: '', manualCategory: '', manualSearch: '' });
+  }, [manualCategory, manualSearch, manualTab]);
 
   const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
