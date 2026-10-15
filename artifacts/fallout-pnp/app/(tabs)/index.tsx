@@ -1061,13 +1061,6 @@ export default function CombatScreen() {
   // Reload AP cost — Speed Loader mod (reloadApOverride) can reduce it.
   const reloadApCost = modEffects.reloadApOverride ?? AP_COSTS.RELOAD;
 
-  // Attack verb by weapon type: THROW (thrown), FIRE (ranged guns/energy),
-  // ATTACK (melee/unarmed/default).
-  const attackVerb = weapon
-    ? (weapon.category === 'throwing' ? 'THROW' : isRanged ? 'FIRE' : 'ATTACK')
-    : 'ATTACK';
-  const attackActionLabel = specialUnarmedAttack?.name.toUpperCase() ?? attackVerb;
-
   // Active-effect (chem) modifiers on attacker & defender (data/effects.ts).
   const defenderEffectMods = defender ? computeEffectModifiers(defender) : null;
   const attackerEffSpecial = attackerSheet?.effectiveSpecial ?? null;
@@ -2003,8 +1996,8 @@ export default function CombatScreen() {
   const makeInjury = useCallback((location: Injury['location'], description: string): Injury => ({
     id: genId(), location, severity: 'crippled', description,
     toHitPenalty: 0, skillPenalty: {}, movementPenalty: 0, isActive: true,
-    source: `Critical hit (${weapon?.name ?? 'attack'})`,
-  }), [weapon]);
+    source: `${attacker?.name ?? 'Unknown attacker'} with ${weapon?.name ?? 'Unarmed attack'}`,
+  }), [attacker, weapon]);
 
   // Pick a limb side (left/right) — prefer the side without an existing injury.
   const pickLimbSide = useCallback((kind: 'arm' | 'leg'): Injury['location'] => {
@@ -3186,7 +3179,7 @@ export default function CombatScreen() {
             </View>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: (canRoll && !attackBlocked) ? colors.primary : colors.secondary, opacity: (canRoll && !attackBlocked) ? 1 : 0.5 }} onPress={rollDice} disabled={!canRoll || attackBlocked}>
               <Feather name="crosshair" size={16} color={canRoll ? colors.primaryForeground : colors.mutedForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>{attackActionLabel}{attackResolved ? ' AGAIN' : ''}</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>ROLL FOR ATTACK</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
@@ -3225,7 +3218,7 @@ export default function CombatScreen() {
             </Text>
             {attackResolved && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
-                Press {attackActionLabel} again to make another attack (costs {effectiveAPCost} AP — spend it above).
+                Press ROLL FOR ATTACK again to make another attack (costs {effectiveAPCost} AP — spend it above).
               </Text>
             )}
             {!canRoll && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>Select an attacker with a weapon and a defender first.</Text>}

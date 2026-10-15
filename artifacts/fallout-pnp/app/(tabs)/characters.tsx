@@ -1741,6 +1741,11 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       <View style={{ flex: 1, gap: 3 }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: inj.isActive ? colors.destructive : colors.mutedForeground }}>{info?.label ?? inj.location} — {inj.severity}</Text>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{inj.description}</Text>
+                        {inj.source && inj.source !== 'manual' && (
+                          <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                            <Text>Caused by: </Text>{inj.source}
+                          </Text>
+                        )}
                         {info && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 15 }}>{info.effectText}</Text>}
                       </View>
                       <TouchableOpacity onPress={() => setChar(c => ({ ...c, injuries: c.injuries.filter(i => i.id !== inj.id) }))} style={{ padding: 4 }}>
