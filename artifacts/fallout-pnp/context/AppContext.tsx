@@ -472,6 +472,7 @@ function normalizePersistedState(parsed: AppState): AppState {
 }
 
 interface AppContextValue extends AppState {
+  loaded: boolean;
   allWeapons: Weapon[];
   allArmor: Armor[];
   allAmmo: AmmoType[];
@@ -1930,6 +1931,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={{
       ...state,
+      loaded,
       allWeapons, allArmor, allAmmo,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
         applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
