@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Modal, Platform, ScrollView, View } from 'react-native';
+import { Modal, Platform, ScrollView, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,6 +82,7 @@ function MenuButton({
         fontFamily: 'Inter_700Bold',
         color,
         letterSpacing: 1.35,
+        textTransform: 'uppercase',
       }}>
         {label}
       </Text>
@@ -121,10 +122,10 @@ function LanguagePicker({
           backgroundColor: colors.card,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-            <Text accessibilityRole="header" style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>
-              CHOOSE A LANGUAGE
+            <Text accessibilityRole="header" style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, textTransform: 'uppercase' }}>
+              Choose a language
             </Text>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close language selector" onPress={onClose} style={{ padding: 6 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel" onPress={onClose} style={{ padding: 6 }}>
               <Feather name="x" size={19} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
@@ -197,7 +198,7 @@ export default function MainMenuScreen() {
   const neonStyle = useAnimatedStyle(() => ({ opacity: flicker.value }));
 
   const continueCampaign = () => {
-    if (loaded) router.replace('/(tabs)');
+    if (loaded) router.push('/(tabs)');
   };
 
   const startNewCampaign = () => {
@@ -207,9 +208,9 @@ export default function MainMenuScreen() {
         customWeapons: [],
         customArmor: [],
       }));
-      if (ok) router.replace('/(tabs)');
+      if (ok) router.push('/(tabs)');
     };
-    const title = translateText('Start a new campaign?', locale);
+    const title = translateText('Are you sure?', locale);
     const message = translateText(
       'This replaces the currently loaded campaign. Save it first if you want to keep it; you can load saved campaigns later.',
       locale,
@@ -217,7 +218,7 @@ export default function MainMenuScreen() {
     if (Platform.OS === 'web') {
       if (window.confirm(`${title}\n\n${message}`)) start();
     } else {
-      LocalizedAlert.alert('Start a new campaign?', 'This replaces the currently loaded campaign. Save it first if you want to keep it; you can load saved campaigns later.', [
+      LocalizedAlert.alert('Are you sure?', 'This replaces the currently loaded campaign. Save it first if you want to keep it; you can load saved campaigns later.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Start New Campaign', style: 'destructive', onPress: start },
       ]);
@@ -231,8 +232,7 @@ export default function MainMenuScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <TouchableOpacity
         accessibilityRole="button"
-        accessibilityLabel={`Language: ${APP_LANGUAGES.find(item => item.locale === locale)?.label ?? locale}`}
-        accessibilityHint="Opens language options"
+        accessibilityLabel="Choose a language"
         testID="menu-language-selector"
         onPress={() => setShowLanguages(true)}
         style={{
@@ -328,7 +328,7 @@ export default function MainMenuScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 }}>
               <View style={{ width: 20, height: 1, backgroundColor: colors.border }} />
               <Text style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground, letterSpacing: 2 }}>
-                WASTELAND FIELD SYSTEM
+                Campaign management system
               </Text>
               <View style={{ width: 20, height: 1, backgroundColor: colors.border }} />
             </View>
@@ -337,10 +337,10 @@ export default function MainMenuScreen() {
           </View>
 
           <View style={{ gap: 10 }}>
-            <MenuButton label="CONTINUE" icon="play" primary onPress={continueCampaign} disabled={!loaded} testID="continue-campaign" />
-            <MenuButton label="NEW CAMPAIGN" icon="file-plus" onPress={startNewCampaign} disabled={!loaded} testID="new-campaign" />
-            <MenuButton label="LOAD CAMPAIGN" icon="folder" onPress={() => setShowLibrary(true)} disabled={!loaded} testID="open-campaign-library" />
-            <MenuButton label="OPTIONS" icon="settings" onPress={() => setShowOptions(true)} disabled={!loaded} testID="open-menu-options" />
+            <MenuButton label="Continue" icon="play" primary onPress={continueCampaign} disabled={!loaded} testID="continue-campaign" />
+            <MenuButton label="New Campaign" icon="file-plus" onPress={startNewCampaign} disabled={!loaded} testID="new-campaign" />
+            <MenuButton label="Load Campaign" icon="folder" onPress={() => setShowLibrary(true)} disabled={!loaded} testID="open-campaign-library" />
+            <MenuButton label="Options" icon="settings" onPress={() => setShowOptions(true)} disabled={!loaded} testID="open-menu-options" />
           </View>
         </View>
       </ScrollView>
@@ -351,7 +351,7 @@ export default function MainMenuScreen() {
         onClose={() => setShowLibrary(false)}
         onCampaignLoaded={() => {
           setShowLibrary(false);
-          router.replace('/(tabs)');
+          router.push('/(tabs)');
         }}
       />
       <LanguagePicker visible={showLanguages} onClose={() => setShowLanguages(false)} />

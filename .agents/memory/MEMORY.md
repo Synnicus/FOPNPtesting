@@ -17,3 +17,4 @@
 - [Generic Karma titles](fallout-pnp-karma-titles.md) — replace “Vault” with “Wasteland” when adapting Fallout 3 titles, as requested for generic characters.
 - [Manual rules-reference scope](fallout-pnp-manual-reference.md) — organize all manual rules/tables by its sections; keep item and creature catalogs in their app tabs.
 - [Fallout PnP localization](fallout-pnp-localization.md) — language choice is device-local, separate from campaigns; player-authored names and notes stay unchanged.
+- [Campaign library archives](fallout-pnp-campaign-library.md) — keep library snapshots portable and embed portraits so campaign switching cannot break saved portrait references.

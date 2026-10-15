@@ -130,7 +130,12 @@ function webDownload(content: string, filename: string) {
 }
 
 function sanitizeFilename(name: string) {
-  const safe = name.trim().replace(/\.json$/i, '').replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '-');
+  const safe = name.trim()
+    .replace(/\.json$/i, '')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/[\u0000-\u001f]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 100);
   return `${safe || 'fallout-campaign'}.json`;
 }
 
@@ -148,13 +153,24 @@ function campaignStateFromJson(json: string): CampaignStateSnapshot | null {
   }
 }
 
+async function makePortableCampaignJson(json: string): Promise<string> {
+  const parsed = parseCampaignFile(json);
+  if (!parsed.ok) throw new Error('Could not save campaign.');
+  const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
+  const assets = parsed.source === 'portable'
+    ? parsed.bundle.assets
+    : await collectPortraitAssets(state.characters);
+  return JSON.stringify(createCampaignBundle(state, assets));
+}
+
 function campaignCounts(json: string) {
   const state = campaignStateFromJson(json);
   if (!state) return { characters: 0, npcs: 0, equipment: 0 };
+  const customAmmo = (state as CampaignStateSnapshot & { customAmmo?: unknown[] }).customAmmo ?? [];
   return {
     characters: state.characters.length,
     npcs: state.characters.filter(character => character.type === 'npc').length,
-    equipment: (state.customWeapons?.length ?? 0) + (state.customArmor?.length ?? 0),
+    equipment: (state.customWeapons?.length ?? 0) + (state.customArmor?.length ?? 0) + customAmmo.length,
   };
 }
 
@@ -197,7 +213,7 @@ function ActionButton({
       }}
     >
       <Feather name={icon} size={14} color={tint} />
-      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: tint, letterSpacing: 0.5 }}>
+      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: tint, letterSpacing: 0.5, textTransform: 'uppercase' }}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -231,7 +247,7 @@ export default function CampaignLibraryModal({
       setRecords(await listSavedCampaigns());
       setStatus('');
     } catch {
-      setStatus('Saved campaigns could not be read.');
+      setStatus('Campaign could not be read.');
     }
   }, []);
 
@@ -253,13 +269,12 @@ export default function CampaignLibraryModal({
   const saveCurrentCampaign = async () => {
     const name = newName.trim();
     if (!name) {
-      setStatus('Enter a campaign name first.');
+      setStatus('Campaign name is required.');
       return;
     }
     setBusy(true);
     try {
-      const campaignJson = exportCampaign();
-      if (!campaignStateFromJson(campaignJson)) throw new Error('Current campaign data is invalid.');
+      const campaignJson = await makePortableCampaignJson(exportCampaign());
       const record: SavedCampaignRecord = {
         id: newId(),
         name,
@@ -271,9 +286,9 @@ export default function CampaignLibraryModal({
       setNewName('');
       setNewDescription('');
       setShowSaveForm(false);
-      setStatus('Campaign saved to this device.');
+      setStatus('Campaign saved.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Campaign could not be saved.');
+      setStatus(error instanceof Error ? error.message : 'Could not save campaign.');
     } finally {
       setBusy(false);
     }
@@ -286,16 +301,11 @@ export default function CampaignLibraryModal({
       return;
     }
     setBusy(true);
-    let importSession: ReturnType<typeof createPortraitImportSession> | null = null;
     try {
-      let state: CampaignStateSnapshot;
-      if (parsed.source === 'portable') {
-        importSession = createPortraitImportSession();
-        const restored = await restoreCampaignPortraits(parsed.bundle, importSession.materialize);
-        state = restored.state;
-      } else {
-        state = parsed.state;
-      }
+      const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
+      const assets = parsed.source === 'portable'
+        ? parsed.bundle.assets
+        : await collectPortraitAssets(state.characters);
       const filenameName = fileName?.replace(/\.json$/i, '').trim();
       const baseName = filenameName && filenameName.length > 0 ? filenameName : 'Imported campaign';
       const record: SavedCampaignRecord = {
@@ -303,13 +313,12 @@ export default function CampaignLibraryModal({
         name: baseName.slice(0, 80),
         description: '',
         updatedAt: Date.now(),
-        campaignJson: JSON.stringify(state),
+        campaignJson: JSON.stringify(createCampaignBundle(state, assets)),
       };
       await saveRecord(record);
-      setStatus('Campaign file added to this device.');
+      setStatus('Campaign imported.');
     } catch {
-      importSession?.cleanup();
-      setStatus('The campaign file could not be saved safely.');
+      setStatus('Could not save campaign.');
     } finally {
       setBusy(false);
     }
@@ -326,7 +335,7 @@ export default function CampaignLibraryModal({
             const file = input.files?.[0];
             if (file) await uploadCampaignJson(await file.text(), file.name);
           } catch {
-            setStatus('The JSON file could not be opened.');
+            setStatus('Could not open JSON file.');
           }
         };
         input.click();
@@ -334,10 +343,13 @@ export default function CampaignLibraryModal({
       }
       const picked = await ExpoFile.pickFileAsync(undefined, 'application/json');
       const file = Array.isArray(picked) ? picked[0] : picked;
-      if (file) await uploadCampaignJson(await file.text(), file.name);
+      if (file) {
+        const filename = file.uri.split(/[\\/]/).pop();
+        await uploadCampaignJson(await file.text(), filename);
+      }
     } catch (error) {
       if (error instanceof Error && /cancel/i.test(error.message)) return;
-      setStatus('The JSON file could not be opened.');
+      setStatus('Could not open JSON file.');
     }
   };
 
@@ -347,13 +359,15 @@ export default function CampaignLibraryModal({
       const parsed = parseCampaignFile(record.campaignJson);
       if (!parsed.ok) throw new Error(parsed.error);
       const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
-      const assets = await collectPortraitAssets(state.characters);
+      const assets = parsed.source === 'portable'
+        ? parsed.bundle.assets
+        : await collectPortraitAssets(state.characters);
       const bundle = createCampaignBundle(state, assets);
       const json = JSON.stringify(bundle, null, 2);
       const filename = sanitizeFilename(record.name);
       if (Platform.OS === 'web') {
         webDownload(json, filename);
-        setStatus(`Exported ${record.name} to Downloads.`);
+        setStatus('Campaign exported.');
       } else {
         const file = new ExpoFile(Paths.document, filename);
         file.create({ intermediates: true, overwrite: true });
@@ -361,38 +375,53 @@ export default function CampaignLibraryModal({
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
         }
-        setStatus(`Exported ${record.name}.`);
+        setStatus('Campaign exported.');
       }
     } catch {
-      setStatus(`Could not export ${record.name}.`);
+      setStatus('Could not export campaign.');
     } finally {
       setBusy(false);
     }
   };
 
   const loadCampaign = (record: SavedCampaignRecord) => {
-    const confirmLoad = () => {
-      const parsed = parseCampaignFile(record.campaignJson);
-      if (!parsed.ok) {
-        setStatus(parsed.error);
-        return;
+    const confirmLoad = async () => {
+      if (busy) return;
+      setBusy(true);
+      let importSession: ReturnType<typeof createPortraitImportSession> | null = null;
+      try {
+        const parsed = parseCampaignFile(record.campaignJson);
+        if (!parsed.ok) {
+          setStatus(parsed.error);
+          return;
+        }
+        let state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
+        if (parsed.source === 'portable') {
+          importSession = createPortraitImportSession();
+          state = (await restoreCampaignPortraits(parsed.bundle, importSession.materialize)).state;
+        }
+        if (!importCampaign(JSON.stringify(state))) {
+          importSession?.cleanup();
+          setStatus('Campaign could not be loaded.');
+          return;
+        }
+        setStatus('');
+        onCampaignLoaded();
+      } catch {
+        importSession?.cleanup();
+        setStatus('Campaign could not be loaded.');
+      } finally {
+        setBusy(false);
       }
-      const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
-      if (!importCampaign(JSON.stringify(state))) {
-        setStatus('Campaign data could not be loaded.');
-        return;
-      }
-      setStatus('');
-      onCampaignLoaded();
     };
-    const title = 'Load campaign?';
-    const message = 'Unsaved changes in the current campaign will be replaced.';
+    const title = 'Are you sure?';
+    const message = 'Loading will replace unsaved changes in the current campaign.';
     if (Platform.OS === 'web') {
-      if (window.confirm(`${title}\n\n${message}`)) confirmLoad();
+      if (window.confirm(`${title}\n\n${message}`)) void confirmLoad();
     } else {
       LocalizedAlert.alert(title, message, [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Load', style: 'destructive', onPress: confirmLoad },
+        { text: 'Load', style: 'destructive', onPress: () => void confirmLoad() },
       ]);
     }
   };
@@ -404,11 +433,11 @@ export default function CampaignLibraryModal({
         setRecords(current => current.filter(item => item.id !== record.id));
         setStatus('Campaign deleted.');
       } catch {
-        setStatus('Campaign could not be deleted.');
+        setStatus('Could not delete campaign.');
       }
     };
-    const title = 'Delete campaign?';
-    const message = `Delete "${record.name}" from this device? This cannot be undone.`;
+    const title = 'Are you sure?';
+    const message = 'Delete this saved campaign from this device? This cannot be undone.';
     if (Platform.OS === 'web') {
       if (window.confirm(`${title}\n\n${message}`)) void remove();
     } else {
@@ -428,16 +457,16 @@ export default function CampaignLibraryModal({
         delete next[record.id];
         return next;
       });
-      setStatus('Campaign description saved.');
+      setStatus('Description saved.');
     } catch {
-      setStatus('Campaign description could not be saved.');
+      setStatus('Could not save description.');
     }
   };
 
   const commitRename = async (record: SavedCampaignRecord) => {
     const name = renameDraft.trim();
     if (!name) {
-      setStatus('Campaign name cannot be empty.');
+      setStatus('Campaign name is required.');
       return;
     }
     try {
@@ -446,7 +475,7 @@ export default function CampaignLibraryModal({
       setRenameDraft('');
       setStatus('Campaign renamed.');
     } catch {
-      setStatus('Campaign could not be renamed.');
+      setStatus('Could not rename campaign.');
     }
   };
 
@@ -469,8 +498,8 @@ export default function CampaignLibraryModal({
           backgroundColor: colors.card,
         }}>
           <View style={{ flex: 1 }}>
-            <Text accessibilityRole="header" style={{ fontSize: 17, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>
-              CAMPAIGN LIBRARY
+            <Text accessibilityRole="header" style={{ fontSize: 17, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+              Campaign Library
             </Text>
             <Text style={{ marginTop: 3, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
               Saved JSON campaigns stay on this device.
@@ -478,7 +507,7 @@ export default function CampaignLibraryModal({
           </View>
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel="Close campaign library"
+            accessibilityLabel="Cancel"
             onPress={onClose}
             style={{ padding: 6 }}
           >
@@ -495,14 +524,14 @@ export default function CampaignLibraryModal({
           <View style={{ flexDirection: 'row', gap: 9 }}>
             <ActionButton
               icon="save"
-              label="SAVE CURRENT CAMPAIGN"
+              label="Save Current Campaign"
               onPress={() => setShowSaveForm(value => !value)}
               disabled={!loaded || busy}
               testID="save-current-campaign"
             />
             <ActionButton
               icon="upload"
-              label="UPLOAD JSON"
+              label="Upload JSON"
               onPress={() => void handleUpload()}
               disabled={!loaded || busy}
               testID="upload-campaign-json"
@@ -518,11 +547,11 @@ export default function CampaignLibraryModal({
               borderRadius: colors.radius,
               backgroundColor: colors.card,
             }}>
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>
-                SAVE CURRENT CAMPAIGN
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary, textTransform: 'uppercase' }}>
+                Save Current Campaign
               </Text>
               <TextInput
-                accessibilityLabel="New campaign name"
+                accessibilityLabel="Campaign name"
                 testID="new-campaign-name"
                 value={newName}
                 onChangeText={setNewName}
@@ -531,7 +560,7 @@ export default function CampaignLibraryModal({
                 style={{ minHeight: 42, paddingHorizontal: 11, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, color: colors.foreground, backgroundColor: colors.background }}
               />
               <TextInput
-                accessibilityLabel="New campaign description"
+                accessibilityLabel="Description (optional)"
                 testID="new-campaign-description"
                 value={newDescription}
                 onChangeText={setNewDescription}
@@ -542,8 +571,8 @@ export default function CampaignLibraryModal({
                 style={{ minHeight: 82, padding: 11, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, color: colors.foreground, backgroundColor: colors.background }}
               />
               <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
-                <ActionButton icon="x" label="CANCEL" onPress={() => setShowSaveForm(false)} testID="cancel-save-campaign" />
-                <ActionButton icon="check" label="SAVE" onPress={() => void saveCurrentCampaign()} disabled={!loaded || busy} testID="confirm-save-campaign" />
+                <ActionButton icon="x" label="Cancel" onPress={() => setShowSaveForm(false)} testID="cancel-save-campaign" />
+                <ActionButton icon="check" label="Save" onPress={() => void saveCurrentCampaign()} disabled={!loaded || busy} testID="confirm-save-campaign" />
               </View>
             </View>
           )}
@@ -587,17 +616,17 @@ export default function CampaignLibraryModal({
                   {isRenaming ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
                       <TextInput
-                        accessibilityLabel={`Rename ${record.name}`}
+                accessibilityLabel="Rename campaign"
                         value={renameDraft}
                         onChangeText={setRenameDraft}
                         maxLength={80}
                         autoFocus
                         style={{ flex: 1, minHeight: 40, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, color: colors.foreground, backgroundColor: colors.background }}
                       />
-                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save campaign name" onPress={() => void commitRename(record)} style={{ padding: 8 }}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save" onPress={() => void commitRename(record)} style={{ padding: 8 }}>
                         <Feather name="check" size={18} color={colors.primary} />
                       </TouchableOpacity>
-                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel rename" onPress={() => setRenamingId(null)} style={{ padding: 8 }}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel" onPress={() => setRenamingId(null)} style={{ padding: 8 }}>
                         <Feather name="x" size={18} color={colors.mutedForeground} />
                       </TouchableOpacity>
                     </View>
@@ -608,7 +637,7 @@ export default function CampaignLibraryModal({
                       </Text>
                       <TouchableOpacity
                         accessibilityRole="button"
-                        accessibilityLabel={`Rename ${record.name}`}
+                        accessibilityLabel="Rename campaign"
                         onPress={() => { setRenamingId(record.id); setRenameDraft(record.name); }}
                         style={{ padding: 7 }}
                       >
@@ -619,9 +648,9 @@ export default function CampaignLibraryModal({
 
                   <View style={{ flexDirection: 'row', gap: 7, flexWrap: 'wrap' }}>
                     {[
-                      ['CHARACTERS', counts.characters],
-                      ['CUSTOM NPCS', counts.npcs],
-                      ['EQUIPMENT', counts.equipment],
+                      ['Characters', counts.characters],
+                      ['Custom NPCs', counts.npcs],
+                      ['Equipment', counts.equipment],
                     ].map(([label, count]) => (
                       <View key={label} style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: colors.radius, backgroundColor: colors.secondary }}>
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.35 }}>
@@ -633,10 +662,10 @@ export default function CampaignLibraryModal({
 
                   <View style={{ gap: 6 }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.7 }}>
-                      DESCRIPTION
+                      Description
                     </Text>
                     <TextInput
-                      accessibilityLabel={`${record.name} description`}
+                      accessibilityLabel="Description"
                       testID={`campaign-description-${record.id}`}
                       value={draft ?? record.description}
                       onChangeText={text => setDescriptionDrafts(current => ({ ...current, [record.id]: text }))}
@@ -649,16 +678,16 @@ export default function CampaignLibraryModal({
                     {descriptionChanged && (
                       <TouchableOpacity accessibilityRole="button" onPress={() => void commitDescription(record)} style={{ alignSelf: 'flex-end', paddingVertical: 4 }}>
                         <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>
-                          SAVE DESCRIPTION
+                          Save description
                         </Text>
                       </TouchableOpacity>
                     )}
                   </View>
 
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                    <ActionButton icon="folder-open" label="LOAD" onPress={() => loadCampaign(record)} disabled={!loaded || busy} testID={`load-campaign-${record.id}`} />
-                    <ActionButton icon="download" label="EXPORT" onPress={() => void exportSavedCampaign(record)} disabled={busy} testID={`export-campaign-${record.id}`} />
-                    <ActionButton icon="trash-2" label="DELETE" onPress={() => confirmDelete(record)} disabled={busy} destructive testID={`delete-campaign-${record.id}`} />
+                    <ActionButton icon="folder" label="Load" onPress={() => loadCampaign(record)} disabled={!loaded || busy} testID={`load-campaign-${record.id}`} />
+                    <ActionButton icon="download" label="Export" onPress={() => void exportSavedCampaign(record)} disabled={busy} testID={`export-campaign-${record.id}`} />
+                    <ActionButton icon="trash-2" label="Delete" onPress={() => confirmDelete(record)} disabled={busy} destructive testID={`delete-campaign-${record.id}`} />
                   </View>
                 </View>
               );
