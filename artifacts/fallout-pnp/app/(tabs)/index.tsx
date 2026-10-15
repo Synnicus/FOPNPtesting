@@ -40,6 +40,7 @@ import {
 } from '@/data/effectiveRules';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import type { ResolvedArmorSheet } from '@/data/armorEffects';
+import { resolveDefenderHandWeapon } from '@/data/combatantEquipment';
 import {
   SPECIAL_UNARMED_ATTACKS,
   SpecialUnarmedGroup,
@@ -904,13 +905,7 @@ export default function CombatScreen() {
         ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
         : allWeapons.find(w => w.id === 'unarmed') ?? null)
     : null;
-  const defenderWeapon = [
-    defender?.rightHandWeaponId,
-    defender?.equippedWeaponId,
-    defender?.leftHandWeaponId,
-  ]
-    .map(id => id ? allWeapons.find(candidate => candidate.id === id) : undefined)
-    .find((candidate): candidate is Weapon => !!candidate) ?? null;
+  const defenderWeapon = defender ? resolveDefenderHandWeapon(defender, allWeapons) : null;
   const naturalAttackWeapons = (attacker?.naturalAttacks ?? [])
     .map(attack => allWeapons.find(candidate => candidate.id === attack.weaponId))
     .filter((candidate): candidate is Weapon => !!candidate);
