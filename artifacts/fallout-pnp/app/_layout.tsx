@@ -52,23 +52,23 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <AppProvider>
-            <VaultRadioProvider>
-              <SystemSoundsProvider>
-                <LocalizationProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppProvider>
+          <VaultRadioProvider>
+            <SystemSoundsProvider>
+              <LocalizationProvider>
+                <ErrorBoundary>
                   <GestureHandlerRootView>
                     <KeyboardProvider>
                       <RootLayoutNav />
                     </KeyboardProvider>
                   </GestureHandlerRootView>
-                </LocalizationProvider>
-              </SystemSoundsProvider>
-            </VaultRadioProvider>
-          </AppProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
+                </ErrorBoundary>
+              </LocalizationProvider>
+            </SystemSoundsProvider>
+          </VaultRadioProvider>
+        </AppProvider>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 }

@@ -5,15 +5,15 @@ import { ObjectStorageService } from "../lib/objectStorage";
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
 
-router.get("/storage/public-objects/*filePath", async (req, res) => {
-  const rawPath = req.params.filePath;
-  const filePath = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
-  if (!filePath || filePath.split("/").some(part => part === "." || part === "..")) {
+router.get("/storage/public-objects/vault-radio/:fileName", async (req, res) => {
+  const fileName = req.params.fileName;
+  if (!fileName || fileName.includes("/") || fileName === "." || fileName === "..") {
     res.status(400).json({ error: "Invalid public asset path" });
     return;
   }
 
   try {
+    const filePath = `vault-radio/${fileName}`;
     const file = await objectStorage.searchPublicObject(filePath);
     if (!file) {
       res.status(404).json({ error: "File not found" });

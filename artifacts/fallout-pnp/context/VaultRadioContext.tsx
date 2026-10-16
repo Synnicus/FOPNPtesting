@@ -5,13 +5,13 @@ import { useAudioPlayer } from 'expo-audio';
 import { useApp } from '@/context/AppContext';
 
 const RADIO_TRACKS = [
-  { id: 'aint-misbehavin', file: 'aint-misbehavin.mp3' },
+  { id: 'aint-misbehavin', file: '9684-Aint-misbehavin_1792110276845.mp3' },
   { id: 'it-had-to-be-you', file: 'it-had-to-be-you.mp3' },
-  { id: 'rhapsody-in-blue', file: 'rhapsody-in-blue.mp3' },
-  { id: 'alabamy-bound', file: 'alabamy-bound.mp3' },
-  { id: 'angry', file: 'angry.mp3' },
-  { id: 'the-prisoners-song', file: 'the-prisoners-song.mp3' },
-  { id: 'the-titanic', file: 'the-titanic.mp3' },
+  { id: 'rhapsody-in-blue', file: 'Rhapsody_in_Blue_1792110276845.mp3' },
+  { id: 'alabamy-bound', file: 'The78Prof_-_1925_HITS_ARCHIVE__Alabamy_Bound_-_Blossom_Seeley_1792110276845.mp3' },
+  { id: 'angry', file: 'The78Prof_-_1925_HITS_ARCHIVE__Angry_-_Art_Gillham_(The_Whispe_1792110276845.mp3' },
+  { id: 'the-prisoners-song', file: 'The78Prof_-_1925_HITS_ARCHIVE__The_Prisoner’s_Song_-_Vernon_Da_1792110276846.mp3' },
+  { id: 'the-titanic', file: 'The78Prof_-_1925_HITS_ARCHIVE__The_Titanic_-_Ernest_V._Stonema_1792110276846.mp3' },
 ] as const;
 
 const RADIO_FOLDER = 'vault-radio';

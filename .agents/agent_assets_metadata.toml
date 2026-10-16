@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "5SoqixlmdODIIjS4myHXV"
+uri = "file://generated-artifacts/vault-radio/it-had-to-be-you.mp3"
+type = "audio"
+title = "It Had to Be You — MP3 for Vault Radio"
+description = "MP3 conversion of the supplied OGA track. Upload it to public App Storage as vault-radio/it-had-to-be-you.mp3."
+logical_id = "7b361924-11b1-4c96-9092-22f9a23de5af"
+content_hash = "sha256:f13e9a0e534cce6b18d862a2685545e1f903793c01238659b6a914b5e37dde3e"
+size = 2873901
+mtime_ms = 1792111741890
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:edcffca3-783b-418a-919c-31872dda788e/7b361924-11b1-4c96-9092-22f9a23de5af/20e93548-84bc-48f1-b227-b10bafd42ab1"
+storage_version_token = "1792112026186631"
+content_type = "audio/mpeg"
