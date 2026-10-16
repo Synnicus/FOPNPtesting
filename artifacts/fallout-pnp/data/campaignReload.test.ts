@@ -172,6 +172,64 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.equal(saved.customBestiaryTemplates[0].usesDerivedArmorClass, true);
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
 
+    await t.test('importCampaign repairs legacy custom armor and saves the imported repair', async () => {
+      storage.clear();
+      campaign = undefined;
+      try {
+        const empty = await mount();
+        assert.equal(empty.loaded, true);
+        assert.deepEqual(empty.characters, []);
+        assert.deepEqual(empty.customBestiaryTemplates, []);
+        const writesBeforeImport = writes.length;
+        await act(async () => {
+          assert.equal(empty.importCampaign(raw), true, 'legacy campaign import accepted');
+        });
+        assert.ok(campaign);
+        const assertRepaired = (
+          state: Pick<ReturnType<typeof useApp>, 'characters' | 'customBestiaryTemplates'>,
+          stage: string,
+        ) => {
+          assert.equal(state.customBestiaryTemplates.length, 1, stage);
+          const template = state.customBestiaryTemplates[0];
+          assert.equal(template.id, legacyTemplate.id, stage);
+          assert.equal(template.usesDerivedArmorClass, true, `${stage}: custom template repaired`);
+          assert.equal(state.characters.length, 2, stage);
+          const npc = state.characters.find(character => character.id === legacyNpc.id)!;
+          assert.ok(npc, `${stage}: linked NPC present`);
+          assert.equal(npc.bestiaryTemplateId, template.id, stage);
+          assert.equal(npc.usesDerivedArmorClass, true, `${stage}: linked NPC repaired`);
+          assert.equal(npc.equippedBodyArmorId, 'greater_banding', stage);
+          assert.equal(npc.equippedHelmetId, 'metal_helmet', stage);
+          const resolved = sheet(npc);
+          assert.equal(resolved.armorClass, 36, stage);
+          assert.equal(resolved.armorClassBreakdown.agility, 5, stage);
+          assert.equal(resolved.armorClassBreakdown.bodyArmor, 25, stage);
+          assert.equal(resolved.armorClassBreakdown.helmet, 6, stage);
+          assert.equal(resolved.armorClassBreakdown.manual, 0, stage);
+          const freshSpawn = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, 'After import', 'import-spawn');
+          assert.equal(sheet(freshSpawn).armorClass, 36, `${stage}: repaired template spawns correctly`);
+          const printed = state.characters.find(character => character.id === printedNpc.id)!;
+          assert.ok(printed, `${stage}: printed creature present`);
+          assert.notEqual(printed.usesDerivedArmorClass, true, stage);
+          assert.equal(printed.manualDerivedStats?.armorClass, brahmin.armorClass, stage);
+          assert.equal(sheet(printed).armorClass, brahmin.armorClass, `${stage}: printed AC unchanged`);
+        };
+        assertRepaired(campaign, 'imported state');
+        assert.deepEqual(writes.slice(writesBeforeImport), [STORAGE_KEY], 'import triggers save-back');
+        assertRepaired(JSON.parse(storage.get(STORAGE_KEY)!), 'saved import');
+
+        await act(async () => renderer!.unmount());
+        renderer = undefined;
+        campaign = undefined;
+        const readsBeforeReload = reads.length;
+        assertRepaired(await mount(), 'imported save reload');
+        assert.deepEqual(reads.slice(readsBeforeReload), [STORAGE_KEY], 'fresh provider reads imported save');
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
+
     for (const hasStat of [false, true]) {
       for (const outcome of ['success', 'failure', 'cancel'] as const) {
         for (const roundAdvance of ['nextTurn', 'nextRound'] as const) {
