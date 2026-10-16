@@ -4,6 +4,7 @@ import { BUILT_IN_ARMOR } from './armor.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
 import { BUILT_IN_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
+import { resolveAreaTarget } from './areaEffects.ts';
 import {
   applyRadiationGain,
   ghoulRadiationHealingDivisor,
@@ -38,6 +39,37 @@ test('radiation-immune races suppress sickness and Hardcore radiation penalties'
   assert.equal(sheet.radiationResistance, 100);
   assert.equal(sheet.radiationSicknessImmune, true);
   assert.equal(sheet.effectiveSpecial.strength, special.strength);
+});
+
+test('Option 1 and Super Mutant/Deathclaw immunity block radiation without healing, while Half-Mutants stay unchanged', () => {
+  const rules = { mutantGhoulRadiationRules: true, ghoulRadiationHealingOption: 1 as const };
+  for (const raceId of ['ghoul', 'superMutant', 'deathclaw']) {
+    const sheet = resolveArmorAwareSheet({
+      special, skills, raceId, radiationResistance: 25,
+      ...rules, allArmor: [],
+    });
+    assert.equal(sheet.radiationResistance, 100, `${raceId} has complete resistance under Option 1`);
+    assert.equal(sheet.radiationSicknessImmune, true, `${raceId} is immune to radiation sickness`);
+    const gain = applyRadiationGain(
+      { accumulatedRadiation: 0, currentHp: 2 },
+      resolveRadiationAddition(20, sheet.radiationResistance),
+      100,
+      sheet.ghoulRadiationHealingDivisor,
+    );
+    assert.equal(gain.accumulatedRadiation, 0, `${raceId}: no radiation enters the meter`);
+    assert.equal(gain.currentHp, 2, `${raceId}: Option 1 grants no radiation healing`);
+  }
+
+  const halfMutant = resolveArmorAwareSheet({
+    special, skills, raceId: 'halfMutant', radiationResistance: 25,
+    mutantGhoulRadiationRules: true, ghoulRadiationHealingOption: 2, allArmor: [],
+  });
+  assert.equal(halfMutant.radiationResistance, 25);
+  assert.equal(halfMutant.radiationSicknessImmune, false);
+  assert.equal(halfMutant.ghoulRadiationHealingDivisor, null);
+  const halfMutantGain = applyRadiationGain({ accumulatedRadiation: 0, currentHp: 2 }, 20, 100, null);
+  assert.equal(halfMutantGain.accumulatedRadiation, 20);
+  assert.equal(halfMutantGain.currentHp, 2);
 });
 
 test('Ghoul healing options override natural resistance but retain worn armor resistance', () => {
@@ -97,6 +129,97 @@ test('ghoul healing uses only newly accumulated radiation, carries remainders, a
   assert.equal(resistanceApplied, 14);
   assert.equal(applyRadiationGain({ accumulatedRadiation: 0, currentHp: 4 }, resistanceApplied, 10, 1).currentHp, 10);
   assert.equal(applyRadiationGain({ accumulatedRadiation: 0, currentHp: 4 }, 20, 10, null).currentHp, 4);
+});
+
+test('body armor and a compatible helmet reduce Ghoul radiation before healing options 2–4', () => {
+  const body = {
+    ...BUILT_IN_ARMOR.find(item => item.id === 'clothing')!,
+    id: 'radiation-body-armor',
+    effects: { radiationResistance: 20 },
+  };
+  const helmet = {
+    ...BUILT_IN_ARMOR.find(item => item.id === 'leather_cap')!,
+    id: 'radiation-helmet',
+    compatibleBodyArmorIds: [body.id],
+    effects: { radiationResistance: 30 },
+  };
+  const allArmor = [...BUILT_IN_ARMOR, body, helmet];
+
+  for (const [option, expectedHp] of [[2, 4], [3, 8], [4, 22]] as const) {
+    const sheet = resolveArmorAwareSheet({
+      special, skills, raceId: 'ghoul', radiationResistance: 60,
+      mutantGhoulRadiationRules: true, ghoulRadiationHealingOption: option,
+      equippedBodyArmorId: body.id, equippedHelmetId: helmet.id, allArmor,
+    });
+    assert.equal(sheet.armorEffects.radiationResistance, 50, `option ${option}: worn body and helmet resistance stack`);
+    assert.equal(sheet.radiationResistance, 50, `option ${option}: natural Ghoul resistance is replaced, armor remains`);
+
+    let ghoul: Parameters<typeof applyRadiationGain>[0] = {
+      accumulatedRadiation: 0, currentHp: 2, ghoulRadiationHealingRemainder: 0,
+    };
+    for (const rawGain of [20, 20]) {
+      const accepted = resolveRadiationAddition(rawGain, sheet.radiationResistance);
+      ghoul = applyRadiationGain(
+        ghoul, accepted, 100,
+        ghoulRadiationHealingDivisor('ghoul', {
+          mutantGhoulRadiationRules: true, ghoulRadiationHealingOption: option,
+        }),
+      );
+    }
+    assert.equal(ghoul.accumulatedRadiation, 20, `option ${option}: only absorbed radiation reaches the meter`);
+    assert.equal(ghoul.currentHp, expectedHp, `option ${option}: separate gains accumulate healing progress`);
+  }
+});
+
+test('combat radiation is resisted once, heals a Ghoul from applied exposure, and caps at the accepted meter amount', () => {
+  const body = {
+    ...BUILT_IN_ARMOR.find(item => item.id === 'clothing')!,
+    id: 'combat-radiation-body',
+    effects: { radiationResistance: 20 },
+  };
+  const helmet = {
+    ...BUILT_IN_ARMOR.find(item => item.id === 'leather_cap')!,
+    id: 'combat-radiation-helmet',
+    compatibleBodyArmorIds: [body.id],
+    effects: { radiationResistance: 30 },
+  };
+  const sheet = resolveArmorAwareSheet({
+    special, skills, raceId: 'ghoul', radiationResistance: 60,
+    mutantGhoulRadiationRules: true, ghoulRadiationHealingOption: 2,
+    equippedBodyArmorId: body.id, equippedHelmetId: helmet.id,
+    allArmor: [...BUILT_IN_ARMOR, body, helmet],
+  });
+  const resolvedCombat = resolveAreaTarget({
+    kind: 'explosion',
+    rawDamage: 0,
+    components: [{
+      id: 'radiation-rider', label: 'Radiation rider', type: 'radiation',
+      dmgDieCount: 0, dmgDie: 0, dmgBonus: 100,
+    }],
+  }, {
+    id: 'ghoul-target', name: 'Armored Ghoul', endurance: 5,
+    gasInhaledResistance: 0, gasContactResistance: 0, electricityResistance: 0,
+    dt: 0, dr: 0, radiationResistance: sheet.radiationResistance,
+  });
+
+  assert.equal(resolvedCombat.radiationExposure, 50, 'combat resolves body plus helmet resistance');
+  const afterCombat = applyRadiationGain(
+    { accumulatedRadiation: 0, currentHp: 2 },
+    resolvedCombat.radiationExposure ?? 0,
+    100,
+    sheet.ghoulRadiationHealingDivisor,
+  );
+  assert.equal(afterCombat.accumulatedRadiation, 50);
+  assert.equal(afterCombat.currentHp, 7, 'the already-resisted combat exposure is not resisted a second time');
+
+  const capped = applyRadiationGain(
+    { accumulatedRadiation: 999, currentHp: 2 },
+    resolvedCombat.radiationExposure ?? 0,
+    100,
+    1,
+  );
+  assert.equal(capped.accumulatedRadiation, 1000);
+  assert.equal(capped.currentHp, 3, 'healing is awarded only for the one point that fit under the meter cap');
 });
 
 test('pre-made Ghoul, Super Mutant, and Deathclaw templates spawn as their race without losing printed resistances', () => {
