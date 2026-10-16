@@ -10,6 +10,7 @@ import ru from './locales/ru.json';
 import zhHans from './locales/zh-Hans.json';
 import zhHant from './locales/zh-Hant.json';
 import languageSettings from './locales/language-settings.json';
+import uiSupplemental from './locales/ui-supplemental.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -471,6 +472,7 @@ const dynamicPatterns: Partial<Record<AppLocale, Record<string, string>>> = {
   ru: patternsRu, 'zh-Hans': patternsZhHans, 'zh-Hant': patternsZhHant,
 };
 const languageSettingsTranslations = languageSettings as Record<string, Record<string, string>>;
+const uiSupplementalTranslations = uiSupplemental as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();
 
 let activeLocale: AppLocale = 'en';
@@ -494,7 +496,14 @@ function normalizeText(value: string): string {
 function compiledPatterns(locale: AppLocale) {
   const cached = patternCache.get(locale);
   if (cached) return cached;
-  const patterns = Object.entries(dynamicPatterns[locale] ?? {})
+  const supplementalPatterns = Object.fromEntries(
+    Object.entries(uiSupplementalTranslations[locale] ?? {})
+      .filter(([pattern]) => /\{\d+\}/.test(pattern)),
+  );
+  const patterns = Object.entries({
+    ...(dynamicPatterns[locale] ?? {}),
+    ...supplementalPatterns,
+  })
     .filter(([pattern]) => /\{\d+\}/.test(pattern))
     .map(([pattern, translated]) => {
       const placeholderOrder: number[] = [];
@@ -522,10 +531,15 @@ export function translateText(value: string, locale: AppLocale = activeLocale): 
   const key = normalizeText(core);
   if (!key) return value;
   const legacyKey = key === 'Pipe Rifle' ? 'Pipe Rife' : undefined;
-  const exact = translations[locale]?.[key]
-    ?? supplementalTranslations[locale]?.[key]
-    ?? campaignMenuTranslations[locale]?.[key]
-    ?? languageSettingsTranslations[locale]?.[key]
+  const exactCandidates = [
+    translations[locale]?.[key],
+    supplementalTranslations[locale]?.[key],
+    campaignMenuTranslations[locale]?.[key],
+    languageSettingsTranslations[locale]?.[key],
+    uiSupplementalTranslations[locale]?.[key],
+  ];
+  const exact = exactCandidates.find(candidate => candidate !== undefined && candidate !== key)
+    ?? exactCandidates.find(candidate => candidate !== undefined)
     ?? (legacyKey ? translations[locale]?.[legacyKey] : undefined);
   if (exact !== undefined) return `${leading}${exact}${trailing}`;
   const capacity = translateWeaponCapacityLabel(key, locale);
