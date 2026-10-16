@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BestiaryTemplate, BestiaryCategory, CharacterSkills, SPECIALStats, DEFAULT_SKILLS, NaturalProtection, EMPTY_NATURAL_PROTECTION, Armor, DamageType, DAMAGE_TYPE_NAMES } from '@/context/types';
 import { BUILT_IN_BESTIARY, BESTIARY_CATEGORIES, spawnBestiaryTemplate } from '@/data/bestiary';
 import { calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills } from '@/data/derived';
@@ -750,8 +751,11 @@ export default function BestiaryScreen() {
         </View>
 
         {/* Category tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+        <ScrollableTabStrip
+          accessibilityLabel="Bestiary categories"
+          colors={colors}
+          contentContainerStyle={{ flexDirection: 'row', gap: 6 }}
+        >
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityState={{ selected: showAllCategories && !searchingAllCategories }}
@@ -778,8 +782,7 @@ export default function BestiaryScreen() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </ScrollView>
+        </ScrollableTabStrip>
       </View>
 
       {/* Template list */}

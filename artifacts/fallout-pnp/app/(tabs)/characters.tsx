@@ -18,6 +18,7 @@ import {
 } from '@/context/types';
 import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/EquipmentConditionPanel';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import KarmaTracker from '@/components/KarmaTracker';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
@@ -899,13 +900,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         {/* Tab bar */}
         {/* flexGrow: 0 — a horizontal ScrollView otherwise stretches to fill the
             modal's vertical flex space, leaving a huge blank gap under the tabs. */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }} contentContainerStyle={{ paddingHorizontal: 8 }}>
+        <ScrollableTabStrip
+          accessibilityLabel="Character editor tabs"
+          colors={colors}
+          style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}
+          contentContainerStyle={{ paddingHorizontal: 8 }}
+        >
           {TABS.map((t, i) => (
             <TouchableOpacity key={t} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primary : 'transparent' }} onPress={() => { setCropDragging(false); setActiveTab(i); }}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: activeTab === i ? colors.primary : colors.mutedForeground }}>{t.toUpperCase()}</Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </ScrollableTabStrip>
 
         <KeyboardAwareScrollViewCompat
           style={{ flex: 1 }}

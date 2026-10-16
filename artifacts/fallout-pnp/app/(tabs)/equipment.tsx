@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
@@ -1204,7 +1205,11 @@ export default function EquipmentScreen() {
 
         {/* Category filter chips (weapons only) */}
         {tab === 'weapons' && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+          <ScrollableTabStrip
+            accessibilityLabel="Weapon types"
+            colors={colors}
+            contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 2 }}
+          >
             {(['all', ...WEAPON_CATEGORY_ORDER] as const).map(cat => {
               const active = categoryFilter === cat;
               const label = cat === 'all' ? 'All' : WEAPON_CATEGORY_LABELS[cat];
@@ -1214,7 +1219,7 @@ export default function EquipmentScreen() {
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </ScrollableTabStrip>
         )}
       </View>
 
