@@ -22,6 +22,16 @@ pnpm --filter @workspace/fallout-pnp run test:native:karma
 
 The flow creates a uniquely named character without clearing campaign data. It checks that invalid and zero changes do not create entries, positive and negative reasons remain in order, a capped change stores only its applied amount, the Karma title follows a level change without changing the character name, and all saved entries survive a cold app restart. This must run on a native device or simulator; rule tests and web preview checks are not equivalent.
 
+# Native character action confirmation regression
+
+Run the character action flow against an installed, launchable Android or iOS build using:
+
+```sh
+pnpm --filter @workspace/fallout-pnp run test:native:character-actions
+```
+
+The flow adds three uniquely named characters and removes only the copy it creates. It verifies that canceling and confirming healing, storage/return, copying, reordering, and deletion have the intended effect, and that backstory opens without an action prompt. Use a disposable campaign because the original test characters remain in the campaign after the run. This must run on a native device or simulator; the rule test covers the shared web/native modal wiring but does not replace device interaction testing.
+
 # Native combatant picker regression
 
 Run against an installed, launchable Android or iOS build using:

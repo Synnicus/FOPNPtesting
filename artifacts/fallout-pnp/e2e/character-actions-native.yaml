@@ -1,0 +1,134 @@
+# Run against an installed, launchable Android or iOS build (not the web preview).
+# Supply a unique TEST_NAME with maestro -e. This adds several uniquely named
+# characters and deletes only its own copied test character; use a disposable campaign.
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn: "Characters"
+
+# Create a character with less than full HP so healing cancel/confirm are observable.
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}-Alpha
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: character-hp-decrease
+    direction: DOWN
+- tapOn:
+    id: character-hp-decrease
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}-Beta
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}-Gamma
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+# Cancel preserves HP; confirming restores full HP.
+- scrollUntilVisible:
+    element: "Heal ${TEST_NAME}-Alpha"
+    direction: DOWN
+- tapOn: "Heal ${TEST_NAME}-Alpha"
+- assertVisible: "Heal Character?"
+- assertVisible: "Restore ${TEST_NAME}-Alpha to full HP and clear unconsciousness?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- assertVisible:
+    text: "HP 29/30"
+- tapOn: "Heal ${TEST_NAME}-Alpha"
+- tapOn:
+    id: character-action-confirmation-confirm
+- assertVisible:
+    text: "HP 30/30"
+
+# Backstory opens directly and never shows an action confirmation.
+- tapOn: "Edit ${TEST_NAME}-Alpha backstory"
+- assertVisible: "Write this character's backstory, notes, and history…"
+- assertNotVisible: "Heal Character?"
+- tapOn:
+    id: character-backstory-close
+
+# Cancel and confirm both storage transitions, checking that the character stays
+# in its original section on cancel and changes sections only after confirmation.
+- tapOn: "Store ${TEST_NAME}-Alpha"
+- assertVisible: "Store Character?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- assertVisible: "Store ${TEST_NAME}-Alpha"
+- tapOn: "Store ${TEST_NAME}-Alpha"
+- tapOn:
+    id: character-action-confirmation-confirm
+- assertNotVisible: ${TEST_NAME}-Alpha
+- tapOn:
+    id: character-storage-toggle
+- assertVisible: ${TEST_NAME}-Alpha
+- assertVisible: "Return ${TEST_NAME}-Alpha from storage"
+
+- tapOn: "Return ${TEST_NAME}-Alpha from storage"
+- assertVisible: "Return Character?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- assertVisible: "Return ${TEST_NAME}-Alpha from storage"
+- tapOn: "Return ${TEST_NAME}-Alpha from storage"
+- tapOn:
+    id: character-action-confirmation-confirm
+- scrollUntilVisible:
+    element: "Store ${TEST_NAME}-Alpha"
+    direction: UP
+- assertVisible: "Store ${TEST_NAME}-Alpha"
+
+# Canceling copy creates nothing; confirming creates one named copy.
+- tapOn: "Copy ${TEST_NAME}-Alpha"
+- assertVisible: "Copy Character?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- assertNotVisible: "${TEST_NAME}-Alpha (Clone)"
+- tapOn: "Copy ${TEST_NAME}-Alpha"
+- tapOn:
+    id: character-action-confirmation-confirm
+- assertVisible: "${TEST_NAME}-Alpha (Clone)"
+
+# Canceling delete preserves the copy; confirming removes only that copy.
+- tapOn: "Delete ${TEST_NAME}-Alpha (Clone)"
+- assertVisible: "Delete Character?"
+- assertVisible: "Permanently remove ${TEST_NAME}-Alpha (Clone) from the campaign? This cannot be undone."
+- tapOn:
+    id: character-delete-confirmation-cancel
+- assertVisible: "${TEST_NAME}-Alpha (Clone)"
+- tapOn: "Delete ${TEST_NAME}-Alpha (Clone)"
+- tapOn:
+    id: character-delete-confirmation-confirm
+- assertNotVisible: "${TEST_NAME}-Alpha (Clone)"
+- assertVisible: ${TEST_NAME}-Alpha
+
+# Gamma is the last test character. Cancel its move-up, confirm it, then verify
+# the newly enabled move-down action opens a prompt and can restore its position.
+- tapOn: "Move ${TEST_NAME}-Gamma up"
+- assertVisible: "Move Character Up?"
+- assertVisible: "Move ${TEST_NAME}-Gamma one position up in the list?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- tapOn: "Move ${TEST_NAME}-Gamma up"
+- tapOn:
+    id: character-action-confirmation-confirm
+- tapOn: "Move ${TEST_NAME}-Gamma down"
+- assertVisible: "Move Character Down?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- tapOn: "Move ${TEST_NAME}-Gamma down"
+- tapOn:
+    id: character-action-confirmation-confirm
+

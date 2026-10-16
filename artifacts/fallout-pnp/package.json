@@ -11,6 +11,7 @@
     "check:expo-compat": "CI=1 pnpm exec expo install --check && CI=1 pnpm exec expo-doctor",
     "validate": "pnpm run typecheck && pnpm run test:rules && pnpm run check:expo-compat",
     "test:native:karma": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Karma regression $(date +%s)\" e2e/karma-native.yaml",
+    "test:native:character-actions": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Character action regression $(date +%s)\" e2e/character-actions-native.yaml",
     "test:native:combatant-cards": "maestro test -e APP_ID=com.falloutpnpcalculator.app e2e/combatant-cards-native.yaml",
     "test:native:radiation": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Radiation regression $(date +%s)\" e2e/radiation-native.yaml",
     "test:native:manual-catalog": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Manual catalog regression $(date +%s)\" e2e/manual-catalog-native.yaml",

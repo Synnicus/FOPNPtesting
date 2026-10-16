@@ -288,9 +288,9 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
 }
 
 // ─── Confirm Modal (cross-platform; Alert.alert buttons don't work on web) ────
-function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, confirmColor, onCancel, onConfirm }: {
+function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, confirmColor, testIDPrefix, onCancel, onConfirm }: {
   visible: boolean; title: string; message: string; confirmLabel?: string; cancelLabel?: string;
-  confirmColor?: string; onCancel: () => void; onConfirm: () => void;
+  confirmColor?: string; testIDPrefix?: string; onCancel: () => void; onConfirm: () => void;
 }) {
   const colors = useColors();
   const headingRef = useRef<View>(null);
@@ -324,10 +324,10 @@ function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, conf
             <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 20 }}>{message}</Text>
           </View>
           <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border }}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={cancelLabel ?? 'CANCEL'} style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={onCancel}>
+            <TouchableOpacity testID={testIDPrefix ? `${testIDPrefix}-cancel` : undefined} accessibilityRole="button" accessibilityLabel={cancelLabel ?? 'CANCEL'} style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={onCancel}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{cancelLabel ?? 'CANCEL'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={confirmLabel ?? 'DELETE'} style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
+            <TouchableOpacity testID={testIDPrefix ? `${testIDPrefix}-confirm` : undefined} accessibilityRole="button" accessibilityLabel={confirmLabel ?? 'DELETE'} style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: confirmColor ?? colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
             </TouchableOpacity>
           </View>
@@ -1086,7 +1086,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>HIT POINTS</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, currentHp: Math.max(0, c.currentHp - 1) }))}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
+                  <TouchableOpacity testID="character-hp-decrease" style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setChar(c => ({ ...c, currentHp: Math.max(0, c.currentHp - 1) }))}><Feather name="minus" size={14} color={colors.foreground} /></TouchableOpacity>
                   <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.foreground, flex: 1, textAlign: 'center' }}>{char.currentHp} / {char.maxHp}</Text>
                   <TouchableOpacity
                     disabled={isHealingBlocked(char)}
@@ -2134,7 +2134,7 @@ function BioEditorModal({ visible, name, value, onClose }: {
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => onClose(text)}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: Platform.OS === 'ios' ? 52 : 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
-          <TouchableOpacity onPress={() => onClose(text)}><Feather name="chevron-left" size={24} color={colors.mutedForeground} /></TouchableOpacity>
+          <TouchableOpacity testID="character-backstory-close" onPress={() => onClose(text)} accessibilityRole="button" accessibilityLabel="Close backstory editor"><Feather name="chevron-left" size={24} color={colors.mutedForeground} /></TouchableOpacity>
           <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }} numberOfLines={1}>{name ? name.toUpperCase() : 'BIOGRAPHY'}</Text>
           <TouchableOpacity onPress={() => onClose(text)}>
             <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>DONE</Text>
@@ -2304,7 +2304,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
             Lv {character.level} {character.race} · {weapon?.name ?? 'No weapon'}
           </Text>
-          <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+          <Text testID={`character-card-health-${character.id}`} style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
             HP {character.currentHp}/{character.maxHp} · AC {armorSheet.armorClass} · AP {Math.min(character.currentAP, armorSheet.maxAP)}/{armorSheet.maxAP} · SEQ {armorSheet.sequence}
           </Text>
           <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
@@ -2324,20 +2324,28 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
         </View>
         <View style={{ gap: 6 }}>
           <View style={{ flexDirection: 'row' }}>
-            <TouchableOpacity onPress={onMoveUp} disabled={!canMoveUp} style={{ padding: 4, opacity: canMoveUp ? 1 : 0.25 }} accessibilityLabel="Move character up">
+            <TouchableOpacity testID={`character-action-move-up-${character.id}`} onPress={onMoveUp} disabled={!canMoveUp} style={{ padding: 4, opacity: canMoveUp ? 1 : 0.25 }} accessibilityRole="button" accessibilityLabel={`Move ${character.name} up`} accessibilityHint="Asks for confirmation before changing the character order">
               <Feather name="chevron-up" size={18} color={colors.primary} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={onMoveDown} disabled={!canMoveDown} style={{ padding: 4, opacity: canMoveDown ? 1 : 0.25 }} accessibilityLabel="Move character down">
+            <TouchableOpacity testID={`character-action-move-down-${character.id}`} onPress={onMoveDown} disabled={!canMoveDown} style={{ padding: 4, opacity: canMoveDown ? 1 : 0.25 }} accessibilityRole="button" accessibilityLabel={`Move ${character.name} down`} accessibilityHint="Asks for confirmation before changing the character order">
               <Feather name="chevron-down" size={18} color={colors.primary} />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onResetHp} style={{ padding: 4 }}><Ionicons name="heart-circle" size={16} color={character.currentHp < character.maxHp ? colors.destructive : colors.mutedForeground} /></TouchableOpacity>
-          <TouchableOpacity onPress={onBio} style={{ padding: 4 }}><Feather name="book-open" size={16} color={colors.primary} /></TouchableOpacity>
-          <TouchableOpacity onPress={onToggleStorage} style={{ padding: 4 }}>
+          <TouchableOpacity testID={`character-action-heal-${character.id}`} onPress={onResetHp} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel={`Heal ${character.name}`} accessibilityHint="Asks for confirmation before restoring full HP">
+            <Ionicons name="heart-circle" size={16} color={character.currentHp < character.maxHp ? colors.destructive : colors.mutedForeground} />
+          </TouchableOpacity>
+          <TouchableOpacity testID={`character-action-backstory-${character.id}`} onPress={onBio} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel={`Edit ${character.name} backstory`}>
+            <Feather name="book-open" size={16} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity testID={`character-action-storage-${character.id}`} onPress={onToggleStorage} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel={character.inStorage ? `Return ${character.name} from storage` : `Store ${character.name}`} accessibilityHint="Asks for confirmation before changing storage status">
             <Ionicons name={character.inStorage ? 'file-tray-full' : 'archive-outline'} size={16} color={character.inStorage ? colors.primary : colors.mutedForeground} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={onClone} style={{ padding: 4 }}><Feather name="copy" size={16} color={colors.mutedForeground} /></TouchableOpacity>
-          <TouchableOpacity onPress={onDelete} style={{ padding: 4 }}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>
+          <TouchableOpacity testID={`character-action-copy-${character.id}`} onPress={onClone} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel={`Copy ${character.name}`} accessibilityHint="Asks for confirmation before creating a copy">
+            <Feather name="copy" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+          <TouchableOpacity testID={`character-action-delete-${character.id}`} onPress={onDelete} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel={`Delete ${character.name}`} accessibilityHint="Asks for confirmation before permanently removing this character">
+            <Feather name="trash-2" size={16} color={colors.destructive} />
+          </TouchableOpacity>
         </View>
       </View>
       {/* Chosen traits */}
@@ -2703,7 +2711,7 @@ export default function CharactersScreen() {
           renderItem={({ item }) => renderCharacterCard(item, active)}
           ListFooterComponent={stored.length > 0 ? (
             <View style={{ marginTop: 18, gap: 10 }}>
-              <TouchableOpacity onPress={() => setShowStorage(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 }}>
+              <TouchableOpacity testID="character-storage-toggle" onPress={() => setShowStorage(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="file-tray-full" size={18} color={colors.primary} />
                   <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>STORAGE ({stored.length})</Text>
@@ -2822,6 +2830,7 @@ export default function CharactersScreen() {
         message={pendingActionDetails?.message ?? ''}
         confirmLabel={pendingActionDetails?.confirmLabel}
         confirmColor={colors.primary}
+        testIDPrefix="character-action-confirmation"
         onCancel={() => setPendingCharacterAction(null)}
         onConfirm={confirmCharacterAction}
       />
@@ -2831,6 +2840,7 @@ export default function CharactersScreen() {
         title="Delete Character?"
         message={`Permanently remove ${deleteTarget?.name ?? 'this character'} from the campaign? This cannot be undone.`}
         confirmLabel="DELETE"
+        testIDPrefix="character-delete-confirmation"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) {
