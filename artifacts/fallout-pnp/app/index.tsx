@@ -402,38 +402,41 @@ export default function MainMenuScreen() {
               <Text style={{
                 fontSize: logoPnpSize,
                 lineHeight: logoPnpSize * 1.15,
-                fontFamily: 'Monoton_400Regular',
+                fontFamily: 'Overseer',
                 color: colors.primary,
                 letterSpacing: 4,
                 textShadowColor: colors.primary,
                 textShadowRadius: 16,
                 textShadowOffset: { width: 0, height: 0 },
+                transform: [{ scaleX: 1.45 }],
               }}>
                 PNP
               </Text>
               <Text style={{
                 fontSize: logoLineSize * 0.88,
                 lineHeight: logoLineSize * 1.05,
-                fontFamily: 'Monoton_400Regular',
+                fontFamily: 'Overseer',
                 color: colors.primary,
                 letterSpacing: 2,
                 textAlign: 'center',
                 textShadowColor: colors.primary,
                 textShadowRadius: 12,
                 textShadowOffset: { width: 0, height: 0 },
+                transform: [{ scaleX: 1.5 }],
               }}>
                 COMBAT
               </Text>
               <Text style={{
                 fontSize: logoLineSize,
                 lineHeight: logoLineSize * 1.05,
-                fontFamily: 'Monoton_400Regular',
+                fontFamily: 'Overseer',
                 color: colors.primary,
                 letterSpacing: 0.25,
                 textAlign: 'center',
                 textShadowColor: colors.primary,
                 textShadowRadius: 12,
                 textShadowOffset: { width: 0, height: 0 },
+                transform: [{ scaleX: 1.7 }],
               }}>
                 CALCULATOR
               </Text>
