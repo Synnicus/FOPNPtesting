@@ -18,6 +18,7 @@
 - [Manual rules-reference scope](fallout-pnp-manual-reference.md) — organize all manual rules/tables by its sections; keep item and creature catalogs in their app tabs.
 - [Fallout PnP localization](fallout-pnp-localization.md) — language choice is device-local, separate from campaigns; player-authored names and notes stay unchanged.
 - [Vault Radio](fallout-pnp-vault-radio.md) — user-described free-to-use 1920s score stays in App Storage and caches on first play, not in the app bundle.
+- [Scrollable tab interaction](fallout-pnp-scrollable-tabs.md) — keep arrows, touch swipe, and mouse-drag support on overflowing tab strips.
 - [Post-merge database push](post-merge-db-push.md) — dependency installation plus Drizzle schema inspection needs more than a 20-second setup timeout.
 - [Campaign library archives](fallout-pnp-campaign-library.md) — keep library snapshots portable and embed portraits so campaign switching cannot break saved portrait references.
 - [Node test imports](node-test-imports.md) — direct `node:test` TypeScript runs cannot resolve the app’s `@/` aliases; keep tested data modules on relative imports.
