@@ -40,6 +40,7 @@ export interface CampaignStateSnapshot {
   systemSoundsEnabled?: boolean;
   combatSoundsEnabled?: boolean;
   musicEnabled?: boolean;
+  musicVolume?: number;
   /** Legacy import alias retained so older campaign files remain compatible. */
   fallout3RadiationDebuffs?: boolean;
 }
@@ -259,6 +260,8 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
     && (value.combatSoundsEnabled === undefined || typeof value.combatSoundsEnabled === 'boolean')
     && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
+    && (value.musicVolume === undefined
+      || (typeof value.musicVolume === 'number' && Number.isFinite(value.musicVolume) && value.musicVolume >= 0 && value.musicVolume <= 1))
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
       || value.ghoulRadiationHealingOption === 1
@@ -454,6 +457,8 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
     && (value.combatSoundsEnabled === undefined || typeof value.combatSoundsEnabled === 'boolean')
     && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
+    && (value.musicVolume === undefined
+      || (typeof value.musicVolume === 'number' && Number.isFinite(value.musicVolume) && value.musicVolume >= 0 && value.musicVolume <= 1))
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
       || value.ghoulRadiationHealingOption === 1

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 import { useLocalization } from '@/context/LocalizationContext';
 import { useColors } from '@/hooks/useColors';
+import { useVaultRadioStatus } from '@/context/VaultRadioContext';
 import { THEME_SWATCHES } from '@/constants/colors';
 import {
   formatHardcoreRadiationPenalties,
@@ -84,6 +85,90 @@ function PreferenceSwitchRow({
         trackColor={{ false: palette.border, true: palette.primary }}
         thumbColor={palette.card}
       />
+    </View>
+  );
+}
+
+function PreferenceSliderRow({
+  label,
+  description,
+  value,
+  onValueChange,
+  testID,
+}: {
+  label: string;
+  description: string;
+  value: number;
+  onValueChange: (value: number) => void;
+  testID: string;
+}) {
+  const palette = useColors();
+  const sliderWidth = useRef(1);
+  const percent = Math.round(value * 100);
+  const updateFromPosition = (x: number) => {
+    const next = Math.max(0, Math.min(1, x / sliderWidth.current));
+    onValueChange(Math.round(next * 100) / 100);
+  };
+
+  return (
+    <View style={{
+      padding: 14,
+      borderWidth: 1,
+      borderColor: palette.border,
+      borderRadius: palette.radius,
+      backgroundColor: palette.secondary,
+      gap: 8,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
+          {label}
+        </Text>
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.primary, minWidth: 38, textAlign: 'right' }}>
+          {percent}%
+        </Text>
+      </View>
+      <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+        {description}
+      </Text>
+      <View
+        testID={testID}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={label}
+        accessibilityHint="Swipe up or down to adjust the music volume."
+        accessibilityValue={{ min: 0, max: 100, now: percent, text: `${percent}%` }}
+        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+        onAccessibilityAction={event => {
+          const delta = event.nativeEvent.actionName === 'increment' ? 0.05 : -0.05;
+          onValueChange(Math.max(0, Math.min(1, Math.round((value + delta) * 100) / 100)));
+        }}
+        onLayout={event => { sliderWidth.current = Math.max(1, event.nativeEvent.layout.width); }}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={event => updateFromPosition(event.nativeEvent.locationX)}
+        onResponderMove={event => updateFromPosition(event.nativeEvent.locationX)}
+        style={{ height: 36, justifyContent: 'center', marginHorizontal: 7 }}
+      >
+        <View pointerEvents="none" style={{
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: palette.border,
+          overflow: 'hidden',
+        }}>
+          <View style={{ width: `${percent}%`, height: '100%', backgroundColor: palette.primary }} />
+        </View>
+        <View pointerEvents="none" style={{
+          position: 'absolute',
+          left: `${percent}%`,
+          marginLeft: -9,
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: palette.primary,
+          borderWidth: 2,
+          borderColor: palette.card,
+        }} />
+      </View>
     </View>
   );
 }
@@ -261,8 +346,11 @@ export default function CampaignOptionsModal({
     setCombatSoundsEnabled,
     musicEnabled,
     setMusicEnabled,
+    musicVolume,
+    setMusicVolume,
   } = useApp();
   const { locale, setLocale } = useLocalization();
+  const { hasPlaybackError } = useVaultRadioStatus();
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
   const previewTriggerRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
@@ -559,12 +647,24 @@ export default function CampaignOptionsModal({
               testID="combat-sounds-toggle"
             />
             <PreferenceSwitchRow
-              label="Music"
-              description="Saved for future audio support. Music playback is not available yet."
+              label="Enable Vault Radio"
+              description="1920s music starts at a random track, then repeats in order."
               value={musicEnabled}
               onValueChange={setMusicEnabled}
-              testID="music-toggle"
+              testID="vault-radio-toggle"
             />
+            <PreferenceSliderRow
+              label="Vault Radio volume"
+              description="Set the volume for Vault Radio music."
+              value={musicVolume}
+              onValueChange={setMusicVolume}
+              testID="vault-radio-volume"
+            />
+            {hasPlaybackError && (
+              <Text accessibilityRole="alert" style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: palette.destructive }}>
+                Vault Radio is unavailable. Check the connection and track files.
+              </Text>
+            )}
           </ScrollView>
         </View>
       </Modal>

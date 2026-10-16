@@ -495,6 +495,7 @@ interface AppContextValue extends AppState {
   setSystemSoundsEnabled: (enabled: boolean) => void;
   setCombatSoundsEnabled: (enabled: boolean) => void;
   setMusicEnabled: (enabled: boolean) => void;
+  setMusicVolume: (volume: number) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
   /** Start a GM-timed combat skill. See TimedSkillActionRequest for AP/round timing. */
@@ -1943,6 +1944,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, musicEnabled }));
   }, []);
 
+  const setMusicVolume = useCallback((musicVolume: number) => {
+    const normalizedVolume = Number.isFinite(musicVolume)
+      ? Math.max(0, Math.min(1, musicVolume))
+      : DEFAULT_CAMPAIGN_OPTIONS.musicVolume;
+    setState(s => ({ ...s, musicVolume: normalizedVolume }));
+  }, []);
+
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...state.customArmor];
   const allAmmo = [...AMMO_TYPES, ...state.customAmmo];
@@ -1956,7 +1964,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
         setMutantGhoulRadiationRules, setGhoulRadiationHealingOption,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
-          setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled,
+          setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled, setMusicVolume,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,
       restorePremadeWeaponCondition: restorePremadeWeaponConditionForCharacter,
