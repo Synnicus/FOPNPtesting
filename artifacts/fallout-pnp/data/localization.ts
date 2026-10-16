@@ -671,6 +671,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   fr: {
     'Remove All Status Effects': 'Supprimer tous les effets de statut',
     'Also Heal Injuries?': 'Soigner aussi les blessures ?',
+    'Are you sure?': 'Êtes-vous sûr ?',
+    'CANCEL': 'ANNULER',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Faut-il aussi soigner les blessures, comme les membres cassés ? Elles resteront dans le dossier du personnage, mais seront marquées comme inactives.',
     'KEEP INJURIES': 'GARDER LES BLESSURES',
     'HEAL INJURIES': 'SOIGNER LES BLESSURES',
@@ -681,6 +683,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   it: {
     'Remove All Status Effects': 'Rimuovi tutti gli effetti di stato',
     'Also Heal Injuries?': 'Curare anche le ferite?',
+    'Are you sure?': 'Sei sicuro?',
+    'CANCEL': 'ANNULLA',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Vuoi curare anche ferite come gli arti rotti? Le voci resteranno nella scheda del personaggio ma saranno contrassegnate come inattive.',
     'KEEP INJURIES': 'MANTIENI LE FERITE',
     'HEAL INJURIES': 'CURA LE FERITE',
@@ -691,6 +695,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   de: {
     'Remove All Status Effects': 'Alle Statuseffekte entfernen',
     'Also Heal Injuries?': 'Auch alle Verletzungen heilen?',
+    'Are you sure?': 'Bist du sicher?',
+    'CANCEL': 'ABBRECHEN',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Sollen auch Verletzungen wie gebrochene Gliedmaßen geheilt werden? Die Einträge bleiben erhalten, werden aber als inaktiv markiert.',
     'KEEP INJURIES': 'VERLETZUNGEN BEHALTEN',
     'HEAL INJURIES': 'VERLETZUNGEN HEILEN',
@@ -701,6 +707,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   'es-ES': {
     'Remove All Status Effects': 'Eliminar todos los efectos de estado',
     'Also Heal Injuries?': '¿Curar también las heridas?',
+    'Are you sure?': '¿Estás seguro?',
+    'CANCEL': 'CANCELAR',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '¿También quieres curar heridas como miembros rotos? Se conservarán en la ficha, pero quedarán marcadas como inactivas.',
     'KEEP INJURIES': 'MANTENER HERIDAS',
     'HEAL INJURIES': 'CURAR HERIDAS',
@@ -711,6 +719,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   'es-MX': {
     'Remove All Status Effects': 'Eliminar todos los efectos de estado',
     'Also Heal Injuries?': '¿Curar también las heridas?',
+    'Are you sure?': '¿Estás seguro?',
+    'CANCEL': 'CANCELAR',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '¿También quieres curar heridas como extremidades rotas? Se conservarán en la ficha, pero quedarán marcadas como inactivas.',
     'KEEP INJURIES': 'CONSERVAR HERIDAS',
     'HEAL INJURIES': 'CURAR HERIDAS',
@@ -721,6 +731,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   ja: {
     'Remove All Status Effects': 'すべての状態効果を解除',
     'Also Heal Injuries?': '負傷も治しますか？',
+    'Are you sure?': '本当によろしいですか？',
+    'CANCEL': 'キャンセル',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '骨折などの負傷も治しますか？記録は残り、非アクティブとして表示されます。',
     'KEEP INJURIES': '負傷を残す',
     'HEAL INJURIES': '負傷を治す',
@@ -731,6 +743,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   pl: {
     'Remove All Status Effects': 'Usuń wszystkie efekty statusu',
     'Also Heal Injuries?': 'Czy wyleczyć też rany?',
+    'Are you sure?': 'Czy na pewno?',
+    'CANCEL': 'ANULUJ',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Czy wyleczyć także rany, takie jak złamane kończyny? Wpisy pozostaną w karcie, ale zostaną oznaczone jako nieaktywne.',
     'KEEP INJURIES': 'ZOSTAW RANY',
     'HEAL INJURIES': 'WYLECZ RANY',
@@ -741,6 +755,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   'pt-BR': {
     'Remove All Status Effects': 'Remover todos os efeitos de status',
     'Also Heal Injuries?': 'Curar também os ferimentos?',
+    'Are you sure?': 'Tem certeza?',
+    'CANCEL': 'CANCELAR',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Também deseja curar ferimentos como membros quebrados? Os registros serão mantidos, mas marcados como inativos.',
     'KEEP INJURIES': 'MANTER FERIMENTOS',
     'HEAL INJURIES': 'CURAR FERIMENTOS',
@@ -751,6 +767,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   ru: {
     'Remove All Status Effects': 'Убрать все эффекты состояния',
     'Also Heal Injuries?': 'Также вылечить ранения?',
+    'Are you sure?': 'Вы уверены?',
+    'CANCEL': 'ОТМЕНА',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': 'Вылечить также ранения, например переломы? Записи останутся, но будут помечены как неактивные.',
     'KEEP INJURIES': 'ОСТАВИТЬ РАНЕНИЯ',
     'HEAL INJURIES': 'ВЫЛЕЧИТЬ РАНЕНИЯ',
@@ -761,6 +779,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   'zh-Hans': {
     'Remove All Status Effects': '移除所有状态效果',
     'Also Heal Injuries?': '同时治愈所有伤势？',
+    'Are you sure?': '确定要继续吗？',
+    'CANCEL': '取消',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '是否同时治愈骨折等伤势？记录会保留，但会标记为未生效。',
     'KEEP INJURIES': '保留伤势',
     'HEAL INJURIES': '治愈伤势',
@@ -771,6 +791,8 @@ const statusCleanupLabels: Partial<Record<AppLocale, Record<string, string>>> = 
   'zh-Hant': {
     'Remove All Status Effects': '移除所有狀態效果',
     'Also Heal Injuries?': '同時治癒所有傷勢？',
+    'Are you sure?': '確定要繼續嗎？',
+    'CANCEL': '取消',
     'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.': '是否同時治癒骨折等傷勢？記錄會保留，但會標記為未生效。',
     'KEEP INJURIES': '保留傷勢',
     'HEAL INJURIES': '治癒傷勢',

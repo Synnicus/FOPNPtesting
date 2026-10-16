@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FlatList, Image, Modal, PanResponder, Platform, ScrollView,
+  AccessibilityInfo, findNodeHandle, FlatList, Image, Modal, PanResponder, Platform, ScrollView,
   View, useWindowDimensions,
 } from 'react-native';
 import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
@@ -293,19 +293,41 @@ function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, conf
   confirmColor?: string; onCancel: () => void; onConfirm: () => void;
 }) {
   const colors = useColors();
+  const headingRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (!visible || Platform.OS === 'web') return;
+    const focusTimeout = setTimeout(() => {
+      const headingNode = findNodeHandle(headingRef.current);
+      if (headingNode !== null) AccessibilityInfo.setAccessibilityFocus(headingNode);
+    }, 350);
+    return () => clearTimeout(focusTimeout);
+  }, [visible]);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', padding: 24 }}>
+      <View
+        accessibilityViewIsModal
+        importantForAccessibility="yes"
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', padding: 24 }}
+      >
         <View style={{ width: '100%', maxWidth: 380, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
           <View style={{ padding: 20, gap: 8 }}>
-            <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>{title}</Text>
+            <View
+              ref={headingRef}
+              accessible
+              accessibilityRole="header"
+              accessibilityLabel={translateText(title)}
+            >
+              <Text accessible={false} style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>{title}</Text>
+            </View>
             <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 20 }}>{message}</Text>
           </View>
           <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border }}>
-            <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={onCancel}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={cancelLabel ?? 'CANCEL'} style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRightWidth: 1, borderRightColor: colors.border }} onPress={onCancel}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{cancelLabel ?? 'CANCEL'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={confirmLabel ?? 'DELETE'} style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: confirmColor ?? colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
             </TouchableOpacity>
           </View>

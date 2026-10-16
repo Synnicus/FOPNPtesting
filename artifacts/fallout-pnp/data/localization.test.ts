@@ -7,6 +7,20 @@ const localeIds = [
   'fr', 'it', 'de', 'es-ES', 'es-MX', 'ja', 'pl', 'pt-BR', 'ru', 'zh-Hans', 'zh-Hant',
 ];
 const localeDirectory = new URL('./locales/', import.meta.url);
+const localizationSource = readFileSync(new URL('./localization.ts', import.meta.url), 'utf8');
+const statusCleanupTranslationSource = localizationSource.slice(
+  localizationSource.indexOf('const statusCleanupLabels:'),
+  localizationSource.indexOf('function translateStatusCleanupLabel'),
+);
+
+function getStatusCleanupLocaleBlock(locale: string): string {
+  const escapedLocale = locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const localeMatch = statusCleanupTranslationSource.match(new RegExp(
+    `(?:^|\\n)  (?:'${escapedLocale}'|${escapedLocale}): \\{([\\s\\S]*?)(?=\\n  (?:'[^']+'|[a-z-]+): \\{|\\n\\};)`,
+  ));
+  assert.ok(localeMatch, `${locale} has status-cleanup translations`);
+  return localeMatch[1];
+}
 
 test('every supported non-English locale bundles app UI and built-in content translations', () => {
   const requiredStrings = [
@@ -56,5 +70,31 @@ test('language setting copy is available for every locale without translating us
     assert.ok(languageSettings[locale]?.['Names and notes you enter stay in the language you wrote them.']);
     assert.ok(languageSettings[locale]?.['rank']);
     assert.ok(languageSettings[locale]?.['perk points']);
+  }
+});
+
+test('status-cleanup prompt text is translated for every supported non-English locale', () => {
+  const promptText = [
+    'Remove All Status Effects',
+    'Also Heal Injuries?',
+    'Should injuries such as broken limbs also be healed? Their entries will be kept but marked inactive.',
+    'KEEP INJURIES',
+    'HEAL INJURIES',
+    'Are you sure?',
+    'This clears temporary effects (poison, unconsciousness, drug effects, withdrawal, and ongoing hazards) from all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.',
+    'This clears temporary effects and marks all injuries inactive for all active characters. Stored characters, HP, radiation, armor, and perk effects are unchanged.',
+    'CANCEL',
+    'REMOVE ALL EFFECTS',
+  ];
+
+  for (const locale of localeIds) {
+    const localeBlock = getStatusCleanupLocaleBlock(locale);
+    for (const source of promptText) {
+      const escapedSource = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const translation = localeBlock.match(new RegExp(`^\\s*'${escapedSource}': '([^']*)'`, 'm'));
+      assert.ok(translation, `${locale} translates status-cleanup prompt text “${source}”`);
+      assert.ok(translation[1].trim(), `${locale} has a non-empty translation for “${source}”`);
+      assert.notEqual(translation[1], source, `${locale} does not show English for “${source}”`);
+    }
   }
 });
