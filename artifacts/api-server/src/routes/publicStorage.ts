@@ -5,18 +5,34 @@ import { ObjectStorageService } from "../lib/objectStorage";
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
 
+router.get("/storage/public-objects/vault-radio", async (_req, res) => {
+  try {
+    const tracks = (await objectStorage.listPublicObjects("vault-radio/"))
+      .filter(fileName => /\.(mp3|oga|ogg|m4a|wav)$/i.test(fileName))
+      .sort((a, b) => a.localeCompare(b, "en", { numeric: true, sensitivity: "base" }));
+    res.json({ tracks });
+  } catch (error) {
+    console.error("Unable to list public Vault Radio tracks from App Storage.", error);
+    res.status(500).json({ error: "Unable to list Vault Radio tracks" });
+  }
+});
+
 router.get("/storage/public-objects/vault-radio/:fileName", async (req, res) => {
   const fileName = req.params.fileName;
-  if (!fileName || fileName.includes("/") || fileName === "." || fileName === "..") {
+  if (
+    !fileName
+    || fileName.includes("/")
+    || fileName.includes("\\")
+    || fileName === "."
+    || fileName === ".."
+  ) {
     res.status(400).json({ error: "Invalid public asset path" });
     return;
   }
 
   try {
     const filePath = `vault-radio/${fileName}`;
-    // Public search paths may already point at the vault-radio directory.
-    const file = await objectStorage.searchPublicObject(filePath)
-      ?? await objectStorage.searchPublicObject(fileName);
+    const file = await objectStorage.searchPublicObject(filePath);
     if (!file) {
       res.status(404).json({ error: "File not found" });
       return;

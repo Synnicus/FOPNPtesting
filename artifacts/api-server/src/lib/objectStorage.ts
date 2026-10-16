@@ -88,6 +88,27 @@ export class ObjectStorageService {
     return null;
   }
 
+  async listPublicObjects(filePathPrefix: string): Promise<string[]> {
+    if (
+      filePathPrefix.startsWith('/')
+      || filePathPrefix.includes('..')
+      || filePathPrefix.includes('\\')
+    ) {
+      throw new Error('Invalid public object path prefix.');
+    }
+
+    const names = new Set<string>();
+    for (const searchPath of this.getPublicObjectSearchPaths()) {
+      const { bucketName, objectName } = parseObjectPath(`${searchPath}/${filePathPrefix}`);
+      const [files] = await objectStorageClient.bucket(bucketName).getFiles({ prefix: objectName });
+      for (const file of files) {
+        const name = file.name.slice(objectName.length);
+        if (name.length > 0 && !name.includes('/')) names.add(name);
+      }
+    }
+    return [...names];
+  }
+
   async downloadObject(
     file: File,
     cacheTtlSec: number = 3600,

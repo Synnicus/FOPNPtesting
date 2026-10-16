@@ -24,6 +24,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /storage/public-objects/vault-radio/{fileName}:
+    get:
+      operationId: getVaultRadioTrack
+      tags: [storage]
+      summary: Stream a Vault Radio track from App Storage
+      parameters:
+        - name: fileName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audio track content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid track filename
+        "404":
+          description: Track not found
+  /storage/public-objects/vault-radio:
+    get:
+      operationId: listVaultRadioTracks
+      tags: [storage]
+      summary: List playable tracks in the Vault Radio folder
+      responses:
+        "200":
+          description: Available audio filenames
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultRadioTrackList"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +68,13 @@ components:
           type: string
       required:
         - status
+    VaultRadioTrackList:
+      type: object
+      properties:
+        tracks:
+          type: array
+          items:
+            type: string
+      required:
+        - tracks
 
