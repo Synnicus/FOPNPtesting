@@ -34,7 +34,7 @@ import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
 import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
-import { clearTemporaryCharacterEffects } from '@/data/statusEffects';
+import { clearTemporaryEffectsFromActiveCharacters } from '@/data/statusEffects';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
 import { poisonEffectName } from '@/data/poisonEffects';
@@ -2564,9 +2564,10 @@ export default function CharactersScreen() {
   };
 
   const removeAllStatusEffects = () => {
-    characters
-      .filter(character => !character.inStorage)
-      .forEach(character => updateCharacter(clearTemporaryCharacterEffects(character, statusCleanupHealsInjuries)));
+    const cleanedCharacters = clearTemporaryEffectsFromActiveCharacters(characters, statusCleanupHealsInjuries);
+    cleanedCharacters.forEach((character, index) => {
+      if (character !== characters[index]) updateCharacter(character);
+    });
     setStatusCleanupPrompt(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };

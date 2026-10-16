@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Character } from '../context/types.ts';
-import { clearTemporaryCharacterEffects } from './statusEffects.ts';
+import {
+  clearTemporaryCharacterEffects,
+  clearTemporaryEffectsFromActiveCharacters,
+} from './statusEffects.ts';
 
 function makeCharacter(overrides: Record<string, unknown> = {}): Character {
   return {
@@ -69,4 +72,45 @@ test('healing injuries deactivates them without deleting their history', () => {
   assert.equal(cleared.injuries[0].isActive, false);
   assert.equal(cleared.injuries[0].description, 'Broken left arm');
   assert.equal(character.injuries[0].isActive, true);
+});
+
+test('cleared statuses and active injuries persist through a campaign save/reload round trip', () => {
+  const active = makeCharacter();
+  const stored = makeCharacter({ id: 'stored-character', inStorage: true });
+  const storedBeforeCleanup = JSON.parse(JSON.stringify(stored));
+
+  const saved = {
+    characters: clearTemporaryEffectsFromActiveCharacters([active, stored]),
+  };
+  const reloaded = JSON.parse(JSON.stringify(saved)) as { characters: Character[] };
+  const [reloadedActive, reloadedStored] = reloaded.characters;
+
+  assert.deepEqual(reloadedActive.effects, []);
+  assert.deepEqual(reloadedActive.conditions, []);
+  assert.equal(reloadedActive.isKnockedOut, false);
+  assert.equal(reloadedActive.knockOutRoundsLeft, 0);
+  assert.equal(reloadedActive.combatDefenseSuppressed, false);
+  assert.deepEqual(reloadedActive.areaEffects, []);
+  assert.equal(reloadedActive.injuries[0].isActive, true);
+  assert.deepEqual(reloadedStored, storedBeforeCleanup);
+});
+
+test('healed injuries remain inactive after a campaign save/reload round trip', () => {
+  const active = makeCharacter();
+  const stored = makeCharacter({ id: 'stored-character', inStorage: true });
+  const storedBeforeCleanup = JSON.parse(JSON.stringify(stored));
+
+  const saved = {
+    characters: clearTemporaryEffectsFromActiveCharacters([active, stored], true),
+  };
+  const reloaded = JSON.parse(JSON.stringify(saved)) as { characters: Character[] };
+  const [reloadedActive, reloadedStored] = reloaded.characters;
+
+  assert.deepEqual(reloadedActive.effects, []);
+  assert.deepEqual(reloadedActive.conditions, []);
+  assert.equal(reloadedActive.isKnockedOut, false);
+  assert.deepEqual(reloadedActive.areaEffects, []);
+  assert.equal(reloadedActive.injuries[0].isActive, false);
+  assert.equal(reloadedActive.injuries[0].description, 'Broken left arm');
+  assert.deepEqual(reloadedStored, storedBeforeCleanup);
 });

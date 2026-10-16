@@ -22,3 +22,16 @@ export function clearTemporaryCharacterEffects(
       : {}),
   };
 }
+
+/**
+ * Clear temporary statuses for active campaign characters while preserving
+ * every stored character record as-is.
+ */
+export function clearTemporaryEffectsFromActiveCharacters(
+  characters: readonly Character[],
+  healInjuries = false,
+): Character[] {
+  return characters.map(character => character.inStorage
+    ? character
+    : clearTemporaryCharacterEffects(character, healInjuries));
+}
