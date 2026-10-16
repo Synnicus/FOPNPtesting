@@ -13,6 +13,7 @@ import {
   type TouchableOpacityProps,
 } from 'react-native';
 import { useLocalization } from '@/context/LocalizationContext';
+import { useSystemUiSounds } from '@/context/SystemSoundsContext';
 import { getActiveLocale, translateText } from '@/data/localization';
 
 export function localizedConfirm(title: string, message?: string): boolean {
@@ -61,10 +62,15 @@ export const LocalizedTouchableOpacity = forwardRef<
   TouchableOpacityProps
 >(function LocalizedTouchableOpacity({ accessibilityLabel, accessibilityHint, ...props }, ref) {
   const { locale } = useLocalization();
+  const { playUiClick } = useSystemUiSounds();
   return (
     <NativeTouchableOpacity
       {...props}
       ref={ref}
+      onPress={props.onPress ? event => {
+        playUiClick();
+        props.onPress?.(event);
+      } : undefined}
       accessibilityLabel={accessibilityLabel ? translateText(accessibilityLabel, locale) : accessibilityLabel}
       accessibilityHint={accessibilityHint ? translateText(accessibilityHint, locale) : accessibilityHint}
     />
@@ -76,10 +82,15 @@ export const LocalizedPressable = forwardRef<
   PressableProps
 >(function LocalizedPressable({ accessibilityLabel, accessibilityHint, ...props }, ref) {
   const { locale } = useLocalization();
+  const { playUiClick } = useSystemUiSounds();
   return (
     <NativePressable
       {...props}
       ref={ref}
+      onPress={props.onPress ? event => {
+        playUiClick();
+        props.onPress?.(event);
+      } : undefined}
       accessibilityLabel={accessibilityLabel ? translateText(accessibilityLabel, locale) : accessibilityLabel}
       accessibilityHint={accessibilityHint ? translateText(accessibilityHint, locale) : accessibilityHint}
     />

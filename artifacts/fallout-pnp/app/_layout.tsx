@@ -16,6 +16,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { AppProvider } from '@/context/AppContext';
 import { LocalizationProvider } from '@/context/LocalizationContext';
+import { SystemSoundsProvider } from '@/context/SystemSoundsContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -53,13 +54,15 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AppProvider>
-            <LocalizationProvider>
-              <GestureHandlerRootView>
-                <KeyboardProvider>
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </LocalizationProvider>
+            <SystemSoundsProvider>
+              <LocalizationProvider>
+                <GestureHandlerRootView>
+                  <KeyboardProvider>
+                    <RootLayoutNav />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </LocalizationProvider>
+            </SystemSoundsProvider>
           </AppProvider>
         </QueryClientProvider>
       </ErrorBoundary>

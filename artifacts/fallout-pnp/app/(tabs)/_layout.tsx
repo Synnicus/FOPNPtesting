@@ -5,11 +5,13 @@ import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalization } from '@/context/LocalizationContext';
 import { translateText } from '@/data/localization';
+import { useSystemUiSounds } from '@/context/SystemSoundsContext';
 
 export default function TabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { locale } = useLocalization();
+  const { playUiClick } = useSystemUiSounds();
   // Respect the device's bottom safe area (home indicator / nav bar) so the
   // labels never get cut off, with a sensible minimum padding.
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'web' ? 14 : 20) + 6;
@@ -25,7 +27,7 @@ export default function TabLayout() {
   const inactiveTint = colors.mutedForeground;
 
   return (
-    <Tabs screenOptions={{ headerShown: false, tabBarStyle, tabBarActiveTintColor: activeTint, tabBarInactiveTintColor: inactiveTint, tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.5 } }}>
+    <Tabs screenListeners={{ tabPress: () => playUiClick() }} screenOptions={{ headerShown: false, tabBarStyle, tabBarActiveTintColor: activeTint, tabBarInactiveTintColor: inactiveTint, tabBarLabelStyle: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.5 } }}>
       <Tabs.Screen name="index" options={{ title: translateText('Combat', locale), tabBarIcon: ({ color, size }) => <Feather name="crosshair" size={size} color={color} /> }} />
       <Tabs.Screen name="characters" options={{ title: translateText('Characters', locale), tabBarIcon: ({ color, size }) => <Feather name="users" size={size} color={color} /> }} />
       <Tabs.Screen name="bestiary" options={{ title: translateText('Bestiary', locale), tabBarIcon: ({ color, size }) => <Feather name="book-open" size={size} color={color} /> }} />
