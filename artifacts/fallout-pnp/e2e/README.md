@@ -31,3 +31,13 @@ pnpm --filter @workspace/fallout-pnp run test:native:combatant-cards
 ```
 
 This flow opens the attacker and defender pickers from their combat cards. It does not require characters to exist and does not modify saved data.
+
+# Native manual catalog navigation regression
+
+Run against an installed, launchable Android or iOS build using:
+
+```sh
+pnpm --filter @workspace/fallout-pnp run test:native:manual-catalog
+```
+
+The flow adds a uniquely named character to the current campaign without clearing existing data. It opens the Mines & Traps Equipment category and a named Deathclaw Bestiary search from the Campaign manual reference, then returns to Campaign after each route and confirms the character remains present. Use a disposable campaign/device if you do not want to retain the test character. This check must run on a native device or simulator; source-level tests and browser previews are not equivalent.

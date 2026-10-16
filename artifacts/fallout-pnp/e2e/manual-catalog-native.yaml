@@ -1,0 +1,61 @@
+# Run against an installed, launchable Android or iOS build (not the web preview).
+# Supply APP_ID and a unique TEST_NAME with maestro -e; do not clear app data on launch.
+appId: ${APP_ID}
+---
+- launchApp
+
+# Add a known character to the currently active campaign without deleting existing data.
+- tapOn: "Characters"
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+# Open the mines-and-traps category from Campaign's manual and verify its filtered catalog.
+- tapOn: "Campaign"
+- scrollUntilVisible:
+    element:
+      id: quick-rules-search
+    direction: DOWN
+- tapOn:
+    id: quick-rules-search
+- inputText: "traps and mines"
+- hideKeyboard
+- tapOn:
+    id: quick-rule-catalog-link-equipment-hazards-1
+- assertVisible: "EQUIPMENT"
+- assertVisible: "Mines & Traps"
+- assertVisible: "Bullhorn Trap"
+- assertNotVisible: "Colt 6520 10mm Pistol"
+
+# Returning to Campaign must leave the active campaign's character data intact.
+- tapOn: "Campaign"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: UP
+- assertVisible: ${TEST_NAME}
+
+# Open a named creature search from the manual, not from the Bestiary tab itself.
+- scrollUntilVisible:
+    element:
+      id: quick-rules-search
+    direction: DOWN
+- tapOn:
+    id: quick-rules-search
+- eraseText: 40
+- inputText: "race"
+- hideKeyboard
+- tapOn:
+    id: quick-rule-catalog-link-race-overview-1
+- assertVisible: "BESTIARY"
+- assertVisible: "Deathclaw"
+
+# Returning again confirms the same campaign and character remain available.
+- tapOn: "Campaign"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: UP
+- assertVisible: ${TEST_NAME}
