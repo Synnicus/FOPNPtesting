@@ -14,7 +14,9 @@ router.get("/storage/public-objects/vault-radio/:fileName", async (req, res) => 
 
   try {
     const filePath = `vault-radio/${fileName}`;
-    const file = await objectStorage.searchPublicObject(filePath);
+    // Public search paths may already point at the vault-radio directory.
+    const file = await objectStorage.searchPublicObject(filePath)
+      ?? await objectStorage.searchPublicObject(fileName);
     if (!file) {
       res.status(404).json({ error: "File not found" });
       return;
