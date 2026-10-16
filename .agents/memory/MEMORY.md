@@ -22,3 +22,4 @@
 - [Post-merge database push](post-merge-db-push.md) — dependency installation plus Drizzle schema inspection needs more than a 20-second setup timeout.
 - [Campaign library archives](fallout-pnp-campaign-library.md) — keep library snapshots portable and embed portraits so campaign switching cannot break saved portrait references.
 - [Node test imports](node-test-imports.md) — direct `node:test` TypeScript runs cannot resolve the app’s `@/` aliases; keep tested data modules on relative imports.
+- [Expo workflow restarts](expo-workflow-restarts.md) — check for an existing Metro process before restarting; duplicate Expo sessions can prompt to move off the injected port.
