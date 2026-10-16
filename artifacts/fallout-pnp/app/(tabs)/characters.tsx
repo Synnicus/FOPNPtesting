@@ -321,6 +321,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
   const {
     allWeapons, allArmor, hardcoreRadiationRules,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -885,9 +886,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1, paddingTop: modalTopInset, backgroundColor: colors.background }}>
         {/* Header */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: Math.max(insets.top, 16), borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
           <TouchableOpacity onPress={onClose}><Feather name="x" size={24} color={colors.mutedForeground} /></TouchableOpacity>
           <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
             {character ? 'EDIT CHARACTER' : 'NEW CHARACTER'}
