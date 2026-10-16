@@ -5,6 +5,7 @@ import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as T
 import { getActiveLocale, translateText } from '@/data/localization';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { useAudioPlayer } from 'expo-audio';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
@@ -760,12 +761,30 @@ export default function CombatScreen() {
   const stackCombatantCards = windowWidth < 420 || fontScale > 1.2;
   const app = useApp();
   const combatScrollRef = useRef<ScrollView>(null);
+  const combatImpactPlayer = useAudioPlayer(require('../../assets/combat-impact.wav'));
   const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
   } = app;
+  const combatSoundsEnabledRef = useRef(app.combatSoundsEnabled);
+  combatSoundsEnabledRef.current = app.combatSoundsEnabled;
+  const playCombatImpact = useCallback(() => {
+    if (!combatSoundsEnabledRef.current) return;
+    combatImpactPlayer.volume = 0.55;
+    void combatImpactPlayer.seekTo(0)
+      .then(() => {
+        if (combatSoundsEnabledRef.current) combatImpactPlayer.play();
+      })
+      .catch(() => {});
+  }, [combatImpactPlayer]);
+  const lastAreaImpactRequestId = useRef(areaAttackReceipt?.requestId);
+  useEffect(() => {
+    if (!areaAttackReceipt || lastAreaImpactRequestId.current === areaAttackReceipt.requestId) return;
+    lastAreaImpactRequestId.current = areaAttackReceipt.requestId;
+    if (areaAttackReceipt.results.some(result => result.damage > 0)) playCombatImpact();
+  }, [areaAttackReceipt, playCombatImpact]);
 
   // Round tracker
   const [showRoundTracker, setShowRoundTracker] = useState(false);
@@ -2046,6 +2065,7 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     if (totalDamage > 0) applyCombatDamage(attackReceipt.current, defender.id, totalDamage,
       shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined);
+    if (totalDamage > 0) playCombatImpact();
     if (totalRadiationExposure > 0) adjustRadiation(defender.id, totalRadiationExposure);
     if (hasAppliedPoison) applyPoisonExposure(appliedPoisonResults);
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
@@ -2053,7 +2073,7 @@ export default function CombatScreen() {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect]);
+  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect, playCombatImpact]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).

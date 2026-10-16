@@ -642,7 +642,7 @@ export default function CampaignOptionsModal({
             />
             <PreferenceSwitchRow
               label="Combat Sounds"
-              description="Reserved for future combat sound effects. No combat sounds play yet."
+              description="Plays a brief impact when attack damage is applied."
               value={combatSoundsEnabled}
               onValueChange={setCombatSoundsEnabled}
               testID="combat-sounds-toggle"
