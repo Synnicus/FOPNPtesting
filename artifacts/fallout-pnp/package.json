@@ -8,6 +8,8 @@
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
     "test:rules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types data/*.test.ts",
+    "check:expo-compat": "CI=1 pnpm exec expo install --check && CI=1 pnpm exec expo-doctor",
+    "validate": "pnpm run typecheck && pnpm run test:rules && pnpm run check:expo-compat",
     "test:native:karma": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Karma regression $(date +%s)\" e2e/karma-native.yaml",
     "test:native:combatant-cards": "maestro test -e APP_ID=com.falloutpnpcalculator.app e2e/combatant-cards-native.yaml",
     "test:native:radiation": "maestro test -e APP_ID=com.falloutpnpcalculator.app -e \"TEST_NAME=Radiation regression $(date +%s)\" e2e/radiation-native.yaml",
@@ -32,6 +34,7 @@
     "expo": "~54.0.37",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.14",
+    "expo-doctor": "1.21.4",
     "expo-font": "~14.0.10",
     "expo-glass-effect": "~0.1.4",
     "expo-haptics": "~15.0.8",
@@ -63,6 +66,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "expo-asset": "~12.0.13",
     "expo-audio": "~1.1.1",
     "expo-file-system": "^19.0.24",
     "expo-sharing": "^14.0.8"
