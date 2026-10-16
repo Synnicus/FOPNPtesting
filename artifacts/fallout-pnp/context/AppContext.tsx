@@ -663,9 +663,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const cloneCharacter = useCallback((id: string) => {
     setState(s => {
-      const src = s.characters.find(c => c.id === id);
-      if (!src) return s;
-      return { ...s, characters: [...s.characters, { ...src, id: genId(), name: `${src.name} (Clone)` }] };
+      const sourceIndex = s.characters.findIndex(character => character.id === id);
+      if (sourceIndex < 0) return s;
+      const source = s.characters[sourceIndex];
+      const characters = [...s.characters];
+      characters.splice(sourceIndex + 1, 0, {
+        ...source,
+        id: genId(),
+        name: `${source.name} (Clone)`,
+      });
+      return { ...s, characters };
     });
   }, []);
 

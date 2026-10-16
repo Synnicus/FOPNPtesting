@@ -288,9 +288,9 @@ function SelectionModal<T>({ visible, onClose, onSelect, items, keyFn, renderIte
 }
 
 // ─── Confirm Modal (cross-platform; Alert.alert buttons don't work on web) ────
-function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, onCancel, onConfirm }: {
+function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, confirmColor, onCancel, onConfirm }: {
   visible: boolean; title: string; message: string; confirmLabel?: string; cancelLabel?: string;
-  onCancel: () => void; onConfirm: () => void;
+  confirmColor?: string; onCancel: () => void; onConfirm: () => void;
 }) {
   const colors = useColors();
   return (
@@ -306,7 +306,7 @@ function ConfirmModal({ visible, title, message, confirmLabel, cancelLabel, onCa
               <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{cancelLabel ?? 'CANCEL'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ flex: 1, paddingVertical: 14, alignItems: 'center' }} onPress={onConfirm}>
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: confirmColor ?? colors.destructive, letterSpacing: 1 }}>{confirmLabel ?? 'DELETE'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2217,6 +2217,9 @@ function PremadeGearRepairPicker({ visible, character, candidateWeaponIds, allWe
   );
 }
 
+type CharacterCardAction = 'heal' | 'storage' | 'copy' | 'moveUp' | 'moveDown';
+type PendingCharacterAction = { action: CharacterCardAction; characterId: string };
+
 // ─── Character Card ────────────────────────────────────────────────────────────
 function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor, onRepairPremadeGear, repairablePremadeWeaponIds }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
@@ -2414,6 +2417,7 @@ export default function CharactersScreen() {
   const [statusCleanupPrompt, setStatusCleanupPrompt] = useState<'injuries' | 'confirm' | null>(null);
   const [statusCleanupHealsInjuries, setStatusCleanupHealsInjuries] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
+  const [pendingCharacterAction, setPendingCharacterAction] = useState<PendingCharacterAction | null>(null);
   const [premadeRepairCharacter, setPremadeRepairCharacter] = useState<Character | null>(null);
   const [premadeRepairPickerVisible, setPremadeRepairPickerVisible] = useState(false);
   const [premadeRepairWeaponId, setPremadeRepairWeaponId] = useState<string | null>(null);
@@ -2439,6 +2443,91 @@ export default function CharactersScreen() {
     healCharacter(c.id, c.maxHp);
     updateCharacter({ ...c, currentHp: c.maxHp, isKnockedOut: false, knockOutRoundsLeft: 0 });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const askForCharacterAction = (action: CharacterCardAction, character: Character) => {
+    setPendingCharacterAction({ action, characterId: character.id });
+  };
+
+  const pendingActionCharacter = pendingCharacterAction
+    ? characters.find(character => character.id === pendingCharacterAction.characterId)
+    : undefined;
+  const pendingActionDetails = pendingCharacterAction && pendingActionCharacter
+    ? (() => {
+        const name = pendingActionCharacter.name;
+        switch (pendingCharacterAction.action) {
+          case 'heal':
+            return {
+              title: 'Heal Character?',
+              message: `Restore ${name} to full HP and clear unconsciousness?`,
+              confirmLabel: 'HEAL',
+            };
+          case 'storage':
+            return pendingActionCharacter.inStorage
+              ? {
+                  title: 'Return Character?',
+                  message: `Move ${name} from the storage chest back to the active character list?`,
+                  confirmLabel: 'RETURN',
+                }
+              : {
+                  title: 'Store Character?',
+                  message: `Find ${name} in the storage chest below.`,
+                  confirmLabel: 'STORE',
+                };
+          case 'copy':
+            return {
+              title: 'Copy Character?',
+              message: `Create a copy of ${name} with the same stats and equipment?`,
+              confirmLabel: 'COPY',
+            };
+          case 'moveUp':
+            return {
+              title: 'Move Character Up?',
+              message: `Move ${name} one position up in the list?`,
+              confirmLabel: 'MOVE UP',
+            };
+          case 'moveDown':
+            return {
+              title: 'Move Character Down?',
+              message: `Move ${name} one position down in the list?`,
+              confirmLabel: 'MOVE DOWN',
+            };
+        }
+      })()
+    : null;
+
+  const confirmCharacterAction = () => {
+    if (!pendingCharacterAction || !pendingActionCharacter) {
+      setPendingCharacterAction(null);
+      return;
+    }
+
+    const character = pendingActionCharacter;
+    switch (pendingCharacterAction.action) {
+      case 'heal':
+        resetHp(character);
+        break;
+      case 'storage':
+        toggleStorage(character);
+        break;
+      case 'copy':
+        cloneCharacter(character.id);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        break;
+      case 'moveUp':
+      case 'moveDown': {
+        const visibleCharacters = character.inStorage ? stored : active;
+        const index = visibleCharacters.findIndex(item => item.id === character.id);
+        const step = pendingCharacterAction.action === 'moveUp' ? -1 : 1;
+        const neighbor = visibleCharacters[index + step];
+        if (neighbor) {
+          moveCharacter(character.id, neighbor.id);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        break;
+      }
+    }
+    setPendingCharacterAction(null);
   };
 
   const resetAllHp = (healRadiation: boolean) => {
@@ -2498,11 +2587,6 @@ export default function CharactersScreen() {
 
   const renderCharacterCard = (item: Character, visibleCharacters: Character[]) => {
     const index = visibleCharacters.findIndex(character => character.id === item.id);
-    const move = (target: Character | undefined) => {
-      if (!target) return;
-      moveCharacter(item.id, target.id);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
     return (
       <CharacterCard
         key={item.id}
@@ -2519,12 +2603,12 @@ export default function CharactersScreen() {
         ghoulRadiationHealingOption={ghoulRadiationHealingOption}
         onEdit={() => { setEditingChar(item); setShowForm(true); }}
         onBio={() => setBioChar(item)}
-        onToggleStorage={() => toggleStorage(item)}
-        onResetHp={() => resetHp(item)}
+        onToggleStorage={() => askForCharacterAction('storage', item)}
+        onResetHp={() => askForCharacterAction('heal', item)}
         onDelete={() => setDeleteTarget(item)}
-        onClone={() => { cloneCharacter(item.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-        onMoveUp={() => move(visibleCharacters[index - 1])}
-        onMoveDown={() => move(visibleCharacters[index + 1])}
+        onClone={() => askForCharacterAction('copy', item)}
+        onMoveUp={() => askForCharacterAction('moveUp', item)}
+        onMoveDown={() => askForCharacterAction('moveDown', item)}
         canMoveUp={index > 0}
         canMoveDown={index >= 0 && index < visibleCharacters.length - 1}
       />
@@ -2710,9 +2794,19 @@ export default function CharactersScreen() {
       />
 
       <ConfirmModal
+        visible={pendingActionDetails !== null}
+        title={pendingActionDetails?.title ?? ''}
+        message={pendingActionDetails?.message ?? ''}
+        confirmLabel={pendingActionDetails?.confirmLabel}
+        confirmColor={colors.primary}
+        onCancel={() => setPendingCharacterAction(null)}
+        onConfirm={confirmCharacterAction}
+      />
+
+      <ConfirmModal
         visible={deleteTarget !== null}
-        title="DELETE CHARACTER"
-        message={`Delete ${deleteTarget?.name ?? 'this character'}? This cannot be undone.`}
+        title="Delete Character?"
+        message={`Permanently remove ${deleteTarget?.name ?? 'this character'} from the campaign? This cannot be undone.`}
         confirmLabel="DELETE"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
