@@ -331,6 +331,7 @@ export default function CampaignOptionsModal({
 }) {
   const palette = useColors();
   const insets = useSafeAreaInsets();
+  const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
   const {
     hardcoreRadiationRules,
     setHardcoreRadiationRules,
@@ -392,7 +393,7 @@ export default function CampaignOptionsModal({
     <>
       <Modal visible={visible} animationType="slide" onRequestClose={closeOptions} testID="campaign-options-modal">
         <View
-          style={{ flex: 1, paddingTop: insets.top, backgroundColor: palette.background }}
+          style={{ flex: 1, paddingTop: modalTopInset, backgroundColor: palette.background }}
           accessibilityElementsHidden={showHardcorePreview}
           importantForAccessibility={showHardcorePreview ? 'no-hide-descendants' : 'auto'}
         >
