@@ -9,13 +9,13 @@ import {
 import { useApp } from '@/context/AppContext';
 
 const RADIO_TRACKS = [
-  { id: 'aint-misbehavin', file: '9684-Aint-misbehavin_1792110276845.mp3' },
-  { id: 'it-had-to-be-you', file: 'it-had-to-be-you.mp3' },
-  { id: 'rhapsody-in-blue', file: 'Rhapsody_in_Blue_1792110276845.mp3' },
-  { id: 'alabamy-bound', file: 'The78Prof_-_1925_HITS_ARCHIVE__Alabamy_Bound_-_Blossom_Seeley_1792110276845.mp3' },
-  { id: 'angry', file: 'The78Prof_-_1925_HITS_ARCHIVE__Angry_-_Art_Gillham_(The_Whispe_1792110276845.mp3' },
-  { id: 'the-prisoners-song', file: 'The78Prof_-_1925_HITS_ARCHIVE__The_Prisoner’s_Song_-_Vernon_Da_1792110276846.mp3' },
-  { id: 'the-titanic', file: 'The78Prof_-_1925_HITS_ARCHIVE__The_Titanic_-_Ernest_V._Stonema_1792110276846.mp3' },
+  { id: 'aint-misbehavin', file: '9684-Aint-misbehavin.mp3' },
+  { id: 'it-had-to-be-you', file: 'Isham_Jones_-_It_Had_to_Be_You_(1924).mp3' },
+  { id: 'rhapsody-in-blue', file: 'Rhapsody in Blue.mp3' },
+  { id: 'alabamy-bound', file: 'The78Prof - 1925 HITS ARCHIVE_ Alabamy Bound - Blossom Seeley.mp3' },
+  { id: 'angry', file: 'The78Prof - 1925 HITS ARCHIVE_ Angry - Art Gillham (The Whispering Pianist).mp3' },
+  { id: 'the-prisoners-song', file: 'The78Prof - 1925 HITS ARCHIVE_ The Prisoner’s Song - Vernon Dalhart (Victor 19427--Acoustic version).mp3' },
+  { id: 'the-titanic', file: 'The78Prof - 1925 HITS ARCHIVE_ The Titanic - Ernest V. Stoneman.mp3' },
 ] as const;
 
 const RADIO_FOLDER = 'vault-radio';
