@@ -130,7 +130,7 @@ export const getGetVaultRadioTrackUrl = (fileName: string,) => {
 
 
 
-  return `/api/storage/objects/vault-radio/${fileName}`
+  return `/api/storage/public-objects/vault-radio/${fileName}`
 }
 
 /**
@@ -153,7 +153,7 @@ export const getVaultRadioTrack = async (fileName: string, options?: RequestInit
 
 export const getGetVaultRadioTrackQueryKey = (fileName: string,) => {
     return [
-    `/api/storage/objects/vault-radio/${fileName}`
+    `/api/storage/public-objects/vault-radio/${fileName}`
     ] as const;
     }
 
@@ -207,7 +207,7 @@ export const getListVaultRadioTracksUrl = () => {
 
 
 
-  return `/api/storage/objects/vault-radio`
+  return `/api/storage/public-objects/vault-radio`
 }
 
 /**
@@ -230,7 +230,7 @@ export const listVaultRadioTracks = async ( options?: RequestInit): Promise<Vaul
 
 export const getListVaultRadioTracksQueryKey = () => {
     return [
-    `/api/storage/objects/vault-radio`
+    `/api/storage/public-objects/vault-radio`
     ] as const;
     }
 
