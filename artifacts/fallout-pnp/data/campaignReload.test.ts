@@ -230,6 +230,79 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       }
     });
 
+    await t.test('importCampaign preserves an explicit fixed-AC policy on a linked custom NPC', async () => {
+      storage.clear();
+      campaign = undefined;
+      const fixedTemplate: BestiaryTemplate = {
+        ...legacyTemplate,
+        id: 'fixed-custom-armored',
+        name: 'Fixed Custom Armored NPC',
+        usesDerivedArmorClass: true,
+      };
+      const fixedNpc = {
+        ...spawnBestiaryTemplate(fixedTemplate, BUILT_IN_WEAPONS, fixedTemplate.name, 'fixed-custom-npc'),
+        usesDerivedArmorClass: false,
+      };
+      const fixedCampaign = {
+        characters: [fixedNpc],
+        customBestiaryTemplates: [fixedTemplate],
+        customWeapons: [],
+        customArmor: [],
+        customAmmo: [],
+        initiativeEntries: [],
+      };
+      const fixedRaw = JSON.stringify(fixedCampaign);
+      assert.equal(fixedNpc.usesDerivedArmorClass, false);
+      assert.equal(fixedNpc.bestiaryTemplateId, fixedTemplate.id);
+      assert.equal(fixedNpc.manualDerivedStats?.armorClass, 36);
+
+      try {
+        const empty = await mount();
+        assert.equal(empty.loaded, true);
+        const writesBeforeImport = writes.length;
+        await act(async () => {
+          assert.equal(empty.importCampaign(fixedRaw), true, 'fixed-AC campaign import accepted');
+        });
+        assert.ok(campaign);
+        const assertFixedArmor = (
+          state: Pick<ReturnType<typeof useApp>, 'characters' | 'customBestiaryTemplates'>,
+          stage: string,
+        ) => {
+          assert.equal(state.customBestiaryTemplates.length, 1, stage);
+          const template = state.customBestiaryTemplates[0];
+          assert.equal(template.id, fixedTemplate.id, stage);
+          assert.equal(template.usesDerivedArmorClass, true, `${stage}: custom template remains derived`);
+          assert.equal(state.characters.length, 1, stage);
+          const npc = state.characters[0];
+          assert.equal(npc.bestiaryTemplateId, template.id, stage);
+          assert.equal(npc.usesDerivedArmorClass, false, `${stage}: explicit fixed-AC policy preserved`);
+          assert.equal(npc.manualDerivedStats?.armorClass, 36, `${stage}: manual AC preserved`);
+          assert.equal(npc.equippedBodyArmorId, 'greater_banding', `${stage}: body armor preserved`);
+          assert.equal(npc.equippedHelmetId, 'metal_helmet', `${stage}: helmet preserved`);
+          const resolved = sheet(npc);
+          assert.equal(resolved.armorClass, 67, `${stage}: manual AC and equipment both contribute`);
+          assert.equal(resolved.armorClassBreakdown.agility, 5, stage);
+          assert.equal(resolved.armorClassBreakdown.manual, 31, stage);
+          assert.equal(resolved.armorClassBreakdown.bodyArmor, 25, stage);
+          assert.equal(resolved.armorClassBreakdown.helmet, 6, stage);
+        };
+
+        assertFixedArmor(campaign, 'imported state');
+        assert.deepEqual(writes.slice(writesBeforeImport), [STORAGE_KEY], 'import triggers save-back');
+        assertFixedArmor(JSON.parse(storage.get(STORAGE_KEY)!), 'saved import');
+
+        await act(async () => renderer!.unmount());
+        renderer = undefined;
+        campaign = undefined;
+        const readsBeforeReload = reads.length;
+        assertFixedArmor(await mount(), 'imported save reload');
+        assert.deepEqual(reads.slice(readsBeforeReload), [STORAGE_KEY], 'fresh provider reads imported save');
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
+
     for (const hasStat of [false, true]) {
       for (const outcome of [
         'success', 'failure', 'cancel',
