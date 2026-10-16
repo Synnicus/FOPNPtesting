@@ -48,6 +48,7 @@ import {
 } from '@/data/skillAdvancement';
 import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
+import { getLegacyPremadeRepairCandidateWeaponIds } from '@/data/condition';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import {
@@ -69,6 +70,10 @@ import {
 const LEGACY_TRAIT_PERK_IDS = new Set(['finesse', 'fast_metabolism', 'chem_resistant', 'glowing_one']);
 
 const DAMAGE_TYPES: DamageType[] = ['normal', 'laser', 'fire', 'plasma', 'explosion'];
+const PREMADE_WEAPON_IDS = [...new Set(PREMADE_CHARACTERS.flatMap(p => [
+  ...(p.inventoryWeaponIds ?? []),
+  ...(p.weaponId ? [p.weaponId] : []),
+]))];
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -2156,13 +2161,63 @@ function PremadePickerModal({ visible, onClose, onPick }: {
   );
 }
 
+function PremadeGearRepairPicker({ visible, character, candidateWeaponIds, allWeapons, onClose, onSelect }: {
+  visible: boolean;
+  character: Character | null;
+  candidateWeaponIds: string[];
+  allWeapons: { id: string; name: string }[];
+  onClose: () => void;
+  onSelect: (weaponId: string) => void;
+}) {
+  const colors = useColors();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', padding: 20 }}>
+        <View style={{ width: '100%', maxWidth: 420, maxHeight: '80%', backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+          <View style={{ padding: 18, gap: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>LEGACY PREMADE GEAR REPAIR</Text>
+            <Text style={{ fontSize: 13, lineHeight: 19, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              {character?.name ?? 'This character'} and its premade origin cannot be verified from saved data. Choose a weapon only if you recognize it as premade gear incorrectly marked broken by the old migration. Legitimate wear should not be reset.
+            </Text>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
+              Only fully broken, currently carried weapons found in premade loadouts are listed.
+            </Text>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 12, gap: 8 }}>
+            {candidateWeaponIds.map(weaponId => {
+              const weaponName = allWeapons.find(weapon => weapon.id === weaponId)?.name ?? weaponId;
+              return (
+                <TouchableOpacity
+                  key={weaponId}
+                  testID={`legacy-premade-repair-select-${weaponId}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select ${weaponName} for possible legacy premade repair`}
+                  style={{ padding: 13, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary }}
+                  onPress={() => onSelect(weaponId)}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{weaponName}</Text>
+                  <Text style={{ marginTop: 3, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>Currently marked broken · select to review repair</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <TouchableOpacity onPress={onClose} style={{ padding: 14, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CANCEL</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Character Card ────────────────────────────────────────────────────────────
-function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor }: {
+function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption, onEdit, onDelete, onClone, onBio, onToggleStorage, onResetHp, onMoveUp, onMoveDown, canMoveUp, canMoveDown, allWeapons, allArmor, onRepairPremadeGear, repairablePremadeWeaponIds }: {
   character: Character; onEdit: () => void; onDelete: () => void; onClone: () => void;
   hardcoreRadiationRules: boolean;
   mutantGhoulRadiationRules: boolean;
   ghoulRadiationHealingOption: GhoulRadiationHealingOption;
   onBio: () => void; onToggleStorage: () => void; onResetHp: () => void;
+  onRepairPremadeGear: () => void; repairablePremadeWeaponIds: string[];
   onMoveUp: () => void; onMoveDown: () => void; canMoveUp: boolean; canMoveDown: boolean;
   allWeapons: { id: string; name: string }[];
   allArmor: Armor[];
@@ -2197,6 +2252,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
     ['intelligence', 'INT'], ['agility', 'AGI'], ['luck', 'LCK'],
   ];
   return (
+    <View style={{ gap: 6 }}>
     <TouchableOpacity style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <CharacterAvatar portrait={character.portrait} name={character.name} size={48} fit={character.portraitFit ?? 'cover'} offset={character.portraitOffset} />
@@ -2316,6 +2372,18 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
       )}
       <HPBar current={character.currentHp} max={character.maxHp} height={4} showText={false} />
     </TouchableOpacity>
+    {repairablePremadeWeaponIds.length > 0 && (
+      <TouchableOpacity
+        testID={`legacy-premade-repair-open-${character.id}`}
+        accessibilityRole="button"
+        accessibilityLabel={`Review possible old premade gear repair for ${character.name}`}
+        onPress={onRepairPremadeGear}
+        style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.destructive + '88', backgroundColor: colors.destructive + '14' }}
+      >
+        <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.5 }}>REVIEW LEGACY PREMADE GEAR REPAIR</Text>
+      </TouchableOpacity>
+    )}
+    </View>
   );
 }
 
@@ -2326,6 +2394,7 @@ export default function CharactersScreen() {
   const {
     characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter,
     allWeapons, allArmor, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+    restorePremadeWeaponCondition,
   } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -2338,6 +2407,12 @@ export default function CharactersScreen() {
   const [statusCleanupPrompt, setStatusCleanupPrompt] = useState<'injuries' | 'confirm' | null>(null);
   const [statusCleanupHealsInjuries, setStatusCleanupHealsInjuries] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
+  const [premadeRepairCharacter, setPremadeRepairCharacter] = useState<Character | null>(null);
+  const [premadeRepairPickerVisible, setPremadeRepairPickerVisible] = useState(false);
+  const [premadeRepairWeaponId, setPremadeRepairWeaponId] = useState<string | null>(null);
+  const premadeRepairCandidateWeaponIds = premadeRepairCharacter
+    ? getLegacyPremadeRepairCandidateWeaponIds(premadeRepairCharacter, PREMADE_WEAPON_IDS)
+    : [];
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
   const active = characters.filter(c => !c.inStorage && matchesSearch(c));
@@ -2427,6 +2502,11 @@ export default function CharactersScreen() {
         character={item}
         allWeapons={allWeapons}
         allArmor={allArmor}
+        repairablePremadeWeaponIds={getLegacyPremadeRepairCandidateWeaponIds(item, PREMADE_WEAPON_IDS)}
+        onRepairPremadeGear={() => {
+          setPremadeRepairCharacter(item);
+          setPremadeRepairPickerVisible(true);
+        }}
         hardcoreRadiationRules={hardcoreRadiationRules}
         mutantGhoulRadiationRules={mutantGhoulRadiationRules}
         ghoulRadiationHealingOption={ghoulRadiationHealingOption}
@@ -2533,6 +2613,40 @@ export default function CharactersScreen() {
         visible={showPremades}
         onClose={() => setShowPremades(false)}
         onPick={handlePickPremade}
+      />
+      <PremadeGearRepairPicker
+        visible={premadeRepairPickerVisible}
+        character={premadeRepairCharacter}
+        candidateWeaponIds={premadeRepairCandidateWeaponIds}
+        allWeapons={allWeapons}
+        onClose={() => {
+          setPremadeRepairPickerVisible(false);
+          setPremadeRepairCharacter(null);
+          setPremadeRepairWeaponId(null);
+        }}
+        onSelect={weaponId => {
+          setPremadeRepairWeaponId(weaponId);
+          setPremadeRepairPickerVisible(false);
+        }}
+      />
+      <ConfirmModal
+        visible={premadeRepairCharacter !== null && premadeRepairWeaponId !== null}
+        title="RESTORE THIS PREMADE WEAPON?"
+        message={`Only continue if ${premadeRepairCharacter?.name ?? 'this character'} is a premade and this weapon was marked broken by the old migration—not by combat wear. This sets only ${allWeapons.find(weapon => weapon.id === premadeRepairWeaponId)?.name ?? premadeRepairWeaponId ?? 'the selected weapon'} to pristine. Its ammo, armor, other weapons, and all other condition history stay unchanged.`}
+        confirmLabel="RESTORE TO PRISTINE"
+        cancelLabel="KEEP CONDITION"
+        onCancel={() => {
+          setPremadeRepairWeaponId(null);
+          setPremadeRepairCharacter(null);
+        }}
+        onConfirm={() => {
+          if (premadeRepairCharacter && premadeRepairWeaponId) {
+            restorePremadeWeaponCondition(premadeRepairCharacter.id, premadeRepairWeaponId);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          setPremadeRepairWeaponId(null);
+          setPremadeRepairCharacter(null);
+        }}
       />
 
       {/* Card-level biography editor */}

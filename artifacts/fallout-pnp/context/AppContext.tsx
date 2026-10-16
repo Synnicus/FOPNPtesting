@@ -6,7 +6,7 @@ import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIA
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
-import { clampConditionBoxes, CONDITION_BOXES_MAX, markConditionSemanticsV2, migrateConditionSemantics } from '@/data/condition';
+import { clampConditionBoxes, CONDITION_BOXES_MAX, markConditionSemanticsV2, migrateConditionSemantics, restorePremadeWeaponCondition } from '@/data/condition';
 import { computeModEffects } from '@/data/mods';
 import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
@@ -517,6 +517,7 @@ interface AppContextValue extends AppState {
   reloadWeapon: (characterId: string, weaponId: string) => void;
   jamWeapon: (characterId: string, weaponId: string) => void;
   setWeaponCondition: (characterId: string, weaponId: string, filledBoxes: number) => void;
+  restorePremadeWeaponCondition: (characterId: string, weaponId: string) => void;
   setAmmoType: (characterId: string, weaponId: string, ammoTypeId: string | undefined) => void;
   equipWeapon: (characterId: string, weaponId: string, hand?: 'left' | 'right' | 'both') => void;
   setActiveWeapon: (characterId: string, weaponId: string) => void;
@@ -1340,6 +1341,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const restorePremadeWeaponConditionForCharacter = useCallback((characterId: string, weaponId: string) => {
+    setState(s => {
+      const character = s.characters.find(c => c.id === characterId);
+      if (!character) return s;
+      const weaponAmmoStates = restorePremadeWeaponCondition(character.weaponAmmoStates, weaponId);
+      if (weaponAmmoStates === character.weaponAmmoStates) return s;
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates } : c),
+      };
+    });
+  }, []);
+
   // ─── Injuries ────────────────────────────────────────────────────────────────
 
   const addInjury = useCallback((characterId: string, injury: Injury) => {
@@ -1944,7 +1958,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         hardcoreRadiationRules: state.hardcoreRadiationRules,
           setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
-      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon,
+      spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,
+      restorePremadeWeaponCondition: restorePremadeWeaponConditionForCharacter,
+      setAmmoType, equipWeapon, setActiveWeapon,
       addEffect, removeEffect, applyChem,
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,

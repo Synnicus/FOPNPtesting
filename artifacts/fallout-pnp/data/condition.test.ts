@@ -5,6 +5,8 @@ import {
   CONDITION_BOXES_MAX,
   markConditionSemanticsV2,
   migrateConditionSemantics,
+  getLegacyPremadeRepairCandidateWeaponIds,
+  restorePremadeWeaponCondition,
 } from './condition.ts';
 import type { Character } from '../context/types.ts';
 
@@ -46,4 +48,64 @@ test('legacy remaining-box saves still migrate once to filled-box semantics', ()
     migrateConditionSemantics(migrated).characters?.map(character => character.weaponAmmoStates?.[0].conditionBoxes),
     [10, 0],
   );
+});
+
+test('explicit premade repair changes only the selected broken weapon condition', () => {
+  const states = [
+    { weaponId: 'premade-rifle', currentAmmo: 3, ammoTypeId: '5.56', conditionBoxes: 10 },
+    { weaponId: 'other-weapon', currentAmmo: 7, ammoTypeId: '9mm', conditionBoxes: 4 },
+  ];
+
+  assert.deepEqual(restorePremadeWeaponCondition(states, 'premade-rifle'), [
+    { weaponId: 'premade-rifle', currentAmmo: 3, ammoTypeId: '5.56', conditionBoxes: 0 },
+    { weaponId: 'other-weapon', currentAmmo: 7, ammoTypeId: '9mm', conditionBoxes: 4 },
+  ]);
+  assert.equal(states[0].conditionBoxes, 10, 'repair does not mutate the saved input');
+});
+
+test('explicit premade repair does nothing to non-broken or missing weapons', () => {
+  const states = [
+    { weaponId: 'premade-rifle', currentAmmo: 3, conditionBoxes: 9 },
+  ];
+
+  assert.equal(restorePremadeWeaponCondition(states, 'premade-rifle'), states);
+  assert.equal(restorePremadeWeaponCondition(states, 'not-carried'), states);
+});
+
+test('repair candidates are only broken carried weapons found in premade loadouts', () => {
+  const savedCharacter = {
+    id: 'candidate',
+    type: 'pc',
+    inventoryWeaponIds: ['10mm_pistol', 'custom_weapon'],
+    weaponAmmoStates: [
+      { weaponId: '10mm_pistol', currentAmmo: 12, conditionBoxes: 10 },
+      { weaponId: 'custom_weapon', currentAmmo: 4, conditionBoxes: 10 },
+      { weaponId: 'combat_knife', currentAmmo: 0, conditionBoxes: 10 },
+      { weaponId: 'combat_knife', currentAmmo: 0, conditionBoxes: 9 },
+    ],
+  } as Pick<Character, 'type' | 'inventoryWeaponIds' | 'weaponAmmoStates'>;
+
+  assert.deepEqual(
+    getLegacyPremadeRepairCandidateWeaponIds(savedCharacter, ['10mm_pistol', 'combat_knife']),
+    ['10mm_pistol'],
+  );
+});
+
+test('repair candidates exclude a broken premade weapon that is no longer carried', () => {
+  const savedCharacter = {
+    id: 'candidate',
+    type: 'pc',
+    inventoryWeaponIds: [],
+    weaponAmmoStates: [{ weaponId: '10mm_pistol', currentAmmo: 12, conditionBoxes: 10 }],
+  } as Pick<Character, 'type' | 'inventoryWeaponIds' | 'weaponAmmoStates'>;
+  assert.deepEqual(getLegacyPremadeRepairCandidateWeaponIds(savedCharacter, ['10mm_pistol']), []);
+});
+
+test('repair candidates are not offered for NPCs', () => {
+  const savedNpc = {
+    type: 'npc',
+    inventoryWeaponIds: ['10mm_pistol'],
+    weaponAmmoStates: [{ weaponId: '10mm_pistol', currentAmmo: 12, conditionBoxes: 10 }],
+  } as Pick<Character, 'type' | 'inventoryWeaponIds' | 'weaponAmmoStates'>;
+  assert.deepEqual(getLegacyPremadeRepairCandidateWeaponIds(savedNpc, ['10mm_pistol']), []);
 });

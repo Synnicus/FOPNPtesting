@@ -1,4 +1,4 @@
-import type { Character } from '../context/types.ts';
+import type { Character, WeaponAmmoState } from '../context/types.ts';
 
 // ─── Weapon Condition — Fallout PnP 2.0 manual ───────────────────────────────
 // Every weapon has 10 condition boxes. `conditionBoxes` in WeaponAmmoState
@@ -35,6 +35,45 @@ export function conditionLabel(filledBoxes: number): string {
   if (f >= 8) return 'Poor (−10% to hit)';
   if (f >= 4) return 'Worn';
   return 'Good';
+}
+
+/**
+ * Explicit repair for a weapon the user has identified as legacy premade gear.
+ * Only a fully broken weapon is eligible; all its other state and all sibling
+ * weapon states are preserved.
+ */
+export function restorePremadeWeaponCondition(
+  states: WeaponAmmoState[],
+  weaponId: string,
+): WeaponAmmoState[] {
+  const target = states.find(state => state.weaponId === weaponId);
+  if (!target || target.conditionBoxes !== CONDITION_BOXES_MAX) return states;
+  return states.map(state => state.weaponId === weaponId
+    ? { ...state, conditionBoxes: 0 }
+    : state);
+}
+
+/**
+ * Find fully broken, currently carried weapons that appear in premade
+ * loadouts. This is only a candidate list; saved data cannot prove provenance.
+ */
+export function getLegacyPremadeRepairCandidateWeaponIds(
+  character: Pick<Character, 'type' | 'weaponAmmoStates' | 'inventoryWeaponIds' | 'equippedWeaponId' | 'leftHandWeaponId' | 'rightHandWeaponId'>,
+  premadeWeaponIds: readonly string[],
+): string[] {
+  if (character.type !== 'pc') return [];
+  const premadeIds = new Set(premadeWeaponIds);
+  const carriedWeaponIds = new Set([
+    ...(character.inventoryWeaponIds ?? []),
+    character.equippedWeaponId,
+    character.leftHandWeaponId,
+    character.rightHandWeaponId,
+  ].filter((id): id is string => !!id));
+  return (character.weaponAmmoStates ?? [])
+    .filter(state => state.conditionBoxes === CONDITION_BOXES_MAX
+      && carriedWeaponIds.has(state.weaponId)
+      && premadeIds.has(state.weaponId))
+    .map(state => state.weaponId);
 }
 
 type ConditionSemanticsState = {
