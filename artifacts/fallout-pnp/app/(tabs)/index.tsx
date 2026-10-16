@@ -17,7 +17,7 @@ import {
   baseCritChance as calcBaseCritChance, hasPerk, BodyPart, HELMET_HEAD_CRIT_REDUCTION,
   applyHelmetHeadCritReduction, criticalFailureSelfDamage,
 } from '@/data/criticals';
-import { computeInjuryEffects } from '@/data/injuries';
+import { computeInjuryEffects, createCombatInjury } from '@/data/injuries';
 import {
   CONDITION_BOXES_MAX, clampConditionBoxes, conditionAfterCriticalFailure, conditionToHitPenalty, isWeaponJammed, conditionLabel,
 } from '@/data/condition';
@@ -2007,9 +2007,7 @@ export default function CombatScreen() {
 
   // ─── Injury helpers for crit effects ─────────────────────────────────────────
   const makeInjury = useCallback((location: Injury['location'], description: string): Injury => ({
-    id: genId(), location, severity: 'crippled', description,
-    toHitPenalty: 0, skillPenalty: {}, movementPenalty: 0, isActive: true,
-    source: `${attacker?.name ?? 'Unknown attacker'} with ${weapon?.name ?? 'Unarmed attack'}`,
+    ...createCombatInjury(genId(), { location, description }, attacker?.name, weapon?.name),
   }), [attacker, weapon]);
 
   // Pick a limb side (left/right) — prefer the side without an existing injury.

@@ -43,6 +43,25 @@ export interface InjuryEffectsSummary {
   notes: string[];
 }
 
+/** Create a combat-generated injury with the attacker and selected weapon recorded. */
+export function createCombatInjury(
+  id: string,
+  injury: Pick<Injury, 'location' | 'description'>,
+  attackerName: string | undefined,
+  weaponName: string | undefined,
+): Injury {
+  return {
+    id,
+    ...injury,
+    severity: 'crippled',
+    toHitPenalty: 0,
+    skillPenalty: {},
+    movementPenalty: 0,
+    isActive: true,
+    source: `${attackerName ?? 'Unknown attacker'} with ${weaponName ?? 'Unarmed attack'}`,
+  };
+}
+
 function isCrippling(inj: Injury): boolean {
   return inj.isActive && (inj.severity === 'crippled' || inj.severity === 'broken');
 }
