@@ -362,6 +362,7 @@ function isCharacterRecord(value: unknown): value is Character {
       && typeof injury.description === 'string'
       && isFiniteNumber(injury.toHitPenalty)
       && isFiniteNumber(injury.movementPenalty)
+      && (injury.source === undefined || typeof injury.source === 'string')
       && typeof injury.isActive === 'boolean')
     && typeof value.isKnockedOut === 'boolean'
     && isStringArray(value.conditions)

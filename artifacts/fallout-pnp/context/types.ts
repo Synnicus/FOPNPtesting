@@ -191,7 +191,8 @@ export interface Injury {
   skillPenalty: Partial<CharacterSkills>;
   movementPenalty: number;
   isActive: boolean;
-  source: string;
+  /** Optional for injuries from older campaign exports that predate attribution. */
+  source?: string;
 }
 
 export interface KarmaLogEntry {

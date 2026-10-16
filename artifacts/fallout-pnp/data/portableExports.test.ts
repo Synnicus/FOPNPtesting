@@ -165,6 +165,87 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
+test('portable campaign round-trips injury attribution, descriptions, and effects', () => {
+  const injury = {
+    id: 'injury-1',
+    location: 'leftArm' as const,
+    severity: 'crippled' as const,
+    description: 'The left arm is crippled.',
+    toHitPenalty: -2,
+    skillPenalty: { smallGuns: -2 },
+    movementPenalty: 0,
+    isActive: true,
+    source: 'Raider with Hunting Rifle',
+  };
+  const campaign = createCampaignBundle({
+    ...state,
+    characters: [{ ...character, injuries: [injury] }],
+  }, []);
+
+  assert.equal(campaign.state.characters[0].injuries[0].source, injury.source);
+  const parsed = parseCampaignFile(JSON.stringify(campaign));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'portable') {
+    assert.deepEqual(parsed.bundle.state.characters[0].injuries[0], injury);
+  }
+});
+
+test('campaign imports accept older injuries without source attribution', () => {
+  const { source: _source, ...olderInjury } = {
+    id: 'injury-legacy',
+    location: 'leftArm' as const,
+    severity: 'crippled' as const,
+    description: 'The left arm is crippled.',
+    toHitPenalty: -2,
+    skillPenalty: { smallGuns: -2 },
+    movementPenalty: 0,
+    isActive: true,
+    source: 'Raider with Hunting Rifle',
+  };
+  const olderCharacter = { ...character, injuries: [olderInjury] };
+  const portable = createCampaignBundle({ ...state, characters: [olderCharacter] }, []);
+
+  for (const file of [
+    { ...portable, state: { ...portable.state, characters: [olderCharacter] } },
+    { ...state, characters: [olderCharacter] },
+  ]) {
+    const parsed = parseCampaignFile(JSON.stringify(file));
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      const importedCharacter = parsed.source === 'portable'
+        ? parsed.bundle.state.characters[0]
+        : parsed.state.characters[0];
+      assert.deepEqual(importedCharacter.injuries[0], olderInjury);
+      assert.equal('source' in importedCharacter.injuries[0], false);
+    }
+  }
+});
+
+test('portable campaign imports reject malformed injury attribution', () => {
+  const bundle = createCampaignBundle({
+    ...state,
+    characters: [{
+      ...character,
+      injuries: [{
+        id: 'injury-invalid',
+        location: 'leftArm',
+        severity: 'crippled',
+        description: 'The left arm is crippled.',
+        toHitPenalty: -2,
+        skillPenalty: { smallGuns: -2 },
+        movementPenalty: 0,
+        isActive: true,
+        source: 'Raider with Hunting Rifle',
+      }],
+    }],
+  }, []);
+  const malformed = JSON.parse(JSON.stringify(bundle)) as {
+    state: { characters: Array<{ injuries: Array<Record<string, unknown>> }> };
+  };
+  malformed.state.characters[0].injuries[0].source = 42;
+  assert.equal(parseCampaignFile(JSON.stringify(malformed)).ok, false);
+});
+
 test('portable campaign exports round-trip theme, audio, and mutant radiation preferences', () => {
   const bundle = createCampaignBundle({
     ...state,
