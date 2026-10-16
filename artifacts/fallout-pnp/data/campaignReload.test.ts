@@ -303,6 +303,51 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       }
     });
 
+    await t.test('importCampaign rejects invalid JSON without replacing a populated campaign', async () => {
+      storage.clear();
+      campaign = undefined;
+
+      try {
+        const empty = await mount();
+        assert.equal(empty.loaded, true);
+        await act(async () => {
+          assert.equal(empty.importCampaign(raw), true, 'populated campaign import accepted');
+        });
+        const current = () => {
+          assert.ok(campaign);
+          return campaign;
+        };
+        assert.equal(current().characters.length, 2);
+        assert.equal(current().customBestiaryTemplates.length, 1);
+
+        const liveBefore = current().exportCampaign();
+        const storedBefore = storage.get(STORAGE_KEY);
+        assert.ok(storedBefore, 'populated campaign saved');
+        const writesBefore = writes.length;
+
+        for (const [label, invalidJson] of [
+          ['malformed JSON', '{'],
+          ['missing characters array', JSON.stringify({
+            customBestiaryTemplates: [],
+            customWeapons: [],
+            customArmor: [],
+            customAmmo: [],
+            initiativeEntries: [],
+          })],
+        ] as const) {
+          await act(async () => {
+            assert.equal(current().importCampaign(invalidJson), false, `${label} rejected`);
+          });
+          assert.equal(current().exportCampaign(), liveBefore, `${label} leaves live campaign unchanged`);
+          assert.equal(storage.get(STORAGE_KEY), storedBefore, `${label} leaves saved campaign unchanged`);
+          assert.equal(writes.length, writesBefore, `${label} does not trigger a replacement save`);
+        }
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
+
     for (const hasStat of [false, true]) {
       for (const outcome of [
         'success', 'failure', 'cancel',
