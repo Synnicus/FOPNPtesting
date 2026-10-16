@@ -231,9 +231,14 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     });
 
     for (const hasStat of [false, true]) {
-      for (const outcome of ['success', 'failure', 'cancel'] as const) {
+      for (const outcome of [
+        'success', 'failure', 'cancel',
+        'healer unconscious', 'target conscious', 'healer removed', 'target removed',
+      ] as const) {
         for (const roundAdvance of ['nextTurn', 'nextRound'] as const) {
-          await t.test(`${hasStat ? 'Stat!' : 'ordinary'} delayed healer: reload, ${roundAdvance}, reload, ${outcome}`, async () => {
+          const invalidOutcome = !['success', 'failure', 'cancel'].includes(outcome);
+          const invalidateBeforeReady = invalidOutcome && roundAdvance === 'nextTurn';
+          await t.test(`${hasStat ? 'Stat!' : 'ordinary'} delayed healer: reload, ${roundAdvance}, reload, ${outcome}${invalidOutcome ? (invalidateBeforeReady ? ' before ready' : ' after ready') : ''}`, async () => {
             storage.clear();
             campaign = undefined;
             await mount();
@@ -308,6 +313,100 @@ test('AppProvider campaign storage lifecycle', async (t) => {
               assert.equal(targetEntry().currentHp, 0);
               assert.equal(targetEntry().currentAP, 0);
             };
+            const verifyInvalidation = async (actionId: string) => {
+              const apBefore = actor().currentAP;
+              const removedId = outcome === 'healer removed' ? healer.id
+                : outcome === 'target removed' ? target.id : undefined;
+              await change(() => {
+                if (removedId) current().removeInitiativeEntry(`entry-${removedId}`);
+                else if (outcome === 'healer unconscious') current().setKnockedOut(healer.id, 10);
+                else {
+                  // Independent recovery, not the pending Heal Fallen outcome.
+                  current().healCharacter(target.id, 4);
+                  current().setKnockedOut(target.id, 0);
+                }
+              });
+              const expectedAP = outcome === 'healer unconscious' ? 0 : apBefore;
+              const assertAP = (ap: number) => {
+                assert.equal(actor().currentAP, ap, 'invalidation never refunds or charges AP');
+                const entry = current().initiativeEntries.find(e => e.characterId === healer.id);
+                if (entry) assert.equal(entry.currentAP, ap, 'initiative AP matches');
+                assert.equal(stored().characters.find((c: Character) => c.id === healer.id).currentAP, ap);
+              };
+              const assertTarget = () => {
+                assert.equal(fallen().currentHp, outcome === 'target conscious' ? 4 : 0);
+                assert.equal(fallen().isKnockedOut, outcome !== 'target conscious');
+                assert.equal(fallen().revivedNoAPUntilRound, undefined, 'invalid healing never applies a revival lock');
+                assert.equal(fallen().position, 'prone');
+                assert.equal(fallen().currentAP, 0);
+              };
+              assertAP(expectedAP);
+              assertTarget();
+              if (removedId) {
+                assert.ok(current().characters.some(c => c.id === removedId), 'combat removal retains character');
+                assert.equal(current().initiativeEntries.some(e => e.characterId === removedId), false);
+                assert.deepEqual(current().pendingCombatSkillActions, []);
+                assert.equal(actor().combatDefenseSuppressed, false);
+              } else {
+                assert.equal(current().pendingCombatSkillActions.length, 1);
+              }
+              // Compare persisted values: JSON intentionally drops undefined optional fields.
+              const characterSnapshot = () => JSON.parse(JSON.stringify(current().characters));
+              const invalidatedCharacters = characterSnapshot();
+              const invalidatedEntries = structuredClone(current().initiativeEntries);
+              await reload();
+              assert.deepEqual(characterSnapshot(), invalidatedCharacters);
+              assert.deepEqual(current().initiativeEntries, invalidatedEntries);
+              assertAP(expectedAP);
+              assertTarget();
+
+              if (invalidateBeforeReady && !removedId) {
+                await change(() => current().completeHealFallen({
+                  actionId, resolution: { method: 'automaticSuccess' },
+                }));
+                assert.equal(current().combatSkillReceipt?.status, 'rejected');
+                assert.equal(current().combatSkillReceipt?.spentAP, 0);
+                assertAP(expectedAP);
+                assertTarget();
+                await change(() => current().nextRound());
+                assertAP(expectedAP); // Other combatant's turn must not refund AP.
+                await change(() => current().nextTurn());
+                assert.equal(current().activeEntryId, 'entry-healer');
+                assertAP(outcome === 'healer unconscious' ? 0 : 7); // Normal own-turn refill only.
+                assert.equal(current().combatSkillReceipt?.success, false);
+                assert.match(current().combatSkillReceipt?.reason ?? '', /unconscious healer|already conscious/);
+                assert.deepEqual(current().pendingCombatSkillActions, []);
+                assertTarget();
+              }
+
+              const charactersBeforeCompletion = characterSnapshot();
+              const entriesBeforeCompletion = structuredClone(current().initiativeEntries);
+              await change(() => current().completeHealFallen({
+                actionId, resolution: { method: 'automaticSuccess' },
+              }));
+              assert.equal(current().combatSkillReceipt?.status,
+                !invalidateBeforeReady && !removedId ? 'completed' : 'rejected');
+              if (!invalidateBeforeReady && !removedId) {
+                assert.equal(current().combatSkillReceipt?.success, false);
+                assert.match(current().combatSkillReceipt?.reason ?? '', /unconscious or absent|missing or conscious/);
+              }
+              assert.equal(current().combatSkillReceipt?.spentAP, 0);
+              assert.deepEqual(current().pendingCombatSkillActions, []);
+              assert.deepEqual(stored().pendingCombatSkillActions, []);
+              assert.deepEqual(characterSnapshot(), charactersBeforeCompletion);
+              assert.deepEqual(current().initiativeEntries, entriesBeforeCompletion);
+              await reload();
+              await change(() => current().completeHealFallen({
+                actionId, resolution: { method: 'automaticSuccess' },
+              }));
+              assert.equal(current().combatSkillReceipt?.status, 'rejected');
+              assert.equal(current().combatSkillReceipt?.spentAP, 0);
+              assert.deepEqual(current().pendingCombatSkillActions, []);
+              assert.deepEqual(characterSnapshot(), charactersBeforeCompletion, 'stale action cannot revive or change AP after reload');
+              assert.deepEqual(current().initiativeEntries, entriesBeforeCompletion);
+              assert.deepEqual(stored().characters, charactersBeforeCompletion);
+              assert.deepEqual(stored().initiativeEntries, entriesBeforeCompletion);
+            };
             try {
               await change(() => characters.forEach(c => current().addCharacter(c)));
               await change(() => current().startCombat(entries));
@@ -338,6 +437,10 @@ test('AppProvider campaign storage lifecycle', async (t) => {
               await reload();
               assertActor(0, true);
               assertUnconscious();
+              if (invalidateBeforeReady) {
+                await verifyInvalidation(actionId);
+                return;
+              }
               await change(() => current().completeHealFallen({
                 actionId, resolution: { method: 'automaticSuccess' },
               }));
@@ -368,6 +471,11 @@ test('AppProvider campaign storage lifecycle', async (t) => {
               assertActor(5, false);
               assertUnconscious();
               assert.equal(current().pendingCombatSkillActions[0].readyToResolve, true);
+
+              if (invalidOutcome) {
+                await verifyInvalidation(actionId);
+                return;
+              }
 
               await change(() => outcome === 'cancel'
                 ? current().cancelCombatSkillAction(actionId)
