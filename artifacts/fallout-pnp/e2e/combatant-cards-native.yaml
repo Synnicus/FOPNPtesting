@@ -1,0 +1,22 @@
+# Run against an installed, launchable Android or iOS build (not the web preview).
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn:
+    id: continue-campaign
+- scrollUntilVisible:
+    element:
+      id: combat-attacker-card
+    direction: DOWN
+- tapOn:
+    id: combat-attacker-card
+- assertVisible: "SELECT ATTACKER"
+- tapOn:
+    id: combat-character-picker-close
+- scrollUntilVisible:
+    element:
+      id: combat-defender-card
+    direction: DOWN
+- tapOn:
+    id: combat-defender-card
+- assertVisible: "SELECT DEFENDER"

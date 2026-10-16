@@ -21,3 +21,13 @@ pnpm --filter @workspace/fallout-pnp run test:native:karma
 ```
 
 The flow creates a uniquely named character without clearing campaign data. It checks that invalid and zero changes do not create entries, positive and negative reasons remain in order, a capped change stores only its applied amount, the Karma title follows a level change without changing the character name, and all saved entries survive a cold app restart. This must run on a native device or simulator; rule tests and web preview checks are not equivalent.
+
+# Native combatant picker regression
+
+Run against an installed, launchable Android or iOS build using:
+
+```sh
+pnpm --filter @workspace/fallout-pnp run test:native:combatant-cards
+```
+
+This flow opens the attacker and defender pickers from their combat cards. It does not require characters to exist and does not modify saved data.
