@@ -413,7 +413,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Scorri o trascina orizzontalmente, oppure usa i pulsanti freccia per vedere altre schede.",
     "Scroll tabs right": "Scorri schede a destra",
     "CUSTOM AMMO": "MUNIZIONI PERSONALIZZATE",
-    "Public Domain 1920s": "Anni ’20 di pubblico dominio"
+    "Public Domain 1920s": "Anni ’20 di pubblico dominio",
+    "NOW PLAYING": "IN RIPRODUZIONE",
+    "Previous track": "Brano precedente",
+    "Next track": "Brano successivo",
+    "Loading track…": "Caricamento del brano…",
+    "No track playing": "Nessun brano in riproduzione",
+    "Unknown artist": "Artista sconosciuto"
   },
   "de": {
     "SPAWN": "ERSTELLEN",
@@ -851,7 +857,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Wische oder ziehe horizontal, oder nutze die Pfeiltasten, um mehr Tabs zu sehen.",
     "Scroll tabs right": "Tabs nach rechts scrollen",
     "CUSTOM AMMO": "BENUTZERDEFINIERTE MUNITION",
-    "Public Domain 1920s": "1920er-Musik gemeinfrei"
+    "Public Domain 1920s": "1920er-Musik gemeinfrei",
+    "NOW PLAYING": "JETZT LÄUFT",
+    "Previous track": "Vorheriger Titel",
+    "Next track": "Nächster Titel",
+    "Loading track…": "Titel wird geladen…",
+    "No track playing": "Kein Titel wird wiedergegeben",
+    "Unknown artist": "Unbekannter Künstler"
   },
   "fr": {
     "Equipped:": "Équipé :",
@@ -1268,7 +1280,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Balayez ou faites glisser horizontalement, ou utilisez les boutons fléchés pour voir plus d'onglets.",
     "Scroll tabs right": "Faire défiler les onglets vers la droite",
     "CUSTOM AMMO": "MUNITIONS PERSONNALISÉES",
-    "Public Domain 1920s": "Années 1920 du domaine public"
+    "Public Domain 1920s": "Années 1920 du domaine public",
+    "NOW PLAYING": "EN COURS DE LECTURE",
+    "Previous track": "Piste précédente",
+    "Next track": "Piste suivante",
+    "Loading track…": "Chargement du morceau…",
+    "No track playing": "Aucun morceau en cours",
+    "Unknown artist": "Artiste inconnu"
   },
   "es-ES": {
     "Equipped:": "Equipado:",
@@ -1692,7 +1710,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslice o arrastre horizontalmente, o use los botones de flecha para ver más pestañas.",
     "Scroll tabs right": "Desplazar pestañas a la derecha",
     "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA",
-    "Public Domain 1920s": "Años 20 de dominio público"
+    "Public Domain 1920s": "Años 20 de dominio público",
+    "NOW PLAYING": "REPRODUCIENDO AHORA",
+    "Previous track": "Pista anterior",
+    "Next track": "Pista siguiente",
+    "Loading track…": "Cargando pista…",
+    "No track playing": "No hay ninguna pista en reproducción",
+    "Unknown artist": "Artista desconocido"
   },
   "es-MX": {
     "Equipped:": "Equipado:",
@@ -2116,7 +2140,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslice o arrastre horizontalmente, o use los botones de flecha para ver más pestañas.",
     "Scroll tabs right": "Desplazar pestañas a la derecha",
     "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA",
-    "Public Domain 1920s": "Años 20 de dominio público"
+    "Public Domain 1920s": "Años 20 de dominio público",
+    "NOW PLAYING": "REPRODUCIENDO AHORA",
+    "Previous track": "Pista anterior",
+    "Next track": "Pista siguiente",
+    "Loading track…": "Cargando pista…",
+    "No track playing": "No hay ninguna pista en reproducción",
+    "Unknown artist": "Artista desconocido"
   },
   "ja": {
     "Equipped:": "装備中:",
@@ -2564,7 +2594,13 @@
     "Scroll tabs right": "タブを右にスクロール",
     "% Gas ·": "% ガス ·",
     "CUSTOM AMMO": "カスタム弾薬",
-    "Public Domain 1920s": "パブリックドメインの1920年代"
+    "Public Domain 1920s": "パブリックドメインの1920年代",
+    "NOW PLAYING": "再生中",
+    "Previous track": "前の曲",
+    "Next track": "次の曲",
+    "Loading track…": "曲を読み込み中…",
+    "No track playing": "再生中の曲はありません",
+    "Unknown artist": "不明なアーティスト"
   },
   "pl": {
     "Equipped:": "Wyposażono:",
@@ -2993,7 +3029,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Przesuń lub przeciągnij poziomo, albo użyj przycisków strzałek, aby zobaczyć więcej kart.",
     "Scroll tabs right": "Przewiń karty w prawo",
     "CUSTOM AMMO": "AMUNICJA NIESTANDARDOWA",
-    "Public Domain 1920s": "Lata 20. XX wieku w domenie publicznej"
+    "Public Domain 1920s": "Lata 20. XX wieku w domenie publicznej",
+    "NOW PLAYING": "TERAZ ODTWARZANE",
+    "Previous track": "Poprzedni utwór",
+    "Next track": "Następny utwór",
+    "Loading track…": "Wczytywanie utworu…",
+    "No track playing": "Żaden utwór nie jest odtwarzany",
+    "Unknown artist": "Nieznany wykonawca"
   },
   "pt-BR": {
     "Equipped:": "Equipado:",
@@ -3420,7 +3462,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslize ou arraste horizontalmente, ou use os botões de seta para ver mais abas.",
     "Scroll tabs right": "Rolar abas para a direita",
     "CUSTOM AMMO": "MUNIÇÃO PERSONALIZADA",
-    "Public Domain 1920s": "Anos 1920 em domínio público"
+    "Public Domain 1920s": "Anos 1920 em domínio público",
+    "NOW PLAYING": "TOCANDO AGORA",
+    "Previous track": "Faixa anterior",
+    "Next track": "Próxima faixa",
+    "Loading track…": "Carregando faixa…",
+    "No track playing": "Nenhuma faixa está tocando",
+    "Unknown artist": "Artista desconhecido"
   },
   "ru": {
     "Equipped:": "Экипировано:",
@@ -3847,7 +3895,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Проведите пальцем или перетащите по горизонтали, или используйте кнопки со стрелками, чтобы увидеть другие вкладки.",
     "Scroll tabs right": "Прокрутить вкладки вправо",
     "CUSTOM AMMO": "ПОЛЬЗОВАТELЬСКИЕ БОЕПРИПАСЫ",
-    "Public Domain 1920s": "Музыка 1920-х в общественном достоянии"
+    "Public Domain 1920s": "Музыка 1920-х в общественном достоянии",
+    "NOW PLAYING": "СЕЙЧАС ИГРАЕТ",
+    "Previous track": "Предыдущий трек",
+    "Next track": "Следующий трек",
+    "Loading track…": "Загрузка трека…",
+    "No track playing": "Трек не воспроизводится",
+    "Unknown artist": "Неизвестный исполнитель"
   },
   "zh-Hant": {
     "Equipped:": "已裝備:",
@@ -4286,7 +4340,13 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平滑動或拖動，或使用箭頭按鈕查看更多標籤頁。",
     "Scroll tabs right": "向右滾動標籤頁",
     "CUSTOM AMMO": "自訂彈藥",
-    "Public Domain 1920s": "1920年代公有領域音樂"
+    "Public Domain 1920s": "1920年代公有領域音樂",
+    "NOW PLAYING": "正在播放",
+    "Previous track": "上一首",
+    "Next track": "下一首",
+    "Loading track…": "正在載入曲目…",
+    "No track playing": "目前沒有播放曲目",
+    "Unknown artist": "未知演出者"
   },
   "zh-Hans": {
     "Equipped:": "已装备:",
@@ -4725,6 +4785,12 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平滑动或拖动，或使用箭头按钮查看更多标签页。",
     "Scroll tabs right": "向右滚动标签页",
     "CUSTOM AMMO": "自定义弹药",
-    "Public Domain 1920s": "1920年代公有领域音乐"
+    "Public Domain 1920s": "1920年代公有领域音乐",
+    "NOW PLAYING": "正在播放",
+    "Previous track": "上一首",
+    "Next track": "下一首",
+    "Loading track…": "正在加载曲目…",
+    "No track playing": "当前没有播放曲目",
+    "Unknown artist": "未知艺术家"
   }
 }

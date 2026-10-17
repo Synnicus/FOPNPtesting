@@ -7,20 +7,30 @@ import {
   useListVaultRadioTracks,
 } from '@workspace/api-client-react';
 import { useApp } from '@/context/AppContext';
-
-const RADIO_TRACKS = [
-  { id: 'aint-misbehavin', file: '9684-Aint-misbehavin.mp3' },
-  { id: 'it-had-to-be-you', file: 'Isham_Jones_-_It_Had_to_Be_You_(1924).mp3' },
-  { id: 'rhapsody-in-blue', file: 'Rhapsody in Blue.mp3' },
-  { id: 'alabamy-bound', file: 'The78Prof - 1925 HITS ARCHIVE_ Alabamy Bound - Blossom Seeley.mp3' },
-  { id: 'angry', file: 'The78Prof - 1925 HITS ARCHIVE_ Angry - Art Gillham (The Whispering Pianist).mp3' },
-  { id: 'the-prisoners-song', file: 'The78Prof - 1925 HITS ARCHIVE_ The Prisoner’s Song - Vernon Dalhart (Victor 19427--Acoustic version).mp3' },
-  { id: 'the-titanic', file: 'The78Prof - 1925 HITS ARCHIVE_ The Titanic - Ernest V. Stoneman.mp3' },
-] as const;
+import {
+  createVaultRadioTrack,
+  getAdjacentVaultRadioIndex,
+  VAULT_RADIO_TRACKS,
+  type VaultRadioTrack,
+} from '@/data/vaultRadio';
 
 const RADIO_FOLDER = 'vault-radio';
 const CACHE_FOLDER = 'vault-radio-cache';
-const VaultRadioStatusContext = createContext({ hasPlaybackError: false });
+type VaultRadioStatus = {
+  hasPlaybackError: boolean;
+  currentTrack: VaultRadioTrack | null;
+  canSkip: boolean;
+  skipPrevious: () => void;
+  skipNext: () => void;
+};
+
+const VaultRadioStatusContext = createContext<VaultRadioStatus>({
+  hasPlaybackError: false,
+  currentTrack: null,
+  canSkip: false,
+  skipPrevious: () => {},
+  skipNext: () => {},
+});
 
 function getTrackUrl(fileName: string) {
   const configuredDomain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -62,12 +72,12 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
   const radioTracks = useMemo(() => {
     const uploadedFiles = trackList?.tracks ?? [];
     const uploadedSet = new Set(uploadedFiles);
-    const knownTracks = RADIO_TRACKS.filter(track => uploadedSet.has(track.file));
+    const knownTracks = VAULT_RADIO_TRACKS.filter(track => uploadedSet.has(track.file));
     const knownFiles = new Set<string>(knownTracks.map(track => track.file));
     const additionalTracks = uploadedFiles
       .filter(file => !knownFiles.has(file))
       .sort((a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }))
-      .map(file => ({ id: file, file }));
+      .map(createVaultRadioTrack);
     return [...knownTracks, ...additionalTracks];
   }, [trackList]);
   const generation = useRef(0);
@@ -76,6 +86,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
   const enabledRef = useRef(musicEnabled);
   const volumeRef = useRef(musicVolume);
   const [hasPlaybackError, setHasPlaybackError] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState<VaultRadioTrack | null>(null);
 
   enabledRef.current = musicEnabled;
   volumeRef.current = musicVolume;
@@ -92,14 +103,32 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
       player.loop = false;
       player.volume = volumeRef.current;
       player.play();
+      setCurrentTrack(track);
       setHasPlaybackError(false);
     } catch (error) {
       if (generation.current !== playbackGeneration || !enabledRef.current) return;
       console.warn(`Vault Radio could not load ${track.id}.`, error);
       player.pause();
+      setCurrentTrack(null);
       setHasPlaybackError(true);
     }
   }, [player, radioTracks]);
+
+  const skipTrack = useCallback((direction: -1 | 1) => {
+    if (!enabledRef.current || radioTracks.length < 2) return;
+    const nextIndex = getAdjacentVaultRadioIndex(currentTrackIndex.current, direction, radioTracks.length);
+    if (nextIndex === null) return;
+    const playbackGeneration = ++generation.current;
+    currentTrackIndex.current = nextIndex;
+    finishedTrack.current = true;
+    setCurrentTrack(null);
+    setHasPlaybackError(false);
+    player.pause();
+    void playTrack(nextIndex, playbackGeneration);
+  }, [player, playTrack, radioTracks.length]);
+
+  const skipPrevious = useCallback(() => skipTrack(-1), [skipTrack]);
+  const skipNext = useCallback(() => skipTrack(1), [skipTrack]);
 
   useEffect(() => {
     player.volume = musicVolume;
@@ -110,8 +139,8 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
       if (status.didJustFinish && enabledRef.current && !finishedTrack.current) {
         if (radioTracks.length === 0) return;
         finishedTrack.current = true;
-        const currentIndex = currentTrackIndex.current ?? 0;
-        const nextIndex = (currentIndex + 1) % RADIO_TRACKS.length;
+        const nextIndex = getAdjacentVaultRadioIndex(currentTrackIndex.current, 1, radioTracks.length);
+        if (nextIndex === null) return;
         currentTrackIndex.current = nextIndex;
         void playTrack(nextIndex, generation.current);
       } else if (!status.didJustFinish && status.playing) {
@@ -125,6 +154,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
     const playbackGeneration = ++generation.current;
     if (!musicEnabled) {
       currentTrackIndex.current = null;
+      setCurrentTrack(null);
       player.pause();
       setHasPlaybackError(false);
       return () => {
@@ -134,6 +164,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
 
     if (trackListLoading) {
       currentTrackIndex.current = null;
+      setCurrentTrack(null);
       player.pause();
       setHasPlaybackError(false);
       return () => {
@@ -143,6 +174,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
 
     if (radioTracks.length === 0) {
       currentTrackIndex.current = null;
+      setCurrentTrack(null);
       player.pause();
       setHasPlaybackError(true);
       return () => {
@@ -153,6 +185,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
     setHasPlaybackError(false);
     const firstTrackIndex = Math.floor(Math.random() * radioTracks.length);
     currentTrackIndex.current = firstTrackIndex;
+    setCurrentTrack(null);
     void playTrack(firstTrackIndex, playbackGeneration);
 
     return () => {
@@ -162,7 +195,13 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
   }, [musicEnabled, player, playTrack, radioTracks.length, trackListLoading]);
 
   return (
-    <VaultRadioStatusContext.Provider value={{ hasPlaybackError }}>
+    <VaultRadioStatusContext.Provider value={{
+      hasPlaybackError,
+      currentTrack,
+      canSkip: musicEnabled && radioTracks.length > 1 && (currentTrack !== null || hasPlaybackError),
+      skipPrevious,
+      skipNext,
+    }}>
       {children}
     </VaultRadioStatusContext.Provider>
   );

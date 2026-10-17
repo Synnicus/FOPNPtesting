@@ -150,6 +150,16 @@ test('translated interface fallbacks override English identity entries and match
     assert.notEqual(runtimeTranslateText('CUSTOM ARMOR', locale), 'CUSTOM ARMOR', locale);
     assert.notEqual(runtimeTranslateText('CUSTOM AMMO', locale), 'CUSTOM AMMO', locale);
     assert.notEqual(runtimeTranslateText('Public Domain 1920s', locale), 'Public Domain 1920s', locale);
+    for (const source of [
+      'NOW PLAYING',
+      'Previous track',
+      'Next track',
+      'Loading track…',
+      'No track playing',
+      'Unknown artist',
+    ]) {
+      assert.notEqual(runtimeTranslateText(source, locale), source, `${locale} translates ${source}`);
+    }
   }
   assert.notEqual(
     runtimeTranslateText('Move Alex one position up in the list?', 'ja'),

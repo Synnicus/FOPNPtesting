@@ -41,6 +41,105 @@ function SectionHeading({ title }: { title: string }) {
   );
 }
 
+function VaultRadioNowPlaying({
+  track,
+  hasPlaybackError,
+  canSkip,
+  onPrevious,
+  onNext,
+}: {
+  track: { title: string; artist: string } | null;
+  hasPlaybackError: boolean;
+  canSkip: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  const palette = useColors();
+  return (
+    <View style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: palette.border,
+      borderRadius: palette.radius,
+      backgroundColor: palette.card,
+    }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <Text style={{
+          fontSize: 10,
+          fontFamily: 'Inter_700Bold',
+          color: palette.primary,
+          letterSpacing: 1.1,
+        }}>
+          NOW PLAYING
+        </Text>
+        {track ? (
+          <>
+            <Text
+              numberOfLines={2}
+              style={{ fontSize: 13, lineHeight: 17, fontFamily: 'Inter_700Bold', color: palette.foreground }}
+            >
+              {track.title}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}
+            >
+              {track.artist}
+            </Text>
+          </>
+        ) : (
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+            {hasPlaybackError ? 'No track playing' : 'Loading track…'}
+          </Text>
+        )}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Previous track"
+          disabled={!canSkip}
+          testID="vault-radio-previous"
+          onPress={onPrevious}
+          style={{
+            width: 38,
+            height: 38,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 1,
+            borderColor: palette.border,
+            borderRadius: palette.radius,
+            opacity: canSkip ? 1 : 0.45,
+          }}
+        >
+          <Feather name="skip-back" size={17} color={canSkip ? palette.primary : palette.mutedForeground} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Next track"
+          disabled={!canSkip}
+          testID="vault-radio-next"
+          onPress={onNext}
+          style={{
+            width: 38,
+            height: 38,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 1,
+            borderColor: palette.border,
+            borderRadius: palette.radius,
+            opacity: canSkip ? 1 : 0.45,
+          }}
+        >
+          <Feather name="skip-forward" size={17} color={canSkip ? palette.primary : palette.mutedForeground} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function PreferenceSwitchRow({
   label,
   description,
@@ -351,7 +450,13 @@ export default function CampaignOptionsModal({
     setMusicVolume,
   } = useApp();
   const { locale, setLocale } = useLocalization();
-  const { hasPlaybackError } = useVaultRadioStatus();
+  const {
+    hasPlaybackError,
+    currentTrack,
+    canSkip,
+    skipPrevious,
+    skipNext,
+  } = useVaultRadioStatus();
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
   const previewTriggerRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
@@ -654,6 +759,15 @@ export default function CampaignOptionsModal({
               onValueChange={setMusicEnabled}
               testID="vault-radio-toggle"
             />
+            {musicEnabled && (
+              <VaultRadioNowPlaying
+                track={currentTrack}
+                hasPlaybackError={hasPlaybackError}
+                canSkip={canSkip}
+                onPrevious={skipPrevious}
+                onNext={skipNext}
+              />
+            )}
             <PreferenceSliderRow
               label="Vault Radio volume"
               description="Set the volume for Vault Radio music."
