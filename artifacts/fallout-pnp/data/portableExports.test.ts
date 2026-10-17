@@ -221,6 +221,50 @@ test('campaign imports accept older injuries without source attribution', () => 
   }
 });
 
+test('individual character exports preserve injury attribution, descriptions, active state, and penalties', () => {
+  const injury = {
+    id: 'injury-character-export',
+    location: 'rightArm' as const,
+    severity: 'broken' as const,
+    description: 'A raider shot the Courier in the right arm.',
+    toHitPenalty: -3,
+    skillPenalty: { smallGuns: -2, energyWeapons: -1 },
+    movementPenalty: -1,
+    isActive: true,
+    source: 'Raider with Hunting Rifle',
+  };
+  const exported = createCharacterBundle({ ...character, injuries: [injury] }, [], []);
+
+  assert.deepEqual(exported.character.injuries[0], injury);
+  const parsed = parseIndividualFile(JSON.stringify(exported));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.kind === 'character') {
+    assert.deepEqual(parsed.bundle.character.injuries[0], injury);
+  }
+});
+
+test('individual character imports accept older injuries without source attribution', () => {
+  const { source: _source, ...olderInjury } = {
+    id: 'injury-character-legacy',
+    location: 'leftArm' as const,
+    severity: 'crippled' as const,
+    description: 'The left arm is crippled.',
+    toHitPenalty: -2,
+    skillPenalty: { smallGuns: -2 },
+    movementPenalty: 0,
+    isActive: true,
+    source: 'Raider with Hunting Rifle',
+  };
+  const exported = createCharacterBundle({ ...character, injuries: [olderInjury] }, [], []);
+  const parsed = parseIndividualFile(JSON.stringify(exported));
+
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.kind === 'character') {
+    assert.deepEqual(parsed.bundle.character.injuries[0], olderInjury);
+    assert.equal('source' in parsed.bundle.character.injuries[0], false);
+  }
+});
+
 test('portable campaign imports reject malformed injury attribution', () => {
   const bundle = createCampaignBundle({
     ...state,
