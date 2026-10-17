@@ -48,15 +48,19 @@ function combinedProtectionFor(
   return { dt: armor.dt + npDt, dr: armor.dr + npDr };
 }
 
-// ─── Spawn Modal ─────────────────────────────────────────────────────────────
-function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor }: {
+// ─── Bestiary detail page ────────────────────────────────────────────────────
+function BestiaryDetailModal({ template, visible, onClose, onSpawn, allWeapons, allArmor }: {
   template: BestiaryTemplate | null; visible: boolean;
   onClose: () => void; onSpawn: (name: string) => void;
   allWeapons: import('@/context/types').Weapon[];
   allArmor: Armor[];
 }) {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const [customName, setCustomName] = useState('');
+  useEffect(() => {
+    setCustomName('');
+  }, [template?.id, visible]);
   if (!template) return null;
   const spawnName = customName.trim() || template.name;
   const attacks = (template.naturalAttacks ?? []).map(attack => ({
@@ -65,17 +69,39 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
   })).filter(attack => !!attack.weapon);
   const spawnBody = allArmor.find(a => a.id === template.equippedBodyArmorId);
   const spawnHelmet = allArmor.find(a => a.id === template.equippedHelmetId);
+  const carriedWeapons = (template.inventoryWeaponIds ?? [])
+    .map(id => allWeapons.find(weapon => weapon.id === id))
+    .filter((weapon): weapon is NonNullable<typeof weapon> => !!weapon);
+  const equippedWeapon = template.equippedWeaponId
+    ? allWeapons.find(weapon => weapon.id === template.equippedWeaponId)
+    : undefined;
+  const skills = Object.entries(template.skills)
+    .filter(([, value]) => Number(value) > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.8)' }}>
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 14 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>SPAWN {template.name.toUpperCase()}</Text>
-            <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
+    <Modal visible={visible} transparent={false} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: colors.border }}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to Bestiary" onPress={onClose} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="arrow-left" size={21} color={colors.primary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>BESTIARY ENTRY</Text>
+            <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary }} numberOfLines={1}>{template.name}</Text>
           </View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close Bestiary entry" onPress={onClose} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="x" size={21} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
 
-          {/* Stats row */}
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 14 }}>
+          {template.description && (
+            <Text style={{ fontSize: 14, lineHeight: 20, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              {template.description}
+            </Text>
+          )}
+
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {[
               ['HP', template.maxHp], ['AC', template.armorClass], ['AP', template.maxAP],
@@ -89,53 +115,72 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
             ))}
           </View>
 
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>PR {template.poisonResistance ?? 0}%</Text>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>RR {template.radiationResistance}%</Text>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>GR {template.gasResistance}/{template.gasResistanceSecondary ?? 0}</Text>
+          <View style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>RESISTANCES</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              <Text style={{ fontSize: 12, color: colors.foreground }}>Poison {template.poisonResistance ?? 0}%</Text>
+              <Text style={{ fontSize: 12, color: colors.foreground }}>Radiation {template.radiationResistance}%</Text>
+              <Text style={{ fontSize: 12, color: colors.foreground }}>Gas {template.gasResistance}/{template.gasResistanceSecondary ?? 0}</Text>
+              <Text style={{ fontSize: 12, color: colors.foreground }}>Electricity {template.electricityResistance}%</Text>
+            </View>
           </View>
 
-          {/* Top combat skills */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {SKILL_SHORTHAND.map(sk => (
-              template.skills[sk] > 0 && (
-                <View key={sk} style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.secondary, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{SKILL_SHORT_LABELS[sk]}</Text>
-                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{template.skills[sk]}%</Text>
-                </View>
-              )
-            ))}
-          </View>
-
-          {attacks.map(({ weapon, hitChance, notes }) => weapon && (
-            <Text key={weapon.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
-              {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
-            </Text>
-          ))}
-          {!attacks.length && template.equippedWeaponId && (
-            <Text style={{ fontSize: 12, color: colors.foreground }}>
-              Equipped: {allWeapons.find(w => w.id === template.equippedWeaponId)?.name ?? template.equippedWeaponId}
-            </Text>
-          )}
-
-          {/* Derived DT/DR (armor + natural protection) */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          <View style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>DAMAGE PROTECTION</Text>
             {NP_TYPES.map(t => {
               const c = combinedProtectionFor(template.naturalProtection, spawnBody, spawnHelmet, t);
               return (
-                <View key={t.type} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{DAMAGE_TYPE_NAMES[t.type].charAt(0)}</Text>
-                  {c.dt > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.foreground }}>DT {c.dt}</Text>}
-                  {c.dr > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>DR {c.dr}%</Text>}
+                <View key={t.type} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 12, color: colors.foreground }}>{DAMAGE_TYPE_NAMES[t.type]}</Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>DT {c.dt} · DR {c.dr}%</Text>
                 </View>
               );
             })}
           </View>
 
-          {template.description && (
-            <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>{template.description}</Text>
-          )}
+          <View style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>SKILLS</Text>
+            {skills.length ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {skills.map(([skill, value]) => {
+                  const name = skill.replace(/([A-Z])/g, ' $1').replace(/^./, first => first.toUpperCase());
+                  return (
+                    <View key={skill} style={{ paddingHorizontal: 8, paddingVertical: 5, backgroundColor: colors.secondary, borderRadius: 5 }}>
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{name}</Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{value}%</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : <Text style={{ fontSize: 12, color: colors.mutedForeground }}>No listed skills.</Text>}
+          </View>
 
+          <View style={{ padding: 12, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>EQUIPMENT & ATTACKS</Text>
+            {spawnBody && <Text style={{ fontSize: 12, color: colors.foreground }}>Body armor: {spawnBody.name}</Text>}
+            {spawnHelmet && <Text style={{ fontSize: 12, color: colors.foreground }}>Helmet: {spawnHelmet.name}</Text>}
+            {attacks.map(({ weapon, hitChance, notes }) => weapon && (
+              <Text key={weapon.id} style={{ fontSize: 12, lineHeight: 18, color: colors.foreground }}>
+                {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie} {DAMAGE_TYPE_NAMES[weapon.damageType]}{notes ? ` · ${notes}` : ''}
+              </Text>
+            ))}
+            {!attacks.length && equippedWeapon && (
+              <Text style={{ fontSize: 12, color: colors.foreground }}>
+                Equipped weapon: {equippedWeapon.name} · {equippedWeapon.damageDieCount}d{equippedWeapon.damageDie} {DAMAGE_TYPE_NAMES[equippedWeapon.damageType]}
+              </Text>
+            )}
+            {carriedWeapons.length > 0 && (
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
+                Carried: {carriedWeapons.map(weapon => weapon.name).join(', ')}
+              </Text>
+            )}
+            {!spawnBody && !spawnHelmet && !attacks.length && !equippedWeapon && carriedWeapons.length === 0 && (
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>No equipment or attacks listed.</Text>
+            )}
+          </View>
+        </ScrollView>
+
+        <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 12), gap: 10, borderTopWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
           <TextInput
             style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14 }}
             placeholder={`Custom name (default: ${template.name})`}
@@ -149,7 +194,7 @@ function SpawnModal({ template, visible, onClose, onSpawn, allWeapons, allArmor 
             onPress={() => { onSpawn(spawnName); setCustomName(''); onClose(); }}
           >
             <Feather name="plus-circle" size={16} color={colors.primaryForeground} />
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>SPAWN TO COMBAT</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>SPAWN TO CHARACTERS</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -565,9 +610,9 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
 }
 
 // ─── Bestiary Card ───────────────────────────────────────────────────────────
-function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
+function BestiaryCard({ template, onPress, onEdit, onDelete, allWeapons }: {
   template: BestiaryTemplate;
-  onSpawn: () => void;
+  onPress: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   allWeapons: import('@/context/types').Weapon[];
@@ -578,82 +623,70 @@ function BestiaryCard({ template, onSpawn, onEdit, onDelete, allWeapons }: {
     ...attack,
     weapon: allWeapons.find(w => w.id === attack.weaponId),
   })).filter(attack => !!attack.weapon);
-  const topSkills = SKILL_SHORTHAND.filter(sk => template.skills[sk] > 0);
 
   return (
-    <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: template.isCustom ? colors.primary + '66' : colors.border, padding: 12, gap: 8 }}>
-      {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {template.isCustom && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 4 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground, flexShrink: 1 }}>{template.name}</Text>
+    <View style={{ position: 'relative' }}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${template.name} details`}
+        onPress={onPress}
+        activeOpacity={0.86}
+        style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: template.isCustom ? colors.primary + '66' : colors.border, padding: 12, paddingTop: 12, gap: 8 }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, paddingRight: onEdit || onDelete ? 48 : 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {template.isCustom && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 4 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground, flexShrink: 1 }}>{template.name}</Text>
+            </View>
+            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, marginTop: 3, letterSpacing: 0.6 }}>{cat?.label.toUpperCase() ?? 'NPC'}</Text>
+            {template.description && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 3 }} numberOfLines={2}>{template.description}</Text>}
           </View>
-          {template.description && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }} numberOfLines={2}>{template.description}</Text>}
+          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
         </View>
-        <View style={{ flexDirection: 'row', gap: 4 }}>
-          {onEdit && <TouchableOpacity onPress={onEdit} style={{ padding: 4 }}><Feather name="edit-2" size={14} color={colors.mutedForeground} /></TouchableOpacity>}
-          {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 4 }}><Feather name="trash-2" size={14} color={colors.destructive} /></TouchableOpacity>}
-        </View>
-      </View>
 
-      {/* Stats */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {[['HP', template.maxHp], ['AC', template.armorClass], ['AP', template.maxAP], ['SEQ', template.sequence], ['XP', template.xpValue ?? '—'], ['CC', template.criticalChance === undefined ? '—' : `${template.criticalChance}%`]].map(([l, v]) => (
-          <View key={l} style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4 }}>
-            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{l}</Text>
-            <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{v}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>PR {template.poisonResistance ?? 0}%</Text>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>RR {template.radiationResistance}%</Text>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>GR {template.gasResistance}/{template.gasResistanceSecondary ?? 0}</Text>
-      </View>
-
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-        {NP_TYPES.map(t => {
-          const protection = combinedProtectionFor(template.naturalProtection, undefined, undefined, t);
-          return (
-            <Text key={t.type} style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
-              {DAMAGE_TYPE_NAMES[t.type].charAt(0)} {protection.dt}/{protection.dr}
-            </Text>
-          );
-        })}
-      </View>
-
-      {/* Top skills */}
-      {topSkills.length > 0 && (
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {topSkills.slice(0, 4).map(sk => (
-            <View key={sk} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4 }}>
-              <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{SKILL_SHORT_LABELS[sk]}</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: template.skills[sk] >= 60 ? colors.primary : colors.foreground }}>{template.skills[sk]}%</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {[
+            ['HP', template.maxHp], ['AC', template.armorClass], ['AP', template.maxAP],
+            ['SEQ', template.sequence], ['XP', template.xpValue ?? '—'],
+          ].map(([label, value]) => (
+            <View key={label} style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4, minWidth: 40, alignItems: 'center' }}>
+              <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>{label}</Text>
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{value}</Text>
             </View>
           ))}
         </View>
-      )}
 
-      {attacks.map(({ weapon, hitChance, notes }) => weapon && (
-        <Text key={weapon.id} style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }} numberOfLines={2}>
-          {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
-        </Text>
-      ))}
-      {!attacks.length && template.equippedWeaponId && (
-        <Text style={{ fontSize: 11, color: colors.foreground }}>
-          Equipped: {allWeapons.find(w => w.id === template.equippedWeaponId)?.name ?? template.equippedWeaponId}
-        </Text>
-      )}
+        {attacks.map(({ weapon, hitChance, notes }) => weapon && (
+          <Text key={weapon.id} style={{ fontSize: 10, lineHeight: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }} numberOfLines={2}>
+            {weapon.name}: {hitChance}% · {weapon.apSingle} AP · {weapon.damageDieCount}d{weapon.damageDie}{notes ? ` · ${notes}` : ''}
+          </Text>
+        ))}
+        {!attacks.length && template.equippedWeaponId && (
+          <Text style={{ fontSize: 11, color: colors.foreground }} numberOfLines={2}>
+            Equipped: {allWeapons.find(w => w.id === template.equippedWeaponId)?.name ?? template.equippedWeaponId}
+          </Text>
+        )}
 
-      <TouchableOpacity
-        style={{ paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.primary, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-        onPress={onSpawn}
-      >
-        <Feather name="plus" size={14} color={colors.primaryForeground} />
-        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.primaryForeground }}>SPAWN</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, paddingTop: 2 }}>
+          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.6 }}>VIEW DETAILS</Text>
+          <Feather name="arrow-up-right" size={12} color={colors.primary} />
+        </View>
       </TouchableOpacity>
+      {(onEdit || onDelete) && (
+        <View style={{ position: 'absolute', top: 7, right: 7, flexDirection: 'row', gap: 3 }}>
+          {onEdit && (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Edit ${template.name}`} onPress={event => { event.stopPropagation?.(); onEdit(); }} style={{ padding: 5, backgroundColor: colors.card, borderRadius: 5 }}>
+              <Feather name="edit-2" size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
+          {onDelete && (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete ${template.name}`} onPress={event => { event.stopPropagation?.(); onDelete(); }} style={{ padding: 5, backgroundColor: colors.card, borderRadius: 5 }}>
+              <Feather name="trash-2" size={14} color={colors.destructive} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -665,7 +698,7 @@ export default function BestiaryScreen() {
   const { addCharacter, customBestiaryTemplates, addCustomBestiaryTemplate, removeCustomBestiaryTemplate, allWeapons, allArmor } = useApp();
 
   const [activeCategory, setActiveCategory] = useState<BestiaryCategory>('beast');
-  const [spawnTarget, setSpawnTarget] = useState<BestiaryTemplate | null>(null);
+  const [detailTarget, setDetailTarget] = useState<BestiaryTemplate | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<BestiaryTemplate | null>(null);
   const [search, setSearch] = useState('');
@@ -813,7 +846,7 @@ export default function BestiaryScreen() {
               <BestiaryCard
                 template={item}
                 allWeapons={allWeapons}
-                onSpawn={() => setSpawnTarget(item)}
+                onPress={() => setDetailTarget(item)}
                 onEdit={item.isCustom ? () => { setEditingTemplate(item); setShowCustomForm(true); } : undefined}
                 onDelete={item.isCustom ? () => handleDelete(item) : undefined}
               />
@@ -822,11 +855,11 @@ export default function BestiaryScreen() {
         />
       )}
 
-      <SpawnModal
-        template={spawnTarget}
-        visible={!!spawnTarget}
-        onClose={() => setSpawnTarget(null)}
-        onSpawn={name => spawnTarget && handleSpawn(spawnTarget, name)}
+      <BestiaryDetailModal
+        template={detailTarget}
+        visible={!!detailTarget}
+        onClose={() => setDetailTarget(null)}
+        onSpawn={name => detailTarget && handleSpawn(detailTarget, name)}
         allWeapons={allWeapons}
         allArmor={allArmor}
       />

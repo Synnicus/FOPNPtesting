@@ -533,12 +533,12 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-                       AC {sheet.armorClass} · HP {c.currentHp}/{c.maxHp} · AP {c.currentAP ?? sheet.maxAP}/{sheet.maxAP}
-                      {weapon ? ` · ${weapon.name}` : ''}
-                      {weapon && weapon.magazineSize > 0 ? ` [${ammoState?.currentAmmo ?? weapon.magazineSize}/${weapon.magazineSize}]` : ''}
+                      {c.vehicle
+                        ? `VEHICLE · AC ${c.vehicle.armorClass} · Structure ${c.currentHp}/${c.maxHp} HP`
+                        : `AC ${sheet.armorClass} · HP ${c.currentHp}/${c.maxHp} · AP ${c.currentAP ?? sheet.maxAP}/${sheet.maxAP}${weapon ? ` · ${weapon.name}` : ''}${weapon && weapon.magazineSize > 0 ? ` [${ammoState?.currentAmmo ?? weapon.magazineSize}/${weapon.magazineSize}]` : ''}`}
                     </Text>
                   </View>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: c.type === 'pc' ? colors.primary : colors.destructive }}>{c.type.toUpperCase()}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: c.type === 'pc' ? colors.primary : colors.destructive }}>{c.vehicle ? 'VEHICLE' : c.type.toUpperCase()}</Text>
                 </TouchableOpacity>
               );
             }} />
@@ -796,6 +796,8 @@ export default function CombatScreen() {
   // Combatants
   const [attackerId, setAttackerId] = useState<string | null>(null);
   const [defenderId, setDefenderId] = useState<string | null>(null);
+  const [selectedVehicleSystemId, setSelectedVehicleSystemId] = useState<string | null>(null);
+  const [showVehicleSystemPicker, setShowVehicleSystemPicker] = useState(false);
 
   // Dice (standard percentile)
   const [tensFace, setTensFace] = useState<number | null>(null);
@@ -897,11 +899,15 @@ export default function CombatScreen() {
 
   // Non-storage characters — used for pickers and initiative setup
   const activeCharacters = characters.filter(c => !c.inStorage);
-  const initiativeSetupCharacters = activeCharacters.filter(c => c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
+  const initiativeSetupCharacters = activeCharacters.filter(c => !c.vehicle && c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
 
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
   const defender = characters.find(c => c.id === defenderId) ?? null;
+  const selectedVehicleSystem = defender?.vehicle?.systems.find(system => system.id === selectedVehicleSystemId)
+    ?? defender?.vehicle?.systems.find(system => system.kind === 'structure')
+    ?? defender?.vehicle?.systems[0]
+    ?? null;
   const completionHealAction = completionHealActionId
     ? (pendingCombatSkillActions ?? []).find(action => action.id === completionHealActionId && action.kind === 'healFallen') ?? null
     : null;
@@ -1117,7 +1123,7 @@ export default function CombatScreen() {
     ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.ammoTypeId
     : undefined;
   const loadedAmmo: AmmoType | null = resolveEquippedAmmoType(weapon, ammoTypeId, allAmmo) ?? null;
-  const attackPoisons = poisonExposuresForAttack(weapon, loadedAmmo);
+  const attackPoisons = defender?.vehicle ? [] : poisonExposuresForAttack(weapon, loadedAmmo);
   // Only the weapon's compatible ammo may be loaded.
   const compatibleAmmo: AmmoType[] = weapon?.compatibleAmmo
     ? weapon.compatibleAmmo.map(id => getAmmoById(id, allAmmo)).filter((a): a is AmmoType => !!a)
@@ -1185,6 +1191,7 @@ export default function CombatScreen() {
   // negative for armor-piercing → treat as a positive to-hit adjustment.
   const ammoAccuracyModifier = describeAmmoAccuracyModifier(loadedAmmo);
   const ammoToHitAdjust = ammoAccuracyModifier?.chanceToHitAdjustment ?? 0;
+  const vehicleMotionPenalty = defender?.vehicle?.inMotion ? -10 : 0;
 
   // One Hander trait: +20% with one-handed weapons, −40% with two-handed.
   const weaponHands = weapon ? getWeaponHands(weapon) : 1;
@@ -1211,6 +1218,7 @@ export default function CombatScreen() {
       + ammoToHitAdjust
       + oneHanderToHit
       + (traitEffects.toHitBonus ?? 0)
+      + vehicleMotionPenalty
     ));
 
   // Double shot: single shot, range −3
@@ -2064,16 +2072,17 @@ export default function CombatScreen() {
     attackApplied.current = true;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     if (totalDamage > 0) applyCombatDamage(attackReceipt.current, defender.id, totalDamage,
-      shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined);
+      shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined,
+      selectedVehicleSystem?.id);
     if (totalDamage > 0) playCombatImpact();
-    if (totalRadiationExposure > 0) adjustRadiation(defender.id, totalRadiationExposure);
-    if (hasAppliedPoison) applyPoisonExposure(appliedPoisonResults);
+    if (totalRadiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, totalRadiationExposure);
+    if (hasAppliedPoison && !defender.vehicle) applyPoisonExposure(appliedPoisonResults);
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
     if (primaryIsCrit && isAimed && aimedCritPart && !aimedCritApplied) {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect, playCombatImpact]);
+  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, selectedVehicleSystem?.id, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect, playCombatImpact]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).
@@ -2576,12 +2585,49 @@ export default function CombatScreen() {
                       <Text>VS.</Text>{' '}{weapon ? <Text>{DAMAGE_TYPE_NAMES[weapon.damageType]}</Text> : '—'}
                     </Text>
                     {defender.combatDefenseSuppressed && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>ARMOR-ONLY AC · AGI, PERKS & UNUSED AP SUPPRESSED</Text>}
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      {defenderPos === 'standing' ? 'Standing' : defenderPos === 'crouching' ? 'Crouching' : 'Prone'}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp}` : ''}
-                    </Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{defenderWeapon?.name ?? 'No Weapon'}</Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{bodyArmor?.name ?? 'No Armor'}</Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'No Helmet')}</Text>
+                    {defender.vehicle ? (
+                      <>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
+                          VEHICLE · Structure {defender.currentHp}/{defender.maxHp} HP · {defender.vehicle.inMotion ? 'Moving (−10% to hit)' : 'Stopped'}
+                        </Text>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Choose vehicle system to target. Current target: ${selectedVehicleSystem?.name ?? 'Structure'}`}
+                          onPress={event => {
+                            event.stopPropagation?.();
+                            setShowVehicleSystemPicker(true);
+                          }}
+                          style={{ alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+                        >
+                          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                            TARGET: {selectedVehicleSystem?.name ?? 'Structure'} {selectedVehicleSystem ? `${selectedVehicleSystem.currentHp}/${selectedVehicleSystem.maxHp} HP` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+                          {defender.vehicle.mountedWeapons.length ? defender.vehicle.mountedWeapons.join(', ') : 'No Vehicle Weapons'}
+                        </Text>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={defender.vehicle.inMotion ? 'Set vehicle stopped' : 'Set vehicle moving'}
+                          onPress={event => {
+                            event.stopPropagation?.();
+                            updateCharacter({ ...defender, vehicle: { ...defender.vehicle!, inMotion: !defender.vehicle!.inMotion } });
+                          }}
+                          style={{ alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+                        >
+                          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{defender.vehicle.inMotion ? 'SET STOPPED' : 'SET MOVING'}</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                          {defenderPos === 'standing' ? 'Standing' : defenderPos === 'crouching' ? 'Crouching' : 'Prone'}{defender.special ? ` · HP ${defender.currentHp}/${defender.maxHp}` : ''}
+                        </Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{defenderWeapon?.name ?? 'No Weapon'}</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{bodyArmor?.name ?? 'No Armor'}</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{helmet?.name ?? (bodyArmor?.integratedHelmet ? bodyArmor.name : 'No Helmet')}</Text>
+                      </>
+                    )}
                     {defender.isKnockedOut && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>KO · {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
@@ -3012,6 +3058,7 @@ export default function CombatScreen() {
                 ? <FormulaLine label="Armor Class (piercing technique)" value="IGNORED" color="#4a8c3f" />
                 : <FormulaLine label="Armor Class" value={`−${defenderAC}%`} color={colors.destructive} />}
               {defender?.tempAC && defender.tempAC > 0 ? <FormulaLine label="  (temp AC)" value={`+${defender.tempAC} from unspent AP`} color={colors.mutedForeground} /> : null}
+              {vehicleMotionPenalty !== 0 && <FormulaLine label="Moving vehicle" value={`${vehicleMotionPenalty}%`} color={colors.destructive} />}
               {coverPenalty !== 0 && <FormulaLine label="Cover penalty" value={`−${coverPenalty}%`} color={colors.destructive} />}
               {weaponBonus !== 0 && <FormulaLine label="Manual to-hit adjust" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? '#4a8c3f' : colors.destructive} />}
               {modBonuses.toHit !== 0 && <FormulaLine label="Weapon mods (auto)" value={`${modBonuses.toHit >= 0 ? '+' : ''}${modBonuses.toHit}%`} color={modBonuses.toHit > 0 ? '#4a8c3f' : colors.destructive} />}
@@ -3357,9 +3404,12 @@ export default function CombatScreen() {
                 const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
                 setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage, componentBreakdown, radiationExposure });
                 if (defender) {
-                  if (totalBurstDmg > 0) applyCombatDamage(attackReceipt.current, defender.id, totalBurstDmg, damagingHits);
-                    if (radiationExposure > 0) adjustRadiation(defender.id, radiationExposure);
-                  applyPoisonExposure(poisonResults);
+                  if (totalBurstDmg > 0) applyCombatDamage(
+                    attackReceipt.current, defender.id, totalBurstDmg, damagingHits, undefined,
+                    selectedVehicleSystem?.id,
+                  );
+                    if (radiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, radiationExposure);
+                  if (!defender.vehicle) applyPoisonExposure(poisonResults);
                 }
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               }}>
@@ -3669,8 +3719,51 @@ export default function CombatScreen() {
 
       </ScrollView>
 
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} onClear={() => setAttackerId(null)} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
-      <CharacterPickerModal visible={showDefenderPicker} onClose={() => setShowDefenderPicker(false)} onSelect={setDefenderId} onClear={() => setDefenderId(null)} clearRole="Defender" title="SELECT DEFENDER" characters={activeCharacters.filter(c => c.id !== attackerId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      <Modal visible={showVehicleSystemPicker && !!defender?.vehicle} transparent animationType="slide" onRequestClose={() => setShowVehicleSystemPicker(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.78)' }}>
+          <View style={{ maxHeight: '72%', backgroundColor: colors.card, borderTopLeftRadius: 15, borderTopRightRadius: 15, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderColor: colors.border }}>
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 13, letterSpacing: 1.3 }}>TARGET VEHICLE SYSTEM</Text>
+              <TouchableOpacity onPress={() => setShowVehicleSystemPicker(false)} accessibilityLabel="Close vehicle system picker"><Feather name="x" size={20} color={colors.mutedForeground} /></TouchableOpacity>
+            </View>
+            <FlatList
+              data={defender?.vehicle?.systems ?? []}
+              keyExtractor={system => system.id}
+              contentContainerStyle={{ padding: 12, gap: 7, paddingBottom: insets.bottom + 14 }}
+              renderItem={({ item: system }) => (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`Target ${system.name}, ${system.currentHp} of ${system.maxHp} HP`}
+                  onPress={() => { setSelectedVehicleSystemId(system.id); setShowVehicleSystemPicker(false); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: system.id === selectedVehicleSystem?.id ? colors.primary : colors.border, backgroundColor: system.id === selectedVehicleSystem?.id ? colors.primary + '18' : colors.secondary }}
+                >
+                  <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 12 }}>{system.name}</Text>
+                  <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_600SemiBold', fontSize: 11 }}>{system.currentHp}/{system.maxHp} HP</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} onClear={() => setAttackerId(null)} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId && !c.vehicle)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      <CharacterPickerModal
+        visible={showDefenderPicker}
+        onClose={() => setShowDefenderPicker(false)}
+        onSelect={id => {
+          setDefenderId(id);
+          const selected = characters.find(character => character.id === id)?.vehicle;
+          setSelectedVehicleSystemId(selected?.systems.find(system => system.kind === 'structure')?.id ?? selected?.systems[0]?.id ?? null);
+        }}
+        onClear={() => { setDefenderId(null); setSelectedVehicleSystemId(null); }}
+        clearRole="Defender"
+        title="SELECT DEFENDER"
+        characters={activeCharacters.filter(c => c.id !== attackerId)}
+        allWeapons={allWeapons}
+        allArmor={allArmor}
+        hardcoreRadiationRules={hardcoreRadiationRules}
+        mutantGhoulRadiationRules={mutantGhoulRadiationRules}
+        ghoulRadiationHealingOption={ghoulRadiationHealingOption}
+      />
       <CombatSkillModal
         visible={showCombatSkill}
         actor={completionHealAction ? completionHealActor : attacker}
@@ -3724,7 +3817,7 @@ export default function CombatScreen() {
           hasActed: false,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !c.vehicle && !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
       <CriticalHitModal
         visible={showCritModal}

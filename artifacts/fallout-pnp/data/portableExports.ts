@@ -5,6 +5,7 @@ import type {
   FactionReputation,
   KarmaLogEntry,
   InitiativeEntry,
+  VehicleProfile,
   Weapon,
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
@@ -28,6 +29,7 @@ export interface CampaignStateSnapshot {
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
+  customVehicles?: VehicleProfile[];
   customBestiaryTemplates: BestiaryTemplate[];
   initiativeEntries: InitiativeEntry[];
   currentRound: number;
@@ -47,12 +49,21 @@ export interface CampaignStateSnapshot {
   fallout3RadiationDebuffs?: boolean;
 }
 
-export interface PortablePortraitAsset {
+export type PortablePortraitAsset =
+  | {
   kind: 'character-portrait';
   characterId: string;
   mimeType: string;
   base64: string;
 }
+  | {
+  kind: 'vehicle-portrait';
+  vehicleId: string;
+  mimeType: string;
+  base64: string;
+};
+export type CharacterPortraitAsset = Extract<PortablePortraitAsset, { kind: 'character-portrait' }>;
+export type VehiclePortraitAsset = Extract<PortablePortraitAsset, { kind: 'vehicle-portrait' }>;
 
 export interface PortableCampaignBundle {
   format: typeof PORTABLE_EXPORT_FORMAT;
@@ -80,14 +91,24 @@ export interface PortableEquipmentBundle {
   item: Weapon | Armor;
 }
 
+export interface PortableVehicleBundle {
+  format: typeof PORTABLE_EXPORT_FORMAT;
+  version: typeof PORTABLE_EXPORT_VERSION;
+  kind: 'vehicle';
+  vehicle: VehicleProfile;
+  assets: VehiclePortraitAsset[];
+}
+
 export type PortableBundle =
   | PortableCampaignBundle
   | PortableCharacterBundle
-  | PortableEquipmentBundle;
+  | PortableEquipmentBundle
+  | PortableVehicleBundle;
 
 export type IndividualFileParseResult =
   | { ok: true; kind: 'character'; bundle: PortableCharacterBundle; ignoredAssets: number }
   | { ok: true; kind: 'equipment'; bundle: PortableEquipmentBundle }
+  | { ok: true; kind: 'vehicle'; bundle: PortableVehicleBundle; ignoredAssets: number }
   | { ok: false; error: string };
 
 export type CampaignParseResult =
@@ -111,9 +132,15 @@ function decodedBase64Bytes(base64: string): number | null {
 }
 
 function characterForBundle(character: Character): Character {
-  if (!character.portrait) return character;
   const { portrait: _localPortrait, ...portableCharacter } = character;
-  return portableCharacter;
+  return character.vehicle?.portrait
+    ? { ...portableCharacter, vehicle: { ...character.vehicle, portrait: undefined } }
+    : portableCharacter;
+}
+
+function vehicleForBundle(vehicle: VehicleProfile): VehicleProfile {
+  const { portrait: _localPortrait, ...portableVehicle } = vehicle;
+  return portableVehicle;
 }
 
 export function parsePortraitDataUri(uri: string): { mimeType: string; base64: string } | null {
@@ -127,7 +154,7 @@ export function portraitAsset(
   characterId: string,
   mimeType: string,
   base64: string,
-): PortablePortraitAsset | null {
+): CharacterPortraitAsset | null {
   const normalizedBase64 = base64.replace(/\s+/g, '');
   const byteLength = decodedBase64Bytes(normalizedBase64);
   if (
@@ -145,6 +172,28 @@ export function portraitAsset(
   };
 }
 
+export function vehiclePortraitAsset(
+  vehicleId: string,
+  mimeType: string,
+  base64: string,
+): VehiclePortraitAsset | null {
+  const normalizedBase64 = base64.replace(/\s+/g, '');
+  const byteLength = decodedBase64Bytes(normalizedBase64);
+  if (
+    !vehicleId
+    || vehicleId.length > 128
+    || !isImageMimeType(mimeType)
+    || byteLength === null
+    || byteLength > MAX_PORTRAIT_BYTES
+  ) return null;
+  return {
+    kind: 'vehicle-portrait',
+    vehicleId,
+    mimeType: mimeType.toLowerCase(),
+    base64: normalizedBase64,
+  };
+}
+
 export function portraitDataUri(asset: PortablePortraitAsset): string {
   return `data:${asset.mimeType};base64,${asset.base64}`;
 }
@@ -154,22 +203,23 @@ export function createCampaignBundle(
   assets: readonly PortablePortraitAsset[],
 ): PortableCampaignBundle {
   const characterIds = new Set(state.characters.map(character => character.id));
+  const vehicleIds = new Set((state.customVehicles ?? []).map(vehicle => vehicle.id));
   const embeddedIds = new Set<string>();
   let totalBytes = 0;
   const validAssets: PortablePortraitAsset[] = [];
   for (const asset of assets) {
     const bytes = decodedBase64Bytes(asset.base64);
     if (
-      asset.kind !== 'character-portrait'
-      || !characterIds.has(asset.characterId)
-      || embeddedIds.has(asset.characterId)
+      (asset.kind === 'character-portrait'
+        ? !characterIds.has(asset.characterId) || embeddedIds.has(`character:${asset.characterId}`)
+        : !vehicleIds.has(asset.vehicleId) || embeddedIds.has(`vehicle:${asset.vehicleId}`))
       || !isImageMimeType(asset.mimeType)
       || bytes === null
       || bytes > MAX_PORTRAIT_BYTES
       || totalBytes + bytes > MAX_CAMPAIGN_PORTRAIT_BYTES
     ) continue;
     validAssets.push(asset);
-    embeddedIds.add(asset.characterId);
+    embeddedIds.add(asset.kind === 'character-portrait' ? `character:${asset.characterId}` : `vehicle:${asset.vehicleId}`);
     totalBytes += bytes;
   }
   return {
@@ -188,6 +238,7 @@ export function createCampaignBundle(
       })(),
       characters: state.characters.map(character =>
         characterForBundle(character)),
+      customVehicles: (state.customVehicles ?? []).map(vehicleForBundle),
     },
     assets: validAssets,
   };
@@ -223,8 +274,8 @@ export function createCharacterBundle(
   customArmor: readonly Armor[],
   asset?: PortablePortraitAsset | null,
 ): PortableCharacterBundle {
-  const validAsset = asset?.characterId === character.id
-    && asset.kind === 'character-portrait'
+  const validAsset = asset?.kind === 'character-portrait'
+    && asset.characterId === character.id
     && isImageMimeType(asset.mimeType)
     && decodedBase64Bytes(asset.base64) !== null
     ? asset
@@ -253,11 +304,32 @@ export function createEquipmentBundle(
   };
 }
 
+export function createVehicleBundle(
+  vehicle: VehicleProfile,
+  asset?: VehiclePortraitAsset | null,
+): PortableVehicleBundle {
+  const validAsset = asset?.kind === 'vehicle-portrait'
+    && asset.vehicleId === vehicle.id
+    && isImageMimeType(asset.mimeType)
+    && decodedBase64Bytes(asset.base64) !== null
+    ? asset
+    : null;
+  return {
+    format: PORTABLE_EXPORT_FORMAT,
+    version: PORTABLE_EXPORT_VERSION,
+    kind: 'vehicle',
+    vehicle: vehicleForBundle(vehicle),
+    assets: validAsset ? [validAsset] : [],
+  };
+}
+
 function isCampaignState(value: unknown): value is CampaignStateSnapshot {
   if (!isRecord(value)) return false;
   return Array.isArray(value.characters)
     && Array.isArray(value.customWeapons ?? [])
     && Array.isArray(value.customArmor ?? [])
+    && (value.customVehicles === undefined
+      || (Array.isArray(value.customVehicles) && value.customVehicles.every(isVehicleProfileRecord)))
     && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
     && (value.combatSoundsEnabled === undefined || typeof value.combatSoundsEnabled === 'boolean')
@@ -322,6 +394,33 @@ function hasValidFactionReputationData(value: Record<string, unknown>): boolean 
   return new Set(reputations.map(faction => faction.name.trim().toLowerCase())).size === reputations.length;
 }
 
+function isVehicleProfileRecord(value: unknown): value is VehicleProfile {
+  if (!isRecord(value) || !isRecord(value.damageResistance) || !Array.isArray(value.systems)) return false;
+  const numericOrNull = (field: unknown) => field === null || isFiniteNumber(field);
+  return typeof value.id === 'string'
+    && value.id.length > 0 && value.id.length <= 128
+    && typeof value.name === 'string'
+    && typeof value.description === 'string'
+    && typeof value.category === 'string'
+    && isFiniteNumber(value.armorClass)
+    && typeof value.passengers === 'string'
+    && typeof value.carryingWeightLb === 'string'
+    && ['topSpeedKph', 'accelerationKphPerRound', 'brakingKphPerRound', 'turningRadiusMeters', 'rangeKm', 'fuelCharges']
+      .every(field => numericOrNull(value[field]))
+    && hasFiniteNumbers(value.damageResistance, ['normal', 'laser', 'fire', 'plasma', 'explosion'])
+    && value.systems.every(system => isRecord(system)
+      && typeof system.id === 'string' && typeof system.name === 'string'
+      && typeof system.kind === 'string' && isFiniteNumber(system.currentHp)
+      && isFiniteNumber(system.maxHp) && system.maxHp > 0
+      && system.currentHp >= 0 && system.currentHp <= system.maxHp)
+    && isStringArray(value.mountedWeapons)
+    && isStringArray(value.enhancements)
+    && isStringArray(value.notes)
+    && isFiniteNumber(value.terrainPilotModifier)
+    && typeof value.inMotion === 'boolean'
+    && (value.portrait === undefined || typeof value.portrait === 'string');
+}
+
 function isCharacterRecord(value: unknown): value is Character {
   if (!isRecord(value)) return false;
   const numericFields = [
@@ -375,6 +474,7 @@ function isCharacterRecord(value: unknown): value is Character {
       && (injury.source === undefined || typeof injury.source === 'string')
       && typeof injury.isActive === 'boolean')
     && typeof value.isKnockedOut === 'boolean'
+    && (value.vehicle === undefined || isVehicleProfileRecord(value.vehicle))
     && isStringArray(value.conditions)
     && positionValid
     && (value.effects === undefined || Array.isArray(value.effects))
@@ -449,16 +549,19 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !Array.isArray(value.characters)
     || !Array.isArray(value.customWeapons)
     || !Array.isArray(value.customArmor)
+    || (value.customVehicles !== undefined && !Array.isArray(value.customVehicles))
     || !Array.isArray(value.customBestiaryTemplates)
     || !Array.isArray(value.initiativeEntries)) return false;
   if (!value.characters.every(isCharacterRecord)
     || !value.customWeapons.every(isWeaponRecord)
     || !value.customArmor.every(isArmorRecord)
+    || !((value.customVehicles ?? []) as unknown[]).every(isVehicleProfileRecord)
     || !value.customBestiaryTemplates.every(isBestiaryTemplateRecord)
     || !value.initiativeEntries.every(isInitiativeRecord)) return false;
   return hasUniqueIds(value.characters)
     && hasUniqueIds(value.customWeapons)
     && hasUniqueIds(value.customArmor)
+    && hasUniqueIds((value.customVehicles ?? []) as VehicleProfile[])
     && hasUniqueIds(value.customBestiaryTemplates)
     && hasUniqueIds(value.initiativeEntries)
     && isFiniteNumber(value.currentRound)
@@ -500,13 +603,24 @@ function isCompletePortableEquipmentBundle(value: unknown): value is PortableEqu
     : isArmorRecord(value.item);
 }
 
+function isCompletePortableVehicleBundle(value: unknown): value is PortableVehicleBundle {
+  return isRecord(value)
+    && value.kind === 'vehicle'
+    && isVehicleProfileRecord(value.vehicle)
+    && value.vehicle.isCustom === true
+    && Array.isArray(value.assets);
+}
+
 function isPortablePortraitAsset(value: unknown): value is PortablePortraitAsset {
   const bytes = isRecord(value) && typeof value.base64 === 'string'
     ? decodedBase64Bytes(value.base64)
     : null;
   return isRecord(value)
-    && value.kind === 'character-portrait'
-    && typeof value.characterId === 'string'
+    && (value.kind === 'character-portrait'
+      ? typeof value.characterId === 'string' && value.characterId.length > 0
+      : value.kind === 'vehicle-portrait'
+        ? typeof value.vehicleId === 'string' && value.vehicleId.length > 0
+        : false)
     && isImageMimeType(value.mimeType)
     && typeof value.base64 === 'string'
     && bytes !== null
@@ -539,6 +653,7 @@ export function parseIndividualFile(json: string): IndividualFileParseResult {
     for (const candidate of parsed.assets) {
       if (
         !isPortablePortraitAsset(candidate)
+        || candidate.kind !== 'character-portrait'
         || candidate.characterId !== parsed.character.id
         || validAssets.length > 0
       ) {
@@ -580,6 +695,38 @@ export function parseIndividualFile(json: string): IndividualFileParseResult {
     };
   }
 
+  if (parsed.kind === 'vehicle') {
+    if (!isCompletePortableVehicleBundle(parsed)) {
+      return { ok: false, error: 'The vehicle export is incomplete, damaged, or not a custom vehicle.' };
+    }
+    const validAssets: VehiclePortraitAsset[] = [];
+    let ignoredAssets = 0;
+    for (const candidate of parsed.assets) {
+      if (
+        !isPortablePortraitAsset(candidate)
+        || candidate.kind !== 'vehicle-portrait'
+        || candidate.vehicleId !== parsed.vehicle.id
+        || validAssets.length > 0
+      ) {
+        ignoredAssets += 1;
+        continue;
+      }
+      validAssets.push(candidate);
+    }
+    return {
+      ok: true,
+      kind: 'vehicle',
+      ignoredAssets,
+      bundle: {
+        format: PORTABLE_EXPORT_FORMAT,
+        version: PORTABLE_EXPORT_VERSION,
+        kind: 'vehicle',
+        vehicle: vehicleForBundle(parsed.vehicle),
+        assets: validAssets,
+      },
+    };
+  }
+
   return { ok: false, error: 'The selected file is not an individual Fallout PnP export.' };
 }
 
@@ -613,17 +760,21 @@ export function parseCampaignFile(json: string): CampaignParseResult {
     return { ok: false, error: 'The campaign export is incomplete or damaged.' };
   }
 
-  const ids = parsed.state.characters.map(character => character.id);
-
-  const characterIds = new Set(ids);
-  const assetCharacterIds = new Set<string>();
+  const characterIds = new Set(parsed.state.characters.map(character => character.id));
+  const vehicleIds = new Set(((parsed.state.customVehicles ?? []) as VehicleProfile[]).map(vehicle => vehicle.id));
+  const embeddedAssetIds = new Set<string>();
   const validAssets: PortablePortraitAsset[] = [];
   let ignoredAssets = 0;
   let totalBytes = 0;
   for (const candidate of parsed.assets) {
-    if (!isPortablePortraitAsset(candidate)
-      || !characterIds.has(candidate.characterId)
-      || assetCharacterIds.has(candidate.characterId)) {
+    if (!isPortablePortraitAsset(candidate)) {
+      ignoredAssets += 1;
+      continue;
+    }
+    const isCharacterAsset = candidate.kind === 'character-portrait';
+    const id = isCharacterAsset ? candidate.characterId : candidate.vehicleId;
+    const assetKey = `${candidate.kind}:${id}`;
+    if ((isCharacterAsset ? !characterIds.has(id) : !vehicleIds.has(id)) || embeddedAssetIds.has(assetKey)) {
       ignoredAssets += 1;
       continue;
     }
@@ -632,7 +783,7 @@ export function parseCampaignFile(json: string): CampaignParseResult {
       return { ok: false, error: 'The campaign contains too much portrait data to import safely.' };
     }
     validAssets.push(candidate);
-    assetCharacterIds.add(candidate.characterId);
+    embeddedAssetIds.add(assetKey);
     totalBytes += bytes;
   }
 
@@ -646,6 +797,7 @@ export function parseCampaignFile(json: string): CampaignParseResult {
       state: {
         ...parsed.state,
         characters: parsed.state.characters.map(character => characterForBundle(character)),
+        customVehicles: (parsed.state.customVehicles ?? []).map(vehicleForBundle),
       },
       assets: validAssets,
     },
@@ -658,13 +810,36 @@ export async function restoreCharacterPortrait(
   materialize: (asset: PortablePortraitAsset) => Promise<string>,
 ): Promise<{ character: Character; restored: number; failed: number }> {
   const asset = bundle.assets[0];
-  if (!asset) return { character: bundle.character, restored: 0, failed: 0 };
+  if (!asset || asset.kind !== 'character-portrait') return { character: bundle.character, restored: 0, failed: 0 };
   try {
     const portrait = await materialize(asset);
     if (!portrait) throw new Error('Portrait materializer returned an empty URI');
-    return { character: { ...bundle.character, portrait }, restored: 1, failed: 0 };
+    return {
+      character: {
+        ...bundle.character,
+        portrait,
+        ...(bundle.character.vehicle ? { vehicle: { ...bundle.character.vehicle, portrait } } : {}),
+      },
+      restored: 1,
+      failed: 0,
+    };
   } catch {
     return { character: bundle.character, restored: 0, failed: 1 };
+  }
+}
+
+export async function restoreVehiclePortrait(
+  bundle: PortableVehicleBundle,
+  materialize: (asset: PortablePortraitAsset) => Promise<string>,
+): Promise<{ vehicle: VehicleProfile; restored: number; failed: number }> {
+  const asset = bundle.assets[0];
+  if (!asset || asset.kind !== 'vehicle-portrait') return { vehicle: bundle.vehicle, restored: 0, failed: 0 };
+  try {
+    const portrait = await materialize(asset);
+    if (!portrait) throw new Error('Portrait materializer returned an empty URI');
+    return { vehicle: { ...bundle.vehicle, portrait }, restored: 1, failed: 0 };
+  } catch {
+    return { vehicle: bundle.vehicle, restored: 0, failed: 1 };
   }
 }
 
@@ -673,8 +848,13 @@ export async function restoreCampaignPortraits(
   materialize: (asset: PortablePortraitAsset) => Promise<string>,
 ): Promise<{ state: CampaignStateSnapshot; restored: number; failed: number }> {
   const assetsByCharacter = new Map<string, PortablePortraitAsset>();
+  const assetsByVehicle = new Map<string, PortablePortraitAsset>();
   for (const asset of bundle.assets) {
-    if (!assetsByCharacter.has(asset.characterId)) assetsByCharacter.set(asset.characterId, asset);
+    if (asset.kind === 'character-portrait') {
+      if (!assetsByCharacter.has(asset.characterId)) assetsByCharacter.set(asset.characterId, asset);
+    } else if (!assetsByVehicle.has(asset.vehicleId)) {
+      assetsByVehicle.set(asset.vehicleId, asset);
+    }
   }
 
   let restored = 0;
@@ -690,15 +870,37 @@ export async function restoreCampaignPortraits(
       const portrait = await materialize(asset);
       if (!portrait) throw new Error('Portrait materializer returned an empty URI');
       restored += 1;
-      characters.push({ ...character, portrait });
+      characters.push({
+        ...character,
+        portrait,
+        ...(character.vehicle ? { vehicle: { ...character.vehicle, portrait } } : {}),
+      });
     } catch {
       failed += 1;
       characters.push(character);
     }
   }
 
+  const customVehicles: VehicleProfile[] = [];
+  for (const vehicle of bundle.state.customVehicles ?? []) {
+    const asset = assetsByVehicle.get(vehicle.id);
+    if (!asset) {
+      customVehicles.push(vehicle);
+      continue;
+    }
+    try {
+      const portrait = await materialize(asset);
+      if (!portrait) throw new Error('Portrait materializer returned an empty URI');
+      restored += 1;
+      customVehicles.push({ ...vehicle, portrait });
+    } catch {
+      failed += 1;
+      customVehicles.push(vehicle);
+    }
+  }
+
   return {
-    state: { ...bundle.state, characters },
+    state: { ...bundle.state, characters, customVehicles },
     restored,
     failed,
   };

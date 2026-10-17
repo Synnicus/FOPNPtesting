@@ -86,7 +86,6 @@ export function ArmorConditionMeter({ char, setChar, armor, inactive }: { char: 
   const boxes = Math.floor(hits / 5);
   const pen = Math.round(armorConditionModifier(hits) * 100);
   const setHits = (n: number) => setHitsOn(setChar, armor.id, n);
-  const stepBtn = { width: 36, height: 36, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: 'center' as const, justifyContent: 'center' as const };
   return (
     <View style={{ gap: 6, padding: 12, marginTop: -6, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
       {inactive && (
@@ -94,35 +93,13 @@ export function ArmorConditionMeter({ char, setChar, armor, inactive }: { char: 
           Inactive: this helmet contributes no protection while the suit prohibits, integrates or is incompatible with it. Stored condition is kept.
         </Text>
       )}
-      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: 'Inter_400Regular' }}>
-        Ten bars, five hit segments each. Chart by boxes: 0-3 none, 4 5%, 5 10%, 6 20%, 7 30%, 8 40%, 9 50%, 10 60% (DT/DR only, AC unchanged). Aimed head or eyes hits wear a separate valid helmet; other hits wear the body armor or integrated suit.
-      </Text>
-      <View accessible accessibilityRole="adjustable" accessibilityLabel={`${armor.name} hits: ${hits} of 50`}
-        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-        onAccessibilityAction={e => setHits(hits + (e.nativeEvent.actionName === 'increment' ? 1 : -1))}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <TouchableOpacity accessibilityLabel={`Remove one hit from ${armor.name}`} onPress={() => setHits(hits - 1)} style={stepBtn}>
-          <Feather name="minus" size={14} color={colors.foreground} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {Array.from({ length: 10 }, (_, bar) => (
-            <View key={bar} style={{ width: '18%', flexGrow: 1, flexDirection: 'row', gap: 1 }}>
-              {Array.from({ length: 5 }, (_, seg) => {
-                const g = bar * 5 + seg + 1;
-                const filled = g <= hits;
-                return (
-                  <TouchableOpacity key={g} accessibilityLabel={`${armor.name} hit segment ${g}`} accessibilityState={{ selected: filled }}
-                    onPress={() => setHits(g === hits ? g - 1 : g)}
-                    style={{ flex: 1, height: 26, borderWidth: 1, borderRadius: 2, borderColor: filled ? colors.destructive : colors.border, backgroundColor: filled ? colors.destructive : colors.background }} />
-                );
-              })}
-            </View>
-          ))}
-        </View>
-        <TouchableOpacity accessibilityLabel={`Add one hit to ${armor.name}`} onPress={() => setHits(hits + 1)} style={stepBtn}>
-          <Feather name="plus" size={14} color={colors.foreground} />
-        </TouchableOpacity>
-      </View>
+      <Meter
+        label={`${armor.name} condition`}
+        count={boxes}
+        total={10}
+        color={colors.destructive}
+        onSet={nextBoxes => setHits(nextBoxes * 5)}
+      />
       <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: pen > 0 ? colors.destructive : colors.foreground }}>
         {hits}/50 hits · {boxes}/10 boxes · {pen > 0 ? `DT/DR -${pen}% (AC unchanged)` : 'No DT/DR penalty'}
       </Text>

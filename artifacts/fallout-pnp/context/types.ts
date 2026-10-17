@@ -10,6 +10,9 @@ export const DAMAGE_TYPE_NAMES: Record<DamageType, string> = {
 export type WeaponCategory = 'smallGuns' | 'bigGuns' | 'energyWeapons' | 'meleeWeapons' | 'unarmed' | 'throwing' | 'minesTraps' | 'natural';
 export type ArmorSlot = 'body' | 'helmet';
 export type CharacterType = 'pc' | 'npc';
+export type VehicleCategory =
+  | 'car' | 'truck' | 'motorcycle' | 'boat' | 'aircraft' | 'apc' | 'tank' | 'trailer' | 'artillery';
+export type VehicleSystemKind = 'structure' | 'engine' | 'controls' | 'drive' | 'tire' | 'tread' | 'other';
 export type RaceType =
   | 'human' | 'ghoul' | 'superMutant' | 'halfMutant' | 'robot'
   | 'deathclaw' | 'dog' | 'molerat' | 'yaoguai'
@@ -277,6 +280,45 @@ export interface NaturalProtection {
   drNormal: number; drLaser: number; drFire: number; drPlasma: number; drExplosion: number;
 }
 
+export interface VehicleSystem {
+  id: string;
+  name: string;
+  kind: VehicleSystemKind;
+  currentHp: number;
+  maxHp: number;
+}
+
+/**
+ * Manual vehicle profile and persistent system condition. Vehicles do not use
+ * DT; their five damage-resistance percentages apply directly to each system.
+ */
+export interface VehicleProfile {
+  id: string;
+  name: string;
+  category: VehicleCategory;
+  description: string;
+  isCustom?: boolean;
+  portrait?: string;
+  topSpeedKph: number | null;
+  accelerationKphPerRound: number | null;
+  brakingKphPerRound: number | null;
+  turningRadiusMeters: number | null;
+  rangeKm: number | null;
+  passengers: string;
+  carryingWeightLb: string;
+  fuelCharges: number | null;
+  armorClass: number;
+  damageResistance: Record<DamageType, number>;
+  systems: VehicleSystem[];
+  mountedWeapons: string[];
+  enhancements: string[];
+  notes: string[];
+  terrainPilotModifier: number;
+  inMotion: boolean;
+}
+
+export type VehicleTemplate = VehicleProfile;
+
 export const EMPTY_NATURAL_PROTECTION: NaturalProtection = {
   armorClass: 0,
   dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0,
@@ -328,6 +370,8 @@ export interface Character {
   /** Crop focus when portraitFit is 'cover': 0–1 in each axis (0.5 = centered). */
 
   portraitOffset?: { x: number; y: number };
+  /** Present when this saved NPC-shaped combat record is a persistent vehicle. */
+  vehicle?: VehicleProfile;
   /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
 
   traits?: string[];

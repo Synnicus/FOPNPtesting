@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  FlatList, Modal, Platform, ScrollView, View,
+  FlatList, Image, Modal, Platform, ScrollView, View,
 } from 'react-native';
 import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,7 +15,9 @@ import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
-import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills } from '@/context/types';
+import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile } from '@/context/types';
+import { VehicleFormModal } from '@/components/VehicleFormModal';
+import { VEHICLE_CATEGORIES } from '@/data/vehicles';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -1074,23 +1076,74 @@ function AmmoRow({ ammo, onCopy, onEdit, onDelete }: { ammo: AmmoType; onCopy?: 
   );
 }
 
+// ─── Vehicle catalog row ──────────────────────────────────────────────────────
+function VehicleRow({ vehicle, onCopy, onEdit, onDelete }: {
+  vehicle: VehicleProfile;
+  onCopy: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={{ marginHorizontal: 16, marginBottom: 10, padding: 13, gap: 8, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        {vehicle.portrait
+          ? <Image source={{ uri: vehicle.portrait }} style={{ width: 58, height: 46, borderRadius: 6, backgroundColor: colors.secondary }} />
+          : <View style={{ width: 58, height: 46, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}><Feather name="truck" size={22} color={colors.mutedForeground} /></View>}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ color: colors.foreground, fontSize: 15, fontFamily: 'Inter_700Bold' }}>{vehicle.name}</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>
+            {VEHICLE_CATEGORIES[vehicle.category].toUpperCase()} · AC {vehicle.armorClass} · {vehicle.fuelCharges === null ? 'NO FUEL' : `${vehicle.fuelCharges} CHARGES`}
+          </Text>
+        </View>
+        {vehicle.isCustom && <Text style={{ fontSize: 9, color: colors.primary, fontFamily: 'Inter_700Bold' }}>CUSTOM</Text>}
+      </View>
+      <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}>
+        TS {vehicle.topSpeedKph ?? '—'} KPH · AR {vehicle.accelerationKphPerRound ?? '—'} · BR {vehicle.brakingKphPerRound ?? '—'} · TR {vehicle.turningRadiusMeters ?? '—'} m · Range {vehicle.rangeKm ?? '—'} km
+      </Text>
+      <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}>
+        Passengers {vehicle.passengers || '—'} · Cargo {vehicle.carryingWeightLb || '—'} lb · DR N/L/F/P/E {vehicle.damageResistance.normal}/{vehicle.damageResistance.laser}/{vehicle.damageResistance.fire}/{vehicle.damageResistance.plasma}/{vehicle.damageResistance.explosion}%
+      </Text>
+      <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }} numberOfLines={3}>
+        {vehicle.systems.map(system => `${system.name} ${system.maxHp} HP${system.kind === 'tire' || system.kind === 'tread' ? ` · ${vehicle.systems.filter(s => s.kind === system.kind).length} total` : ''}`).join(' · ')}
+      </Text>
+      {vehicle.mountedWeapons.length > 0 && (
+        <Text style={{ color: colors.primary, fontSize: 10, fontFamily: 'Inter_600SemiBold' }} numberOfLines={2}>
+          Weapons: {vehicle.mountedWeapons.join(', ')}
+        </Text>
+      )}
+      {vehicle.description ? <Text style={{ color: colors.mutedForeground, fontSize: 11, fontFamily: 'Inter_400Regular' }}>{vehicle.description}</Text> : null}
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+        <TouchableOpacity onPress={onCopy} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 7 }} accessibilityLabel={`Copy ${vehicle.name} as a custom vehicle`}>
+          <Feather name="copy" size={14} color={colors.primary} /><Text style={{ color: colors.primary, fontSize: 10, fontFamily: 'Inter_700Bold' }}>CUSTOMIZE COPY</Text>
+        </TouchableOpacity>
+        {onEdit && <TouchableOpacity onPress={onEdit} style={{ padding: 7 }} accessibilityLabel={`Edit ${vehicle.name}`}><Feather name="edit-2" size={15} color={colors.primary} /></TouchableOpacity>}
+        {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 7 }} accessibilityLabel={`Delete ${vehicle.name}`}><Feather name="trash-2" size={15} color={colors.destructive} /></TouchableOpacity>}
+      </View>
+    </View>
+  );
+}
+
 // ─── Equipment Screen ─────────────────────────────────────────────────────────
 export default function EquipmentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
-    customWeapons, customArmor, customAmmo, allAmmo,
+    customWeapons, customArmor, customAmmo, allAmmo, customVehicles, allVehicles,
     addCustomWeapon, updateCustomWeapon, deleteCustomWeapon,
     addCustomArmor, updateCustomArmor, deleteCustomArmor,
     addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
+    addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
   } = useApp();
-  const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo'>('weapons');
+  const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo' | 'vehicles'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [showArmorForm, setShowArmorForm] = useState(false);
   const [showAmmoForm, setShowAmmoForm] = useState(false);
+  const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [editingWeapon, setEditingWeapon] = useState<Weapon | null>(null);
   const [editingArmor, setEditingArmor] = useState<Armor | null>(null);
   const [editingAmmo, setEditingAmmo] = useState<AmmoType | null>(null);
+  const [editingVehicle, setEditingVehicle] = useState<VehicleProfile | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all'>('all');
   const { manualTab, manualCategory, manualSearch } = useLocalSearchParams<{
@@ -1119,9 +1172,22 @@ export default function EquipmentScreen() {
   const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
   const openNewAmmo = () => { setEditingAmmo(null); setShowAmmoForm(true); };
+  const openNewVehicle = () => {
+    setEditingVehicle({
+      id: genId(), name: '', category: 'car', description: '', isCustom: true,
+      topSpeedKph: null, accelerationKphPerRound: null, brakingKphPerRound: null,
+      turningRadiusMeters: null, rangeKm: null, passengers: '', carryingWeightLb: '',
+      fuelCharges: null, armorClass: 0,
+      damageResistance: { normal: 0, laser: 0, fire: 0, plasma: 0, explosion: 0 },
+      systems: [{ id: 'structure', name: 'Structure', kind: 'structure', currentHp: 100, maxHp: 100 }],
+      mountedWeapons: [], enhancements: [], notes: [], terrainPilotModifier: 0, inMotion: true,
+    });
+    setShowVehicleForm(true);
+  };
   const openEditWeapon = (w: Weapon) => { setEditingWeapon(w); setShowWeaponForm(true); };
   const openEditArmor = (a: Armor) => { setEditingArmor(a); setShowArmorForm(true); };
   const openEditAmmo = (ammo: AmmoType) => { setEditingAmmo(ammo); setShowAmmoForm(true); };
+  const openEditVehicle = (vehicle: VehicleProfile) => { setEditingVehicle(vehicle); setShowVehicleForm(true); };
   // Duplicate: open the creator pre-filled from an existing weapon/armor as a NEW custom.
   const openCopyWeapon = (w: Weapon) => { setEditingWeapon({ ...w, id: genId(), name: `${w.name} (Copy)`, isCustom: true }); setShowWeaponForm(true); };
   const openCopyArmor = (a: Armor) => { setEditingArmor({ ...a, id: genId(), name: `${a.name} (Copy)`, isCustom: true }); setShowArmorForm(true); };
@@ -1137,6 +1203,16 @@ export default function EquipmentScreen() {
       }]).map(component => ({ ...component, id: genId() })),
     });
     setShowAmmoForm(true);
+  };
+  const openCopyVehicle = (vehicle: VehicleProfile) => {
+    setEditingVehicle({
+      ...vehicle,
+      id: genId(),
+      name: `${vehicle.name} (Copy)`,
+      isCustom: true,
+      systems: vehicle.systems.map(system => ({ ...system, id: genId(), currentHp: system.maxHp })),
+    });
+    setShowVehicleForm(true);
   };
   const confirmDelete = (name: string, onDelete: () => void) => {
     // React Native Web does not implement Alert.alert action buttons.
@@ -1159,6 +1235,9 @@ export default function EquipmentScreen() {
   );
   const filteredArmor = allArmor.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()));
   const filteredAmmo = allAmmo.filter(ammo => !search || ammo.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredVehicles = allVehicles.filter(vehicle =>
+    !search || `${vehicle.name} ${vehicle.description} ${vehicle.category} ${vehicle.mountedWeapons.join(' ')}`
+      .toLowerCase().includes(search.toLowerCase()));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
@@ -1168,11 +1247,11 @@ export default function EquipmentScreen() {
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
           <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
-            onPress={() => tab === 'weapons' ? openNewWeapon() : tab === 'armor' ? openNewArmor() : openNewAmmo()}
+            onPress={() => tab === 'weapons' ? openNewWeapon() : tab === 'armor' ? openNewArmor() : tab === 'ammo' ? openNewAmmo() : openNewVehicle()}
           >
             <Feather name="plus" size={14} color={colors.primaryForeground} />
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
-              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'armor' ? 'CUSTOM ARMOR' : 'CUSTOM AMMO'}
+              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'armor' ? 'CUSTOM ARMOR' : tab === 'ammo' ? 'CUSTOM AMMO' : 'CUSTOM VEHICLE'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1189,7 +1268,7 @@ export default function EquipmentScreen() {
         </View>
 
         {/* Tab bar */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <ScrollableTabStrip accessibilityLabel="Equipment categories" colors={colors} contentContainerStyle={{ flexDirection: 'row', gap: 8 }}>
           {(['weapons', 'armor', 'ammo'] as const).map(t => (
             <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === t ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === t ? colors.primary : colors.border }} onPress={() => setTab(t)}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === t ? colors.primaryForeground : colors.mutedForeground }}>
@@ -1201,7 +1280,10 @@ export default function EquipmentScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+          <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === 'vehicles' ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === 'vehicles' ? colors.primary : colors.border }} onPress={() => setTab('vehicles')}>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === 'vehicles' ? colors.primaryForeground : colors.mutedForeground }}>VEHICLES ({filteredVehicles.length})</Text>
+          </TouchableOpacity>
+        </ScrollableTabStrip>
 
         {/* Category filter chips (weapons only) */}
         {tab === 'weapons' && (
@@ -1256,7 +1338,7 @@ export default function EquipmentScreen() {
             />
           )}
         />
-      ) : (
+      ) : tab === 'ammo' ? (
         <FlatList
           data={filteredAmmo}
           keyExtractor={ammo => ammo.id}
@@ -1272,6 +1354,25 @@ export default function EquipmentScreen() {
               onCopy={() => openCopyAmmo(item)}
               onEdit={item.isCustom ? () => openEditAmmo(item) : undefined}
               onDelete={item.isCustom ? () => confirmDelete(item.name, () => deleteCustomAmmo(item.id)) : undefined}
+            />
+          )}
+        />
+      ) : (
+        <FlatList
+          data={filteredVehicles}
+          keyExtractor={vehicle => vehicle.id}
+          contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
+          ListHeaderComponent={(
+            <Text style={{ marginHorizontal: 16, marginBottom: 10, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              Manual vehicle profiles track separate system HP, including each tire or tread. Built-in AC is 0 because the manual does not list model-specific values.
+            </Text>
+          )}
+          renderItem={({ item }) => (
+            <VehicleRow
+              vehicle={item}
+              onCopy={() => openCopyVehicle(item)}
+              onEdit={item.isCustom ? () => openEditVehicle(item) : undefined}
+              onDelete={item.isCustom ? () => confirmDelete(item.name, () => deleteCustomVehicle(item.id)) : undefined}
             />
           )}
         />
@@ -1305,6 +1406,19 @@ export default function EquipmentScreen() {
         onSave={ammo => {
           if (customAmmo.some(candidate => candidate.id === ammo.id)) updateCustomAmmo(ammo);
           else addCustomAmmo(ammo);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
+      <VehicleFormModal
+        visible={showVehicleForm}
+        initial={editingVehicle}
+        title={editingVehicle?.isCustom ? 'CUSTOM VEHICLE' : 'VEHICLE DETAILS'}
+        onClose={() => { setShowVehicleForm(false); setEditingVehicle(null); }}
+        onSave={vehicle => {
+          if (customVehicles.some(existing => existing.id === vehicle.id)) updateCustomVehicle(vehicle);
+          else addCustomVehicle(vehicle);
+          setShowVehicleForm(false);
+          setEditingVehicle(null);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />

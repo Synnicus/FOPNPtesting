@@ -1,18 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
-import type { Armor, Character, Weapon } from '../context/types.ts';
+import type { Armor, Character, VehicleProfile, Weapon } from '../context/types.ts';
+import { BUILT_IN_VEHICLES } from './vehicles.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
   createCampaignBundle,
   createCharacterBundle,
   createEquipmentBundle,
+  createVehicleBundle,
   parseCampaignFile,
   parseIndividualFile,
   portraitAsset,
   restoreCampaignPortraits,
   restoreCharacterPortrait,
+  restoreVehiclePortrait,
+  type PortablePortraitAsset,
+  vehiclePortraitAsset,
 } from './portableExports.ts';
+
+const portraitOwnerId = (asset: PortablePortraitAsset) =>
+  asset.kind === 'character-portrait' ? asset.characterId : asset.vehicleId;
 
 const character: Character = {
   id: 'character-1',
@@ -141,7 +149,7 @@ test('campaign portrait assets restore only to their matching character id', asy
   assert.deepEqual(bundle.state.characters[0].portraitOffset, { x: 0.25, y: 0.75 });
 
   const restored = await restoreCampaignPortraits(bundle, async image =>
-    `restored://${image.characterId}/${image.mimeType}`);
+    `restored://${portraitOwnerId(image)}/${image.mimeType}`);
   assert.equal(restored.restored, 1);
   assert.equal(restored.failed, 0);
   assert.equal(restored.state.characters[0].portrait, 'restored://character-1/image/jpeg');
@@ -423,7 +431,7 @@ for (const { label, settings, expected } of [
     assert.equal(parsed.bundle.state.hardcoreRadiationRules, expected);
 
     const restored = await restoreCampaignPortraits(parsed.bundle, async image =>
-      `restored://${image.characterId}`);
+      `restored://${portraitOwnerId(image)}`);
     assert.equal(restored.restored, 1);
     assert.equal(restored.state.hardcoreRadiationRules, expected);
     assert.equal(restored.state.characters[0].portrait, 'restored://character-1');
@@ -584,7 +592,7 @@ test('standalone character exports include only referenced custom equipment', ()
   );
   assert.deepEqual(bundle.customWeapons.map(weapon => weapon.id), ['custom-rifle']);
   assert.deepEqual(bundle.customArmor.map(armor => armor.id), ['custom-coat']);
-  assert.equal(bundle.assets[0].characterId, character.id);
+  assert.equal(bundle.assets[0]?.kind === 'character-portrait' ? bundle.assets[0].characterId : null, character.id);
   assert.equal(bundle.character.portrait, undefined);
 });
 
@@ -610,7 +618,7 @@ test('individual character files validate dependencies and restore only their ma
     assert.equal(parsed.bundle.customArmor[0].id, customArmor.id);
     const restored = await restoreCharacterPortrait(
       parsed.bundle,
-      async image => `restored://${image.characterId}`,
+      async image => `restored://${portraitOwnerId(image)}`,
     );
     assert.equal(restored.character.portrait, `restored://${character.id}`);
     assert.equal(restored.restored, 1);
@@ -695,6 +703,64 @@ test('portable campaign import ignores corrupt and duplicate portrait assets', (
   }
 });
 
+test('custom vehicle profiles and their portraits survive portable campaign round trips', async () => {
+  const source: VehicleProfile = {
+    ...BUILT_IN_VEHICLES[0],
+    id: 'custom-highwayman',
+    name: 'Custom Highwayman',
+    isCustom: true,
+    portrait: 'file:///old-device/highwayman.png',
+    systems: BUILT_IN_VEHICLES[0].systems.map(system => ({ ...system })),
+  };
+  const bundle = createCampaignBundle(
+    { ...state, customVehicles: [source] },
+    [vehiclePortraitAsset(source.id, 'image/png', 'AQID')!],
+  );
+  assert.equal(bundle.state.customVehicles?.[0].portrait, undefined);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') return;
+  const restored = await restoreCampaignPortraits(
+    parsed.bundle,
+    async asset => `restored://${portraitOwnerId(asset)}`,
+  );
+  assert.equal(restored.restored, 1);
+  assert.equal(restored.state.customVehicles?.[0].portrait, `restored://${source.id}`);
+  assert.equal(restored.state.customVehicles?.[0].armorClass, 0);
+});
+
+test('custom vehicle profiles export as importable individual files with portraits', async () => {
+  const source: VehicleProfile = {
+    ...BUILT_IN_VEHICLES[0],
+    id: 'custom-vehicle-file',
+    name: 'Custom Vehicle File',
+    isCustom: true,
+    portrait: 'file:///old-device/custom-vehicle.png',
+    systems: BUILT_IN_VEHICLES[0].systems.map(system => ({ ...system })),
+  };
+  const bundle = createVehicleBundle(
+    source,
+    vehiclePortraitAsset(source.id, 'image/png', 'AQID'),
+  );
+  assert.equal(bundle.vehicle.portrait, undefined);
+
+  const parsed = parseIndividualFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.kind !== 'vehicle') return;
+  const restored = await restoreVehiclePortrait(
+    parsed.bundle,
+    async asset => `restored://${portraitOwnerId(asset)}`,
+  );
+  assert.equal(restored.restored, 1);
+  assert.equal(restored.vehicle.portrait, `restored://${source.id}`);
+  assert.equal(restored.vehicle.armorClass, 0);
+
+  assert.equal(parseIndividualFile(JSON.stringify({
+    ...bundle,
+    vehicle: { ...bundle.vehicle, isCustom: false },
+  })).ok, false);
+});
+
 test('portable campaign import rejects duplicate character ids before restoring files', () => {
   const bundle = createCampaignBundle({
     ...state,
@@ -754,7 +820,7 @@ test('portrait restoration runs sequentially to bound memory and filesystem pres
     maxActive = Math.max(maxActive, active);
     await Promise.resolve();
     active -= 1;
-    return `restored://${asset.characterId}`;
+    return `restored://${portraitOwnerId(asset)}`;
   });
   assert.equal(restored.restored, 2);
   assert.equal(maxActive, 1);

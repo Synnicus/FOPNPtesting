@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -63,6 +63,8 @@ import {
 } from '@/data/radiation';
 import { normalizeKarmaFields } from '@/data/karma';
 import { normalizeFactionReputations } from '@/data/factionReputation';
+import { applyVehicleSystemDamage } from '@/data/vehicles';
+import { BUILT_IN_VEHICLES } from '@/data/vehicles';
 import {
   DEFAULT_CAMPAIGN_OPTIONS,
   normalizeCampaignOptions,
@@ -328,6 +330,7 @@ interface AppState extends CampaignOptions {
   customWeapons: Weapon[];
   customArmor: Armor[];
   customAmmo: AmmoType[];
+  customVehicles: VehicleProfile[];
   customBestiaryTemplates: BestiaryTemplate[];
   initiativeEntries: InitiativeEntry[];
   currentRound: number;
@@ -468,6 +471,19 @@ function normalizePersistedState(parsed: AppState): AppState {
       ? normalized.hardcoreRadiationRules === true
       : legacyRadiationRules === true,
     customWeapons,
+    customVehicles: (parsed.customVehicles ?? []).map(vehicle => ({
+      ...vehicle,
+      isCustom: true,
+      damageResistance: { ...vehicle.damageResistance },
+      systems: (vehicle.systems ?? []).map(system => ({
+        ...system,
+        maxHp: Math.max(1, Math.floor(system.maxHp ?? 1)),
+        currentHp: Math.max(0, Math.min(system.maxHp ?? 1, Math.floor(system.currentHp ?? system.maxHp ?? 1))),
+      })),
+      mountedWeapons: [...(vehicle.mountedWeapons ?? [])],
+      enhancements: [...(vehicle.enhancements ?? [])],
+      notes: [...(vehicle.notes ?? [])],
+    })),
     characters: (normalized.characters ?? []).map(character =>
       normalizeCharacterAmmoStates(character, allWeapons, allAmmo)),
   };
@@ -478,6 +494,7 @@ interface AppContextValue extends AppState {
   allWeapons: Weapon[];
   allArmor: Armor[];
   allAmmo: AmmoType[];
+  allVehicles: VehicleProfile[];
 
   addCharacter: (char: Character) => void;
   updateCharacter: (char: Character) => void;
@@ -486,7 +503,7 @@ interface AppContextValue extends AppState {
   moveCharacter: (characterId: string, targetCharacterId: string) => void;
 
   applyDamage: (characterId: string, damage: number) => void;
-  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string) => void;
+  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string, vehicleSystemId?: string) => void;
   healCharacter: (characterId: string, amount: number) => void;
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
@@ -552,6 +569,9 @@ interface AppContextValue extends AppState {
   addCustomAmmo: (a: AmmoType) => void;
   updateCustomAmmo: (a: AmmoType) => void;
   deleteCustomAmmo: (id: string) => void;
+  addCustomVehicle: (vehicle: VehicleProfile) => void;
+  updateCustomVehicle: (vehicle: VehicleProfile) => void;
+  deleteCustomVehicle: (id: string) => void;
 
   addCustomBestiaryTemplate: (t: BestiaryTemplate) => void;
   removeCustomBestiaryTemplate: (id: string) => void;
@@ -567,6 +587,7 @@ const defaultState: AppState = markConditionSemanticsV2({
   customWeapons: [],
   customArmor: [],
   customAmmo: [],
+  customVehicles: [],
   customBestiaryTemplates: [],
   initiativeEntries: [],
   currentRound: 1,
@@ -603,10 +624,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const activePortraitUris = state.characters
     .map(character => character.portrait)
     .filter((uri): uri is string => !!uri);
-  const activePortraitSignature = [...activePortraitUris].sort().join('\n');
+  const customVehiclePortraitUris = state.customVehicles
+    .map(vehicle => vehicle.portrait)
+    .filter((uri): uri is string => !!uri);
+  const activePortraitSignature = [...activePortraitUris, ...customVehiclePortraitUris].sort().join('\n');
   useEffect(() => {
     if (!loaded) return;
-    cleanupUnreferencedPortraitImports(new Set(activePortraitUris));
+    cleanupUnreferencedPortraitImports(new Set([...activePortraitUris, ...customVehiclePortraitUris]));
   }, [loaded, activePortraitSignature]);
 
   // ─── Character CRUD ─────────────────────────────────────────────────────────
@@ -627,8 +651,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const sheet = resolveCharacterArmorSheet(
         char, allArmor, false, s.hardcoreRadiationRules, s.mutantGhoulRadiationRules, s.ghoulRadiationHealingOption,
       );
+      const vehicleStructure = char.vehicle?.systems.find(system => system.kind === 'structure')
+        ?? char.vehicle?.systems[0];
       const normalized = normalizeCharacterAmmoStates(
-        { ...char, currentAP: Math.min(char.currentAP, sheet.maxAP) },
+        {
+          ...char,
+          ...(char.vehicle && vehicleStructure ? {
+            maxHp: vehicleStructure.maxHp,
+            currentHp: vehicleStructure.currentHp,
+            armorClass: char.vehicle.armorClass,
+            manualDerivedStats: { ...char.manualDerivedStats, armorClass: char.vehicle.armorClass, maxAP: 0, sequence: 0 },
+          } : {}),
+          currentAP: char.vehicle ? 0 : Math.min(char.currentAP, sheet.maxAP),
+        },
         [...BUILT_IN_WEAPONS, ...s.customWeapons],
         [...AMMO_TYPES, ...s.customAmmo],
       );
@@ -636,7 +671,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...s,
         characters: s.characters.map(c => c.id === char.id ? normalized : c),
         initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry =>
-          entry.characterId === char.id ? syncInitiativeEntrySheet(entry, sheet) : entry
+          entry.characterId === char.id
+            ? char.vehicle
+              ? {
+                  ...syncInitiativeEntrySheet(entry, sheet),
+                  currentHp: normalized.currentHp,
+                  maxHp: normalized.maxHp,
+                  armorClass: char.vehicle.armorClass,
+                  maxAP: 0,
+                  currentAP: 0,
+                }
+              : syncInitiativeEntrySheet(entry, sheet)
+            : entry
         )),
       };
     });
@@ -693,20 +739,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Combat Stats ────────────────────────────────────────────────────────────
 
   const applyDamage = useCallback((characterId: string, damage: number) => {
-    setState(s => ({
-      ...s,
-      characters: s.characters.map(c => c.id === characterId
-        ? { ...c, currentHp: Math.max(0, c.currentHp - damage) }
-        : c),
-      initiativeEntries: s.initiativeEntries.map(e => e.characterId === characterId
-        ? { ...e, currentHp: Math.max(0, e.currentHp - damage) }
-        : e),
-    }));
+    setState(s => {
+      const characters = s.characters.map(character => {
+        if (character.id !== characterId) return character;
+        if (!character.vehicle) return { ...character, currentHp: Math.max(0, character.currentHp - damage) };
+        const updatedVehicle = applyVehicleSystemDamage(character.vehicle, 'structure', damage);
+        const structure = updatedVehicle.systems.find(system => system.kind === 'structure') ?? updatedVehicle.systems[0];
+        return {
+          ...character,
+          vehicle: updatedVehicle,
+          currentHp: structure?.currentHp ?? character.currentHp,
+          maxHp: structure?.maxHp ?? character.maxHp,
+        };
+      });
+      const updated = characters.find(character => character.id === characterId);
+      return {
+        ...s,
+        characters,
+        initiativeEntries: s.initiativeEntries.map(entry => entry.characterId === characterId
+          ? { ...entry, currentHp: updated?.currentHp ?? entry.currentHp, maxHp: updated?.maxHp ?? entry.maxHp }
+          : entry),
+      };
+    });
   }, []);
 
-  const applyCombatDamage = useCallback((requestId: string, characterId: string, damage: number, damagingHits: number, location?: string) => {
-    setState(s => applyEquipmentDamage(s, [...BUILT_IN_ARMOR, ...s.customArmor],
-      requestId, characterId, damage, damagingHits, location));
+  const applyCombatDamage = useCallback((
+    requestId: string,
+    characterId: string,
+    damage: number,
+    damagingHits: number,
+    location?: string,
+    vehicleSystemId?: string,
+  ) => {
+    setState(s => {
+      const target = s.characters.find(character => character.id === characterId);
+      if (!target?.vehicle) {
+        return applyEquipmentDamage(s, [...BUILT_IN_ARMOR, ...s.customArmor],
+          requestId, characterId, damage, damagingHits, location);
+      }
+      if (s.damageReceiptIds?.includes(requestId)) return s;
+      const systemId = target.vehicle.systems.some(system => system.id === vehicleSystemId)
+        ? vehicleSystemId!
+        : (target.vehicle.systems.find(system => system.kind === 'structure')?.id ?? target.vehicle.systems[0]?.id);
+      if (!systemId) return s;
+      const updatedVehicle = applyVehicleSystemDamage(target.vehicle, systemId, damage);
+      const structure = updatedVehicle.systems.find(system => system.kind === 'structure') ?? updatedVehicle.systems[0];
+      const characters = s.characters.map(character => character.id === characterId
+        ? {
+            ...character,
+            vehicle: updatedVehicle,
+            currentHp: structure?.currentHp ?? character.currentHp,
+            maxHp: structure?.maxHp ?? character.maxHp,
+          }
+        : character);
+      return {
+        ...s,
+        characters,
+        initiativeEntries: s.initiativeEntries.map(entry => entry.characterId === characterId
+          ? { ...entry, currentHp: structure?.currentHp ?? entry.currentHp, maxHp: structure?.maxHp ?? entry.maxHp }
+          : entry),
+        damageReceiptIds: [...(s.damageReceiptIds ?? []), requestId].slice(-64),
+      };
+    });
   }, []);
 
   const healCharacter = useCallback((characterId: string, amount: number) => {
@@ -1795,6 +1889,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addCustomVehicle = useCallback((vehicle: VehicleProfile) => {
+    setState(s => ({
+      ...s,
+      customVehicles: [...s.customVehicles, {
+        ...vehicle,
+        isCustom: true,
+        systems: vehicle.systems.map(system => ({ ...system, currentHp: system.maxHp })),
+      }],
+    }));
+  }, []);
+  const updateCustomVehicle = useCallback((vehicle: VehicleProfile) => {
+    setState(s => ({
+      ...s,
+      customVehicles: s.customVehicles.map(existing => existing.id === vehicle.id
+        ? { ...vehicle, isCustom: true }
+        : existing),
+    }));
+  }, []);
+  const deleteCustomVehicle = useCallback((id: string) => {
+    setState(s => ({ ...s, customVehicles: s.customVehicles.filter(vehicle => vehicle.id !== id) }));
+  }, []);
+
   // ─── Custom Bestiary ─────────────────────────────────────────────────────────
 
   const addCustomBestiaryTemplate = useCallback((t: BestiaryTemplate) => {
@@ -1963,12 +2079,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...state.customArmor];
   const allAmmo = [...AMMO_TYPES, ...state.customAmmo];
+  const allVehicles = [...BUILT_IN_VEHICLES, ...state.customVehicles];
 
   return (
     <AppContext.Provider value={{
       ...state,
       loaded,
-      allWeapons, allArmor, allAmmo,
+      allWeapons, allArmor, allAmmo, allVehicles,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
         applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
         setMutantGhoulRadiationRules, setGhoulRadiationHealingOption,
@@ -1984,6 +2101,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,
       addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor,
       addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
+      addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
       exportCampaign, importCampaign,
     }}>

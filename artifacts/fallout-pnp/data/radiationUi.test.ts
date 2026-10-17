@@ -40,15 +40,15 @@ test('normal and streamlined combat add resolved radiation without applying resi
     combatSource.indexOf('// Apply a critical-hit table entry'),
   );
   assert.match(normalApply, /if \(totalDamage > 0\) applyCombatDamage\(attackReceipt\.current, defender\.id, totalDamage,/);
-  assert.match(normalApply, /if \(totalRadiationExposure > 0\) adjustRadiation\(defender\.id, totalRadiationExposure\)/);
+  assert.match(normalApply, /if \(totalRadiationExposure > 0 && !defender\.vehicle\) adjustRadiation\(defender\.id, totalRadiationExposure\)/);
   assert.doesNotMatch(normalApply, /resolveRadiationAddition|radiationResistance/);
 
   const streamlinedApply = combatSource.slice(
     combatSource.indexOf('setStreamlinedDmgResult({ perHit'),
     combatSource.indexOf('Haptics.notificationAsync', combatSource.indexOf('setStreamlinedDmgResult({ perHit')),
   );
-  assert.match(streamlinedApply, /if \(totalBurstDmg > 0\) applyCombatDamage\(attackReceipt\.current, defender\.id, totalBurstDmg, damagingHits\)/);
-  assert.match(streamlinedApply, /if \(radiationExposure > 0\) adjustRadiation\(defender\.id, radiationExposure\)/);
+  assert.match(streamlinedApply, /if \(totalBurstDmg > 0\) applyCombatDamage\(\s*attackReceipt\.current, defender\.id, totalBurstDmg, damagingHits, undefined,\s*selectedVehicleSystem\?\.id,\s*\)/);
+  assert.match(streamlinedApply, /if \(radiationExposure > 0 && !defender\.vehicle\) adjustRadiation\(defender\.id, radiationExposure\)/);
   assert.doesNotMatch(streamlinedApply, /resolveRadiationAddition|radiationResistance|currentHp/);
 });
 

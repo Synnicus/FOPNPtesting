@@ -14,7 +14,7 @@ import {
   Character, CharacterType, RaceType,
   SkillType, SPECIALStats, Injury, NaturalProtection, DamageType, Weapon, Armor,
   COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
-  DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION,
+  DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION, VehicleProfile,
 } from '@/context/types';
 import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/EquipmentConditionPanel';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
@@ -51,6 +51,7 @@ import {
 import { refundPerk } from '@/data/perkRefund';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { getLegacyPremadeRepairCandidateWeaponIds } from '@/data/condition';
+import { spawnVehicleCharacter, vehicleSystemStatus } from '@/data/vehicles';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import {
@@ -2439,13 +2440,14 @@ export default function CharactersScreen() {
   const insets = useSafeAreaInsets();
   const {
     characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter,
-    allWeapons, allArmor, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+    allWeapons, allArmor, allVehicles, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     restorePremadeWeaponCondition,
   } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [showPremades, setShowPremades] = useState(false);
+  const [showVehiclePicker, setShowVehiclePicker] = useState(false);
   const [bioChar, setBioChar] = useState<Character | null>(null);
   const [showStorage, setShowStorage] = useState(false);
   const [healAllPrompt, setHealAllPrompt] = useState<'radiation' | 'confirm' | null>(null);
@@ -2567,7 +2569,7 @@ export default function CharactersScreen() {
   };
 
   const resetAllHp = (healRadiation: boolean) => {
-    characters.filter(c => !c.inStorage).forEach(c => {
+    characters.filter(c => !c.inStorage && !c.vehicle).forEach(c => {
       const resetHp = !isHealingBlocked(c) && (c.currentHp !== c.maxHp || c.isKnockedOut);
       const resetRad = healRadiation && (c.accumulatedRadiation ?? 0) > 0;
       if (!resetHp && !resetRad) return;
@@ -2624,6 +2626,46 @@ export default function CharactersScreen() {
 
   const renderCharacterCard = (item: Character, visibleCharacters: Character[]) => {
     const index = visibleCharacters.findIndex(character => character.id === item.id);
+    if (item.vehicle) {
+      const vehicle = item.vehicle;
+      const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
+      return (
+        <View key={item.id} style={{ padding: 13, gap: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {item.portrait
+              ? <Image source={{ uri: item.portrait }} style={{ width: 52, height: 42, borderRadius: 6, backgroundColor: colors.secondary }} />
+              : <View style={{ width: 52, height: 42, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}><Feather name="truck" size={22} color={colors.primary} /></View>}
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{item.name}</Text>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+                VEHICLE · AC {vehicle.armorClass} · STRUCTURE {structure?.currentHp ?? item.currentHp}/{structure?.maxHp ?? item.maxHp}
+              </Text>
+            </View>
+            {item.inStorage && <Text style={{ color: colors.mutedForeground, fontSize: 9, fontFamily: 'Inter_700Bold' }}>STORED</Text>}
+          </View>
+          {vehicle.systems.map(system => (
+            <View key={system.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={{ flex: 1, color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{system.name}</Text>
+              <Text style={{ color: vehicleSystemStatus(system) === 'operational' ? colors.mutedForeground : colors.destructive, fontSize: 10, fontFamily: 'Inter_700Bold' }}>
+                {system.currentHp}/{system.maxHp} HP · {vehicleSystemStatus(system).toUpperCase()}
+              </Text>
+            </View>
+          ))}
+          <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}>
+            DR N/L/F/P/E {vehicle.damageResistance.normal}/{vehicle.damageResistance.laser}/{vehicle.damageResistance.fire}/{vehicle.damageResistance.plasma}/{vehicle.damageResistance.explosion}%
+            {vehicle.mountedWeapons.length ? ` · ${vehicle.mountedWeapons.join(', ')}` : ''}
+          </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 14, paddingTop: 3 }}>
+            <TouchableOpacity onPress={() => askForCharacterAction('storage', item)} accessibilityRole="button" accessibilityLabel={`${item.inStorage ? 'Restore' : 'Store'} ${item.name}`}>
+              <Feather name={item.inStorage ? 'corner-up-left' : 'archive'} size={16} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setDeleteTarget(item)} accessibilityRole="button" accessibilityLabel={`Delete ${item.name}`}>
+              <Feather name="trash-2" size={16} color={colors.destructive} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
     return (
       <CharacterCard
         key={item.id}
@@ -2661,6 +2703,10 @@ export default function CharactersScreen() {
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66' }} onPress={() => setShowPremades(true)}>
               <Feather name="users" size={14} color={colors.primary} />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>PREMADE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66' }} onPress={() => setShowVehiclePicker(true)}>
+              <Feather name="truck" size={14} color={colors.primary} />
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>VEHICLE</Text>
             </TouchableOpacity>
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }} onPress={() => { setEditingChar(null); setShowForm(true); }}>
               <Feather name="plus" size={14} color={colors.primaryForeground} />
@@ -2736,6 +2782,42 @@ export default function CharactersScreen() {
         onSave={handleSave}
         onClose={() => { setShowForm(false); setEditingChar(null); }}
       />
+      <Modal visible={showVehiclePicker} transparent animationType="slide" onRequestClose={() => setShowVehiclePicker(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.78)' }}>
+          <View style={{ maxHeight: '82%', backgroundColor: colors.background, borderTopLeftRadius: 14, borderTopRightRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderColor: colors.border }}>
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 14, letterSpacing: 1.5 }}>ADD A VEHICLE</Text>
+              <TouchableOpacity onPress={() => setShowVehiclePicker(false)} accessibilityLabel="Close vehicle picker"><Feather name="x" size={20} color={colors.mutedForeground} /></TouchableOpacity>
+            </View>
+            <FlatList
+              data={allVehicles}
+              keyExtractor={vehicle => vehicle.id}
+              contentContainerStyle={{ padding: 12, gap: 8, paddingBottom: insets.bottom + 16 }}
+              renderItem={({ item: vehicle }) => (
+                <TouchableOpacity
+                  onPress={() => {
+                    addCharacter(spawnVehicleCharacter(vehicle, genId()));
+                    setShowVehiclePicker(false);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }}
+                  style={{ flexDirection: 'row', gap: 10, alignItems: 'center', padding: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius }}
+                >
+                  {vehicle.portrait
+                    ? <Image source={{ uri: vehicle.portrait }} style={{ width: 50, height: 42, borderRadius: 5 }} />
+                    : <View style={{ width: 50, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: colors.secondary }}><Feather name="truck" size={20} color={colors.primary} /></View>}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 13 }}>{vehicle.name}</Text>
+                    <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10 }}>
+                      AC {vehicle.armorClass} · Structure {vehicle.systems.find(system => system.kind === 'structure')?.maxHp ?? 0} HP
+                    </Text>
+                  </View>
+                  <Feather name="plus-circle" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
 
       <PremadePickerModal
         visible={showPremades}

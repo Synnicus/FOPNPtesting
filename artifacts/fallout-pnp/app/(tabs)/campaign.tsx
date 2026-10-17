@@ -19,20 +19,23 @@ import { useApp } from '@/context/AppContext';
 import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import QuickRulesReference from '@/components/ManualQuickRulesReference';
-import type { Armor, Character, Weapon } from '@/context/types';
+import type { Armor, Character, VehicleProfile, Weapon } from '@/context/types';
 import {
   CampaignStateSnapshot,
   PortablePortraitAsset,
   createCampaignBundle,
   createCharacterBundle,
   createEquipmentBundle,
+  createVehicleBundle,
   parseCampaignFile,
   parseIndividualFile,
   parsePortraitDataUri,
   portraitAsset,
   portraitDataUri,
+  vehiclePortraitAsset,
   restoreCampaignPortraits,
   restoreCharacterPortrait,
+  restoreVehiclePortrait,
 } from '@/data/portableExports';
 
 function defaultExportName() {
@@ -46,6 +49,36 @@ function sanitizeFilename(name: string) {
   const cleaned = trimmed.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '-');
   const base = cleaned.length > 0 ? cleaned : defaultExportName();
   return `${base}.json`;
+}
+
+type CampaignExportCategory = 'players' | 'npcs' | 'weapons' | 'armor' | 'vehicles';
+
+function IndividualExportRow({ name, detail, busy, disabled, onExport }: {
+  name: string;
+  detail: string;
+  busy: boolean;
+  disabled: boolean;
+  onExport: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{name}</Text>
+        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{detail}</Text>
+      </View>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Export ${name}`}
+        onPress={onExport}
+        disabled={disabled}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary, opacity: disabled ? 0.5 : 1 }}
+      >
+        <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>JSON</Text>
+        <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 function webDownload(content: string, filename: string) {
@@ -108,11 +141,44 @@ async function readPortrait(character: Character): Promise<PortablePortraitAsset
   }
 }
 
-async function collectPortraitAssets(characters: readonly Character[]) {
-  const results = await Promise.all(characters.map(readPortrait));
+async function readVehiclePortrait(vehicle: VehicleProfile): Promise<PortablePortraitAsset | null> {
+  if (!vehicle.portrait) return null;
+  const embedded = parsePortraitDataUri(vehicle.portrait);
+  if (embedded) return vehiclePortraitAsset(vehicle.id, embedded.mimeType, embedded.base64);
+
+  try {
+    if (Platform.OS === 'web') {
+      const response = await fetch(vehicle.portrait);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return vehiclePortraitAsset(
+        vehicle.id,
+        mimeTypeForUri(vehicle.portrait, blob.type),
+        arrayBufferToBase64(await blob.arrayBuffer()),
+      );
+    }
+
+    const file = new ExpoFile(vehicle.portrait);
+    if (!file.exists) return null;
+    return vehiclePortraitAsset(
+      vehicle.id,
+      mimeTypeForUri(vehicle.portrait, file.type),
+      await file.base64(),
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function collectPortraitAssets(characters: readonly Character[], vehicles: readonly VehicleProfile[] = []) {
+  const results = await Promise.all([
+    ...characters.map(readPortrait),
+    ...vehicles.map(readVehiclePortrait),
+  ]);
   return {
     assets: results.filter((asset): asset is PortablePortraitAsset => !!asset),
     failed: characters.filter(character => character.portrait).length
+      + vehicles.filter(vehicle => vehicle.portrait).length
       - results.filter(Boolean).length,
   };
 }
@@ -143,7 +209,8 @@ function createPortraitImportSession(): {
   let assetIndex = 0;
   return {
     materialize: async asset => {
-      const safeId = asset.characterId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
+      const ownerId = asset.kind === 'character-portrait' ? asset.characterId : asset.vehicleId;
+      const safeId = ownerId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
       const file = new ExpoFile(
         directory,
         `${assetIndex++}-${safeId}.${portraitExtension(asset.mimeType)}`,
@@ -165,6 +232,8 @@ export default function CampaignScreen() {
     characters,
     customWeapons,
     customArmor,
+    customVehicles,
+    allVehicles,
     allWeapons,
     allArmor,
     addCharacter,
@@ -173,6 +242,8 @@ export default function CampaignScreen() {
     updateCustomWeapon,
     addCustomArmor,
     updateCustomArmor,
+    addCustomVehicle,
+    updateCustomVehicle,
     exportCampaign,
     importCampaign,
   } = useApp();
@@ -181,6 +252,7 @@ export default function CampaignScreen() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCampaignOptions, setShowCampaignOptions] = useState(false);
   const [showCampaignLibrary, setShowCampaignLibrary] = useState(false);
+  const [expandedExportCategory, setExpandedExportCategory] = useState<CampaignExportCategory | null>(null);
   const [exportName, setExportName] = useState(defaultExportName());
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [conflictPrompt, setConflictPrompt] = useState<{
@@ -189,8 +261,9 @@ export default function CampaignScreen() {
     resolve: (choice: 'replace' | 'keep' | 'cancel') => void;
   } | null>(null);
 
-  const pcs = characters.filter(c => c.type === 'pc');
-  const npcs = characters.filter(c => c.type === 'npc');
+  const pcs = characters.filter(c => c.type === 'pc' && !c.vehicle);
+  const vehicleCharacters = characters.filter(c => !!c.vehicle);
+  const npcs = characters.filter(c => c.type === 'npc' && !c.vehicle);
 
   const showStatus = (type: 'success' | 'error', message: string) => {
     setStatus({ type, message });
@@ -228,7 +301,7 @@ export default function CampaignScreen() {
     setBusyAction('campaign');
     try {
       const state = JSON.parse(exportCampaign()) as CampaignStateSnapshot;
-      const portraits = await collectPortraitAssets(state.characters);
+      const portraits = await collectPortraitAssets(state.characters, state.customVehicles ?? []);
       const bundle = createCampaignBundle(state, portraits.assets);
       const filename = sanitizeFilename(exportName);
       const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
@@ -301,6 +374,65 @@ export default function CampaignScreen() {
   const importIndividualJson = async (
     parsed: Extract<ReturnType<typeof parseIndividualFile>, { ok: true }>,
   ) => {
+    if (parsed.kind === 'vehicle') {
+      const vehicle = parsed.bundle.vehicle;
+      if (allVehicles.some(existing => existing.id === vehicle.id && !existing.isCustom)) {
+        showStatus('error', `${vehicle.name} uses an ID reserved by a built-in vehicle and cannot be imported.`);
+        return;
+      }
+
+      const existing = customVehicles.find(candidate => candidate.id === vehicle.id);
+      let choice: 'replace' | 'keep' | 'cancel' = 'replace';
+      if (existing) {
+        choice = await requestConflictChoice(
+          'Vehicle ID already exists',
+          `"${vehicle.name}" has the same ID as "${existing.name}". Replace the existing vehicle or keep it unchanged?`,
+        );
+      }
+      if (choice === 'cancel') return;
+      if (choice === 'keep') {
+        showStatus('success', `Kept the existing vehicle. No changes were made.`);
+        return;
+      }
+
+      setBusyAction('import');
+      let importSession: ReturnType<typeof createPortraitImportSession> | null = null;
+      try {
+        let importedVehicle = vehicle;
+        let restored = 0;
+        let failed = 0;
+        if (parsed.bundle.assets.length > 0) {
+          importSession = createPortraitImportSession();
+          const result = await restoreVehiclePortrait(parsed.bundle, importSession.materialize);
+          importedVehicle = result.vehicle;
+          restored = result.restored;
+          failed = result.failed;
+          if (failed > 0) importSession.cleanup();
+        }
+
+        if (existing) updateCustomVehicle(importedVehicle);
+        else addCustomVehicle(importedVehicle);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const pictureNote = restored > 0
+          ? ' Picture restored.'
+          : failed > 0
+            ? ' Picture could not be restored.'
+            : '';
+        const ignoredNote = parsed.ignoredAssets > 0
+          ? ` Ignored ${parsed.ignoredAssets} invalid picture asset${parsed.ignoredAssets === 1 ? '' : 's'}.`
+          : '';
+        showStatus('success', `${vehicle.name} was imported as a custom vehicle.${pictureNote}${ignoredNote}`);
+        setShowImportModal(false);
+        setImportJson('');
+      } catch {
+        importSession?.cleanup();
+        showStatus('error', `Could not import ${vehicle.name}.`);
+      } finally {
+        setBusyAction(null);
+      }
+      return;
+    }
+
     if (parsed.kind === 'equipment') {
       const { equipmentType, item } = parsed.bundle;
       const builtInConflict = equipmentType === 'weapon'
@@ -490,7 +622,7 @@ export default function CampaignScreen() {
     try {
       const asset = await readPortrait(character);
       const bundle = createCharacterBundle(character, customWeapons, customArmor, asset);
-      const filename = sanitizeFilename(`fallout-character-${character.name}`);
+      const filename = sanitizeFilename(`${character.vehicle ? 'fallout-vehicle' : 'fallout-character'}-${character.name}`);
       const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
       const dependencyCount = bundle.customWeapons.length + bundle.customArmor.length;
       const portraitNote = asset
@@ -520,6 +652,23 @@ export default function CampaignScreen() {
     }
   };
 
+  const exportVehicle = async (vehicle: VehicleProfile) => {
+    setBusyAction(`vehicle:${vehicle.id}`);
+    try {
+      const portrait = await readVehiclePortrait(vehicle);
+      const asset = portrait?.kind === 'vehicle-portrait' ? portrait : null;
+      const bundle = createVehicleBundle(vehicle, asset);
+      const filename = sanitizeFilename(`fallout-vehicle-${vehicle.name}`);
+      const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
+      const portraitNote = asset ? ' Picture included.' : vehicle.portrait ? ' Picture could not be read and was omitted.' : '';
+      showStatus('success', `${saved}${portraitNote}`);
+    } catch {
+      showStatus('error', `Could not export ${vehicle.name}.`);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const handleReset = () => {
     const doReset = () => {
       importCampaign(JSON.stringify({ characters: [], customWeapons: [], customArmor: [] }));
@@ -533,6 +682,112 @@ export default function CampaignScreen() {
         { text: 'Clear All', style: 'destructive', onPress: doReset },
       ]);
     }
+  };
+
+  const renderEmptyExportCategory = (message: string) => (
+    <Text style={{ paddingVertical: 8, fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+      {message}
+    </Text>
+  );
+
+  const renderCategoryExports = (category: CampaignExportCategory) => {
+    if (category === 'players') {
+      return pcs.length === 0
+        ? renderEmptyExportCategory('No player characters to export.')
+        : pcs.map(character => (
+          <IndividualExportRow
+            key={character.id}
+            name={character.name}
+            detail={`${character.inStorage ? 'IN STORAGE · ' : ''}portrait and linked custom gear included`}
+            busy={busyAction === `character:${character.id}`}
+            disabled={busyAction !== null}
+            onExport={() => void exportCharacter(character)}
+          />
+        ));
+    }
+    if (category === 'npcs') {
+      return npcs.length === 0
+        ? renderEmptyExportCategory('No NPCs or enemies to export.')
+        : npcs.map(character => (
+          <IndividualExportRow
+            key={character.id}
+            name={character.name}
+            detail={`${character.inStorage ? 'IN STORAGE · ' : ''}NPC · portrait and linked custom gear included`}
+            busy={busyAction === `character:${character.id}`}
+            disabled={busyAction !== null}
+            onExport={() => void exportCharacter(character)}
+          />
+        ));
+    }
+    if (category === 'weapons') {
+      return customWeapons.length === 0
+        ? renderEmptyExportCategory('No custom weapons to export.')
+        : customWeapons.map(weapon => (
+          <IndividualExportRow
+            key={weapon.id}
+            name={weapon.name}
+            detail="CUSTOM WEAPON"
+            busy={busyAction === `weapon:${weapon.id}`}
+            disabled={busyAction !== null}
+            onExport={() => void exportEquipment('weapon', weapon)}
+          />
+        ));
+    }
+    if (category === 'armor') {
+      return customArmor.length === 0
+        ? renderEmptyExportCategory('No custom armor to export.')
+        : customArmor.map(armor => (
+          <IndividualExportRow
+            key={armor.id}
+            name={armor.name}
+            detail="CUSTOM ARMOR"
+            busy={busyAction === `armor:${armor.id}`}
+            disabled={busyAction !== null}
+            onExport={() => void exportEquipment('armor', armor)}
+          />
+        ));
+    }
+
+    if (customVehicles.length === 0 && vehicleCharacters.length === 0) {
+      return renderEmptyExportCategory('No vehicles to export.');
+    }
+    return (
+      <View>
+        {customVehicles.length > 0 && (
+          <>
+            <Text style={{ paddingTop: 6, fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>CUSTOM VEHICLE PROFILES</Text>
+            {customVehicles.map(vehicle => (
+              <IndividualExportRow
+                key={`profile:${vehicle.id}`}
+                name={vehicle.name}
+                detail={`${vehicle.category.toUpperCase()} · editable vehicle profile${vehicle.portrait ? ' · picture included' : ''}`}
+                busy={busyAction === `vehicle:${vehicle.id}`}
+                disabled={busyAction !== null}
+                onExport={() => void exportVehicle(vehicle)}
+              />
+            ))}
+          </>
+        )}
+        {vehicleCharacters.length > 0 && (
+          <>
+            <Text style={{ paddingTop: 10, fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>VEHICLES IN CAMPAIGN</Text>
+            {vehicleCharacters.map(character => {
+              const structure = character.vehicle?.systems.find(system => system.kind === 'structure');
+              return (
+                <IndividualExportRow
+                  key={`campaign:${character.id}`}
+                  name={character.name}
+                  detail={`CAMPAIGN VEHICLE · structure ${character.currentHp}/${character.maxHp}${structure ? ` · ${structure.currentHp}/${structure.maxHp} HP` : ''}`}
+                  busy={busyAction === `character:${character.id}`}
+                  disabled={busyAction !== null}
+                  onExport={() => void exportCharacter(character)}
+                />
+              );
+            })}
+          </>
+        )}
+      </View>
+    );
   };
 
   return (
@@ -608,23 +863,45 @@ export default function CampaignScreen() {
           </View>
         )}
 
-        {/* Summary */}
+        {/* Campaign asset summary and individual JSON exports */}
         <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 }}>
-          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 12 }}>CAMPAIGN SUMMARY</Text>
-          {[
-            { label: 'Player Characters', value: pcs.length, icon: 'user' as const },
-            { label: 'NPCs / Enemies', value: npcs.length, icon: 'user-x' as const },
-            { label: 'Custom Weapons', value: customWeapons.length, icon: 'crosshair' as const },
-            { label: 'Custom Armor', value: customArmor.length, icon: 'shield' as const },
-          ].map(stat => (
-            <View key={stat.label} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                <Feather name={stat.icon} size={16} color={colors.primary} />
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 4 }}>CAMPAIGN ASSETS</Text>
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginBottom: 10 }}>
+            Tap a category to see its records and download individual JSON files.
+          </Text>
+          {([
+            { id: 'players', label: 'Player Characters', value: pcs.length, icon: 'user' },
+            { id: 'npcs', label: 'NPCs / Enemies', value: npcs.length, icon: 'user-x' },
+            { id: 'weapons', label: 'Custom Weapons', value: customWeapons.length, icon: 'crosshair' },
+            { id: 'armor', label: 'Custom Armor', value: customArmor.length, icon: 'shield' },
+            { id: 'vehicles', label: 'Vehicles', value: customVehicles.length + vehicleCharacters.length, icon: 'truck' },
+          ] as const).map((stat, index, list) => {
+            const expanded = expandedExportCategory === stat.id;
+            return (
+              <View key={stat.id} style={{ borderBottomWidth: index < list.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded }}
+                  accessibilityLabel={`${stat.label}, ${stat.value} items${expanded ? ', expanded' : ', collapsed'}`}
+                  testID={`campaign-assets-toggle-${stat.id}`}
+                  onPress={() => setExpandedExportCategory(current => current === stat.id ? null : stat.id)}
+                  style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingVertical: 7 }}
+                >
+                  <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: expanded ? colors.primary + '22' : colors.secondary, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Feather name={stat.icon} size={16} color={colors.primary} />
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{stat.label}</Text>
+                  <Text style={{ fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary, marginRight: 8 }}>{stat.value}</Text>
+                  <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                {expanded && (
+                  <View testID={`campaign-assets-content-${stat.id}`} style={{ paddingLeft: 42, paddingBottom: 8 }}>
+                    {renderCategoryExports(stat.id)}
+                  </View>
+                )}
               </View>
-              <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{stat.label}</Text>
-              <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary }}>{stat.value}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         {/* Actions */}
@@ -713,75 +990,6 @@ export default function CampaignScreen() {
             <Feather name="clipboard" size={14} color={colors.primary} />
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.5 }}>PASTE JSON INSTEAD</Text>
           </TouchableOpacity>
-
-          {/* Individual portable files */}
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 10 }}>
-            <View style={{ gap: 3 }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>INDIVIDUAL EXPORTS</Text>
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                Save or share one character or custom equipment item.
-              </Text>
-            </View>
-
-            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>CHARACTERS</Text>
-            {characters.length === 0 ? (
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No characters to export.</Text>
-            ) : characters.map(character => {
-              const busy = busyAction === `character:${character.id}`;
-              return (
-                <View key={character.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{character.name}</Text>
-                    <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{character.type.toUpperCase()} · portrait and linked custom gear included</Text>
-                  </View>
-                  <TouchableOpacity
-                    accessibilityLabel={`Export ${character.name}`}
-                    onPress={() => exportCharacter(character)}
-                    disabled={busyAction !== null}
-                    style={{ padding: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}
-                  >
-                    <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-
-            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginTop: 4 }}>CUSTOM EQUIPMENT</Text>
-            {customWeapons.length === 0 && customArmor.length === 0 ? (
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>No custom equipment to export.</Text>
-            ) : (
-              <>
-                {customWeapons.map(weapon => {
-                  const busy = busyAction === `weapon:${weapon.id}`;
-                  return (
-                    <View key={`weapon:${weapon.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{weapon.name}</Text>
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>CUSTOM WEAPON</Text>
-                      </View>
-                      <TouchableOpacity accessibilityLabel={`Export ${weapon.name}`} onPress={() => exportEquipment('weapon', weapon)} disabled={busyAction !== null} style={{ padding: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}>
-                        <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-                {customArmor.map(armor => {
-                  const busy = busyAction === `armor:${armor.id}`;
-                  return (
-                    <View key={`armor:${armor.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{armor.name}</Text>
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>CUSTOM ARMOR</Text>
-                      </View>
-                      <TouchableOpacity accessibilityLabel={`Export ${armor.name}`} onPress={() => exportEquipment('armor', armor)} disabled={busyAction !== null} style={{ padding: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.secondary }}>
-                        <Feather name={busy ? 'clock' : 'download'} size={15} color={colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-              </>
-            )}
-          </View>
 
           {/* Clear */}
           <TouchableOpacity

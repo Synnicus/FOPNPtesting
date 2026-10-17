@@ -22,3 +22,22 @@ test('protection tab provides labeled natural AC controls and a total', () => {
   assert.match(protectionTab, /armorClass: \(np\.armorClass \?\? 0\) \+ 1/);
   assert.match(protectionTab, /Total AC: \{derivedAC\}/);
 });
+
+test('bestiary summary cards open full details and no longer expose a spawn button', () => {
+  const card = source.slice(source.indexOf('function BestiaryCard'), source.indexOf('// ─── Main Bestiary Screen'));
+  assert.match(card, /accessibilityRole="button"/);
+  assert.match(card, /accessibilityLabel=\{`Open \$\{template\.name\} details`\}/);
+  assert.match(card, /\['HP', template\.maxHp\]/);
+  assert.match(card, /\['AC', template\.armorClass\]/);
+  assert.match(card, /\['AP', template\.maxAP\]/);
+  assert.match(card, /\['SEQ', template\.sequence\]/);
+  assert.match(card, /\['XP', template\.xpValue \?\? '—'\]/);
+  assert.doesNotMatch(card, /criticalChance|template\.radiationResistance|template\.gasResistance|Damage Protection|Top skills/);
+  assert.doesNotMatch(card, />SPAWN</);
+
+  const detail = source.slice(source.indexOf('function BestiaryDetailModal'), source.indexOf('// ─── Custom NPC Form Modal'));
+  assert.match(detail, /RESISTANCES/);
+  assert.match(detail, /DAMAGE PROTECTION/);
+  assert.match(detail, /SKILLS/);
+  assert.match(detail, /SPAWN TO CHARACTERS/);
+});

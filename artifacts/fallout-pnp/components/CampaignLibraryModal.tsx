@@ -16,7 +16,7 @@ import {
   LocalizedTouchableOpacity as TouchableOpacity,
 } from '@/components/LocalizedText';
 import { useApp } from '@/context/AppContext';
-import type { Character } from '@/context/types';
+import type { Character, VehicleProfile } from '@/context/types';
 import { useColors } from '@/hooks/useColors';
 import {
   createCampaignBundle,
@@ -24,6 +24,7 @@ import {
   parsePortraitDataUri,
   portraitAsset,
   portraitDataUri,
+  vehiclePortraitAsset,
   restoreCampaignPortraits,
   type CampaignStateSnapshot,
   type PortablePortraitAsset,
@@ -60,8 +61,8 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-async function collectPortraitAssets(characters: readonly Character[]) {
-  const assets = await Promise.all(characters.map(async character => {
+async function collectPortraitAssets(characters: readonly Character[], vehicles: readonly VehicleProfile[] = []) {
+  const readCharacter = async (character: Character) => {
     if (!character.portrait) return null;
     const embedded = parsePortraitDataUri(character.portrait);
     if (embedded) return portraitAsset(character.id, embedded.mimeType, embedded.base64);
@@ -82,8 +83,30 @@ async function collectPortraitAssets(characters: readonly Character[]) {
     } catch {
       return null;
     }
-  }));
-  return assets.filter((asset): asset is PortablePortraitAsset => !!asset);
+  };
+  const readVehicle = async (vehicle: VehicleProfile) => {
+    if (!vehicle.portrait) return null;
+    const embedded = parsePortraitDataUri(vehicle.portrait);
+    if (embedded) return vehiclePortraitAsset(vehicle.id, embedded.mimeType, embedded.base64);
+    try {
+      if (Platform.OS === 'web') {
+        const response = await fetch(vehicle.portrait);
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return vehiclePortraitAsset(vehicle.id, mimeTypeForUri(vehicle.portrait, blob.type), arrayBufferToBase64(await blob.arrayBuffer()));
+      }
+      const file = new ExpoFile(vehicle.portrait);
+      if (!file.exists) return null;
+      return vehiclePortraitAsset(vehicle.id, mimeTypeForUri(vehicle.portrait, file.type), await file.base64());
+    } catch {
+      return null;
+    }
+  };
+  const assets = await Promise.all([
+    ...characters.map(readCharacter),
+    ...vehicles.map(readVehicle),
+  ]);
+  return assets.filter((asset): asset is NonNullable<typeof asset> => asset !== null);
 }
 
 function createPortraitImportSession(): {
@@ -102,7 +125,8 @@ function createPortraitImportSession(): {
   let assetIndex = 0;
   return {
     materialize: async asset => {
-      const safeId = asset.characterId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
+      const ownerId = asset.kind === 'character-portrait' ? asset.characterId : asset.vehicleId;
+      const safeId = ownerId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48);
       const file = new ExpoFile(
         directory,
         `${assetIndex++}-${safeId}.${portraitExtension(asset.mimeType)}`,
@@ -159,7 +183,7 @@ async function makePortableCampaignJson(json: string): Promise<string> {
   const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
   const assets = parsed.source === 'portable'
     ? parsed.bundle.assets
-    : await collectPortraitAssets(state.characters);
+    : await collectPortraitAssets(state.characters, state.customVehicles ?? []);
   return JSON.stringify(createCampaignBundle(state, assets));
 }
 
@@ -170,7 +194,8 @@ function campaignCounts(json: string) {
   return {
     characters: state.characters.length,
     npcs: state.characters.filter(character => character.type === 'npc').length,
-    equipment: (state.customWeapons?.length ?? 0) + (state.customArmor?.length ?? 0) + customAmmo.length,
+    equipment: (state.customWeapons?.length ?? 0) + (state.customArmor?.length ?? 0)
+      + (state.customVehicles?.length ?? 0) + customAmmo.length,
   };
 }
 
@@ -305,7 +330,7 @@ export default function CampaignLibraryModal({
       const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
       const assets = parsed.source === 'portable'
         ? parsed.bundle.assets
-        : await collectPortraitAssets(state.characters);
+        : await collectPortraitAssets(state.characters, state.customVehicles ?? []);
       const filenameName = fileName?.replace(/\.json$/i, '').trim();
       const baseName = filenameName && filenameName.length > 0 ? filenameName : 'Imported campaign';
       const record: SavedCampaignRecord = {
@@ -361,7 +386,7 @@ export default function CampaignLibraryModal({
       const state = parsed.source === 'portable' ? parsed.bundle.state : parsed.state;
       const assets = parsed.source === 'portable'
         ? parsed.bundle.assets
-        : await collectPortraitAssets(state.characters);
+        : await collectPortraitAssets(state.characters, state.customVehicles ?? []);
       const bundle = createCampaignBundle(state, assets);
       const json = JSON.stringify(bundle, null, 2);
       const filename = sanitizeFilename(record.name);
