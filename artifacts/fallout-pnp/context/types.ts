@@ -203,6 +203,29 @@ export interface KarmaLogEntry {
   createdAt: number;
 }
 
+export type FactionReputationKind = 'fame' | 'infamy';
+
+export interface FactionReputationLogEntry {
+  id: string;
+  kind: FactionReputationKind;
+  /** Signed adjustment to the corresponding Fame or Infamy total. */
+  change: number;
+  reason: string;
+  createdAt: number;
+}
+
+export interface FactionReputation {
+  id: string;
+  name: string;
+  /** Profile controls the four per-faction Fame and Infamy title thresholds. */
+  thresholdProfile: string;
+  fame: number;
+  infamy: number;
+  /** Optional role prefix shown before the automated New Vegas reputation title. */
+  customTitle?: string;
+  log: FactionReputationLogEntry[];
+}
+
 // ─── Weapon Ammo State ────────────────────────────────────────────────────────
 export interface WeaponAmmoState {
   weaponId: string;
@@ -295,6 +318,8 @@ export interface Character {
   karma?: number;
   /** Chronological history of Karma changes and neutral actions; entries may be deleted. */
   karmaLog?: KarmaLogEntry[];
+  /** Fallout: New Vegas-style faction Fame/Infamy totals, histories, and title overrides. */
+  factionReputations?: FactionReputation[];
 
   portrait?: string;
   /** How the portrait image fits its frame ('cover' crops, 'contain' letterboxes). */

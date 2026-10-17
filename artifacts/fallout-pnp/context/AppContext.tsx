@@ -62,6 +62,7 @@ import {
   type GhoulRadiationHealingOption,
 } from '@/data/radiation';
 import { normalizeKarmaFields } from '@/data/karma';
+import { normalizeFactionReputations } from '@/data/factionReputation';
 import {
   DEFAULT_CAMPAIGN_OPTIONS,
   normalizeCampaignOptions,
@@ -312,6 +313,7 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
   return {
     ...character,
     ...normalizeKarmaFields(character),
+    factionReputations: normalizeFactionReputations(character.factionReputations),
     inventoryWeaponIds,
     weaponAmmoStates,
     armorConditionStates: normalizeArmorCondition(character.armorConditionStates),

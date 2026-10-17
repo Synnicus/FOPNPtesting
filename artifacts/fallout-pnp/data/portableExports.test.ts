@@ -523,6 +523,42 @@ test('portable imports accept legacy characters but reject invalid or inconsiste
   })).ok, false);
 });
 
+test('faction Fame and Infamy totals and explanatory history survive portable exports and reject inconsistent records', () => {
+  const factionReputations = [{
+    id: 'faction-rep-1',
+    name: 'Brotherhood of Steel',
+    thresholdProfile: 'brotherhood-of-steel',
+    fame: 3,
+    infamy: 0,
+    customTitle: 'Paladin',
+    log: [
+      { id: 'fame-1', kind: 'fame', change: 5, reason: 'Recovered a lost holotape', createdAt: 1000 },
+      { id: 'fame-2', kind: 'fame', change: -2, reason: 'Lost standing after an argument', createdAt: 2000 },
+    ],
+  }];
+  const bundle = createCharacterBundle({ ...character, factionReputations }, [customWeapon], [customArmor]);
+  const parsed = parseIndividualFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.kind === 'character') {
+    assert.deepEqual(parsed.bundle.character.factionReputations, factionReputations);
+  }
+
+  assert.equal(parseIndividualFile(JSON.stringify({
+    ...bundle,
+    character: {
+      ...bundle.character,
+      factionReputations: [{ ...factionReputations[0], fame: 4 }],
+    },
+  })).ok, false);
+  assert.equal(parseIndividualFile(JSON.stringify({
+    ...bundle,
+    character: {
+      ...bundle.character,
+      factionReputations: [{ ...factionReputations[0], thresholdProfile: 'made-up-profile' }],
+    },
+  })).ok, false);
+});
+
 test('unembedded portrait URIs are removed rather than exporting device or network dependencies', () => {
   const bundle = createCampaignBundle({
     ...state,

@@ -2,11 +2,13 @@ import type {
   Armor,
   BestiaryTemplate,
   Character,
+  FactionReputation,
   KarmaLogEntry,
   InitiativeEntry,
   Weapon,
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
+import { isFactionReputationList } from './factionReputation.ts';
 import type { CampaignVisualTheme } from './campaignOptions.ts';
 import type { GhoulRadiationHealingOption } from './radiation.ts';
 
@@ -313,6 +315,13 @@ function hasValidKarmaData(value: Record<string, unknown>): boolean {
   return !hasKarma || historyTotal === karma;
 }
 
+function hasValidFactionReputationData(value: Record<string, unknown>): boolean {
+  if (value.factionReputations === undefined) return true;
+  const reputations = value.factionReputations as FactionReputation[];
+  if (!isFactionReputationList(reputations)) return false;
+  return new Set(reputations.map(faction => faction.name.trim().toLocaleLowerCase())).size === reputations.length;
+}
+
 function isCharacterRecord(value: unknown): value is Character {
   if (!isRecord(value)) return false;
   const numericFields = [
@@ -330,6 +339,7 @@ function isCharacterRecord(value: unknown): value is Character {
     && (value.type === 'pc' || value.type === 'npc')
     && typeof value.race === 'string'
     && hasValidKarmaData(value)
+    && hasValidFactionReputationData(value)
     && numericFields.every(field => isFiniteNumber(value[field]))
     && (value.accumulatedRadiation === undefined
       || (isFiniteNumber(value.accumulatedRadiation)
