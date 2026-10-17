@@ -412,7 +412,8 @@
     "Scroll tabs left": "Scorri schede a sinistra",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Scorri o trascina orizzontalmente, oppure usa i pulsanti freccia per vedere altre schede.",
     "Scroll tabs right": "Scorri schede a destra",
-    "CUSTOM AMMO": "MUNIZIONI PERSONALIZZATE"
+    "CUSTOM AMMO": "MUNIZIONI PERSONALIZZATE",
+    "Public Domain 1920s": "Anni ’20 di pubblico dominio"
   },
   "de": {
     "SPAWN": "ERSTELLEN",
@@ -849,7 +850,8 @@
     "Scroll tabs left": "Tabs nach links scrollen",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Wische oder ziehe horizontal, oder nutze die Pfeiltasten, um mehr Tabs zu sehen.",
     "Scroll tabs right": "Tabs nach rechts scrollen",
-    "CUSTOM AMMO": "BENUTZERDEFINIERTE MUNITION"
+    "CUSTOM AMMO": "BENUTZERDEFINIERTE MUNITION",
+    "Public Domain 1920s": "1920er-Musik gemeinfrei"
   },
   "fr": {
     "Equipped:": "Équipé :",
@@ -1265,7 +1267,8 @@
     "Scroll tabs left": "Faire défiler les onglets vers la gauche",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Balayez ou faites glisser horizontalement, ou utilisez les boutons fléchés pour voir plus d'onglets.",
     "Scroll tabs right": "Faire défiler les onglets vers la droite",
-    "CUSTOM AMMO": "MUNITIONS PERSONNALISÉES"
+    "CUSTOM AMMO": "MUNITIONS PERSONNALISÉES",
+    "Public Domain 1920s": "Années 1920 du domaine public"
   },
   "es-ES": {
     "Equipped:": "Equipado:",
@@ -1688,7 +1691,8 @@
     "Scroll tabs left": "Desplazar pestañas a la izquierda",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslice o arrastre horizontalmente, o use los botones de flecha para ver más pestañas.",
     "Scroll tabs right": "Desplazar pestañas a la derecha",
-    "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA"
+    "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA",
+    "Public Domain 1920s": "Años 20 de dominio público"
   },
   "es-MX": {
     "Equipped:": "Equipado:",
@@ -2111,7 +2115,8 @@
     "Scroll tabs left": "Desplazar pestañas a la izquierda",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslice o arrastre horizontalmente, o use los botones de flecha para ver más pestañas.",
     "Scroll tabs right": "Desplazar pestañas a la derecha",
-    "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA"
+    "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA",
+    "Public Domain 1920s": "Años 20 de dominio público"
   },
   "ja": {
     "Equipped:": "装備中:",
@@ -2558,7 +2563,8 @@
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平にスワイプまたはドラッグするか、矢印ボタンを使用して他のタブを表示してください。",
     "Scroll tabs right": "タブを右にスクロール",
     "% Gas ·": "% ガス ·",
-    "CUSTOM AMMO": "カスタム弾薬"
+    "CUSTOM AMMO": "カスタム弾薬",
+    "Public Domain 1920s": "パブリックドメインの1920年代"
   },
   "pl": {
     "Equipped:": "Wyposażono:",
@@ -2986,7 +2992,8 @@
     "Scroll tabs left": "Przewiń karty w lewo",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Przesuń lub przeciągnij poziomo, albo użyj przycisków strzałek, aby zobaczyć więcej kart.",
     "Scroll tabs right": "Przewiń karty w prawo",
-    "CUSTOM AMMO": "AMUNICJA NIESTANDARDOWA"
+    "CUSTOM AMMO": "AMUNICJA NIESTANDARDOWA",
+    "Public Domain 1920s": "Lata 20. XX wieku w domenie publicznej"
   },
   "pt-BR": {
     "Equipped:": "Equipado:",
@@ -3412,7 +3419,8 @@
     "Scroll tabs left": "Rolar abas para a esquerda",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslize ou arraste horizontalmente, ou use os botões de seta para ver mais abas.",
     "Scroll tabs right": "Rolar abas para a direita",
-    "CUSTOM AMMO": "MUNIÇÃO PERSONALIZADA"
+    "CUSTOM AMMO": "MUNIÇÃO PERSONALIZADA",
+    "Public Domain 1920s": "Anos 1920 em domínio público"
   },
   "ru": {
     "Equipped:": "Экипировано:",
@@ -3838,7 +3846,8 @@
     "Scroll tabs left": "Прокрутить вкладки влево",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Проведите пальцем или перетащите по горизонтали, или используйте кнопки со стрелками, чтобы увидеть другие вкладки.",
     "Scroll tabs right": "Прокрутить вкладки вправо",
-    "CUSTOM AMMO": "ПОЛЬЗОВАТELЬСКИЕ БОЕПРИПАСЫ"
+    "CUSTOM AMMO": "ПОЛЬЗОВАТELЬСКИЕ БОЕПРИПАСЫ",
+    "Public Domain 1920s": "Музыка 1920-х в общественном достоянии"
   },
   "zh-Hant": {
     "Equipped:": "已裝備:",
@@ -4276,7 +4285,8 @@
     "Scroll tabs left": "向左滾動標籤頁",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平滑動或拖動，或使用箭頭按鈕查看更多標籤頁。",
     "Scroll tabs right": "向右滾動標籤頁",
-    "CUSTOM AMMO": "自訂彈藥"
+    "CUSTOM AMMO": "自訂彈藥",
+    "Public Domain 1920s": "1920年代公有領域音樂"
   },
   "zh-Hans": {
     "Equipped:": "已装备:",
@@ -4714,6 +4724,7 @@
     "Scroll tabs left": "向左滚动标签页",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平滑动或拖动，或使用箭头按钮查看更多标签页。",
     "Scroll tabs right": "向右滚动标签页",
-    "CUSTOM AMMO": "自定义弹药"
+    "CUSTOM AMMO": "自定义弹药",
+    "Public Domain 1920s": "1920年代公有领域音乐"
   }
 }

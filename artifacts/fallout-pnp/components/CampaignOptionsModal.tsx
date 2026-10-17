@@ -649,7 +649,7 @@ export default function CampaignOptionsModal({
             />
             <PreferenceSwitchRow
               label="Enable Vault Radio"
-              description="1920s music starts at a random track, then repeats in order."
+              description="Public Domain 1920s"
               value={musicEnabled}
               onValueChange={setMusicEnabled}
               testID="vault-radio-toggle"
