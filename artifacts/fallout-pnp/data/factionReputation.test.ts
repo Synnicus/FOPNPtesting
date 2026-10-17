@@ -6,6 +6,7 @@ import {
   applyFactionReputationAdjustment,
   DEFAULT_FACTION_THRESHOLD_PROFILE,
   FACTION_THRESHOLD_PROFILES,
+  FNV_REPUTATION_TITLES,
   factionReputationTitle,
   isFactionReputation,
   normalizeFactionReputations,
@@ -48,6 +49,19 @@ test('all New Vegas faction and settlement fame/infamy thresholds match the refe
 });
 
 test('separate Fame and Infamy ranges select the complete New Vegas title matrix', () => {
+  const thresholds = [0, 5, 15, 30];
+  for (let infamyRange = 0; infamyRange < 4; infamyRange += 1) {
+    for (let fameRange = 0; fameRange < 4; fameRange += 1) {
+      assert.equal(
+        factionReputationTitle({
+          ...faction,
+          fame: thresholds[fameRange],
+          infamy: thresholds[infamyRange],
+        }),
+        FNV_REPUTATION_TITLES[infamyRange][fameRange],
+      );
+    }
+  }
   assert.equal(factionReputationTitle(faction), 'Mixed');
   assert.equal(factionReputationTitle({ ...faction, fame: 15, infamy: 5 }), 'Smiling Troublemaker');
   assert.equal(factionReputationTitle({ ...faction, fame: 30, infamy: 30 }), 'Wild Child');

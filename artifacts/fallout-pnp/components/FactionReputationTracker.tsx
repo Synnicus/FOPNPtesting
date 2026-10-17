@@ -21,6 +21,7 @@ import {
   factionReputationTitle,
   getFactionThresholdProfile,
   MAX_FACTION_COUNT,
+  MAX_FACTION_LOG_ENTRIES,
   MAX_FACTION_NAME_LENGTH,
   MAX_FACTION_REASON_LENGTH,
   MAX_FACTION_TITLE_LENGTH,
@@ -68,8 +69,10 @@ function FactionCard({
     ? null
     : applyFactionReputationAdjustment(current, parsedChange);
   const trimmedReason = reason.trim();
+  const atHistoryLimit = faction.log.length >= MAX_FACTION_LOG_ENTRIES;
   const canRecord = parsedChange !== null
     && preview !== null
+    && !atHistoryLimit
     && trimmedReason.length > 0
     && trimmedReason.length <= MAX_FACTION_REASON_LENGTH;
   const currentProfile = getFactionThresholdProfile(faction.thresholdProfile);
@@ -81,9 +84,11 @@ function FactionCard({
 
   const recordChange = () => {
     if (!canRecord || parsedChange === null || preview === null) {
-      setFormError(parsedChange !== null && preview === null
-        ? 'No points in this category are available to remove.'
-        : 'Enter a non-zero whole number and an explanation.');
+      setFormError(atHistoryLimit
+        ? "This faction's reputation history is full."
+        : parsedChange !== null && preview === null
+          ? 'No points in this category are available to remove.'
+          : 'Enter a non-zero whole number and an explanation.');
       return;
     }
     onChange({
@@ -161,8 +166,6 @@ function FactionCard({
       </View>
 
       <View
-        accessible
-        accessibilityLabel="Current faction reputation"
         testID={`faction-title-${faction.id}`}
         style={{ alignItems: 'center', gap: 4, paddingVertical: 9 }}
       >
@@ -258,6 +261,21 @@ function FactionCard({
             fontSize: 14,
           }}
         />
+        {amountInput.length > 0 && parsedChange === null ? (
+          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+            Enter a non-zero whole number, such as +25 or −10.
+          </Text>
+        ) : null}
+        {parsedChange !== null && preview === null ? (
+          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+            No points in this category are available to remove.
+          </Text>
+        ) : null}
+        {atHistoryLimit ? (
+          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+            This faction's reputation history is full.
+          </Text>
+        ) : null}
         <TextInput
           accessibilityLabel="Explanation for faction reputation change"
           testID={`faction-reason-input-${faction.id}`}
@@ -280,6 +298,11 @@ function FactionCard({
             fontSize: 13,
           }}
         />
+        {reason.length > 0 && trimmedReason.length === 0 ? (
+          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+            An explanation is required.
+          </Text>
+        ) : null}
         {formError ? (
           <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
             {formError}
@@ -287,7 +310,7 @@ function FactionCard({
         ) : null}
         {preview && parsedChange !== null && preview.appliedChange !== parsedChange ? (
           <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-            Only {preview.appliedChange} will be applied; reputation cannot go below zero.
+            Some points were not applied because the total cannot go below zero.
           </Text>
         ) : null}
         <TouchableOpacity
@@ -497,6 +520,11 @@ export default function FactionReputationTracker({ character, onChange }: Factio
         </View>
         {addError ? (
           <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>{addError}</Text>
+        ) : null}
+        {factions.length >= MAX_FACTION_COUNT ? (
+          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>
+            The faction tracker is full.
+          </Text>
         ) : null}
         <TouchableOpacity
           accessibilityRole="button"

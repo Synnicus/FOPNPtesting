@@ -15,6 +15,9 @@ const localizationSource = readFileSync(new URL('./localization.ts', import.meta
 const uiSupplemental = JSON.parse(
   readFileSync(new URL('ui-supplemental.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
+const factionReputationTranslations = JSON.parse(
+  readFileSync(new URL('faction-reputation.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
 const localizationFilePath = fileURLToPath(new URL('./localization.ts', import.meta.url));
 const nodeModule = createRequire(import.meta.url)('node:module') as any;
 const localizationRuntime = new nodeModule.Module(localizationFilePath);
@@ -140,11 +143,75 @@ test('nested interface actions and prompts are translated in every locale', () =
   }
 });
 
+test('faction reputation UI, profile names, and every automated title are translated in every locale', () => {
+  const required = [
+    'Karma & Factions',
+    'FACTION REPUTATION',
+    "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.",
+    'ADD A FACTION',
+    'Add faction',
+    'Faction name',
+    'Enter a faction name.',
+    'The faction tracker is full.',
+    'A faction with that name is already being tracked.',
+    'THRESHOLD PROFILE',
+    'Threshold profile',
+    'FACTION',
+    'Current faction reputation',
+    'FAME',
+    'INFAMY',
+    'AUTOMATED REPUTATION TITLE',
+    'CUSTOM TITLE (OPTIONAL)',
+    'Custom title, e.g. Paladin',
+    'RECORD REPUTATION CHANGE',
+    'Add Fame or Infamy points with an explanation. Negative changes reduce that total.',
+    'Change, e.g. +5 or -2',
+    'Why did reputation change?',
+    'Enter a non-zero whole number and an explanation.',
+    'No points in this category are available to remove.',
+    'Some points were not applied because the total cannot go below zero.',
+    'Record reputation change',
+    'ADD TO REPUTATION LOG',
+    'REPUTATION HISTORY',
+    'No reputation changes recorded yet.',
+    'Delete reputation entry',
+    'Delete faction',
+    'Delete this reputation entry? The total will be recalculated from remaining entries.',
+    'Delete this faction and its entire reputation history? This cannot be undone.',
+    'Current faction reputation',
+    'No factions tracked yet. Add one above to begin recording Fame and Infamy.',
+    'Neutral', 'Accepted', 'Liked', 'Idolized',
+    'Shunned', 'Mixed', 'Smiling Troublemaker', 'Good-Natured Rascal',
+    'Hated', 'Sneering Punk', 'Unpredictable', 'Dark Hero',
+    'Vilified', 'Merciful Thug', 'Soft-Hearted Devil', 'Wild Child',
+  ];
+  const factionProfiles = [
+    'Boomers', 'Brotherhood of Steel', "Caesar's Legion", 'Followers of the Apocalypse',
+    'Freeside', 'Goodsprings', 'Great Khans', 'New California Republic', 'Novac',
+    'Powder Gangers', 'Primm', 'The Strip', 'White Glove Society',
+  ];
+
+  for (const locale of localeIds) {
+    const translations = factionReputationTranslations[locale] ?? {};
+    for (const source of required) {
+      assert.ok(translations[source]?.trim(), `${locale} translates faction UI text “${source}”`);
+      if (source !== 'Neutral') {
+        assert.notEqual(translations[source], source, `${locale} does not show English for “${source}”`);
+      }
+    }
+    for (const profile of factionProfiles) {
+      assert.ok(translations[profile]?.trim(), `${locale} has a display name for faction profile “${profile}”`);
+    }
+  }
+});
+
 test('translated interface fallbacks override English identity entries and match dynamic prompts', () => {
   assert.equal(runtimeTranslateText('SPAWN', 'it'), 'GENERA');
   assert.equal(runtimeTranslateText('SPAWN', 'de'), 'ERSTELLEN');
   assert.equal(runtimeTranslateText('% Gas ·', 'ja'), '% ガス ·');
   assert.notEqual(runtimeTranslateText('ROLL FOR ATTACK', 'fr'), 'ROLL FOR ATTACK');
+  assert.notEqual(runtimeTranslateText('Wild Child', 'fr'), 'Wild Child');
+  assert.notEqual(runtimeTranslateText('FACTION REPUTATION', 'ja'), 'FACTION REPUTATION');
   for (const locale of Object.keys(uiSupplemental)) {
     assert.notEqual(runtimeTranslateText('Hardcore Radiation Penalties', locale), 'Hardcore Radiation Penalties', locale);
     assert.notEqual(runtimeTranslateText('CUSTOM ARMOR', locale), 'CUSTOM ARMOR', locale);

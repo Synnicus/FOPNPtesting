@@ -11,6 +11,7 @@ import zhHans from './locales/zh-Hans.json';
 import zhHant from './locales/zh-Hant.json';
 import languageSettings from './locales/language-settings.json';
 import uiSupplemental from './locales/ui-supplemental.json';
+import factionReputationTranslations from './locales/faction-reputation.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -472,7 +473,16 @@ const dynamicPatterns: Partial<Record<AppLocale, Record<string, string>>> = {
   ru: patternsRu, 'zh-Hans': patternsZhHans, 'zh-Hant': patternsZhHant,
 };
 const languageSettingsTranslations = languageSettings as Record<string, Record<string, string>>;
-const uiSupplementalTranslations = uiSupplemental as Partial<Record<AppLocale, Record<string, string>>>;
+const uiSupplementalBase = uiSupplemental as Partial<Record<AppLocale, Record<string, string>>>;
+const factionReputationUiTranslations = factionReputationTranslations as Partial<Record<AppLocale, Record<string, string>>>;
+const uiSupplementalTranslations = Object.fromEntries(
+  APP_LANGUAGES
+    .filter(({ locale }) => locale !== 'en')
+    .map(({ locale }) => [locale, {
+      ...(uiSupplementalBase[locale] ?? {}),
+      ...(factionReputationUiTranslations[locale] ?? {}),
+    }]),
+) as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();
 
 let activeLocale: AppLocale = 'en';

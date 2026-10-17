@@ -319,7 +319,7 @@ function hasValidFactionReputationData(value: Record<string, unknown>): boolean 
   if (value.factionReputations === undefined) return true;
   const reputations = value.factionReputations as FactionReputation[];
   if (!isFactionReputationList(reputations)) return false;
-  return new Set(reputations.map(faction => faction.name.trim().toLocaleLowerCase())).size === reputations.length;
+  return new Set(reputations.map(faction => faction.name.trim().toLowerCase())).size === reputations.length;
 }
 
 function isCharacterRecord(value: unknown): value is Character {

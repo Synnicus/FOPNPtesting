@@ -8,8 +8,9 @@ const trackerSource = readFileSync(new URL('../components/KarmaTracker.tsx', imp
 const nativeFlowSource = readFileSync(new URL('../e2e/karma-native.yaml', import.meta.url), 'utf8');
 
 test('character editor exposes the Karma tab and connects it to the editable character', () => {
-  assert.match(characterSource, /const TABS = \[[^\]]*'Effects', 'Karma'\]/);
+  assert.match(characterSource, /const TABS = \[[^\]]*'Effects', 'Karma & Factions'\]/);
   assert.match(characterSource, /activeTab === 7 && \([\s\S]*?<KarmaTracker character=\{char\} onChange=\{updated => setChar\(updated\)\} \/>/);
+  assert.match(characterSource, /<FactionReputationTracker character=\{char\} onChange=\{updated => setChar\(updated\)\} \/>/);
   assert.match(characterSource, /testID="character-level-increase"/);
   assert.match(characterSource, /<KeyboardAwareScrollViewCompat[\s\S]*?keyboardShouldPersistTaps="handled"[\s\S]*?<KarmaTracker/);
 });

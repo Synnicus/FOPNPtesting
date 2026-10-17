@@ -524,7 +524,7 @@ test('portable imports accept legacy characters but reject invalid or inconsiste
 });
 
 test('faction Fame and Infamy totals and explanatory history survive portable exports and reject inconsistent records', () => {
-  const factionReputations = [{
+  const factionReputations: NonNullable<Character['factionReputations']> = [{
     id: 'faction-rep-1',
     name: 'Brotherhood of Steel',
     thresholdProfile: 'brotherhood-of-steel',
@@ -541,6 +541,13 @@ test('faction Fame and Infamy totals and explanatory history survive portable ex
   assert.equal(parsed.ok, true);
   if (parsed.ok && parsed.kind === 'character') {
     assert.deepEqual(parsed.bundle.character.factionReputations, factionReputations);
+  }
+
+  const campaignBundle = createCampaignBundle({ ...state, characters: [{ ...character, factionReputations }] }, []);
+  const parsedCampaign = parseCampaignFile(JSON.stringify(campaignBundle));
+  assert.equal(parsedCampaign.ok, true);
+  if (parsedCampaign.ok && parsedCampaign.source === 'portable') {
+    assert.deepEqual(parsedCampaign.bundle.state.characters[0].factionReputations, factionReputations);
   }
 
   assert.equal(parseIndividualFile(JSON.stringify({
