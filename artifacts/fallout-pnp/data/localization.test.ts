@@ -146,6 +146,9 @@ test('translated interface fallbacks override English identity entries and match
   assert.equal(runtimeTranslateText('SPAWN', 'de'), 'ERSTELLEN');
   assert.equal(runtimeTranslateText('% Gas ·', 'ja'), '% ガス ·');
   assert.notEqual(runtimeTranslateText('ROLL FOR ATTACK', 'fr'), 'ROLL FOR ATTACK');
+  for (const locale of Object.keys(uiSupplemental)) {
+    assert.notEqual(runtimeTranslateText('CUSTOM ARMOR', locale), 'CUSTOM ARMOR', locale);
+  }
   assert.notEqual(
     runtimeTranslateText('Move Alex one position up in the list?', 'ja'),
     'Move Alex one position up in the list?',
