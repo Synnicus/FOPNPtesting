@@ -62,6 +62,12 @@ export function createCombatInjury(
   };
 }
 
+/** Return a player-facing cause line, omitting manual and source-less injuries. */
+export function getInjuryCauseText(source?: Injury['source']): string | null {
+  const trimmedSource = source?.trim();
+  return trimmedSource && trimmedSource !== 'manual' ? `Caused by: ${trimmedSource}` : null;
+}
+
 function isCrippling(inj: Injury): boolean {
   return inj.isActive && (inj.severity === 'crippled' || inj.severity === 'broken');
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
 import type { Armor, Character, Weapon } from '../context/types.ts';
+import { getInjuryCauseText } from './injuries.ts';
 import {
   createCampaignBundle,
   createCharacterBundle,
@@ -186,7 +187,34 @@ test('portable campaign round-trips injury attribution, descriptions, and effect
   const parsed = parseCampaignFile(JSON.stringify(campaign));
   assert.equal(parsed.ok, true);
   if (parsed.ok && parsed.source === 'portable') {
-    assert.deepEqual(parsed.bundle.state.characters[0].injuries[0], injury);
+    const importedInjury = parsed.bundle.state.characters[0].injuries[0];
+    assert.deepEqual(importedInjury, injury);
+    assert.equal(getInjuryCauseText(importedInjury.source), 'Caused by: Raider with Hunting Rifle');
+  }
+});
+
+test('legacy campaign imports keep attacker and weapon cause text', () => {
+  const injury = {
+    id: 'injury-legacy-attributed',
+    location: 'rightArm' as const,
+    severity: 'broken' as const,
+    description: 'A raider shot the Courier in the right arm.',
+    toHitPenalty: -3,
+    skillPenalty: { smallGuns: -2 },
+    movementPenalty: 0,
+    isActive: true,
+    source: 'Raider with Hunting Rifle',
+  };
+  const parsed = parseCampaignFile(JSON.stringify({
+    ...state,
+    characters: [{ ...character, injuries: [injury] }],
+  }));
+
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'legacy') {
+    const importedInjury = parsed.state.characters[0].injuries[0];
+    assert.equal(importedInjury.source, injury.source);
+    assert.equal(getInjuryCauseText(importedInjury.source), 'Caused by: Raider with Hunting Rifle');
   }
 });
 
@@ -217,8 +245,15 @@ test('campaign imports accept older injuries without source attribution', () => 
         : parsed.state.characters[0];
       assert.deepEqual(importedCharacter.injuries[0], olderInjury);
       assert.equal('source' in importedCharacter.injuries[0], false);
+      assert.equal(getInjuryCauseText(undefined), null);
     }
   }
+});
+
+test('injury cause text omits empty, whitespace-only, and manual sources', () => {
+  assert.equal(getInjuryCauseText(''), null);
+  assert.equal(getInjuryCauseText('   '), null);
+  assert.equal(getInjuryCauseText('manual'), null);
 });
 
 test('individual character exports preserve injury attribution, descriptions, active state, and penalties', () => {

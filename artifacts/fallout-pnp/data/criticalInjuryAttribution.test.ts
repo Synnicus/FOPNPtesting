@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
-import { createCombatInjury } from './injuries.ts';
+import { createCombatInjury, getInjuryCauseText } from './injuries.ts';
 
 const combatSource = readFileSync(new URL('../app/(tabs)/index.tsx', import.meta.url), 'utf8');
 const characterSource = readFileSync(new URL('../app/(tabs)/characters.tsx', import.meta.url), 'utf8');
@@ -43,7 +43,9 @@ test('manual injury descriptions remain as entered and do not display combat att
   assert.match(characterSource, /description: injDesc \|\| `crippled \$\{injLocation\}`/);
   assert.match(characterSource, /isActive: true, source: 'manual'/);
   assert.match(characterSource, /\{inj\.description\}/);
-  assert.match(characterSource, /inj\.source && inj\.source !== 'manual'/);
+  assert.match(characterSource, /getInjuryCauseText\(inj\.source\)/);
+  assert.equal(getInjuryCauseText('manual'), null);
+  assert.equal(getInjuryCauseText(undefined), null);
 
   const manualInjury = {
     description: 'Old fracture',

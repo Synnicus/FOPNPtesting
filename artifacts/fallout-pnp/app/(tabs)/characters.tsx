@@ -33,7 +33,7 @@ import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedP
 import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
-import { INJURY_LOCATION_INFO, computeInjuryEffects } from '@/data/injuries';
+import { INJURY_LOCATION_INFO, computeInjuryEffects, getInjuryCauseText } from '@/data/injuries';
 import { clearTemporaryEffectsFromActiveCharacters } from '@/data/statusEffects';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
@@ -1802,6 +1802,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               ) : (
                 char.injuries.map(inj => {
                   const info = INJURY_LOCATION_INFO.find(l => l.location === inj.location);
+                  const causeText = getInjuryCauseText(inj.source);
                   return (
                     <View key={inj.id} style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: inj.isActive ? colors.destructive + '66' : colors.border, backgroundColor: colors.secondary, gap: 10 }}>
                       <TouchableOpacity onPress={() => setChar(c => ({ ...c, injuries: c.injuries.map(i => i.id === inj.id ? { ...i, isActive: !i.isActive } : i) }))} style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: inj.isActive ? colors.destructive : colors.border, backgroundColor: inj.isActive ? colors.destructive + '33' : 'transparent', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
@@ -1810,9 +1811,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       <View style={{ flex: 1, gap: 3 }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: inj.isActive ? colors.destructive : colors.mutedForeground }}>{info?.label ?? inj.location} — {inj.severity}</Text>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{inj.description}</Text>
-                        {inj.source && inj.source !== 'manual' && (
+                        {causeText && (
                           <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                            <Text>Caused by: </Text>{inj.source}
+                            {causeText}
                           </Text>
                         )}
                         {info && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 15 }}>{info.effectText}</Text>}
