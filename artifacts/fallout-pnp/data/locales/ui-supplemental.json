@@ -411,7 +411,8 @@
     "TOPICS": "ARGOMENTI",
     "Scroll tabs left": "Scorri schede a sinistra",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Scorri o trascina orizzontalmente, oppure usa i pulsanti freccia per vedere altre schede.",
-    "Scroll tabs right": "Scorri schede a destra"
+    "Scroll tabs right": "Scorri schede a destra",
+    "CUSTOM AMMO": "MUNIZIONI PERSONALIZZATE"
   },
   "de": {
     "SPAWN": "ERSTELLEN",
@@ -847,7 +848,8 @@
     "TOPICS": "THEMEN",
     "Scroll tabs left": "Tabs nach links scrollen",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Wische oder ziehe horizontal, oder nutze die Pfeiltasten, um mehr Tabs zu sehen.",
-    "Scroll tabs right": "Tabs nach rechts scrollen"
+    "Scroll tabs right": "Tabs nach rechts scrollen",
+    "CUSTOM AMMO": "BENUTZERDEFINIERTE MUNITION"
   },
   "fr": {
     "Equipped:": "Équipé :",
@@ -1262,7 +1264,8 @@
     "TOPICS": "SUJETS",
     "Scroll tabs left": "Faire défiler les onglets vers la gauche",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Balayez ou faites glisser horizontalement, ou utilisez les boutons fléchés pour voir plus d'onglets.",
-    "Scroll tabs right": "Faire défiler les onglets vers la droite"
+    "Scroll tabs right": "Faire défiler les onglets vers la droite",
+    "CUSTOM AMMO": "MUNITIONS PERSONNALISÉES"
   },
   "es-ES": {
     "Equipped:": "Equipado:",
@@ -1684,7 +1687,8 @@
     "TOPICS": "TEMAS",
     "Scroll tabs left": "Desplazar pestañas a la izquierda",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslice o arrastre horizontalmente, o use los botones de flecha para ver más pestañas.",
-    "Scroll tabs right": "Desplazar pestañas a la derecha"
+    "Scroll tabs right": "Desplazar pestañas a la derecha",
+    "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA"
   },
   "es-MX": {
     "Equipped:": "Equipado:",
@@ -2106,7 +2110,8 @@
     "TOPICS": "TEMAS",
     "Scroll tabs left": "Desplazar pestañas a la izquierda",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslice o arrastre horizontalmente, o use los botones de flecha para ver más pestañas.",
-    "Scroll tabs right": "Desplazar pestañas a la derecha"
+    "Scroll tabs right": "Desplazar pestañas a la derecha",
+    "CUSTOM AMMO": "MUNICIÓN PERSONALIZADA"
   },
   "ja": {
     "Equipped:": "装備中:",
@@ -2552,7 +2557,8 @@
     "Scroll tabs left": "タブを左にスクロール",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平にスワイプまたはドラッグするか、矢印ボタンを使用して他のタブを表示してください。",
     "Scroll tabs right": "タブを右にスクロール",
-    "% Gas ·": "% ガス ·"
+    "% Gas ·": "% ガス ·",
+    "CUSTOM AMMO": "カスタム弾薬"
   },
   "pl": {
     "Equipped:": "Wyposażono:",
@@ -2979,7 +2985,8 @@
     "TOPICS": "TEMATY",
     "Scroll tabs left": "Przewiń karty w lewo",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Przesuń lub przeciągnij poziomo, albo użyj przycisków strzałek, aby zobaczyć więcej kart.",
-    "Scroll tabs right": "Przewiń karty w prawo"
+    "Scroll tabs right": "Przewiń karty w prawo",
+    "CUSTOM AMMO": "AMUNICJA NIESTANDARDOWA"
   },
   "pt-BR": {
     "Equipped:": "Equipado:",
@@ -3404,7 +3411,8 @@
     "TOPICS": "TÓPICOS",
     "Scroll tabs left": "Rolar abas para a esquerda",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Deslize ou arraste horizontalmente, ou use os botões de seta para ver mais abas.",
-    "Scroll tabs right": "Rolar abas para a direita"
+    "Scroll tabs right": "Rolar abas para a direita",
+    "CUSTOM AMMO": "MUNIÇÃO PERSONALIZADA"
   },
   "ru": {
     "Equipped:": "Экипировано:",
@@ -3829,7 +3837,8 @@
     "TOPICS": "ТЕМЫ",
     "Scroll tabs left": "Прокрутить вкладки влево",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "Проведите пальцем или перетащите по горизонтали, или используйте кнопки со стрелками, чтобы увидеть другие вкладки.",
-    "Scroll tabs right": "Прокрутить вкладки вправо"
+    "Scroll tabs right": "Прокрутить вкладки вправо",
+    "CUSTOM AMMO": "ПОЛЬЗОВАТELЬСКИЕ БОЕПРИПАСЫ"
   },
   "zh-Hant": {
     "Equipped:": "已裝備:",
@@ -4266,7 +4275,8 @@
     "TOPICS": "主題",
     "Scroll tabs left": "向左滾動標籤頁",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平滑動或拖動，或使用箭頭按鈕查看更多標籤頁。",
-    "Scroll tabs right": "向右滾動標籤頁"
+    "Scroll tabs right": "向右滾動標籤頁",
+    "CUSTOM AMMO": "自訂彈藥"
   },
   "zh-Hans": {
     "Equipped:": "已装备:",
@@ -4703,6 +4713,7 @@
     "TOPICS": "主题",
     "Scroll tabs left": "向左滚动标签页",
     "Swipe or drag horizontally, or use the arrow buttons to see more tabs.": "水平滑动或拖动，或使用箭头按钮查看更多标签页。",
-    "Scroll tabs right": "向右滚动标签页"
+    "Scroll tabs right": "向右滚动标签页",
+    "CUSTOM AMMO": "自定义弹药"
   }
 }

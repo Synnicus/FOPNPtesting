@@ -148,6 +148,7 @@ test('translated interface fallbacks override English identity entries and match
   assert.notEqual(runtimeTranslateText('ROLL FOR ATTACK', 'fr'), 'ROLL FOR ATTACK');
   for (const locale of Object.keys(uiSupplemental)) {
     assert.notEqual(runtimeTranslateText('CUSTOM ARMOR', locale), 'CUSTOM ARMOR', locale);
+    assert.notEqual(runtimeTranslateText('CUSTOM AMMO', locale), 'CUSTOM AMMO', locale);
   }
   assert.notEqual(
     runtimeTranslateText('Move Alex one position up in the list?', 'ja'),
