@@ -2,7 +2,7 @@ export type VaultRadioTrack = {
   id: string;
   file: string;
   title: string;
-  artist: string;
+  artist: string | null;
 };
 
 export const VAULT_RADIO_TRACKS: readonly VaultRadioTrack[] = [
@@ -66,7 +66,7 @@ export function createVaultRadioTrack(file: string): VaultRadioTrack {
     id: file,
     file,
     title: title || file,
-    artist: 'Unknown artist',
+    artist: null,
   };
 }
 

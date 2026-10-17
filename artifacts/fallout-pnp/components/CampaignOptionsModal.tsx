@@ -6,6 +6,7 @@ import {
   ScrollView,
   Switch,
   Platform,
+  Text as NativeText,
   View,
 } from 'react-native';
 import { LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
@@ -48,7 +49,7 @@ function VaultRadioNowPlaying({
   onPrevious,
   onNext,
 }: {
-  track: { title: string; artist: string } | null;
+  track: { title: string; artist: string | null } | null;
   hasPlaybackError: boolean;
   canSkip: boolean;
   onPrevious: () => void;
@@ -77,18 +78,24 @@ function VaultRadioNowPlaying({
         </Text>
         {track ? (
           <>
-            <Text
+            <NativeText
               numberOfLines={2}
               style={{ fontSize: 13, lineHeight: 17, fontFamily: 'Inter_700Bold', color: palette.foreground }}
             >
               {track.title}
-            </Text>
-            <Text
-              numberOfLines={1}
-              style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}
-            >
-              {track.artist}
-            </Text>
+            </NativeText>
+            {track.artist ? (
+              <NativeText
+                numberOfLines={1}
+                style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}
+              >
+                {track.artist}
+              </NativeText>
+            ) : (
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                Unknown artist
+              </Text>
+            )}
           </>
         ) : (
           <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
@@ -546,7 +553,7 @@ export default function CampaignOptionsModal({
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
-                    Hardcore radiation penalties
+                    Hardcore Radiation Penalties
                   </Text>
                   <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
                     Optional campaign-wide SPECIAL penalties. Separate from core radiation sickness.

@@ -27,7 +27,7 @@ test('uploaded tracks without curated metadata get a readable filename and unkno
     id: 'New_song-demo.mp3',
     file: 'New_song-demo.mp3',
     title: 'New song demo',
-    artist: 'Unknown artist',
+    artist: null,
   });
 });
 

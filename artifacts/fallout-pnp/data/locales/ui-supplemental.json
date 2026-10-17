@@ -419,7 +419,8 @@
     "Next track": "Brano successivo",
     "Loading track…": "Caricamento del brano…",
     "No track playing": "Nessun brano in riproduzione",
-    "Unknown artist": "Artista sconosciuto"
+    "Unknown artist": "Artista sconosciuto",
+    "Hardcore Radiation Penalties": "Penalità radiazioni hardcore"
   },
   "de": {
     "SPAWN": "ERSTELLEN",
@@ -863,7 +864,8 @@
     "Next track": "Nächster Titel",
     "Loading track…": "Titel wird geladen…",
     "No track playing": "Kein Titel wird wiedergegeben",
-    "Unknown artist": "Unbekannter Künstler"
+    "Unknown artist": "Unbekannter Künstler",
+    "Hardcore Radiation Penalties": "Hardcore-Strahlungsstrafen"
   },
   "fr": {
     "Equipped:": "Équipé :",
@@ -1286,7 +1288,8 @@
     "Next track": "Piste suivante",
     "Loading track…": "Chargement du morceau…",
     "No track playing": "Aucun morceau en cours",
-    "Unknown artist": "Artiste inconnu"
+    "Unknown artist": "Artiste inconnu",
+    "Hardcore Radiation Penalties": "Pénalités de radiations hardcore"
   },
   "es-ES": {
     "Equipped:": "Equipado:",
@@ -1716,7 +1719,8 @@
     "Next track": "Pista siguiente",
     "Loading track…": "Cargando pista…",
     "No track playing": "No hay ninguna pista en reproducción",
-    "Unknown artist": "Artista desconocido"
+    "Unknown artist": "Artista desconocido",
+    "Hardcore Radiation Penalties": "Penalizaciones de radiación hardcore"
   },
   "es-MX": {
     "Equipped:": "Equipado:",
@@ -2146,7 +2150,8 @@
     "Next track": "Pista siguiente",
     "Loading track…": "Cargando pista…",
     "No track playing": "No hay ninguna pista en reproducción",
-    "Unknown artist": "Artista desconocido"
+    "Unknown artist": "Artista desconocido",
+    "Hardcore Radiation Penalties": "Penalizaciones de radiación hardcore"
   },
   "ja": {
     "Equipped:": "装備中:",
@@ -2600,7 +2605,8 @@
     "Next track": "次の曲",
     "Loading track…": "曲を読み込み中…",
     "No track playing": "再生中の曲はありません",
-    "Unknown artist": "不明なアーティスト"
+    "Unknown artist": "不明なアーティスト",
+    "Hardcore Radiation Penalties": "ハードコア放射線ペナルティ"
   },
   "pl": {
     "Equipped:": "Wyposażono:",
@@ -3035,7 +3041,8 @@
     "Next track": "Następny utwór",
     "Loading track…": "Wczytywanie utworu…",
     "No track playing": "Żaden utwór nie jest odtwarzany",
-    "Unknown artist": "Nieznany wykonawca"
+    "Unknown artist": "Nieznany wykonawca",
+    "Hardcore Radiation Penalties": "Kary za napromieniowanie hardcore"
   },
   "pt-BR": {
     "Equipped:": "Equipado:",
@@ -3468,7 +3475,8 @@
     "Next track": "Próxima faixa",
     "Loading track…": "Carregando faixa…",
     "No track playing": "Nenhuma faixa está tocando",
-    "Unknown artist": "Artista desconhecido"
+    "Unknown artist": "Artista desconhecido",
+    "Hardcore Radiation Penalties": "Penalidades de radiação hardcore"
   },
   "ru": {
     "Equipped:": "Экипировано:",
@@ -3901,7 +3909,8 @@
     "Next track": "Следующий трек",
     "Loading track…": "Загрузка трека…",
     "No track playing": "Трек не воспроизводится",
-    "Unknown artist": "Неизвестный исполнитель"
+    "Unknown artist": "Неизвестный исполнитель",
+    "Hardcore Radiation Penalties": "Штрафы от хардкорной радиации"
   },
   "zh-Hant": {
     "Equipped:": "已裝備:",
@@ -4346,7 +4355,8 @@
     "Next track": "下一首",
     "Loading track…": "正在載入曲目…",
     "No track playing": "目前沒有播放曲目",
-    "Unknown artist": "未知演出者"
+    "Unknown artist": "未知演出者",
+    "Hardcore Radiation Penalties": "硬核輻射懲罰"
   },
   "zh-Hans": {
     "Equipped:": "已装备:",
@@ -4791,6 +4801,7 @@
     "Next track": "下一首",
     "Loading track…": "正在加载曲目…",
     "No track playing": "当前没有播放曲目",
-    "Unknown artist": "未知艺术家"
+    "Unknown artist": "未知艺术家",
+    "Hardcore Radiation Penalties": "硬核辐射惩罚"
   }
 }

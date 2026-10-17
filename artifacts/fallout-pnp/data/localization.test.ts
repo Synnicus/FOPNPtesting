@@ -49,7 +49,6 @@ function getStatusCleanupLocaleBlock(locale: string): string {
 test('every supported non-English locale bundles app UI and built-in content translations', () => {
   const requiredStrings = [
     'CAMPAIGN OPTIONS',
-    'Hardcore radiation penalties',
     'Search the Fallout PnP manual',
   ];
 
@@ -147,6 +146,7 @@ test('translated interface fallbacks override English identity entries and match
   assert.equal(runtimeTranslateText('% Gas ·', 'ja'), '% ガス ·');
   assert.notEqual(runtimeTranslateText('ROLL FOR ATTACK', 'fr'), 'ROLL FOR ATTACK');
   for (const locale of Object.keys(uiSupplemental)) {
+    assert.notEqual(runtimeTranslateText('Hardcore Radiation Penalties', locale), 'Hardcore Radiation Penalties', locale);
     assert.notEqual(runtimeTranslateText('CUSTOM ARMOR', locale), 'CUSTOM ARMOR', locale);
     assert.notEqual(runtimeTranslateText('CUSTOM AMMO', locale), 'CUSTOM AMMO', locale);
     assert.notEqual(runtimeTranslateText('Public Domain 1920s', locale), 'Public Domain 1920s', locale);
