@@ -56,6 +56,11 @@ import {
   type CombatAttackSoundFamily,
 } from '@/data/combatAttackSounds';
 import {
+  getCombatOutcomeSoundKind,
+  requestCombatOutcomeSound,
+  type CombatOutcomeSoundPlayers,
+} from '@/data/combatOutcomeSounds';
+import {
   SPECIAL_UNARMED_ATTACKS,
   SpecialUnarmedGroup,
   evaluateEligibility,
@@ -775,6 +780,8 @@ export default function CombatScreen() {
   const app = useApp();
   const combatScrollRef = useRef<ScrollView>(null);
   const combatImpactPlayer = useAudioPlayer(require('../../assets/combat-impact.wav'));
+  const combatMissPlayer = useAudioPlayer(require('../../assets/combat-miss.wav'));
+  const combatCriticalHitPlayer = useAudioPlayer(require('../../assets/combat-critical-hit.wav'));
   const combatFirearmPlayer = useAudioPlayer(require('../../assets/combat-firearm-shot.wav'));
   const combatBladePlayer = useAudioPlayer(require('../../assets/combat-blade-slice.wav'));
   const combatBluntPlayer = useAudioPlayer(require('../../assets/combat-blunt-hit.wav'));
@@ -787,6 +794,11 @@ export default function CombatScreen() {
   } = app;
   const combatSoundsEnabledRef = useRef(app.combatSoundsEnabled);
   combatSoundsEnabledRef.current = app.combatSoundsEnabled;
+  const combatOutcomeSoundPlayers: CombatOutcomeSoundPlayers = {
+    miss: combatMissPlayer,
+    critical: combatCriticalHitPlayer,
+  };
+  const outcomeSoundReceiptRef = useRef('');
   const attackSoundSequenceIdRef = useRef(0);
   const attackSoundTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const playCombatImpact = useCallback(() => {
@@ -1397,6 +1409,32 @@ export default function CombatScreen() {
     return Math.floor(cth / 10) * 10;
   })();
   const streamlinedHitThreshold = Math.floor(roundedCtH / 10);
+
+  useEffect(() => {
+    const streamlinedOutcome = isBurst && burstMode === 'streamlined' && streamlinedRolled;
+    if (!attackResolved && !streamlinedOutcome) return;
+
+    const receipt = attackReceipt.current;
+    if (!receipt || outcomeSoundReceiptRef.current === receipt) return;
+    outcomeSoundReceiptRef.current = receipt;
+
+    const kind = streamlinedOutcome
+      ? (streamlinedDice.some(die => die > 0 && die <= streamlinedHitThreshold) ? null : 'miss')
+      : getCombatOutcomeSoundKind(shotResults);
+    if (kind) {
+      requestCombatOutcomeSound(kind, combatOutcomeSoundPlayers, () => combatSoundsEnabledRef.current);
+    }
+  }, [
+    attackResolved,
+    isBurst,
+    burstMode,
+    streamlinedRolled,
+    streamlinedDice,
+    streamlinedHitThreshold,
+    shotResults,
+    combatMissPlayer,
+    combatCriticalHitPlayer,
+  ]);
 
   // Reset the full per-attack state (dice + crit + damage + AP flags). Used by
   // ATTACK AGAIN and the change-of-config effect below. Keeps attacker/defender/
