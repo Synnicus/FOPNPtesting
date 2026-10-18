@@ -1,10 +1,41 @@
 import type {
-  Character, DamageType, NaturalProtection, VehicleCategory, VehicleProfile, VehicleSystem,
+  Character, DamageType, NaturalProtection, VehicleCategory, VehicleProfile, VehicleSystem, VehicleWeaponSlot,
 } from '../context/types';
 
 const DR = (normal: number, laser: number, fire: number, plasma: number, explosion: number) => ({
   normal, laser, fire, plasma, explosion,
 });
+
+const MOUNT_WEAPON_IDS: Record<string, string> = {
+  'ags-17 grenade launcher': 'ags_17_grenade_launcher',
+  'm2hb': 'm2hb',
+  'mg3': 'mg3',
+  'tow-ii': 'tow_ii_missile_defense_system',
+  'tow-ii missile launcher': 'tow_ii_missile_defense_system',
+  'tow-ii missile defense system': 'tow_ii_missile_defense_system',
+  '20mm cannon': 'vehicle_20mm_cannon',
+  '25mm cannon': 'vehicle_25mm_cannon',
+  'm68 105mm cannon': 'vehicle_m68_105mm_cannon',
+  'rheinmetall 120mm gun': 'rheinmetall_120mm_gun',
+  '152mm shillelagh missile system': 'vehicle_152mm_shillelagh',
+};
+
+export function vehicleWeaponSlotsFromNames(names: string[]): VehicleWeaponSlot[] {
+  return names.map((name, index) => {
+    const quantityMatch = name.match(/^(.*?)\s*[×x]\s*(\d+)$/i);
+    const baseName = (quantityMatch?.[1] ?? name).trim();
+    const quantity = Math.max(1, Number(quantityMatch?.[2] ?? 1) || 1);
+    const normalized = baseName.toLowerCase();
+    const weaponId = MOUNT_WEAPON_IDS[normalized]
+      ?? (normalized.startsWith('ags-17 grenade launcher or mg3') ? 'ags_17_grenade_launcher' : undefined);
+    return {
+      id: `mount-${index + 1}`,
+      name: baseName,
+      ...(weaponId ? { weaponId } : {}),
+      quantity,
+    };
+  });
+}
 
 function systems(
   structure: number,
@@ -57,6 +88,7 @@ function vehicle(
     carryingWeightLb: values.cargo, fuelCharges: values.fuel, armorClass: 0,
     damageResistance: DR(...values.armor),
     systems: values.systems, mountedWeapons: values.weapons ?? [],
+    weaponSlots: vehicleWeaponSlotsFromNames(values.weapons ?? []),
     enhancements: [], notes: values.notes ?? [], terrainPilotModifier: values.pilot ?? 0,
     inMotion: true,
   };
@@ -219,9 +251,17 @@ export function vehicleWithDefaults(vehicle: VehicleProfile): VehicleProfile {
     damageResistance: { ...vehicle.damageResistance },
     systems: vehicle.systems.map(system => ({ ...system })),
     mountedWeapons: [...vehicle.mountedWeapons],
+    weaponSlots: vehicle.weaponSlots
+      ? vehicle.weaponSlots.map(slot => ({ ...slot }))
+      : vehicleWeaponSlotsFromNames(vehicle.mountedWeapons),
     enhancements: [...vehicle.enhancements],
     notes: [...vehicle.notes],
   };
+}
+
+/** Moving vehicle targets impose −10% to hit; non-moving or absent vehicles do not. */
+export function vehicleTargetToHitPenalty(vehicle: VehicleProfile | null | undefined): number {
+  return vehicle?.inMotion ? -10 : 0;
 }
 
 export function spawnVehicleCharacter(vehicle: VehicleProfile, id: string): Character {

@@ -121,13 +121,11 @@ export function ScrollableTabStrip({
         style,
       ]}
     >
-      {hasOverflow ? (
+      {hasOverflow && canScrollLeft ? (
         <TouchableOpacity
           testID={`${testIdPrefix}-scroll-left`}
           accessibilityRole="button"
           accessibilityLabel="Scroll tabs left"
-          accessibilityState={{ disabled: !canScrollLeft }}
-          disabled={!canScrollLeft}
           onPress={() => scrollByPage(-1)}
           style={{
             width: ARROW_SIZE,
@@ -144,7 +142,7 @@ export function ScrollableTabStrip({
           <Feather
             name="chevron-left"
             size={17}
-            color={canScrollLeft ? colors.primary : colors.mutedForeground}
+            color={colors.primary}
           />
         </TouchableOpacity>
       ) : null}
@@ -165,13 +163,11 @@ export function ScrollableTabStrip({
         {children}
       </ScrollView>
 
-      {hasOverflow ? (
+      {hasOverflow && canScrollRight ? (
         <TouchableOpacity
           testID={`${testIdPrefix}-scroll-right`}
           accessibilityRole="button"
           accessibilityLabel="Scroll tabs right"
-          accessibilityState={{ disabled: !canScrollRight }}
-          disabled={!canScrollRight}
           onPress={() => scrollByPage(1)}
           style={{
             width: ARROW_SIZE,
@@ -188,7 +184,7 @@ export function ScrollableTabStrip({
           <Feather
             name="chevron-right"
             size={17}
-            color={canScrollRight ? colors.primary : colors.mutedForeground}
+            color={colors.primary}
           />
         </TouchableOpacity>
       ) : null}

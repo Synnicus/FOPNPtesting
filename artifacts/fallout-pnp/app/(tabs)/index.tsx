@@ -24,7 +24,7 @@ import {
 } from '@/data/condition';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
-import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
+import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, compactWeaponCombatLabel, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
@@ -42,6 +42,14 @@ import {
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import type { ResolvedArmorSheet } from '@/data/armorEffects';
 import { resolveDefenderHandWeapon } from '@/data/combatantEquipment';
+import { BUILT_IN_VEHICLE_WEAPONS } from '@/data/vehicleWeapons';
+import { vehicleTargetToHitPenalty, vehicleWeaponSlotsFromNames } from '@/data/vehicles';
+import {
+  getCombatAttackSoundFamily,
+  getCombatAttackSoundIntervalMs,
+  getCombatAttackSoundShotCount,
+  type CombatAttackSoundFamily,
+} from '@/data/combatAttackSounds';
 import {
   SPECIAL_UNARMED_ATTACKS,
   SpecialUnarmedGroup,
@@ -534,7 +542,7 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
                       {c.vehicle
-                        ? `VEHICLE · AC ${c.vehicle.armorClass} · Structure ${c.currentHp}/${c.maxHp} HP`
+                        ? `VEHICLE · AC ${c.vehicle.armorClass} · Structure ${c.currentHp}/${c.maxHp} HP${c.vehicle.mountedWeapons.length ? ` · ${c.vehicle.mountedWeapons.join(', ')}` : ''}`
                         : `AC ${sheet.armorClass} · HP ${c.currentHp}/${c.maxHp} · AP ${c.currentAP ?? sheet.maxAP}/${sheet.maxAP}${weapon ? ` · ${weapon.name}` : ''}${weapon && weapon.magazineSize > 0 ? ` [${ammoState?.currentAmmo ?? weapon.magazineSize}/${weapon.magazineSize}]` : ''}`}
                     </Text>
                   </View>
@@ -762,6 +770,10 @@ export default function CombatScreen() {
   const app = useApp();
   const combatScrollRef = useRef<ScrollView>(null);
   const combatImpactPlayer = useAudioPlayer(require('../../assets/combat-impact.wav'));
+  const combatFirearmPlayer = useAudioPlayer(require('../../assets/combat-firearm-shot.wav'));
+  const combatBladePlayer = useAudioPlayer(require('../../assets/combat-blade-slice.wav'));
+  const combatBluntPlayer = useAudioPlayer(require('../../assets/combat-blunt-hit.wav'));
+  const combatLaserPlayer = useAudioPlayer(require('../../assets/combat-energy-laser.wav'));
   const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -770,6 +782,8 @@ export default function CombatScreen() {
   } = app;
   const combatSoundsEnabledRef = useRef(app.combatSoundsEnabled);
   combatSoundsEnabledRef.current = app.combatSoundsEnabled;
+  const attackSoundSequenceIdRef = useRef(0);
+  const attackSoundTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const playCombatImpact = useCallback(() => {
     if (!combatSoundsEnabledRef.current) return;
     combatImpactPlayer.volume = 0.55;
@@ -779,6 +793,40 @@ export default function CombatScreen() {
       })
       .catch(() => {});
   }, [combatImpactPlayer]);
+  const playCombatAttackSounds = useCallback((family: CombatAttackSoundFamily | null, shotCount: number) => {
+    attackSoundSequenceIdRef.current += 1;
+    const sequenceId = attackSoundSequenceIdRef.current;
+    attackSoundTimersRef.current.forEach(clearTimeout);
+    attackSoundTimersRef.current = [];
+    if (!family || !combatSoundsEnabledRef.current) return;
+
+    const player = {
+      firearm: combatFirearmPlayer,
+      blade: combatBladePlayer,
+      blunt: combatBluntPlayer,
+      laser: combatLaserPlayer,
+    }[family];
+    const intervalMs = getCombatAttackSoundIntervalMs(family);
+    const safeShotCount = Math.max(1, Math.floor(shotCount));
+    const playShot = (shotIndex: number) => {
+      if (sequenceId !== attackSoundSequenceIdRef.current || !combatSoundsEnabledRef.current) return;
+      player.volume = 0.48;
+      void player.seekTo(0).then(() => {
+        if (sequenceId === attackSoundSequenceIdRef.current && combatSoundsEnabledRef.current) {
+          player.play();
+        }
+      }).catch(() => {});
+      if (shotIndex + 1 < safeShotCount) {
+        attackSoundTimersRef.current.push(setTimeout(() => playShot(shotIndex + 1), intervalMs));
+      }
+    };
+    playShot(0);
+  }, [combatFirearmPlayer, combatBladePlayer, combatBluntPlayer, combatLaserPlayer]);
+  useEffect(() => () => {
+    attackSoundSequenceIdRef.current += 1;
+    attackSoundTimersRef.current.forEach(clearTimeout);
+    attackSoundTimersRef.current = [];
+  }, []);
   const lastAreaImpactRequestId = useRef(areaAttackReceipt?.requestId);
   useEffect(() => {
     if (!areaAttackReceipt || lastAreaImpactRequestId.current === areaAttackReceipt.requestId) return;
@@ -798,6 +846,7 @@ export default function CombatScreen() {
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [selectedVehicleSystemId, setSelectedVehicleSystemId] = useState<string | null>(null);
   const [showVehicleSystemPicker, setShowVehicleSystemPicker] = useState(false);
+  const [pilotRollResult, setPilotRollResult] = useState<string | null>(null);
 
   // Dice (standard percentile)
   const [tensFace, setTensFace] = useState<number | null>(null);
@@ -904,6 +953,16 @@ export default function CombatScreen() {
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
   const defender = characters.find(c => c.id === defenderId) ?? null;
+  const vehiclePilot = attacker?.vehicle && attacker.vehicleCrew?.pilotCharacterId
+    ? characters.find(character => character.id === attacker.vehicleCrew?.pilotCharacterId && !character.inStorage && !character.vehicle) ?? null
+    : null;
+  const vehicleGunner = attacker?.vehicle && attacker.vehicleCrew?.gunnerCharacterId
+    ? characters.find(character => character.id === attacker.vehicleCrew?.gunnerCharacterId && !character.inStorage && !character.vehicle) ?? null
+    : null;
+  const attackActor = attacker?.vehicle ? vehicleGunner : attacker;
+  const pilotSheet = vehiclePilot ? resolveCombatSheet(
+    vehiclePilot, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  ) : null;
   const selectedVehicleSystem = defender?.vehicle?.systems.find(system => system.id === selectedVehicleSystemId)
     ?? defender?.vehicle?.systems.find(system => system.kind === 'structure')
     ?? defender?.vehicle?.systems[0]
@@ -919,7 +978,9 @@ export default function CombatScreen() {
     : null;
   // This is the authoritative combat sheet: equipped armor is resolved before
   // skills, SPECIAL-derived values, AC, and elemental resistances are consumed.
-  const attackerSheet = attacker ? resolveCombatSheet(
+  const attackerSheet = attackActor ? resolveCombatSheet(
+    attackActor, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+  ) : attacker ? resolveCombatSheet(
     attacker, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
   ) : null;
   const defenderSheet = defender ? resolveCombatSheet(
@@ -927,10 +988,17 @@ export default function CombatScreen() {
   ) : null;
   // Empty hands still make a normal Unarmed attack. Treat them as the built-in
   // Fists and Feet profile without mutating the character's carried inventory.
+  const vehicleWeapons = attacker?.vehicle
+    ? (attacker.vehicle.weaponSlots ?? vehicleWeaponSlotsFromNames(attacker.vehicle.mountedWeapons))
+        .map(slot => [...allWeapons, ...BUILT_IN_VEHICLE_WEAPONS].find(candidate => candidate.id === slot.weaponId))
+        .filter((candidate): candidate is Weapon => !!candidate)
+    : [];
   const activeWeapon = attacker
-    ? (attacker.equippedWeaponId
-        ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
-        : allWeapons.find(w => w.id === 'unarmed') ?? null)
+    ? attacker.vehicle
+      ? vehicleWeapons[0] ?? null
+      : (attacker.equippedWeaponId
+          ? allWeapons.find(w => w.id === attacker.equippedWeaponId) ?? null
+          : allWeapons.find(w => w.id === 'unarmed') ?? null)
     : null;
   const defenderWeapon = defender ? resolveDefenderHandWeapon(defender, allWeapons) : null;
   const naturalAttackWeapons = (attacker?.naturalAttacks ?? [])
@@ -951,7 +1019,7 @@ export default function CombatScreen() {
     ? (activeWeapon?.id === leftWeapon!.id ? rightWeapon : leftWeapon)
     : null;
   const attackCandidates = Array.from(new Map(
-    [leftWeapon, rightWeapon, ...naturalAttackWeapons]
+    (attacker?.vehicle ? vehicleWeapons : [leftWeapon, rightWeapon, ...naturalAttackWeapons])
       .filter((candidate): candidate is Weapon => !!candidate)
       .map(candidate => [candidate.id, candidate]),
   ).values());
@@ -962,12 +1030,14 @@ export default function CombatScreen() {
   // without a profile deliberately retain the normal custom weapon dice path.
   const isMineTrap = weapon?.category === 'minesTraps' || !!weaponAreaAttack;
   const usesAreaAttackProfile = !!weaponAreaAttack;
-  const heldWeapons: Weapon[] = dualWielding
-    ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
-    : (weapon ? [weapon] : []);
+  const heldWeapons: Weapon[] = attacker?.vehicle
+    ? (weapon ? [weapon] : [])
+    : dualWielding
+      ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
+      : (weapon ? [weapon] : []);
   const reloadableHeldWeapons = heldWeapons.filter(w => w.magazineSize > 0);
   const heldAmmoStatuses = [
-    { weapon: activeWeapon, role: 'PRIMARY' },
+    { weapon: attacker?.vehicle ? weapon : activeWeapon, role: 'PRIMARY' },
     { weapon: offhandWeapon, role: 'OFF-HAND' },
   ]
     .filter((candidate): candidate is { weapon: Weapon; role: string } =>
@@ -1032,14 +1102,14 @@ export default function CombatScreen() {
   const modBonuses = { toHit: modEffects.toHit, damage: modEffects.damage, range: modEffects.range };
 
   // Injury effects (manual): attacker & defender.
-  const attackerInjury = attacker ? computeInjuryEffects(attacker) : null;
+  const attackerInjury = attackActor ? computeInjuryEffects(attackActor) : null;
   const defenderInjury = defender ? computeInjuryEffects(defender) : null;
   // Armor-aware sheets already include tag, trait, condition, and active-effect
   // skill changes. Explicit Injury.skillPenalty values are applied here as the
   // final combat-facing adjustment.
-  const combatSkillValues: Partial<Record<SkillType, number>> = attacker && attackerSheet
+  const combatSkillValues: Partial<Record<SkillType, number>> = attackActor && attackerSheet
     ? (['firstAid', 'doctor', 'science', 'repair'] as CombatSkillKey[]).reduce<Partial<Record<SkillType, number>>>((values, skill) => {
-        const injuryDelta = (attacker.injuries ?? [])
+        const injuryDelta = (attackActor.injuries ?? [])
           .filter(injury => injury.isActive)
           .reduce((sum, injury) => sum + (injury.skillPenalty[skill] ?? 0), 0);
         values[skill] = Math.max(0, (attackerSheet.effectiveSkills[skill] ?? 0) + injuryDelta);
@@ -1060,29 +1130,31 @@ export default function CombatScreen() {
     : {};
 
   // Attacker position drives the ranged To-Hit bonus (gun skills only, per manual).
-  const attackerPos = attacker?.position ?? 'standing';
+  const attackerPos = attackActor?.position ?? 'standing';
   const posIdxFromChar = attackerPos === 'crouching' ? 1 : attackerPos === 'prone' ? 2 : 0;
   const positionBonus = isRanged ? POSITION_OPTIONS[posIdxFromChar].bonus : 0;
   // Gate targeting on the weapon: apTargeted === null means the weapon cannot
   // make targeted shots (e.g. thrown explosives, flamethrowers).
-  const traitEffects = attacker ? computeTraitEffects(attacker) : {};
+  const traitEffects = attackActor ? computeTraitEffects(attackActor) : {};
   const fastShotApplies = fastShotAppliesToSkill(weapon?.skill)
     && !!traitEffects.cannotTargetedShot;
   const weaponCanTarget = (!weapon || weapon.apTargeted !== null) && !specialUnarmedAttack && !fastShotApplies;
-  let effTargetedIdx = weaponCanTarget ? targetedIdx : 0;
+  const vehicleTargeting = !!defender?.vehicle;
+  let effTargetedIdx = !vehicleTargeting && weaponCanTarget ? targetedIdx : 0;
   // Sniper scope forces an aimed shot: if no body part is targeted, default to Torso.
   if (modEffects.forcesAimed && weaponCanTarget && effTargetedIdx === 0) effTargetedIdx = 1;
-  const rawTargetedPenalty = isRanged ? TARGETED_OPTIONS[effTargetedIdx].ranged : TARGETED_OPTIONS[effTargetedIdx].melee;
+  const rawTargetedPenalty = vehicleTargeting ? 0
+    : isRanged ? TARGETED_OPTIONS[effTargetedIdx].ranged : TARGETED_OPTIONS[effTargetedIdx].melee;
   // Laser sight negates the aimed-shot to-hit penalty.
   const targetedPenalty = specialUnarmedAttack ? 0 : (modEffects.negatesAimedPenalty ? 0 : rawTargetedPenalty);
-  const targetedBodyPart = TARGETED_OPTIONS[effTargetedIdx].bodyPart;
+  const targetedBodyPart = vehicleTargeting ? null : TARGETED_OPTIONS[effTargetedIdx].bodyPart;
   const isAimed = targetedBodyPart !== null && !specialUnarmedAttack;
   const effectiveAttackerSkills = attackerSheet?.effectiveSkills ?? null;
   const manualNaturalAttack = weapon
-    ? attacker?.naturalAttacks?.find(attack => attack.weaponId === weapon.id)
+    ? attackActor?.naturalAttacks?.find(attack => attack.weaponId === weapon.id)
     : undefined;
-  const manualSkillDelta = manualNaturalAttack && attacker && effectiveAttackerSkills
-    ? (effectiveAttackerSkills.unarmed ?? attacker.skills.unarmed) - attacker.skills.unarmed
+  const manualSkillDelta = manualNaturalAttack && attackActor && effectiveAttackerSkills
+    ? (effectiveAttackerSkills.unarmed ?? attackActor.skills.unarmed) - attackActor.skills.unarmed
     : 0;
   const baseSkill = manualNaturalAttack
     ? Math.max(0, manualNaturalAttack.hitChance + manualSkillDelta)
@@ -1091,7 +1163,7 @@ export default function CombatScreen() {
       : 0;
 
   // Perk bonuses
-  const perkBonuses = computePerkBonuses(attacker, weapon, isRanged);
+  const perkBonuses = computePerkBonuses(attackActor, weapon, isRanged);
 
   // Effective magazine size after mods (extended/drum magazines).
   const effectiveMagazine = weapon ? Math.round(weapon.magazineSize * (modEffects.magazineMult ?? 1)) : 0;
@@ -1103,12 +1175,12 @@ export default function CombatScreen() {
   const defenderEffectMods = defender ? computeEffectModifiers(defender) : null;
   const attackerEffSpecial = attackerSheet?.effectiveSpecial ?? null;
   const defenderEffSpecial = defenderSheet?.effectiveSpecial ?? null;
-  const specialUnarmedEligibility = attacker && specialUnarmedAttack
+  const specialUnarmedEligibility = attackActor && specialUnarmedAttack
     ? evaluateEligibility(
         specialUnarmedAttack,
-        attacker.level,
-        attackerEffSpecial ?? attacker.special,
-        effectiveAttackerSkills ?? attacker.skills,
+        attackActor.level,
+        attackerEffSpecial ?? attackActor.special,
+        effectiveAttackerSkills ?? attackActor.skills,
         [],
       )
     : null;
@@ -1170,8 +1242,8 @@ export default function CombatScreen() {
   // STR requirement penalty
   const effectiveMinStr = weapon ? Math.max(1, weapon.minStr - perkBonuses.strReqReduction) : 0;
   // Uses effective STR (chems like Buffout can raise it past the requirement).
-  const attackerStr = attackerEffSpecial?.strength ?? attacker?.special?.strength ?? 0;
-  const strReqPenalty = (attacker && weapon && attacker.special)
+  const attackerStr = attackerEffSpecial?.strength ?? attackActor?.special?.strength ?? 0;
+  const strReqPenalty = (attackActor && weapon && attackActor.special)
     ? (attackerStr < effectiveMinStr ? (effectiveMinStr - attackerStr) * 20 : 0)
     : 0;
 
@@ -1191,7 +1263,7 @@ export default function CombatScreen() {
   // negative for armor-piercing → treat as a positive to-hit adjustment.
   const ammoAccuracyModifier = describeAmmoAccuracyModifier(loadedAmmo);
   const ammoToHitAdjust = ammoAccuracyModifier?.chanceToHitAdjustment ?? 0;
-  const vehicleMotionPenalty = defender?.vehicle?.inMotion ? -10 : 0;
+  const vehicleMotionPenalty = vehicleTargetToHitPenalty(defender?.vehicle);
 
   // One Hander trait: +20% with one-handed weapons, −40% with two-handed.
   const weaponHands = weapon ? getWeaponHands(weapon) : 1;
@@ -1238,8 +1310,8 @@ export default function CombatScreen() {
 
   // ─── Crit chance (manual: baseCritChance = Luck + 5×More Criticals rank) ──────
   // Aimed shots add TARGETED_CRIT_BONUS[bodyPart].
-  const attackerBaseCrit = attacker
-    ? calcBaseCritChance(attackerEffSpecial ? { ...attacker, special: attackerEffSpecial } : attacker)
+  const attackerBaseCrit = attackActor
+    ? calcBaseCritChance(attackerEffSpecial ? { ...attackActor, special: attackerEffSpecial } : attackActor)
     : 0;
   const aimCritBonus = isAimed && targetedBodyPart ? TARGETED_CRIT_BONUS[targetedBodyPart] : 0;
   const specialCritBonus = specialUnarmedAttack?.critBonus ?? 0;
@@ -1258,13 +1330,13 @@ export default function CombatScreen() {
 
   // Perks: Sniper (ranged) / Slayer (melee+unarmed) — on a successful hit, also
   // roll 1d10; if <= Luck the hit is critical. Whether that perk applies here:
-  const attackerLuck = attackerEffSpecial?.luck ?? attacker?.special?.luck ?? 5;
+  const attackerLuck = attackerEffSpecial?.luck ?? attackActor?.special?.luck ?? 5;
   const sniperApplies = !!attacker && isRanged && hasPerk(attacker, 'sniper');
   const slayerApplies = !!attacker && isMeleeOrUnarmed && hasPerk(attacker, 'slayer');
   // Gunslinger: one-handed ranged weapons crit on a successful Luck roll.
   const gunslingerApplies = !!attacker && isRanged && weaponHands === 1 && hasPerk(attacker, 'gunslinger');
   const luckPerkApplies = sniperApplies || slayerApplies || gunslingerApplies;
-  const hasBetterCriticals = !!attacker && hasPerk(attacker, 'better_criticals');
+  const hasBetterCriticals = !!attackActor && hasPerk(attackActor, 'better_criticals');
 
   // Shot results
   const resolvedShotChances = physicalHitConfirmed ? shotChances.slice(0, 1) : shotChances;
@@ -1282,7 +1354,7 @@ export default function CombatScreen() {
     return { index: i, chanceToHit: cth, penalty: burstPenalties[i], roll, hit, margin, isCrit, isCritFail };
   });
 
-  const canRoll = !!(attacker && defender && weapon);
+  const canRoll = !!(attacker && defender && weapon && (!attacker.vehicle || vehicleGunner));
   const attackResolved = rollTotal !== null || physicalHitConfirmed || manualCritFailConfirmed;
 
   // ─── AP cost (per-weapon apSingle/apTargeted/apBurst; fallback AP_COSTS) ───────
@@ -1305,7 +1377,7 @@ export default function CombatScreen() {
           : wSingle;
   const traitAPDelta = (traitEffects.attackAPPenalty ?? 0) - (fastShotApplies ? (traitEffects.attackAPDiscount ?? 0) : 0);
   const effectiveAPCost = Math.max(1, baseAPCost + traitAPDelta - perkBonuses.apDiscount - (isBurst ? perkBonuses.burstApDiscount : 0));
-  const attackerHasAP = (attacker?.currentAP ?? 0) >= effectiveAPCost;
+  const attackerHasAP = (attackActor?.currentAP ?? 0) >= effectiveAPCost;
 
   // Weapon-usability warnings from injuries (manual):
   //  • Both arms crippled → cannot use any weapon.
@@ -1438,6 +1510,10 @@ export default function CombatScreen() {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    playCombatAttackSounds(
+      getCombatAttackSoundFamily(weapon, isMeleeOrUnarmed),
+      getCombatAttackSoundShotCount({ isBurst: isBurst && weaponCanBurst, burstShots, doubleShotActive }),
+    );
     setRolling(true);
     setPhysicalHitConfirmed(false);
     const t = rollD10(); const u = rollD10();
@@ -1485,7 +1561,8 @@ export default function CombatScreen() {
 
     setTimeout(() => setRolling(false), 350);
   }, [weaponBroken, hasAmmo, attacker, weapon, shotChances, totalCritChance, isAimed, targetedBodyPart,
-      luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon]);
+      luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon, playCombatAttackSounds,
+      isMeleeOrUnarmed, isBurst, weaponCanBurst, burstShots, doubleShotActive]);
 
   const confirmPhysicalHit = useCallback(() => {
     if (isBurst) return;
@@ -1577,6 +1654,10 @@ export default function CombatScreen() {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    playCombatAttackSounds(
+      getCombatAttackSoundFamily(weapon, isMeleeOrUnarmed),
+      getCombatAttackSoundShotCount({ isBurst: true, burstShots, doubleShotActive: false }),
+    );
     const dice = Array.from({ length: burstShots }, () => Math.floor(Math.random() * 10));
     beginAttack();
     setStreamlinedDice(dice);
@@ -1586,7 +1667,8 @@ export default function CombatScreen() {
     if (attacker && weapon && weapon.magazineSize > 0) {
       spendAmmo(attacker.id, weapon.id, burstShots);
     }
-  }, [weaponBroken, hasAmmo, attacker, weapon, burstShots, spendAmmo, currentAmmo]);
+  }, [weaponBroken, hasAmmo, attacker, weapon, burstShots, spendAmmo, currentAmmo,
+    playCombatAttackSounds, isMeleeOrUnarmed]);
 
   const calculateDamage = useCallback(() => {
     if (!weapon || shotResults.length === 0) return;
@@ -1756,14 +1838,14 @@ export default function CombatScreen() {
   }, [defender, weapon, addEffect]);
 
   const handleSpendAP = useCallback(() => {
-    if (!attacker) return;
-    if (!spendAP(attacker.id, effectiveAPCost)) {
-      notify('Not Enough AP', `${attacker.name} needs ${effectiveAPCost} AP for this attack.`);
+    if (!attackActor) return;
+    if (!spendAP(attackActor.id, effectiveAPCost)) {
+      notify('Not Enough AP', `${attackActor.name} needs ${effectiveAPCost} AP for this attack.`);
       return;
     }
     setApSpent(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [attacker, effectiveAPCost, spendAP]);
+  }, [attackActor, effectiveAPCost, spendAP]);
 
   const openMineTrapAreaAttack = useCallback(() => {
     if (!weaponAreaAttack || !weapon) {
@@ -1809,14 +1891,14 @@ export default function CombatScreen() {
       else Alert.alert('Magazine Full', `${w.name} is already fully loaded (${cur}/${mag}).`);
       return;
     }
-    if (!spendAP(attacker.id, cost)) {
+    if (!attackActor || !spendAP(attackActor.id, cost)) {
       if (Platform.OS === 'web') alert(`Not enough AP (need ${cost}) to reload.`);
-      else Alert.alert('Not Enough AP', `Reload needs ${cost} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      else Alert.alert('Not Enough AP', `Reload needs ${cost} AP; ${attackActor?.name ?? 'the gunner'} has ${attackActor?.currentAP ?? 0}.`);
       return;
     }
     reloadWeapon(attacker.id, w.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, spendAP, reloadWeapon]);
+  }, [attacker, attackActor, spendAP, reloadWeapon]);
 
   // Take a chem (manual: using an item costs 3 AP). Applies the chem's immediate
   // stage as an ActiveEffect and resolves any HP heal/damage.
@@ -2227,7 +2309,20 @@ export default function CombatScreen() {
       <ScrollView ref={combatScrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>COMBAT CALCULATOR</Text>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 150, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? '#4a8c3f33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? '#4a8c3f' : colors.border }} onPress={() => setShowRoundTracker(v => !v)}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={combatActive ? `Round ${currentRound} tracker` : 'Initiative and round tracker'}
+            testID="initiative-round-tracker-toggle"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 150, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? '#4a8c3f33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? '#4a8c3f' : colors.border }}
+            onPress={() => {
+              const openingTracker = !showRoundTracker;
+              setShowRoundTracker(openingTracker);
+              if (!combatActive && openingTracker) {
+                setExcludedInitiativeIds([]);
+                setShowInitSetup(true);
+              }
+            }}
+          >
             <Feather name="clock" size={13} color={combatActive ? '#4a8c3f' : colors.mutedForeground} />
             <Text style={{ flexShrink: 1, textAlign: 'center', fontSize: 11, fontFamily: 'Inter_700Bold', color: combatActive ? '#4a8c3f' : colors.mutedForeground }}>
               {combatActive ? `R${currentRound}` : 'INITIATIVE / ROUND TRACKER'}
@@ -2253,12 +2348,6 @@ export default function CombatScreen() {
                       <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>END</Text>
                     </TouchableOpacity>
                   </>
-                )}
-                {!combatActive && (
-                  <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.primary, flexDirection: 'row', gap: 5, alignItems: 'center' }} onPress={() => { setExcludedInitiativeIds([]); setShowInitSetup(true); }}>
-                    <Feather name="play" size={13} color={colors.primaryForeground} />
-                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>START COMBAT</Text>
-                  </TouchableOpacity>
                 )}
               </View>
             </View>
@@ -2525,6 +2614,43 @@ export default function CombatScreen() {
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{weapon ? weapon.name : 'No weapon'}</Text>
+                    {attacker.vehicle && (
+                      <>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+                          MOUNTED: {attacker.vehicle.mountedWeapons.length ? attacker.vehicle.mountedWeapons.join(' · ') : 'No weapons assigned'}
+                        </Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                          Pilot: {vehiclePilot?.name ?? 'Unassigned'} · Gunner: {vehicleGunner?.name ?? 'Unassigned'}
+                        </Text>
+                        {vehiclePilot && pilotSheet ? (
+                          <TouchableOpacity
+                            accessibilityRole="button"
+                            onPress={event => {
+                              event.stopPropagation?.();
+                              const chance = Math.max(0, Math.min(100,
+                                (pilotSheet.effectiveSkills.pilot ?? 0) + attacker.vehicle!.terrainPilotModifier,
+                              ));
+                              const roll = Math.floor(Math.random() * 100) + 1;
+                              setPilotRollResult(`${roll} vs ${chance}% — ${roll <= chance ? 'SUCCESS' : 'FAILURE'}`);
+                              Haptics.notificationAsync(roll <= chance
+                                ? Haptics.NotificationFeedbackType.Success
+                                : Haptics.NotificationFeedbackType.Error);
+                            }}
+                            style={{ alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.card }}
+                          >
+                            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                              ROLL PILOT CHECK · {Math.max(0, Math.min(100, (pilotSheet.effectiveSkills.pilot ?? 0) + attacker.vehicle.terrainPilotModifier))}%
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>Assign a pilot in the vehicle editor to roll a piloting check.</Text>
+                        )}
+                        {pilotRollResult && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: pilotRollResult.includes('SUCCESS') ? '#4a8c3f' : colors.destructive }}>Pilot: {pilotRollResult}</Text>}
+                        {attacker.vehicle.mountedWeapons.length > 0 && !vehicleGunner && (
+                          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Assign a gunner to fire the mounted weapons.</Text>
+                        )}
+                      </>
+                    )}
                     {weapon && <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
                       {DAMAGE_TYPE_NAMES[weapon.damageType]} · {weapon.damageDieCount}d{weapon.damageDie}{weapon.damageBonus !== 0 ? (weapon.damageBonus > 0 ? `+${weapon.damageBonus}` : `${weapon.damageBonus}`) : ''}
                     </Text>}
@@ -2532,10 +2658,10 @@ export default function CombatScreen() {
                     {weapon && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Range: {effectiveRange}{modBonuses.range > 0 ? ` (${weapon.rangeNormal}+${modBonuses.range} mods)` : ''}
                     </Text>}
-                    {attacker.special && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP} · {attackerPos}
+                    {attackActor && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                      {attacker.vehicle ? `GUNNER AP ${Math.min(attackActor.currentAP, attackerSheet?.maxAP ?? attackActor.maxAP)}/${attackerSheet?.maxAP ?? attackActor.maxAP}` : `AP ${Math.min(attackActor.currentAP, attackerSheet?.maxAP ?? attackActor.maxAP)}/${attackerSheet?.maxAP ?? attackActor.maxAP} · ${attackerPos}`}
                     </Text>}
-                    {attacker.isKnockedOut && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>KO · {attacker.knockOutRoundsLeft} turn(s)</Text>}
+                    {attackActor?.isKnockedOut && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>GUNNER KO · {attackActor.knockOutRoundsLeft} turn(s)</Text>}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
                       <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
                     ))}
@@ -2606,17 +2732,6 @@ export default function CombatScreen() {
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
                           {defender.vehicle.mountedWeapons.length ? defender.vehicle.mountedWeapons.join(', ') : 'No Vehicle Weapons'}
                         </Text>
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel={defender.vehicle.inMotion ? 'Set vehicle stopped' : 'Set vehicle moving'}
-                          onPress={event => {
-                            event.stopPropagation?.();
-                            updateCharacter({ ...defender, vehicle: { ...defender.vehicle!, inMotion: !defender.vehicle!.inMotion } });
-                          }}
-                          style={{ alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
-                        >
-                          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{defender.vehicle.inMotion ? 'SET STOPPED' : 'SET MOVING'}</Text>
-                        </TouchableOpacity>
                       </>
                     ) : (
                       <>
@@ -2703,7 +2818,7 @@ export default function CombatScreen() {
                       style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
                     >
                       <Text style={{ textAlign: 'center', fontSize: 10, fontFamily: 'Inter_700Bold', color: selected ? colors.primaryForeground : colors.mutedForeground, letterSpacing: 1 }}>{option.label}</Text>
-                      <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{option.value.name}</Text>
+                       <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{compactWeaponCombatLabel(option.value)}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -2724,7 +2839,7 @@ export default function CombatScreen() {
                       onPress={() => selectAttackWeapon(option.id)}
                       style={{ minWidth: '47%', flexGrow: 1, paddingHorizontal: 10, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
                     >
-                      <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{option.name}</Text>
+                       <Text style={{ textAlign: 'center', fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }} numberOfLines={1}>{compactWeaponCombatLabel(option)}</Text>
                       <Text style={{ textAlign: 'center', fontSize: 9, fontFamily: 'Inter_400Regular', color: selected ? colors.primaryForeground + 'cc' : colors.mutedForeground }}>{attack?.hitChance}% · {option.apSingle} AP · {option.damageDieCount}d{option.damageDie}</Text>
                     </TouchableOpacity>
                   );
@@ -2740,11 +2855,13 @@ export default function CombatScreen() {
                 {!apSpent && (
                   <TouchableOpacity
                     disabled={!attackerHasAP || attackBlocked}
-                    style={{ minWidth: '48%', flexGrow: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: attackerHasAP && !attackBlocked ? colors.primary : colors.secondary, borderWidth: 1, borderColor: attackerHasAP ? colors.primary : colors.destructive, opacity: attackBlocked ? 0.45 : 1 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Spend ${effectiveAPCost} AP with ${weapon?.name ?? 'weapon'}`}
+                    style={{ width: '100%', maxWidth: '100%', minWidth: 0, flexBasis: '100%', flexGrow: 0, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: attackerHasAP && !attackBlocked ? colors.primary : colors.secondary, borderWidth: 1, borderColor: attackerHasAP ? colors.primary : colors.destructive, opacity: attackBlocked ? 0.45 : 1 }}
                     onPress={handleSpendAP}
                   >
-                    <Text style={{ textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: attackerHasAP && !attackBlocked ? colors.primaryForeground : colors.mutedForeground }}>
-                      SPEND {effectiveAPCost} AP — {weapon?.name.toUpperCase()}
+                    <Text numberOfLines={2} ellipsizeMode="tail" style={{ width: '100%', minWidth: 0, flexShrink: 1, textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: attackerHasAP && !attackBlocked ? colors.primaryForeground : colors.mutedForeground }}>
+                      <Text>SPEND</Text> {effectiveAPCost} <Text>AP</Text> — <Text style={{ textTransform: 'uppercase' }}>{weapon ? compactWeaponCombatLabel(weapon) : ''}</Text>
                     </Text>
                     {!!specialUnarmedAttack && (
                       <Text style={{ textAlign: 'center', fontSize: 9, fontFamily: 'Inter_400Regular', color: attackerHasAP && !attackBlocked ? colors.primaryForeground + 'cc' : colors.mutedForeground }}>
@@ -2759,8 +2876,10 @@ export default function CombatScreen() {
                   </TouchableOpacity>
                 )}
                 {apSpent && (
-                  <View style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: '#4a8c3f22', borderWidth: 1, borderColor: '#4a8c3f' }}>
-                    <Text style={{ textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>✓ AP SPENT — {weapon?.name.toUpperCase()}</Text>
+                  <View style={{ width: '100%', maxWidth: '100%', minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: '#4a8c3f22', borderWidth: 1, borderColor: '#4a8c3f' }}>
+                    <Text numberOfLines={2} ellipsizeMode="tail" style={{ width: '100%', minWidth: 0, flexShrink: 1, textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>
+                      ✓ <Text>AP SPENT</Text> — <Text style={{ textTransform: 'uppercase' }}>{weapon ? compactWeaponCombatLabel(weapon) : ''}</Text>
+                    </Text>
                   </View>
                 )}
               </View>
@@ -2775,7 +2894,7 @@ export default function CombatScreen() {
                         style={{ flex: 1, minWidth: 0, paddingHorizontal: 10, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
                       >
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.mutedForeground, letterSpacing: 1 }} numberOfLines={1}>
-                          {status.role} · {status.weapon.name.toUpperCase()}
+                          {status.role} · {compactWeaponCombatLabel(status.weapon).toUpperCase()}
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: hasLoadedAmmo ? colors.primary : colors.destructive }}>
@@ -2831,10 +2950,26 @@ export default function CombatScreen() {
           )}
 
           {/* Spend AP — movement & position actions */}
-          {attacker && (
+          {attacker && !attacker.vehicle && (
             <View style={{ gap: 8 }}>
-              <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} onPress={() => setShowApActions(v => !v)}>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SPEND AP — ACTIONS</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showApActions }}
+                accessibilityLabel={`Spend AP actions${showApActions ? ', expanded' : ', collapsed'}`}
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  borderRadius: colors.radius,
+                  backgroundColor: colors.secondary,
+                  borderWidth: 1,
+                  borderColor: colors.primary,
+                }}
+                onPress={() => setShowApActions(v => !v)}
+              >
+                <Text style={{ flex: 1, textAlign: 'center', fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>MOVEMENT / ACTIONS</Text>
                 <Feather name={showApActions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
               </TouchableOpacity>
               {showApActions && (
@@ -3058,7 +3193,7 @@ export default function CombatScreen() {
                 ? <FormulaLine label="Armor Class (piercing technique)" value="IGNORED" color="#4a8c3f" />
                 : <FormulaLine label="Armor Class" value={`−${defenderAC}%`} color={colors.destructive} />}
               {defender?.tempAC && defender.tempAC > 0 ? <FormulaLine label="  (temp AC)" value={`+${defender.tempAC} from unspent AP`} color={colors.mutedForeground} /> : null}
-              {vehicleMotionPenalty !== 0 && <FormulaLine label="Moving vehicle" value={`${vehicleMotionPenalty}%`} color={colors.destructive} />}
+              {vehicleMotionPenalty !== 0 && <FormulaLine label="Vehicle is Moving?" value={`${vehicleMotionPenalty}%`} color={colors.destructive} />}
               {coverPenalty !== 0 && <FormulaLine label="Cover penalty" value={`−${coverPenalty}%`} color={colors.destructive} />}
               {weaponBonus !== 0 && <FormulaLine label="Manual to-hit adjust" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? '#4a8c3f' : colors.destructive} />}
               {modBonuses.toHit !== 0 && <FormulaLine label="Weapon mods (auto)" value={`${modBonuses.toHit >= 0 ? '+' : ''}${modBonuses.toHit}%`} color={modBonuses.toHit > 0 ? '#4a8c3f' : colors.destructive} />}
@@ -3135,6 +3270,25 @@ export default function CombatScreen() {
                   <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>MANUAL TO-HIT ADJUST</Text><Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>GM ad-hoc modifier</Text></View>
                   <Stepper value={weaponBonus} step={5} min={-50} max={50} onChange={setWeaponBonus} />
                 </View>
+                {defender?.vehicle && (
+                  <TouchableOpacity
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: defender.vehicle.inMotion }}
+                    onPress={() => updateCharacter({
+                      ...defender,
+                      vehicle: { ...defender.vehicle!, inMotion: !defender.vehicle!.inMotion },
+                    })}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 10, borderRadius: 7, borderWidth: 1, borderColor: defender.vehicle.inMotion ? colors.destructive : colors.border, backgroundColor: colors.secondary }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Vehicle is Moving?</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                        {defender.vehicle.inMotion ? '−10% chance to hit' : '0% stationary penalty'}
+                      </Text>
+                    </View>
+                    <Feather name={defender.vehicle.inMotion ? 'check-square' : 'square'} size={18} color={defender.vehicle.inMotion ? colors.destructive : colors.mutedForeground} />
+                  </TouchableOpacity>
+                )}
 
                 {/* Auto-computed weapon-mod to-hit (from equipped weapon's mods) */}
                 {weapon && modBonuses.toHit !== 0 && (
@@ -3184,22 +3338,45 @@ export default function CombatScreen() {
                     </View>
                   </View>
                 )}
-                {canTarget && (
+                {(canTarget || defender?.vehicle) && (
                 <View>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1, marginBottom: 6 }}>TARGETED SHOT</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {TARGETED_OPTIONS.map((opt, i) => {
-                      const pen = isRanged ? opt.ranged : opt.melee;
-                      const critB = opt.bodyPart ? TARGETED_CRIT_BONUS[opt.bodyPart] : 0;
-                      return (
-                        <TouchableOpacity key={i} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: targetedIdx === i ? colors.primary : colors.secondary, borderWidth: 1, borderColor: targetedIdx === i ? colors.primary : colors.border }} onPress={() => setTargetedIdx(i)}>
-                          <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: targetedIdx === i ? colors.primaryForeground : colors.foreground }}>{opt.label}</Text>
-                          {pen !== 0 && <Text style={{ fontSize: 10, color: targetedIdx === i ? colors.primaryForeground + 'cc' : colors.destructive }}>−{pen}%</Text>}
-                          {critB > 0 && <Text style={{ fontSize: 10, color: targetedIdx === i ? colors.primaryForeground + 'cc' : colors.primary }}>+{critB}% crit</Text>}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                  {defender?.vehicle ? (
+                    <>
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground, marginBottom: 6 }}>Choose the vehicle system this hit targets.</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {defender.vehicle.systems.map(system => {
+                          const selected = selectedVehicleSystem?.id === system.id;
+                          return (
+                            <TouchableOpacity
+                              key={system.id}
+                              accessibilityRole="radio"
+                              accessibilityState={{ selected }}
+                              onPress={() => setSelectedVehicleSystemId(system.id)}
+                              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
+                            >
+                              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }}>{system.name}</Text>
+                              <Text style={{ fontSize: 9, color: selected ? colors.primaryForeground + 'cc' : colors.mutedForeground }}>{system.currentHp}/{system.maxHp} HP</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </>
+                  ) : (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {TARGETED_OPTIONS.map((opt, i) => {
+                        const pen = isRanged ? opt.ranged : opt.melee;
+                        const critB = opt.bodyPart ? TARGETED_CRIT_BONUS[opt.bodyPart] : 0;
+                        return (
+                          <TouchableOpacity key={i} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: targetedIdx === i ? colors.primary : colors.secondary, borderWidth: 1, borderColor: targetedIdx === i ? colors.primary : colors.border }} onPress={() => setTargetedIdx(i)}>
+                            <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: targetedIdx === i ? colors.primaryForeground : colors.foreground }}>{opt.label}</Text>
+                            {pen !== 0 && <Text style={{ fontSize: 10, color: targetedIdx === i ? colors.primaryForeground + 'cc' : colors.destructive }}>−{pen}%</Text>}
+                            {critB > 0 && <Text style={{ fontSize: 10, color: targetedIdx === i ? colors.primaryForeground + 'cc' : colors.primary }}>+{critB}% crit</Text>}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
                 )}
               </View>
@@ -3745,7 +3922,7 @@ export default function CombatScreen() {
           </View>
         </View>
       </Modal>
-      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={setAttackerId} onClear={() => setAttackerId(null)} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId && !c.vehicle)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      <CharacterPickerModal visible={showAttackerPicker} onClose={() => setShowAttackerPicker(false)} onSelect={id => { setAttackerId(id); setPilotRollResult(null); }} onClear={() => { setAttackerId(null); setPilotRollResult(null); }} clearRole="Attacker" title="SELECT ATTACKER" characters={activeCharacters.filter(c => c.id !== defenderId)} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <CharacterPickerModal
         visible={showDefenderPicker}
         onClose={() => setShowDefenderPicker(false)}

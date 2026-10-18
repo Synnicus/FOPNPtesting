@@ -1,17 +1,63 @@
 import React, { useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { View } from 'react-native';
+import { Text as NativeText, View } from 'react-native';
+import type { TextProps } from 'react-native';
 import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
+import { useLocalization } from '@/context/LocalizationContext';
+import { translateText } from '@/data/localization';
 import { useColors } from '@/hooks/useColors';
 import { getManualCatalogDestinations, type ManualCatalogDestination } from '@/data/manualCatalogNavigation';
 import type { QuickRule, QuickRuleTable } from '@/data/quickRules';
 import {
   countQuickRuleResults,
+  highlightManualSearchText,
   searchQuickRuleSections,
 } from '@/data/manualRuleSections';
 
-function ManualTable({ table }: { table: QuickRuleTable }) {
+function HighlightedText({ value, query, style, ...textProps }: Omit<TextProps, 'children'> & {
+  value: string;
+  query: string;
+}) {
+  const colors = useColors();
+  const { locale } = useLocalization();
+  const displayedValue = translateText(value, locale);
+  const terms = query.trim().split(/\s+/).filter(Boolean).flatMap(term => [
+    term,
+    translateText(term, locale),
+  ]);
+  const segments = highlightManualSearchText(displayedValue, terms.join(' '));
+
+  return (
+    <NativeText
+      {...textProps}
+      accessibilityLabel={textProps.accessibilityLabel
+        ? translateText(textProps.accessibilityLabel, locale)
+        : undefined}
+      accessibilityHint={textProps.accessibilityHint
+        ? translateText(textProps.accessibilityHint, locale)
+        : undefined}
+      style={style}
+    >
+      {segments.map((segment, index) => segment.highlighted
+        ? (
+          <NativeText
+            key={`match-${index}`}
+            style={{
+              color: colors.primaryForeground,
+              backgroundColor: colors.primary,
+              fontFamily: 'Inter_700Bold',
+            }}
+          >
+            {segment.text}
+          </NativeText>
+        )
+        : segment.text)}
+    </NativeText>
+  );
+}
+
+function ManualTable({ table, query }: { table: QuickRuleTable; query: string }) {
   const colors = useColors();
   const slug = table.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   return (
@@ -26,13 +72,11 @@ function ManualTable({ table }: { table: QuickRuleTable }) {
         gap: 7,
       }}
     >
-      <Text accessibilityRole="header" style={{
+      <HighlightedText value={table.title} query={query} accessibilityRole="header" style={{
         fontSize: 12,
         fontFamily: 'Inter_700Bold',
         color: colors.primary,
-      }}>
-        {table.title}
-      </Text>
+      }} />
       {table.rows.map((row, index) => (
         <View
           key={`${row.label}-${index}`}
@@ -54,33 +98,32 @@ function ManualTable({ table }: { table: QuickRuleTable }) {
           }}
         >
           <View style={{ gap: 4 }}>
-            <Text style={{
+            <HighlightedText value={row.label} query={query} style={{
               fontSize: 11,
               fontFamily: 'Inter_700Bold',
               color: colors.foreground,
-            }}>
-              {row.label}
-            </Text>
+            }} />
             <View style={{ gap: 2 }}>
               {row.values.map((value, valueIndex) => (
-                <Text key={`${valueIndex}-${value}`} style={{
+                <HighlightedText
+                  key={`${valueIndex}-${value}`}
+                  value={`${table.columns[valueIndex] ? `${table.columns[valueIndex]}: ` : ''}${value}`}
+                  query={query}
+                  style={{
                   fontSize: 11,
                   fontFamily: 'Inter_600SemiBold',
                   color: colors.primary,
-                }}>
-                  {table.columns[valueIndex] ? `${table.columns[valueIndex]}: ` : ''}{value}
-                </Text>
+                  }}
+                />
               ))}
             </View>
           </View>
           {row.description ? (
-            <Text style={{
+            <HighlightedText value={row.description} query={query} style={{
               fontSize: 11,
               fontFamily: 'Inter_400Regular',
               color: colors.mutedForeground,
-            }}>
-              {row.description}
-            </Text>
+            }} />
           ) : null}
         </View>
       ))}
@@ -109,7 +152,7 @@ function openCatalog(destination: ManualCatalogDestination) {
   });
 }
 
-function RuleEntry({ rule }: { rule: QuickRule }) {
+function RuleEntry({ rule, query }: { rule: QuickRule; query: string }) {
   const colors = useColors();
   const catalogDestinations = getManualCatalogDestinations(rule.id);
   return (
@@ -125,33 +168,29 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
       }}
     >
       <View style={{ gap: 3 }}>
-        <Text accessibilityRole="header" style={{
+        <HighlightedText value={rule.title} query={query} accessibilityRole="header" style={{
           fontSize: 13,
           fontFamily: 'Inter_700Bold',
           color: colors.foreground,
-        }}>
-          {rule.title}
-        </Text>
-        <Text style={{
+        }} />
+        <HighlightedText value={rule.preview} query={query} style={{
           fontSize: 11,
           fontFamily: 'Inter_600SemiBold',
           color: colors.mutedForeground,
-        }}>
-          {rule.preview}
-        </Text>
+        }} />
       </View>
       {rule.details.map((paragraph, index) => (
-        <Text
+        <HighlightedText
           key={`${rule.id}-${index}`}
+          value={paragraph}
+          query={query}
           testID={`quick-rule-detail-paragraph-${rule.id}-${index + 1}`}
           style={{
             fontSize: 12,
             fontFamily: 'Inter_400Regular',
             color: colors.foreground,
           }}
-        >
-          {paragraph}
-        </Text>
+        />
       ))}
       {catalogDestinations.length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
@@ -187,8 +226,10 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
           ))}
         </View>
       ) : null}
-      {rule.tables?.map(item => <ManualTable key={item.title} table={item} />)}
-      <Text
+      {rule.tables?.map(item => <ManualTable key={item.title} table={item} query={query} />)}
+      <HighlightedText
+        value={`FALLOUT PNP 2.0 · ${rule.manualPages.toUpperCase()}`}
+        query={query}
         accessibilityLabel={`Fallout PnP 2.0 manual, ${rule.manualPages}`}
         testID={`quick-rule-manual-reference-${rule.id}`}
         style={{
@@ -197,19 +238,21 @@ function RuleEntry({ rule }: { rule: QuickRule }) {
           letterSpacing: 0.5,
           color: colors.primary,
         }}
-      >
-        FALLOUT PNP 2.0 · {rule.manualPages.toUpperCase()}
-      </Text>
+      />
     </View>
   );
 }
 
 export default function ManualQuickRulesReference() {
   const colors = useColors();
+  const { locale } = useLocalization();
   const [query, setQuery] = useState('');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [expandedSubsections, setExpandedSubsections] = useState<Record<string, boolean>>({});
-  const results = useMemo(() => searchQuickRuleSections(query), [query]);
+  const results = useMemo(
+    () => searchQuickRuleSections(query, undefined, value => translateText(value, locale)),
+    [query, locale],
+  );
   const topicCount = countQuickRuleResults(results);
   const searching = query.trim().length > 0;
 
@@ -369,33 +412,27 @@ export default function ManualQuickRulesReference() {
                 >
                   <Feather name="book-open" size={15} color={colors.primary} />
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text style={{
+                    <HighlightedText value={section.title} query={query} style={{
                       fontSize: 12,
                       fontFamily: 'Inter_700Bold',
                       color: colors.foreground,
-                    }}>
-                      {section.title}
-                    </Text>
-                    <Text style={{
+                    }} />
+                    <HighlightedText value={section.manualPages.toUpperCase()} query={query} style={{
                       fontSize: 9,
                       fontFamily: 'Inter_600SemiBold',
                       color: colors.mutedForeground,
-                    }}>
-                      {section.manualPages.toUpperCase()}
-                    </Text>
+                    }} />
                   </View>
                   <Feather name={sectionOpen ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} />
                 </TouchableOpacity>
                 {sectionOpen ? (
                   <View style={{ padding: 8, gap: 7 }}>
-                    <Text style={{
+                    <HighlightedText value={section.description} query={query} style={{
                       paddingHorizontal: 4,
                       fontSize: 11,
                       fontFamily: 'Inter_400Regular',
                       color: colors.mutedForeground,
-                    }}>
-                      {section.description}
-                    </Text>
+                    }} />
                     {subsections.map(child => {
                       const subsectionKey = `${section.id}:${child.id}`;
                       const childOpen = searching || expandedSubsections[subsectionKey] === true;
@@ -429,26 +466,22 @@ export default function ManualQuickRulesReference() {
                               gap: 8,
                             }}
                           >
-                            <Text style={{
+                            <HighlightedText value={child.title} query={query} style={{
                               flex: 1,
                               minWidth: 0,
                               flexShrink: 1,
                               fontSize: 11,
                               fontFamily: 'Inter_700Bold',
                               color: colors.foreground,
-                            }}>
-                              {child.title}
-                            </Text>
-                            <Text style={{
+                            }} />
+                            <HighlightedText value={child.manualPages} query={query} style={{
                               flexShrink: 1,
                               maxWidth: '30%',
                               textAlign: 'right',
                               fontSize: 9,
                               fontFamily: 'Inter_600SemiBold',
                               color: colors.mutedForeground,
-                            }}>
-                              {child.manualPages}
-                            </Text>
+                            }} />
                             <Feather name={childOpen ? 'minus' : 'plus'} size={15} color={colors.primary} />
                           </TouchableOpacity>
                           {childOpen ? (
@@ -457,7 +490,7 @@ export default function ManualQuickRulesReference() {
                               paddingTop: 0,
                               gap: 8,
                             }}>
-                              {child.rules.map(item => <RuleEntry key={item.id} rule={item} />)}
+                              {child.rules.map(item => <RuleEntry key={item.id} rule={item} query={query} />)}
                             </View>
                           ) : null}
                         </View>

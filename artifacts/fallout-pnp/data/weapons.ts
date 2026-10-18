@@ -383,6 +383,36 @@ export function isRangedWeapon(w: Weapon): boolean {
   return !isMeleeWeapon(w) && w.category !== 'throwing';
 }
 
+const COMBAT_LABEL_SUFFIXES = [
+  'Heavy Machine Gun',
+  'Grenade Launcher',
+  'Rocket Launcher',
+  'Combat Shotgun',
+  'Plasma Rifle',
+  'Laser Rifle',
+  'Sniper Rifle',
+  'Assault Rifle',
+  'Plasma Pistol',
+  'Laser Pistol',
+  'Machine Gun',
+  'Submachine Gun',
+  'Shotgun',
+  'Rifle',
+  'Pistol',
+  'Flamethrower',
+  'Cannon',
+] as const;
+
+/** Use a weapon-family label in narrow combat controls while retaining the full catalog name elsewhere. */
+export function compactWeaponCombatLabel(weapon: Pick<Weapon, 'name'>, maxLength = 22): string {
+  const fullName = weapon.name.trim();
+  if (fullName.length <= maxLength) return fullName;
+  const normalized = fullName.toLocaleLowerCase();
+  const family = COMBAT_LABEL_SUFFIXES.find(suffix => normalized.endsWith(suffix.toLocaleLowerCase()));
+  if (family) return family;
+  return `${fullName.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
 /** Melee/unarmed/natural weapons add the wielder's melee damage bonus. */
 export function addsMeleeDamage(w: Weapon): boolean {
   return isMeleeWeapon(w);

@@ -1,13 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { QUICK_RULES } from './quickRules.ts';
+import { QUICK_RULES, type QuickRule } from './quickRules.ts';
 import {
   allQuickRules,
   countQuickRuleResults,
+  highlightManualSearchText,
   QUICK_RULE_SECTIONS,
+  type QuickRuleSection,
   searchQuickRuleSections,
 } from './manualRuleSections.ts';
+
+const searchFixtureRule = (id: string, title: string): QuickRule => ({
+  id,
+  title,
+  preview: '',
+  keywords: [],
+  details: [],
+  manualPages: 'p. 1',
+});
 
 test('manual reference follows the manual parts and major chapter hierarchy', () => {
   assert.deepEqual(QUICK_RULE_SECTIONS.map(section => section.title), [
@@ -108,7 +119,79 @@ test('search returns matching nested entries so results are visible under collap
   const ammo = searchQuickRuleSections('AP ammo');
   assert.ok(ammo.some(result => result.section.id === 'equipment-catalog'));
   assert.ok(countQuickRuleResults(ammo) >= 1);
-  assert.equal(searchQuickRuleSections('unmatched wasteland phrase').length, 0);
+  assert.equal(searchQuickRuleSections('zqvxnotaword').length, 0);
+});
+
+test('multiword manual search includes any matching word and filters unrelated rule entries', () => {
+  const sections: QuickRuleSection[] = [{
+    id: 'test-section',
+    title: 'Radiation rules',
+    manualPages: 'p. 1',
+    description: 'A guide to the rules.',
+    subsections: [
+      {
+        id: 'radiation-subsection',
+        title: 'Radiation',
+        manualPages: 'p. 2',
+        keywords: [],
+        rules: [
+          searchFixtureRule('radiation-rule', 'Radiation resistance'),
+          searchFixtureRule('unrelated-sibling', 'Armor repair'),
+        ],
+      },
+      {
+        id: 'weapons-subsection',
+        title: 'Weapons',
+        manualPages: 'p. 3',
+        keywords: [],
+        rules: [
+          searchFixtureRule('plasma-rule', 'Plasma weapon'),
+          searchFixtureRule('unrelated-weapon-sibling', 'Armor repair'),
+        ],
+      },
+    ],
+  }];
+
+  const results = searchQuickRuleSections('radiation plasma', sections);
+  const entries = results.flatMap(result => result.subsections.flatMap(child => child.rules));
+  assert.deepEqual(entries.map(item => item.id), ['radiation-rule', 'plasma-rule']);
+});
+
+test('manual search highlighting marks each matching word and preserves surrounding text', () => {
+  assert.deepEqual(
+    highlightManualSearchText('Armor class reduces fire damage.', 'armor fire'),
+    [
+      { text: 'Armor', highlighted: true },
+      { text: ' class reduces ', highlighted: false },
+      { text: 'fire', highlighted: true },
+      { text: ' damage.', highlighted: false },
+    ],
+  );
+});
+
+test('manual search recognizes the currently translated text as well as the English source', () => {
+  const sections: QuickRuleSection[] = [{
+    id: 'localized-section',
+    title: 'Character rules',
+    manualPages: 'p. 1',
+    description: 'Character guide',
+    subsections: [{
+      id: 'localized-subsection',
+      title: 'Radiation',
+      manualPages: 'p. 2',
+      keywords: [],
+      rules: [searchFixtureRule('radiation-rule', 'Radiation resistance')],
+    }],
+  }];
+  const translate = (value: string) => value === 'Radiation resistance'
+    ? 'Resistencia a radiación'
+    : value;
+
+  const results = searchQuickRuleSections('radiación', sections, translate);
+  assert.deepEqual(
+    results.flatMap(result => result.subsections.flatMap(child => child.rules.map(item => item.id))),
+    ['radiation-rule'],
+  );
 });
 
 test('core manual tables retain the key rows and values', () => {

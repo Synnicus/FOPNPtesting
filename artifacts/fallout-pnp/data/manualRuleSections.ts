@@ -504,15 +504,51 @@ function normalize(value: string): string {
   return value.toLocaleLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
-function ruleSearchText(value: QuickRule): string {
-  return normalize([
-    value.id, value.title, value.preview, value.keywords.join(' '), value.details.join(' '),
+export interface ManualSearchTextSegment {
+  text: string;
+  highlighted: boolean;
+}
+
+export function highlightManualSearchText(text: string, query: string): ManualSearchTextSegment[] {
+  const terms = [...new Set(query.trim().split(/\s+/).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  if (terms.length === 0) return [{ text, highlighted: false }];
+
+  const escapedTerms = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const matcher = new RegExp(`(${escapedTerms.join('|')})`, 'giu');
+  const segments: ManualSearchTextSegment[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = matcher.exec(text)) !== null) {
+    if (match.index > cursor) {
+      segments.push({ text: text.slice(cursor, match.index), highlighted: false });
+    }
+    segments.push({ text: match[0], highlighted: true });
+    cursor = matcher.lastIndex;
+  }
+
+  if (cursor < text.length || segments.length === 0) {
+    segments.push({ text: text.slice(cursor), highlighted: false });
+  }
+  return segments;
+}
+
+type TextTranslator = (value: string) => string;
+
+function translatedSearchText(values: string[], translate: TextTranslator): string {
+  return normalize(values.flatMap(value => [value, translate(value)]).join(' '));
+}
+
+function ruleSearchText(value: QuickRule, translate: TextTranslator): string {
+  return translatedSearchText([
+    value.id, value.title, value.preview, ...value.keywords, ...value.details,
     value.manualPages,
     ...(value.tables ?? []).flatMap(item => [
-      item.title, item.columns.join(' '),
-      ...item.rows.flatMap(row => [row.label, row.values.join(' '), row.description ?? '']),
+      item.title, ...item.columns,
+      ...item.rows.flatMap(row => [row.label, ...row.values, row.description ?? '']),
     ]),
-  ].join(' '));
+  ], translate);
 }
 
 export function allQuickRules(sections: readonly QuickRuleSection[] = QUICK_RULE_SECTIONS): QuickRule[] {
@@ -522,6 +558,7 @@ export function allQuickRules(sections: readonly QuickRuleSection[] = QUICK_RULE
 export function searchQuickRuleSections(
   query: string,
   sections: readonly QuickRuleSection[] = QUICK_RULE_SECTIONS,
+  translate: TextTranslator = value => value,
 ): QuickRuleSearchResult[] {
   const terms = normalize(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
@@ -529,22 +566,29 @@ export function searchQuickRuleSections(
   }
 
   return sections.flatMap(section => {
-    const sectionText = normalize(`${section.title} ${section.description} ${section.manualPages}`);
-    if (terms.every(term => sectionText.includes(term))) {
-      return [{ section, subsections: section.subsections }];
-    }
+    const sectionText = translatedSearchText(
+      [section.title, section.description, section.manualPages],
+      translate,
+    );
+    const sectionMatches = terms.some(term => sectionText.includes(term));
     const matchingSubsections = section.subsections.flatMap(child => {
-      const childText = normalize(`${child.title} ${child.manualPages} ${child.keywords.join(' ')}`);
-      if (terms.every(term => childText.includes(term))) return [child];
+      const childText = translatedSearchText(
+        [child.title, child.manualPages, ...child.keywords],
+        translate,
+      );
+      const childMatches = terms.some(term => childText.includes(term));
       const matchingRules = child.rules.filter(item => {
-        const text = ruleSearchText(item);
-        return terms.every(term => text.includes(term));
+        const text = ruleSearchText(item, translate);
+        return terms.some(term => text.includes(term));
       });
-      return matchingRules.length > 0
-        ? [{ ...child, rules: matchingRules }]
-        : [];
+      if (matchingRules.length > 0 || childMatches) {
+        return [{ ...child, rules: matchingRules }];
+      }
+      return [];
     });
-    return matchingSubsections.length > 0 ? [{ section, subsections: matchingSubsections }] : [];
+    return sectionMatches || matchingSubsections.length > 0
+      ? [{ section, subsections: matchingSubsections }]
+      : [];
   });
 }
 

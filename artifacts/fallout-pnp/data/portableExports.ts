@@ -413,6 +413,13 @@ function isVehicleProfileRecord(value: unknown): value is VehicleProfile {
       && typeof system.kind === 'string' && isFiniteNumber(system.currentHp)
       && isFiniteNumber(system.maxHp) && system.maxHp > 0
       && system.currentHp >= 0 && system.currentHp <= system.maxHp)
+    && (value.weaponSlots === undefined || Array.isArray(value.weaponSlots)
+      && value.weaponSlots.every(slot => isRecord(slot)
+        && typeof slot.id === 'string' && slot.id.length > 0
+        && typeof slot.name === 'string'
+        && Number.isInteger(slot.quantity) && isFiniteNumber(slot.quantity)
+        && slot.quantity >= 1 && slot.quantity <= 99
+        && (slot.weaponId === undefined || typeof slot.weaponId === 'string')))
     && isStringArray(value.mountedWeapons)
     && isStringArray(value.enhancements)
     && isStringArray(value.notes)
@@ -475,6 +482,9 @@ function isCharacterRecord(value: unknown): value is Character {
       && typeof injury.isActive === 'boolean')
     && typeof value.isKnockedOut === 'boolean'
     && (value.vehicle === undefined || isVehicleProfileRecord(value.vehicle))
+    && (value.vehicleCrew === undefined || isRecord(value.vehicleCrew)
+      && (value.vehicleCrew.pilotCharacterId === undefined || typeof value.vehicleCrew.pilotCharacterId === 'string')
+      && (value.vehicleCrew.gunnerCharacterId === undefined || typeof value.vehicleCrew.gunnerCharacterId === 'string'))
     && isStringArray(value.conditions)
     && positionValid
     && (value.effects === undefined || Array.isArray(value.effects))

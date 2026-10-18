@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Modal, Platform, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
-import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
-import { TouchableOpacity } from 'react-native';
+import {
+  LocalizedText as Text,
+  LocalizedTextInput as TextInput,
+  LocalizedTouchableOpacity as TouchableOpacity,
+} from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
-import { VehicleCategory, VehicleProfile, VehicleSystem, VehicleSystemKind } from '@/context/types';
-import { VEHICLE_CATEGORIES, VEHICLE_ENHANCEMENTS } from '@/data/vehicles';
+import { Character, VehicleCategory, VehicleProfile, VehicleSystem, VehicleSystemKind, Weapon } from '@/context/types';
+import { vehicleWeaponSlotsFromNames, VEHICLE_CATEGORIES, VEHICLE_ENHANCEMENTS } from '@/data/vehicles';
+import { BUILT_IN_VEHICLE_WEAPONS } from '@/data/vehicleWeapons';
 
 const DAMAGE_TYPES = [
   { id: 'normal', label: 'Normal' },
@@ -34,19 +38,30 @@ function numberText(value: number | null): string {
   return value === null ? '' : String(value);
 }
 
-export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'VEHICLE DETAILS' }: {
+export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'VEHICLE DETAILS', weaponOptions, crewCandidates, initialCrew }: {
   visible: boolean;
   initial: VehicleProfile | null;
   onClose: () => void;
-  onSave: (vehicle: VehicleProfile) => void;
+  onSave: (vehicle: VehicleProfile, crew?: Character['vehicleCrew']) => void;
   title?: string;
+  weaponOptions?: Weapon[];
+  crewCandidates?: Character[];
+  initialCrew?: Character['vehicleCrew'];
 }) {
   const colors = useColors();
+  const allVehicleWeapons = useMemo(() => Array.from(new Map(
+    [...(weaponOptions ?? []), ...BUILT_IN_VEHICLE_WEAPONS].map(weapon => [weapon.id, weapon]),
+  ).values()), [weaponOptions]);
+  const allVehicleWeaponsRef = useRef(allVehicleWeapons);
+  allVehicleWeaponsRef.current = allVehicleWeapons;
   const [draft, setDraft] = useState<VehicleProfile | null>(null);
   const [numeric, setNumeric] = useState<Record<string, string>>({});
   const [passengers, setPassengers] = useState('');
   const [cargo, setCargo] = useState('');
-  const [weaponsText, setWeaponsText] = useState('');
+  const [pilotCharacterId, setPilotCharacterId] = useState('');
+  const [gunnerCharacterId, setGunnerCharacterId] = useState('');
+  const [weaponPickerSlotId, setWeaponPickerSlotId] = useState<string | null>(null);
+  const [weaponPickerSearch, setWeaponPickerSearch] = useState('');
   const [enhancementsText, setEnhancementsText] = useState('');
   const [notesText, setNotesText] = useState('');
 
@@ -60,6 +75,11 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
       damageResistance: { ...initial.damageResistance },
       systems: initial.systems.map(system => ({ ...system })),
       mountedWeapons: [...initial.mountedWeapons],
+      weaponSlots: (initial.weaponSlots ?? vehicleWeaponSlotsFromNames(initial.mountedWeapons)).map(slot => {
+        if (slot.weaponId) return { ...slot };
+        const matched = allVehicleWeaponsRef.current.find(weapon => weapon.name.toLowerCase() === slot.name.toLowerCase());
+        return { ...slot, ...(matched ? { weaponId: matched.id } : {}) };
+      }),
       enhancements: [...initial.enhancements],
       notes: [...initial.notes],
     };
@@ -77,10 +97,13 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
     });
     setPassengers(copy.passengers);
     setCargo(copy.carryingWeightLb);
-    setWeaponsText(copy.mountedWeapons.join('\n'));
+    setPilotCharacterId(initialCrew?.pilotCharacterId ?? '');
+    setGunnerCharacterId(initialCrew?.gunnerCharacterId ?? '');
     setEnhancementsText(copy.enhancements.join('\n'));
     setNotesText(copy.notes.join('\n'));
-  }, [visible, initial]);
+    setWeaponPickerSlotId(null);
+    setWeaponPickerSearch('');
+  }, [visible, initial, initialCrew]);
 
   const updateNumber = (key: string, value: string) => setNumeric(current => ({ ...current, [key]: value }));
   const numericValue = (key: string, nullable = false): number | null => {
@@ -129,6 +152,23 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
   const removeSystem = (id: string) => setDraft(current => current
     ? { ...current, systems: current.systems.length > 1 ? current.systems.filter(system => system.id !== id) : current.systems }
     : current);
+  const patchWeaponSlot = (id: string, patch: Partial<NonNullable<VehicleProfile['weaponSlots']>[number]>) =>
+    setDraft(current => current ? {
+      ...current,
+      weaponSlots: (current.weaponSlots ?? []).map(slot => slot.id === id ? { ...slot, ...patch } : slot),
+    } : current);
+  const addWeaponSlot = () => setDraft(current => current ? {
+    ...current,
+    weaponSlots: [...(current.weaponSlots ?? []), {
+      id: `mount-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: 'New mount',
+      quantity: 1,
+    }],
+  } : current);
+  const removeWeaponSlot = (id: string) => setDraft(current => current ? {
+    ...current,
+    weaponSlots: (current.weaponSlots ?? []).filter(slot => slot.id !== id),
+  } : current);
 
   const save = () => {
     if (!draft || !draft.name.trim() || draft.systems.length === 0) return;
@@ -157,11 +197,24 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
         maxHp: Math.max(1, Math.floor(system.maxHp)),
         currentHp: Math.max(0, Math.min(system.maxHp, Math.floor(system.currentHp))),
       })),
-      mountedWeapons: weaponsText.split('\n').map(value => value.trim()).filter(Boolean),
+      weaponSlots: (draft.weaponSlots ?? []).map(slot => ({
+        ...slot,
+        name: slot.name.trim() || 'Weapon mount',
+        quantity: Math.max(1, Math.min(99, Math.floor(slot.quantity) || 1)),
+      })),
+      mountedWeapons: (draft.weaponSlots ?? []).map(slot => {
+        const mountedWeapon = allVehicleWeapons.find(weapon => weapon.id === slot.weaponId);
+        const name = mountedWeapon?.name ?? slot.name.trim();
+        const quantity = Math.max(1, Math.min(99, Math.floor(slot.quantity) || 1));
+        return name ? `${name}${quantity > 1 ? ` ×${quantity}` : ''}` : '';
+      }).filter(Boolean),
       enhancements: enhancementsText.split('\n').map(value => value.trim()).filter(Boolean),
       notes: notesText.split('\n').map(value => value.trim()).filter(Boolean),
     };
-    onSave(output);
+    onSave(output, crewCandidates ? {
+      ...(pilotCharacterId ? { pilotCharacterId } : {}),
+      ...(gunnerCharacterId ? { gunnerCharacterId } : {}),
+    } : undefined);
   };
   const sectionTitle = (label: string) => (
     <Text style={{ color: colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1.5, marginTop: 5 }}>
@@ -291,7 +344,134 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
                   <Text style={{ fontSize: 10, color: colors.primary, fontFamily: 'Inter_700Bold' }}>+ ADD SYSTEM</Text>
                 </TouchableOpacity>
 
-                {sectionTitle('WEAPONS, UPGRADES & NOTES')}
+                {sectionTitle('WEAPON MOUNTS')}
+                <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}>
+                  Assign a combat weapon to each mount. The vehicle gunner uses their own skill and AP.
+                </Text>
+                {(draft.weaponSlots ?? []).map(slot => {
+                  const assignedWeapon = allVehicleWeapons.find(weapon => weapon.id === slot.weaponId);
+                  const choices = allVehicleWeapons.filter(weapon =>
+                    weapon.name.toLowerCase().includes(weaponPickerSearch.toLowerCase().trim()));
+                  return (
+                    <View key={slot.id} style={{ padding: 9, borderRadius: 7, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, gap: 7 }}>
+                      <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+                        <TextInput
+                          value={slot.name}
+                          onChangeText={value => patchWeaponSlot(slot.id, { name: value })}
+                          placeholder="Mount name"
+                          placeholderTextColor={colors.mutedForeground}
+                          style={[textInputStyle(colors), { flex: 1 }]}
+                        />
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Choose weapon for ${slot.name}`}
+                          onPress={() => {
+                            setWeaponPickerSearch('');
+                            setWeaponPickerSlotId(weaponPickerSlotId === slot.id ? null : slot.id);
+                          }}
+                          style={{ flex: 1, minHeight: 38, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.secondary }}
+                        >
+                          <Text numberOfLines={1} style={{ fontSize: 10, color: colors.primary, fontFamily: 'Inter_700Bold' }}>
+                            {assignedWeapon?.name ?? 'CHOOSE WEAPON'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => removeWeaponSlot(slot.id)} accessibilityLabel={`Remove ${slot.name}`}>
+                          <Feather name="x" size={17} color={colors.destructive} />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>MOUNTED WEAPONS</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove one mounted weapon" onPress={() => patchWeaponSlot(slot.id, { quantity: Math.max(1, slot.quantity - 1) })}>
+                            <Feather name="minus-circle" size={18} color={colors.primary} />
+                          </TouchableOpacity>
+                          <Text style={{ minWidth: 18, textAlign: 'center', color: colors.foreground, fontFamily: 'Inter_700Bold' }}>{slot.quantity}</Text>
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add one mounted weapon" onPress={() => patchWeaponSlot(slot.id, { quantity: Math.min(99, slot.quantity + 1) })}>
+                            <Feather name="plus-circle" size={18} color={colors.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      {weaponPickerSlotId === slot.id && (
+                        <View style={{ padding: 8, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary, gap: 6 }}>
+                          <TextInput
+                            value={weaponPickerSearch}
+                            onChangeText={setWeaponPickerSearch}
+                            placeholder="Search weapons"
+                            placeholderTextColor={colors.mutedForeground}
+                            style={textInputStyle(colors)}
+                          />
+                          <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled">
+                            <TouchableOpacity
+                              onPress={() => {
+                                patchWeaponSlot(slot.id, { weaponId: undefined });
+                                setWeaponPickerSlotId(null);
+                              }}
+                              style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                            >
+                              <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>No weapon assigned</Text>
+                            </TouchableOpacity>
+                            {choices.map(weapon => (
+                              <TouchableOpacity
+                                key={weapon.id}
+                                onPress={() => {
+                                  patchWeaponSlot(slot.id, { weaponId: weapon.id, name: weapon.name });
+                                  setWeaponPickerSlotId(null);
+                                }}
+                                style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                              >
+                                <Text style={{ color: colors.foreground, fontSize: 11 }}>{weapon.name}</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>
+                                  {weapon.skill} · {weapon.damageDieCount}d{weapon.damageDie}{weapon.damageBonus ? `+${weapon.damageBonus}` : ''} · AP {weapon.apSingle ?? 5}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+                <TouchableOpacity onPress={addWeaponSlot} style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.primary }}>
+                  <Text style={{ fontSize: 10, color: colors.primary, fontFamily: 'Inter_700Bold' }}>+ ADD WEAPON MOUNT</Text>
+                </TouchableOpacity>
+
+                {crewCandidates && (
+                  <>
+                    {sectionTitle('VEHICLE CREW')}
+                    <View style={{ gap: 6 }}>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_700Bold' }}>PILOT</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {[{ id: '', name: 'Unassigned' }, ...crewCandidates.map(character => ({ id: character.id, name: character.name }))].map(candidate => (
+                          <TouchableOpacity
+                            key={`pilot-${candidate.id || 'none'}`}
+                            onPress={() => setPilotCharacterId(candidate.id)}
+                            style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: pilotCharacterId === candidate.id ? colors.primary : colors.border, backgroundColor: pilotCharacterId === candidate.id ? colors.primary : colors.secondary }}
+                          >
+                            <Text style={{ fontSize: 10, color: pilotCharacterId === candidate.id ? colors.primaryForeground : colors.foreground }}>{candidate.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                    {(draft.weaponSlots ?? []).some(slot => !!slot.weaponId) && (
+                      <View style={{ gap: 6 }}>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_700Bold' }}>GUNNER</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {[{ id: '', name: 'Unassigned' }, ...crewCandidates.map(character => ({ id: character.id, name: character.name }))].map(candidate => (
+                            <TouchableOpacity
+                              key={`gunner-${candidate.id || 'none'}`}
+                              onPress={() => setGunnerCharacterId(candidate.id)}
+                              style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: gunnerCharacterId === candidate.id ? colors.primary : colors.border, backgroundColor: gunnerCharacterId === candidate.id ? colors.primary : colors.secondary }}
+                            >
+                              <Text style={{ fontSize: 10, color: gunnerCharacterId === candidate.id ? colors.primaryForeground : colors.foreground }}>{candidate.name}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {sectionTitle('UPGRADES & NOTES')}
                 <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}>
                   Tap a manual enhancement to add or remove it from this vehicle.
                 </Text>
@@ -318,7 +498,6 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
                     </TouchableOpacity>
                   );
                 })}
-                <TextInput value={weaponsText} onChangeText={setWeaponsText} multiline placeholder="Mounted weapons — one per line" placeholderTextColor={colors.mutedForeground} style={[textInputStyle(colors), { minHeight: 54, textAlignVertical: 'top' }]} />
                 <TextInput value={enhancementsText} onChangeText={setEnhancementsText} multiline placeholder="Installed enhancements — one per line" placeholderTextColor={colors.mutedForeground} style={[textInputStyle(colors), { minHeight: 54, textAlignVertical: 'top' }]} />
                 <TextInput value={notesText} onChangeText={setNotesText} multiline placeholder="Manual notes — one per line" placeholderTextColor={colors.mutedForeground} style={[textInputStyle(colors), { minHeight: 64, textAlignVertical: 'top' }]} />
               </ScrollView>

@@ -288,6 +288,14 @@ export interface VehicleSystem {
   maxHp: number;
 }
 
+export interface VehicleWeaponSlot {
+  id: string;
+  /** Mount label, retained even when no weapon is currently assigned. */
+  name: string;
+  weaponId?: string;
+  quantity: number;
+}
+
 /**
  * Manual vehicle profile and persistent system condition. Vehicles do not use
  * DT; their five damage-resistance percentages apply directly to each system.
@@ -311,6 +319,8 @@ export interface VehicleProfile {
   damageResistance: Record<DamageType, number>;
   systems: VehicleSystem[];
   mountedWeapons: string[];
+  /** Structured mount assignments; optional for compatibility with older campaigns. */
+  weaponSlots?: VehicleWeaponSlot[];
   enhancements: string[];
   notes: string[];
   terrainPilotModifier: number;
@@ -372,6 +382,11 @@ export interface Character {
   portraitOffset?: { x: number; y: number };
   /** Present when this saved NPC-shaped combat record is a persistent vehicle. */
   vehicle?: VehicleProfile;
+  /** Crew assignments belong to this deployed vehicle, not its reusable template. */
+  vehicleCrew?: {
+    pilotCharacterId?: string;
+    gunnerCharacterId?: string;
+  };
   /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
 
   traits?: string[];
