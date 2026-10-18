@@ -42,6 +42,11 @@ import {
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import type { ResolvedArmorSheet } from '@/data/armorEffects';
 import { resolveDefenderHandWeapon } from '@/data/combatantEquipment';
+import {
+  hasAreaCombatDamage,
+  hasDirectCombatDamage,
+  requestCombatImpact,
+} from '@/data/combatImpact';
 import { BUILT_IN_VEHICLE_WEAPONS } from '@/data/vehicleWeapons';
 import { vehicleTargetToHitPenalty, vehicleWeaponSlotsFromNames } from '@/data/vehicles';
 import {
@@ -785,13 +790,7 @@ export default function CombatScreen() {
   const attackSoundSequenceIdRef = useRef(0);
   const attackSoundTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const playCombatImpact = useCallback(() => {
-    if (!combatSoundsEnabledRef.current) return;
-    combatImpactPlayer.volume = 0.55;
-    void combatImpactPlayer.seekTo(0)
-      .then(() => {
-        if (combatSoundsEnabledRef.current) combatImpactPlayer.play();
-      })
-      .catch(() => {});
+    requestCombatImpact(combatImpactPlayer, () => combatSoundsEnabledRef.current);
   }, [combatImpactPlayer]);
   const playCombatAttackSounds = useCallback((family: CombatAttackSoundFamily | null, shotCount: number) => {
     attackSoundSequenceIdRef.current += 1;
@@ -831,7 +830,7 @@ export default function CombatScreen() {
   useEffect(() => {
     if (!areaAttackReceipt || lastAreaImpactRequestId.current === areaAttackReceipt.requestId) return;
     lastAreaImpactRequestId.current = areaAttackReceipt.requestId;
-    if (areaAttackReceipt.results.some(result => result.damage > 0)) playCombatImpact();
+    if (hasAreaCombatDamage(areaAttackReceipt.results)) playCombatImpact();
   }, [areaAttackReceipt, playCombatImpact]);
 
   // Round tracker
@@ -2156,7 +2155,7 @@ export default function CombatScreen() {
     if (totalDamage > 0) applyCombatDamage(attackReceipt.current, defender.id, totalDamage,
       shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined,
       selectedVehicleSystem?.id);
-    if (totalDamage > 0) playCombatImpact();
+    if (hasDirectCombatDamage(totalDamage)) playCombatImpact();
     if (totalRadiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, totalRadiationExposure);
     if (hasAppliedPoison && !defender.vehicle) applyPoisonExposure(appliedPoisonResults);
     // Auto-apply the aimed-shot targeted crit injury (no hidden extra tap).
