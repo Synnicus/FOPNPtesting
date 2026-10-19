@@ -284,6 +284,10 @@ test('individual character exports preserve injury attribution, descriptions, ac
   assert.equal(parsed.ok, true);
   if (parsed.ok && parsed.kind === 'character') {
     assert.deepEqual(parsed.bundle.character.injuries[0], injury);
+    assert.equal(
+      getInjuryCauseText(parsed.bundle.character.injuries[0].source),
+      'Caused by: Raider with Hunting Rifle',
+    );
   }
 });
 
@@ -304,8 +308,15 @@ test('individual character imports accept older injuries without source attribut
 
   assert.equal(parsed.ok, true);
   if (parsed.ok && parsed.kind === 'character') {
-    assert.deepEqual(parsed.bundle.character.injuries[0], olderInjury);
-    assert.equal('source' in parsed.bundle.character.injuries[0], false);
+    const importedInjury = parsed.bundle.character.injuries[0];
+    assert.deepEqual(importedInjury, olderInjury);
+    assert.equal('source' in importedInjury, false);
+    assert.equal(
+      getInjuryCauseText('source' in importedInjury && typeof importedInjury.source === 'string'
+        ? importedInjury.source
+        : undefined),
+      null,
+    );
   }
 });
 
