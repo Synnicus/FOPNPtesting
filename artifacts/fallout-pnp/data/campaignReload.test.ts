@@ -315,7 +315,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       }
     });
 
-    await t.test('importCampaign rejects invalid JSON without replacing a populated campaign', async () => {
+    await t.test('importCampaign rejects malformed records and collection shapes without replacing a populated campaign', async () => {
       storage.clear();
       campaign = undefined;
 
@@ -337,6 +337,8 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         assert.ok(storedBefore, 'populated campaign saved');
         const writesBefore = writes.length;
 
+        const malformedCharacter = { ...legacyNpc, conditions: {} };
+        const incompleteCharacter = { id: 'incomplete-character', name: 'Incomplete Character' };
         for (const [label, invalidJson] of [
           ['malformed JSON', '{'],
           ['missing characters array', JSON.stringify({
@@ -346,6 +348,11 @@ test('AppProvider campaign storage lifecycle', async (t) => {
             customAmmo: [],
             initiativeEntries: [],
           })],
+          ['null character record', JSON.stringify({ ...fixture, characters: [null] })],
+          ['incomplete character record', JSON.stringify({ ...fixture, characters: [incompleteCharacter] })],
+          ['malformed character collection', JSON.stringify({ ...fixture, characters: [malformedCharacter] })],
+          ['malformed top-level collection', JSON.stringify({ ...fixture, customWeapons: {} })],
+          ['non-record collection entry', JSON.stringify({ ...fixture, customArmor: [null] })],
         ] as const) {
           await act(async () => {
             assert.equal(current().importCampaign(invalidJson), false, `${label} rejected`);

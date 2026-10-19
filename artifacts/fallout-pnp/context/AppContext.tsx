@@ -356,6 +356,95 @@ interface AppState extends CampaignOptions {
   hardcoreRadiationRules: boolean;
 }
 
+const CAMPAIGN_COLLECTIONS = [
+  'customWeapons',
+  'customArmor',
+  'customAmmo',
+  'customVehicles',
+  'customBestiaryTemplates',
+  'initiativeEntries',
+  'pendingCombatSkillActions',
+] as const;
+
+const CHARACTER_RECORD_COLLECTIONS = [
+  'karmaLog',
+  'factionReputations',
+  'perks',
+  'weaponAmmoStates',
+  'armorConditionStates',
+  'naturalAttacks',
+  'injuries',
+  'effects',
+  'areaEffects',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function hasRecordCollection(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.every(isRecord);
+}
+
+function hasValidCharacterRecord(value: unknown): value is Character {
+  if (!isRecord(value)) return false;
+  const character = value;
+  const finiteNumber = (field: string) =>
+    typeof character[field] === 'number' && Number.isFinite(character[field]);
+  const stringFields = ['id', 'name'] as const;
+  if (stringFields.some(field => typeof character[field] !== 'string' || character[field] === '')) return false;
+  if (character.type !== 'pc' && character.type !== 'npc') return false;
+  if (typeof character.race !== 'string' || character.race === '') return false;
+  if (!['standing', 'crouching', 'prone'].includes(character.position as string)) return false;
+  if (typeof character.isKnockedOut !== 'boolean') return false;
+  if ([
+    'level', 'xp', 'maxHp', 'currentHp', 'armorClass', 'tempAC', 'maxAP', 'currentAP',
+    'sequence', 'unspentSkillPoints', 'radiationResistance', 'gasResistance',
+    'electricityResistance', 'knockOutRoundsLeft',
+  ].some(field => !finiteNumber(field))) return false;
+
+  const specialKeys = ['strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck'];
+  const skillKeys = [
+    'smallGuns', 'bigGuns', 'energyWeapons', 'meleeWeapons', 'unarmed', 'throwing',
+    'firstAid', 'doctor', 'sneak', 'lockpick', 'steal', 'traps', 'science', 'repair',
+    'speech', 'barter', 'gambling', 'outdoorsman', 'pilot',
+  ];
+  const special = character.special;
+  const skills = character.skills;
+  if (!isRecord(special)
+    || specialKeys.some(key => typeof special[key] !== 'number'
+      || !Number.isFinite(special[key]))) return false;
+  if (!isRecord(skills)
+    || skillKeys.some(key => typeof skills[key] !== 'number'
+      || !Number.isFinite(skills[key]))) return false;
+
+  if (!isStringArray(character.taggedSkills) || !isStringArray(character.conditions)) return false;
+  for (const field of CHARACTER_RECORD_COLLECTIONS) {
+    const collection = character[field];
+    if (collection !== undefined && !hasRecordCollection(collection)) return false;
+  }
+  for (const field of ['traits', 'inventoryWeaponIds'] as const) {
+    const collection = character[field];
+    if (collection !== undefined && !isStringArray(collection)) return false;
+  }
+  return true;
+}
+
+function hasValidCampaignImport(value: unknown): value is AppState {
+  if (!isRecord(value) || !Array.isArray(value.characters)
+    || !value.characters.every(hasValidCharacterRecord)) return false;
+  for (const field of CAMPAIGN_COLLECTIONS) {
+    const collection = value[field];
+    if (collection !== undefined && !hasRecordCollection(collection)) return false;
+  }
+  if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
+  return true;
+}
+
 function reconcileInitiativeCharacters(parsed: AppState): AppState {
   const currentRound = parsed.currentRound ?? 1;
   const characters = (parsed.characters ?? []).map(character => ({
@@ -1984,9 +2073,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const importCampaign = useCallback((json: string): boolean => {
     try {
-      const parsed = JSON.parse(json) as AppState;
-      if (!Array.isArray(parsed.characters)) return false;
-       setState({ ...defaultState, ...reconcileInitiativeCharacters(normalizePersistedState(parsed)) });
+      const parsed: unknown = JSON.parse(json);
+      if (!hasValidCampaignImport(parsed)) return false;
+      setState({ ...defaultState, ...reconcileInitiativeCharacters(normalizePersistedState(parsed)) });
       return true;
     } catch (_) { return false; }
   }, []);
