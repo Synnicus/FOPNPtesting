@@ -182,6 +182,60 @@ export interface CharacterPerk {
   /** Level at which the perk was (first) taken — used so per-level HP perks
    *  (Lifegiver, Brutish Hulk) only count levels gained AFTER acquisition. */
   takenAtLevel?: number;
+  /** One-time choices/modifiers are recorded on the perk so refunds remove
+   * exactly the benefit that was granted, without rewriting purchased skills. */
+  appliedSkillBonuses?: Partial<CharacterSkills>;
+  bonusTaggedSkill?: SkillType;
+  replacedTrait?: { removedTraitId: string; addedTraitId: string };
+  appliedXpBonus?: number;
+  levelBeforeXpBonus?: number;
+}
+
+export interface CharacterPerkTracker {
+  /** Manually tracked elapsed days for Fear the Reaper; the app has no clock. */
+  daysElapsed?: number;
+  /** Daily-use state for Divine Favor. */
+  used?: boolean;
+}
+
+export interface CampaignTableEntry {
+  id: string;
+  name: string;
+  description: string;
+  weight: number;
+}
+
+export interface CampaignTable {
+  id: string;
+  name: string;
+  description: string;
+  entries: CampaignTableEntry[];
+}
+
+export interface CampaignMapMarker {
+  id: string;
+  name: string;
+  description: string;
+  /** Normalized map coordinates, from 0 to 1. */
+  x: number;
+  y: number;
+}
+
+export interface CampaignPartyMarker {
+  characterId: string;
+  /** Normalized map coordinates, from 0 to 1. */
+  x: number;
+  y: number;
+}
+
+export interface CampaignMap {
+  id: string;
+  name: string;
+  description: string;
+  /** Embedded image data makes a campaign map portable in JSON exports. */
+  imageDataUri?: string;
+  locations: CampaignMapMarker[];
+  party: CampaignPartyMarker[];
 }
 
 // ─── Injury ───────────────────────────────────────────────────────────────────
@@ -437,6 +491,8 @@ export interface Character {
   // Perks
 
   perks: CharacterPerk[];
+  /** Manual counters and daily-use state for perks that need GM tracking. */
+  perkTrackers?: Record<string, CharacterPerkTracker>;
   /** Break the Rules: the next successfully spent perk point ignores normal
    * level, SPECIAL, skill, prerequisite, and race requirements. */
 

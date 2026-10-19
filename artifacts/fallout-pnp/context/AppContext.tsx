@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -71,6 +71,7 @@ import {
   type CampaignOptions,
   type CampaignVisualTheme,
 } from '@/data/campaignOptions';
+import { normalizeCampaignMap, normalizeCampaignTable } from '@/data/campaignTools';
 
 function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
   if (Platform.OS === 'web') return;
@@ -332,6 +333,9 @@ interface AppState extends CampaignOptions {
   customAmmo: AmmoType[];
   customVehicles: VehicleProfile[];
   customBestiaryTemplates: BestiaryTemplate[];
+  lootTables: CampaignTable[];
+  encounterTables: CampaignTable[];
+  campaignMaps: CampaignMap[];
   initiativeEntries: InitiativeEntry[];
   currentRound: number;
   combatActive: boolean;
@@ -483,6 +487,9 @@ function normalizePersistedState(parsed: AppState): AppState {
       enhancements: [...(vehicle.enhancements ?? [])],
       notes: [...(vehicle.notes ?? [])],
     })),
+    lootTables: (parsed.lootTables ?? []).map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
+    encounterTables: (parsed.encounterTables ?? []).map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
+    campaignMaps: (parsed.campaignMaps ?? []).map(normalizeCampaignMap).filter((map): map is CampaignMap => map !== null),
     characters: (normalized.characters ?? []).map(character =>
       normalizeCharacterAmmoStates(character, allWeapons, allAmmo)),
   };
@@ -502,7 +509,7 @@ interface AppContextValue extends AppState {
   moveCharacter: (characterId: string, targetCharacterId: string) => void;
 
   applyDamage: (characterId: string, damage: number) => void;
-  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string, vehicleSystemId?: string) => void;
+  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string, vehicleSystemId?: string, attackerCharacterId?: string) => void;
   healCharacter: (characterId: string, amount: number) => void;
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
@@ -577,6 +584,11 @@ interface AppContextValue extends AppState {
 
   exportCampaign: () => string;
   importCampaign: (json: string) => boolean;
+  saveCampaignTools: (tools: {
+    lootTables: CampaignTable[];
+    encounterTables: CampaignTable[];
+    campaignMaps: CampaignMap[];
+  }) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -588,6 +600,9 @@ const defaultState: AppState = markConditionSemanticsV2({
   customAmmo: [],
   customVehicles: [],
   customBestiaryTemplates: [],
+  lootTables: [],
+  encounterTables: [],
+  campaignMaps: [],
   initiativeEntries: [],
   currentRound: 1,
   combatActive: false,
@@ -769,14 +784,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     damagingHits: number,
     location?: string,
     vehicleSystemId?: string,
+    attackerCharacterId?: string,
   ) => {
     setState(s => {
-      const target = s.characters.find(character => character.id === characterId);
-      if (!target?.vehicle) {
-        return applyEquipmentDamage(s, [...BUILT_IN_ARMOR, ...s.customArmor],
-          requestId, characterId, damage, damagingHits, location);
-      }
       if (s.damageReceiptIds?.includes(requestId)) return s;
+      const target = s.characters.find(character => character.id === characterId);
+      if (!target) return s;
+      if (!target.vehicle) {
+        const damagedState = applyEquipmentDamage(s, [...BUILT_IN_ARMOR, ...s.customArmor],
+          requestId, characterId, damage, damagingHits, location);
+        const damagedTarget = damagedState.characters.find(character => character.id === characterId);
+        const attacker = attackerCharacterId
+          ? damagedState.characters.find(character => character.id === attackerCharacterId)
+          : undefined;
+        if (!attacker || target.currentHp <= 0 || damagedTarget?.currentHp !== 0
+          || !(attacker.traits ?? []).includes('rabid')) return damagedState;
+        const maximumAP = charMaxAP(attacker, [...BUILT_IN_ARMOR, ...s.customArmor], s.hardcoreRadiationRules);
+        const nextAP = Math.min(maximumAP, attacker.currentAP + 5);
+        return {
+          ...damagedState,
+          characters: damagedState.characters.map(character => character.id === attacker.id
+            ? { ...character, currentAP: nextAP }
+            : character),
+          initiativeEntries: damagedState.initiativeEntries.map(entry => entry.characterId === attacker.id
+            ? { ...entry, currentAP: nextAP }
+            : entry),
+        };
+      }
       const systemId = target.vehicle.systems.some(system => system.id === vehicleSystemId)
         ? vehicleSystemId!
         : (target.vehicle.systems.find(system => system.kind === 'structure')?.id ?? target.vehicle.systems[0]?.id);
@@ -1935,6 +1969,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     return JSON.stringify(portableState, null, 2);
   }, [state]);
+
+  const saveCampaignTools = useCallback((tools: {
+    lootTables: CampaignTable[];
+    encounterTables: CampaignTable[];
+    campaignMaps: CampaignMap[];
+  }) => {
+    setState(s => ({
+      ...s,
+      lootTables: tools.lootTables.map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
+      encounterTables: tools.encounterTables.map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
+      campaignMaps: tools.campaignMaps.map(normalizeCampaignMap).filter((map): map is CampaignMap => map !== null),
+    }));
+  }, []);
   const importCampaign = useCallback((json: string): boolean => {
     try {
       const parsed = JSON.parse(json) as AppState;
@@ -2102,7 +2149,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
       addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
-      exportCampaign, importCampaign,
+      exportCampaign, importCampaign, saveCampaignTools,
     }}>
       {children}
     </AppContext.Provider>

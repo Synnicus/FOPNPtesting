@@ -50,6 +50,7 @@ import {
   reconcileUnspentSkillPoints,
 } from '@/data/skillAdvancement';
 import { refundPerk } from '@/data/perkRefund';
+import { getCharacterPerkReminders } from '@/data/perkReminders';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { getLegacyPremadeRepairCandidateWeaponIds } from '@/data/condition';
 import { vehicleSystemStatus } from '@/data/vehicles';
@@ -368,6 +369,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // Perks tab: only-show-available toggle
   const [onlyAvailablePerks, setOnlyAvailablePerks] = useState(false);
   const [perkRefundId, setPerkRefundId] = useState<string | null>(null);
+  const [tagPerkPickerId, setTagPerkPickerId] = useState<string | null>(null);
+  const [mutatePerkPickerId, setMutatePerkPickerId] = useState<string | null>(null);
+  const [mutateOldTraitId, setMutateOldTraitId] = useState<string | null>(null);
 
   // Skill points GM adjustment input
   const [skillPointsInput, setSkillPointsInput] = useState('');
@@ -406,7 +410,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     for (const key of SPECIAL_KEYS) withTraits[key] += perkStats[key] ?? 0;
     return withTraits;
   }, [char.special, char.traits, char.perks]);
-  const tagRules = useMemo(() => calculateTagSkillRules(char.traits), [char.traits]);
+  const tagRules = useMemo(() => calculateTagSkillRules(char.traits, undefined, char.perks), [char.traits, char.perks]);
   const armorSheet = useMemo(() => resolveArmorAwareSheet({
     special: char.special, skills: char.skills,
     taggedSkills: [...char.taggedSkills, ...tagRules.freeTagSkills],
@@ -609,7 +613,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const adjustSkill = useCallback((sk: SkillType, delta: 1 | -1) => {
     setChar(prev => {
       const base = calcBaseSkills(prev.special)[sk];
-      const isTagged = prev.taggedSkills.includes(sk) || calculateTagSkillRules(prev.traits).freeTagSkills.includes(sk);
+      const isTagged = prev.taggedSkills.includes(sk) || calculateTagSkillRules(prev.traits, undefined, prev.perks).freeTagSkills.includes(sk);
       const result = applySkillPointOperation({
         currentValue: prev.skills[sk],
         baseValue: base,
@@ -636,7 +640,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return prev;
       }
-      const rules = calculateTagSkillRules(prev.traits);
+      const rules = calculateTagSkillRules(prev.traits, undefined, prev.perks);
       const freeTag = rules.freeTagSkills.includes(sk);
       const isTagged = prev.taggedSkills.includes(sk) || freeTag;
       if (freeTag) return prev;
@@ -651,6 +655,39 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       };
     });
   }, []);
+
+  const assignTagPerkSkill = useCallback((skill: SkillType) => {
+    if (!tagPerkPickerId) return;
+    setChar(prev => ({
+      ...prev,
+      perks: prev.perks.map(perk => perk.perkId === tagPerkPickerId
+        ? { ...perk, bonusTaggedSkill: skill }
+        : perk),
+    }));
+    setTagPerkPickerId(null);
+  }, [tagPerkPickerId]);
+
+  const beginMutateTraitSelection = useCallback((perkId: string) => {
+    setMutatePerkPickerId(perkId);
+    setMutateOldTraitId(null);
+  }, []);
+
+  const assignMutatedTrait = useCallback((addedTraitId: string) => {
+    if (!mutatePerkPickerId || !mutateOldTraitId) return;
+    setChar(prev => {
+      const oldTrait = mutateOldTraitId;
+      if (!(prev.traits ?? []).includes(oldTrait) || (prev.traits ?? []).includes(addedTraitId)) return prev;
+      return recomputeDerived({
+        ...prev,
+        traits: (prev.traits ?? []).filter(traitId => traitId !== oldTrait).concat(addedTraitId),
+        perks: prev.perks.map(perk => perk.perkId === mutatePerkPickerId
+          ? { ...perk, replacedTrait: { removedTraitId: oldTrait, addedTraitId } }
+          : perk),
+      });
+    });
+    setMutatePerkPickerId(null);
+    setMutateOldTraitId(null);
+  }, [mutatePerkPickerId, mutateOldTraitId, recomputeDerived]);
 
   const togglePerk = useCallback((perkId: string) => {
     setChar(prev => {
@@ -669,10 +706,19 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         }
         const breakTheRulesPending = breakTheRulesPendingAfterPurchase(prev.breakTheRulesPending, perkId);
         if (!existing) {
+          const newPerk: Character['perks'][number] = { perkId, rank: 1, takenAtLevel: prev.level };
+          let xpBonus = 0;
+          if (perkId === 'here_and_now') {
+            xpBonus = Math.max(0, xpForLevel(prev.level + 1) - prev.xp);
+            newPerk.appliedXpBonus = xpBonus;
+            newPerk.levelBeforeXpBonus = prev.level;
+          }
           return recomputeDerived({
             ...prev,
             breakTheRulesPending,
-            perks: [...prev.perks, { perkId, rank: 1, takenAtLevel: prev.level }],
+            xp: prev.xp + xpBonus,
+            level: levelForXP(prev.xp + xpBonus),
+            perks: [...prev.perks, newPerk],
           });
         }
         return recomputeDerived({
@@ -687,11 +733,28 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   const confirmPerkRefund = useCallback(() => {
     if (!perkRefundId) return;
-    setChar(prev => recomputeDerived({
-      ...prev,
-      perks: refundPerk(prev.perks, perkRefundId).perks,
-      breakTheRulesPending: perkRefundId === 'break_the_rules' ? false : prev.breakTheRulesPending,
-    }));
+    setChar(prev => {
+      const owned = prev.perks.find(perk => perk.perkId === perkRefundId);
+      const refunded = refundPerk(prev.perks, perkRefundId);
+      let traits = prev.traits ?? [];
+      if (owned?.replacedTrait) {
+        traits = traits
+          .filter(traitId => traitId !== owned.replacedTrait!.addedTraitId)
+          .concat(owned.replacedTrait.removedTraitId);
+      }
+      const perkTrackers = { ...(prev.perkTrackers ?? {}) };
+      delete perkTrackers[perkRefundId];
+      const remainingXp = Math.max(0, prev.xp - (owned?.appliedXpBonus ?? 0));
+      return recomputeDerived({
+        ...prev,
+        xp: remainingXp,
+        level: Math.max(owned?.levelBeforeXpBonus ?? 1, levelForXP(remainingXp)),
+        traits,
+        perkTrackers,
+        perks: refunded.perks,
+        breakTheRulesPending: perkRefundId === 'break_the_rules' ? false : prev.breakTheRulesPending,
+      });
+    });
     setPerkRefundId(null);
   }, [perkRefundId, recomputeDerived]);
 
@@ -1423,6 +1486,22 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                           <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{perk.name} <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Rank {cp.rank}/{perk.maxRanks}</Text></Text>
                           {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>⚔ {perk.combatEffect.combatNote}</Text>}
                         </View>
+                        {cp.perkId === 'tag' && (
+                          <TouchableOpacity onPress={() => setTagPerkPickerId(cp.perkId)} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 5, borderWidth: 1, borderColor: colors.primary + '66' }}>
+                            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                              {cp.bonusTaggedSkill ? `TAG: ${SKILL_LABELS[cp.bonusTaggedSkill]}` : 'CHOOSE BONUS TAG'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        {cp.perkId === 'mutate' && (
+                          <TouchableOpacity onPress={() => beginMutateTraitSelection(cp.perkId)} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 5, borderWidth: 1, borderColor: colors.primary + '66' }}>
+                            <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                              {cp.replacedTrait
+                                ? `${getTraitById(cp.replacedTrait.removedTraitId)?.name ?? 'TRAIT'} → ${getTraitById(cp.replacedTrait.addedTraitId)?.name ?? 'TRAIT'}`
+                                : 'CHOOSE MUTATE! TRAITS'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                          {cp.rank < perk.maxRanks && (
                            <TouchableOpacity onPress={() => togglePerk(cp.perkId)} style={{ padding: 4 }}>
                              <Feather name="plus-circle" size={18} color={perkPointsRemaining > 0 ? colors.primary : colors.mutedForeground} />
@@ -1757,6 +1836,62 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           {/* ── EFFECTS (injuries + chem effects) ── */}
           {activeTab === 6 && (
             <>
+              {(char.perks.some(perk => perk.perkId === 'fear_the_reaper')
+                || char.perks.some(perk => perk.perkId === 'divine_favor')) && (
+                <View style={{ padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.primary + '10', gap: 10 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>PERK TRACKERS · MANUAL</Text>
+                  {char.perks.some(perk => perk.perkId === 'fear_the_reaper') && (
+                    <View style={{ gap: 6 }}>
+                      <Text style={{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>Fear the Reaper</Text>
+                      <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10 }}>Track elapsed days here; there is no in-app clock. Check the perk trigger at the required interval.</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Subtract one elapsed day" onPress={() => setChar(prev => ({
+                          ...prev,
+                          perkTrackers: {
+                            ...(prev.perkTrackers ?? {}),
+                            fear_the_reaper: { ...prev.perkTrackers?.fear_the_reaper, daysElapsed: Math.max(0, (prev.perkTrackers?.fear_the_reaper?.daysElapsed ?? 0) - 1) },
+                          },
+                        }))} style={{ padding: 8, borderRadius: 5, borderWidth: 1, borderColor: colors.border }}>
+                          <Feather name="minus" size={15} color={colors.foreground} />
+                        </TouchableOpacity>
+                        <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 13 }}>{char.perkTrackers?.fear_the_reaper?.daysElapsed ?? 0} days</Text>
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add one elapsed day" onPress={() => setChar(prev => ({
+                          ...prev,
+                          perkTrackers: {
+                            ...(prev.perkTrackers ?? {}),
+                            fear_the_reaper: { ...prev.perkTrackers?.fear_the_reaper, daysElapsed: (prev.perkTrackers?.fear_the_reaper?.daysElapsed ?? 0) + 1 },
+                          },
+                        }))} style={{ padding: 8, borderRadius: 5, borderWidth: 1, borderColor: colors.border }}>
+                          <Feather name="plus" size={15} color={colors.foreground} />
+                        </TouchableOpacity>
+                        <TouchableOpacity accessibilityRole="button" onPress={() => setChar(prev => ({
+                          ...prev,
+                          perkTrackers: { ...(prev.perkTrackers ?? {}), fear_the_reaper: { ...prev.perkTrackers?.fear_the_reaper, daysElapsed: 0 } },
+                        }))} style={{ marginLeft: 'auto', padding: 8, borderRadius: 5, borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ color: colors.mutedForeground, fontSize: 9, fontFamily: 'Inter_700Bold' }}>RESET</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                  {char.perks.some(perk => perk.perkId === 'divine_favor') && (
+                    <TouchableOpacity accessibilityRole="button" onPress={() => setChar(prev => ({
+                      ...prev,
+                      perkTrackers: {
+                        ...(prev.perkTrackers ?? {}),
+                        divine_favor: { ...prev.perkTrackers?.divine_favor, used: !(prev.perkTrackers?.divine_favor?.used ?? false) },
+                      },
+                    }))} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 9, borderRadius: 6, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>Divine Favor</Text>
+                        <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10 }}>Once per 24 hours, reroll one failed roll. Toggle to mark used or reset it manually.</Text>
+                      </View>
+                      <Text style={{ color: char.perkTrackers?.divine_favor?.used ? colors.destructive : '#4a8c3f', fontFamily: 'Inter_700Bold', fontSize: 10 }}>
+                        {char.perkTrackers?.divine_favor?.used ? 'USED' : 'READY'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>INJURIES</Text>
               {!addingInjury ? (
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.destructive + '88' }} onPress={() => setAddingInjury(true)}>
@@ -2066,6 +2201,61 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           onConfirm={confirmPerkRefund}
         />
 
+        <Modal visible={tagPerkPickerId !== null} transparent animationType="fade" onRequestClose={() => setTagPerkPickerId(null)}>
+          <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.8)' }}>
+            <View style={{ backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 10 }}>
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 14 }}>CHOOSE TAG! SKILL</Text>
+              <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11 }}>This bonus tag is granted by Tag! and is removed if the perk is refunded.</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                {(Object.keys(SKILL_LABELS) as SkillType[]).map(skill => (
+                  <TouchableOpacity key={skill} accessibilityRole="button" onPress={() => assignTagPerkSkill(skill)} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary }}>
+                    <Text style={{ color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{SKILL_LABELS[skill]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity onPress={() => setTagPerkPickerId(null)} style={{ alignItems: 'center', padding: 9 }}>
+                <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_700Bold', fontSize: 11 }}>CANCEL</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={mutatePerkPickerId !== null} transparent animationType="fade" onRequestClose={() => { setMutatePerkPickerId(null); setMutateOldTraitId(null); }}>
+          <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.8)' }}>
+            <View style={{ backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 10 }}>
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 14 }}>MUTATE! · REPLACE A TRAIT</Text>
+              <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11 }}>
+                {mutateOldTraitId
+                  ? `Choose a legal replacement for ${getTraitById(mutateOldTraitId)?.name ?? 'the selected trait'}.`
+                  : 'Choose one trait to give up.'}
+              </Text>
+              {!mutateOldTraitId ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  {(char.traits ?? []).map(traitId => (
+                    <TouchableOpacity key={traitId} accessibilityRole="button" onPress={() => setMutateOldTraitId(traitId)} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary }}>
+                      <Text style={{ color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{getTraitById(traitId)?.name ?? traitId}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {(char.traits ?? []).length === 0 && <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>This character has no trait to replace.</Text>}
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  {TRAITS.filter(trait => !(char.traits ?? []).includes(trait.id)
+                    && canTakeTrait({ ...char, traits: (char.traits ?? []).filter(id => id !== mutateOldTraitId) }, trait).allowed)
+                    .map(trait => (
+                      <TouchableOpacity key={trait.id} accessibilityRole="button" onPress={() => assignMutatedTrait(trait.id)} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary }}>
+                        <Text style={{ color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{trait.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              )}
+              <TouchableOpacity onPress={() => { setMutatePerkPickerId(null); setMutateOldTraitId(null); }} style={{ alignItems: 'center', padding: 9 }}>
+                <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_700Bold', fontSize: 11 }}>CANCEL</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         {/* Equipment selection modals */}
         {/* Hand picker: only weapons already in inventory (or 2-handed with sling for crippled arms).
             Uses weapon-category grouping so the list is easy to scan. */}
@@ -2268,7 +2458,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
   const injuryEffects = computeInjuryEffects(character);
   const activeEffects = (character.effects ?? []).filter(e => e.isActive);
   const race = getRaceById(character.race) ?? RACES[0];
-  const tagRules = calculateTagSkillRules(character.traits);
+  const tagRules = calculateTagSkillRules(character.traits, undefined, character.perks);
   const armorSheet = resolveArmorAwareSheet({
     special: character.special, skills: character.skills,
     taggedSkills: [...character.taggedSkills, ...tagRules.freeTagSkills],
@@ -2368,6 +2558,16 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
               </View>
             );
           })}
+        </View>
+      )}
+      {getCharacterPerkReminders(character.perks).length > 0 && (
+        <View style={{ backgroundColor: colors.primary + '12', borderRadius: 7, borderWidth: 1, borderColor: colors.primary + '44', padding: 8, gap: 3 }}>
+          <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>PERK REMINDERS</Text>
+          {getCharacterPerkReminders(character.perks).map((reminder, index) => (
+            <Text key={`${character.id}-perk-reminder-${index}`} style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              • {reminder}
+            </Text>
+          ))}
         </View>
       )}
       {/* SPECIAL row — chem-boosted stats render green (may exceed racial max) */}

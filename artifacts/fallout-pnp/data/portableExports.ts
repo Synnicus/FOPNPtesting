@@ -12,6 +12,8 @@ import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 import { isFactionReputationList } from './factionReputation.ts';
 import type { CampaignVisualTheme } from './campaignOptions.ts';
 import type { GhoulRadiationHealingOption } from './radiation.ts';
+import type { CampaignMap, CampaignTable } from '../context/types.ts';
+import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -30,6 +32,9 @@ export interface CampaignStateSnapshot {
   customWeapons: Weapon[];
   customArmor: Armor[];
   customVehicles?: VehicleProfile[];
+  lootTables?: CampaignTable[];
+  encounterTables?: CampaignTable[];
+  campaignMaps?: CampaignMap[];
   customBestiaryTemplates: BestiaryTemplate[];
   initiativeEntries: InitiativeEntry[];
   currentRound: number;
@@ -330,6 +335,12 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
     && Array.isArray(value.customArmor ?? [])
     && (value.customVehicles === undefined
       || (Array.isArray(value.customVehicles) && value.customVehicles.every(isVehicleProfileRecord)))
+    && (value.lootTables === undefined
+      || (Array.isArray(value.lootTables) && value.lootTables.every(validCampaignTable)))
+    && (value.encounterTables === undefined
+      || (Array.isArray(value.encounterTables) && value.encounterTables.every(validCampaignTable)))
+    && (value.campaignMaps === undefined
+      || (Array.isArray(value.campaignMaps) && value.campaignMaps.every(validCampaignMap)))
     && (value.visualTheme === undefined || value.visualTheme === 'western' || value.visualTheme === 'eastern')
     && (value.systemSoundsEnabled === undefined || typeof value.systemSoundsEnabled === 'boolean')
     && (value.combatSoundsEnabled === undefined || typeof value.combatSoundsEnabled === 'boolean')
@@ -560,18 +571,27 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !Array.isArray(value.customWeapons)
     || !Array.isArray(value.customArmor)
     || (value.customVehicles !== undefined && !Array.isArray(value.customVehicles))
+    || (value.lootTables !== undefined && !Array.isArray(value.lootTables))
+    || (value.encounterTables !== undefined && !Array.isArray(value.encounterTables))
+    || (value.campaignMaps !== undefined && !Array.isArray(value.campaignMaps))
     || !Array.isArray(value.customBestiaryTemplates)
     || !Array.isArray(value.initiativeEntries)) return false;
   if (!value.characters.every(isCharacterRecord)
     || !value.customWeapons.every(isWeaponRecord)
     || !value.customArmor.every(isArmorRecord)
     || !((value.customVehicles ?? []) as unknown[]).every(isVehicleProfileRecord)
+    || !((value.lootTables ?? []) as unknown[]).every(validCampaignTable)
+    || !((value.encounterTables ?? []) as unknown[]).every(validCampaignTable)
+    || !((value.campaignMaps ?? []) as unknown[]).every(validCampaignMap)
     || !value.customBestiaryTemplates.every(isBestiaryTemplateRecord)
     || !value.initiativeEntries.every(isInitiativeRecord)) return false;
   return hasUniqueIds(value.characters)
     && hasUniqueIds(value.customWeapons)
     && hasUniqueIds(value.customArmor)
     && hasUniqueIds((value.customVehicles ?? []) as VehicleProfile[])
+    && hasUniqueIds((value.lootTables ?? []) as CampaignTable[])
+    && hasUniqueIds((value.encounterTables ?? []) as CampaignTable[])
+    && hasUniqueIds((value.campaignMaps ?? []) as CampaignMap[])
     && hasUniqueIds(value.customBestiaryTemplates)
     && hasUniqueIds(value.initiativeEntries)
     && isFiniteNumber(value.currentRound)

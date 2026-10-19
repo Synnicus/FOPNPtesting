@@ -1,4 +1,4 @@
-import { SPECIALStats, NaturalProtection } from '@/context/types';
+import type { SPECIALStats, NaturalProtection } from '../context/types.ts';
 
 export interface RaceDefinition {
   id: string;

@@ -31,6 +31,7 @@ import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, 
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
 import { computeTraitEffects } from '@/data/traits';
+import { applyTightNutsDamageResistance, isCriticalFailureRoll } from '@/data/traitRules';
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { computeDefensivePerkBonuses, describeAmmoProtectionModifier, resolveAmmoDamageComponents, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
@@ -216,6 +217,7 @@ interface ShotDamage {
 interface PerkBonus {
   toHit: number;
   damage: number;
+  damageMultiplier: number;
   critChance: number;
   critDamageMult: number;
   allHitsAreCrits: boolean;
@@ -268,13 +270,14 @@ function notify(title: string, message?: string) {
 }
 
 type CombatSkillKey = HealFallenSkill;
-function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRanged: boolean): PerkBonus {
+function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRanged: boolean, target: Character | null = null): PerkBonus {
   const result: PerkBonus = {
-    toHit: 0, damage: 0, critChance: 0, critDamageMult: 1.0,
+    toHit: 0, damage: 0, damageMultiplier: 1, critChance: 0, critDamageMult: 1.0,
     allHitsAreCrits: false, ignoreDT: 0, apDiscount: 0, lightReduction: 0, burstApDiscount: 0,
     strReqReduction: 0, notes: [],
   };
   if (!char || !char.perks) return result;
+  const livingTarget = !!target && !target.vehicle && target.race !== 'robot';
 
   for (const cp of char.perks) {
     const perk = getPerkById(cp.perkId);
@@ -291,7 +294,7 @@ function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRan
       if (fx.meleeToHitBonus) { result.toHit += fx.meleeToHitBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeToHitBonus * rank}% melee to-hit`); }
       // Bonus HtH Damage raises the Melee Damage (MD) stat itself — it is
       // counted inside the MD term of the damage sum, NOT here (would double).
-      if (fx.meleeDamageBonus && perk.id !== 'bonus_hth_damage') { result.damage += fx.meleeDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeDamageBonus * rank} melee dmg`); }
+      if (fx.meleeDamageBonus && perk.id !== 'bonus_hth_damage' && perk.id !== 'deathclaw_rampage') { result.damage += fx.meleeDamageBonus * rank; result.notes.push(`${perk.name}: +${fx.meleeDamageBonus * rank} melee dmg`); }
       if (fx.allHitsAreCrits) { result.allHitsAreCrits = true; result.notes.push(`${perk.name}: all hits are crits`); }
     }
     // Penetrator etc.: DT ignore applies to the attack regardless of ranged/melee
@@ -306,15 +309,58 @@ function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRan
       result.damage += fx.adrenalineStrBonus ?? 1;
       result.notes.push(`${perk.name}: +${fx.adrenalineStrBonus ?? 1} melee dmg (HP < 50%)`);
     }
-    if (fx.damageBonus) { result.damage += fx.damageBonus * rank; result.notes.push(`${perk.name}: +${fx.damageBonus * rank} all dmg`); }
+    if (fx.damageBonus && (perk.id !== 'living_anatomy' || livingTarget)) {
+      result.damage += fx.damageBonus * rank;
+      result.notes.push(`${perk.name}: +${fx.damageBonus * rank}${perk.id === 'living_anatomy' ? ' damage vs living targets' : ' all dmg'}`);
+    }
+    if (perk.id === 'deathclaw_rampage'
+      && char.race === 'deathclaw'
+      && char.maxHp > 0
+      && char.currentHp < char.maxHp / 2
+      && !isRanged
+      && /claw/i.test(weapon?.name ?? '')) {
+      result.damageMultiplier *= 1.5;
+      result.notes.push('Deathclaw Rampage: claw damage ×1.5 (HP < 50%)');
+    }
     if (fx.critChanceBonus) { result.critChance += fx.critChanceBonus * rank; }
     if (fx.critDamageMultiplier) { result.critDamageMult = Math.max(result.critDamageMult, fx.critDamageMultiplier); }
-    if (fx.attackAPDiscount) { result.apDiscount += fx.attackAPDiscount * rank; }
+    if (fx.attackAPDiscount) {
+      const appliesToWeapon = perk.id === 'bonus_hth_attacks'
+        ? !isRanged
+        : perk.id === 'bonus_rate_of_fire'
+          ? isRanged
+          : true;
+      if (appliesToWeapon) result.apDiscount += fx.attackAPDiscount * rank;
+    }
     if (perk.id === 'night_vision' && fx.combatNote) { result.lightReduction = 50; result.notes.push(`${perk.name}: dark-condition penalties halved`); }
     if (perk.id === 'night_person' && fx.combatNote) { result.lightReduction = Math.max(result.lightReduction, 50); result.notes.push(`${perk.name}: light penalties halved`); }
     if (perk.id === 'steady_arm' && fx.combatNote) { result.burstApDiscount += 1; result.notes.push(`${perk.name}: burst attacks −1 AP`); }
   }
   return result;
+}
+
+function empShieldingResistance(defender: Character | null, ammo?: { id: string; name?: string } | null): number {
+  const empAmmo = `${ammo?.id ?? ''} ${ammo?.name ?? ''}`.toLowerCase().includes('emp');
+  return defender?.race === 'robot'
+    && (defender.traits ?? []).includes('emp_shielding')
+    && empAmmo
+    ? 30
+    : 0;
+}
+
+function tightNutsAdjustedDR(
+  totalDamageResistance: number,
+  damageType: DamageType,
+  defender: Character | null,
+  natural: NaturalProtection | null | undefined,
+): number {
+  const key = `dr${damageType.charAt(0).toUpperCase()}${damageType.slice(1)}` as keyof NaturalProtection;
+  return applyTightNutsDamageResistance(
+    totalDamageResistance,
+    Number(natural?.[key] ?? 0),
+    defender?.race ?? '',
+    defender?.traits,
+  );
 }
 
 // ─── Generic option picker modal (weapons / chems / ammo) ────────────────────
@@ -913,6 +959,9 @@ export default function CombatScreen() {
   const [showCritFailModal, setShowCritFailModal] = useState(false);
   const [critFailEntry, setCritFailEntry] = useState<CritFailTableEntry | null>(null);
   const [critFailNotes, setCritFailNotes] = useState<string[]>([]);
+  const [divineFavorRoll, setDivineFavorRoll] = useState<{ roll: number; tens: number; units: number } | null>(null);
+  const [showGlowingAuraModal, setShowGlowingAuraModal] = useState(false);
+  const [glowingAuraTargetIds, setGlowingAuraTargetIds] = useState<string[]>([]);
 
   // AP spent flag
   const [apSpent, setApSpent] = useState(false);
@@ -1174,7 +1223,7 @@ export default function CombatScreen() {
       : 0;
 
   // Perk bonuses
-  const perkBonuses = computePerkBonuses(attackActor, weapon, isRanged);
+  const perkBonuses = computePerkBonuses(attackActor, weapon, isRanged, defender);
 
   // Effective magazine size after mods (extended/drum magazines).
   const effectiveMagazine = weapon ? Math.round(weapon.magazineSize * (modEffects.magazineMult ?? 1)) : 0;
@@ -1359,10 +1408,10 @@ export default function CombatScreen() {
     const isCrit = i === 0
       ? (hit && primaryIsCrit)
       : (hit && roll !== null && roll <= totalCritChance);
-    const isCritFail = (manualCritFailConfirmed && i === 0)
-      || (!physicalHitConfirmed && !hit && roll !== null && roll >= 97);
+    const critFailResult = (manualCritFailConfirmed && i === 0)
+      || (!physicalHitConfirmed && !hit && isCritFail);
     const margin = (roll !== null && hit) ? cth - roll : 0;
-    return { index: i, chanceToHit: cth, penalty: burstPenalties[i], roll, hit, margin, isCrit, isCritFail };
+    return { index: i, chanceToHit: cth, penalty: burstPenalties[i], roll, hit, margin, isCrit, isCritFail: critFailResult };
   });
 
   const canRoll = !!(attacker && defender && weapon && (!attacker.vehicle || vehicleGunner));
@@ -1546,6 +1595,28 @@ export default function CombatScreen() {
       ]);
       return;
     }
+    const skillIsTagged = !!attacker && !!weapon && (
+      attacker.taggedSkills.includes(weapon.skill)
+      || attacker.perks.some(perk => perk.bonusTaggedSkill === weapon.skill)
+    );
+    if (attacker && weapon && skillIsTagged && (attacker.traits ?? []).includes('beta_software')) {
+      const luckTens = rollD10();
+      const luckUnits = rollD10();
+      const luckRoll = percentileRoll(luckTens, luckUnits);
+      if (luckRoll > attacker.special.luck * 10) {
+        setTensFace(luckTens);
+        setUnitsFace(luckUnits);
+        setShotDamages(null);
+        setDamageApplied(false);
+        setPrimaryIsCrit(false);
+        setIsCritFail(false);
+        setShowCritFailModal(false);
+        spendAP(attacker.id, attacker.currentAP);
+        notify('Beta Software Check Failed', `Luck check ${luckRoll} exceeded ${attacker.special.luck * 10}. The tagged-skill action fails and all remaining AP are lost.`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return;
+      }
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     playCombatAttackSounds(
       getCombatAttackSoundFamily(weapon, isMeleeOrUnarmed),
@@ -1560,6 +1631,7 @@ export default function CombatScreen() {
     setPrimaryIsCrit(false); setAimedCritPart(null); setAimedCritApplied(false); setAimedCritNotes([]);
     setShowCritModal(false); setCritTableEntry(null); setCritEffectNotes([]);
     setIsCritFail(false); setManualCritFailConfirmed(false); setShowCritFailModal(false); setCritFailEntry(null); setCritFailNotes([]);
+    setDivineFavorRoll(null);
     setApSpent(false);
     const roll = percentileRoll(t, u);
 
@@ -1588,7 +1660,14 @@ export default function CombatScreen() {
           setShowCritModal(true);
         }
       }
-    } else if (roll >= 97) {
+    } else if (attacker?.perks.some(perk => perk.perkId === 'divine_favor')
+      && !attacker.perkTrackers?.divine_favor?.used) {
+      setDivineFavorRoll({ roll, tens: t, units: u });
+    } else if (isCriticalFailureRoll(
+      roll,
+      characters.some(character => !character.inStorage && (character.traits ?? []).includes('jinxed')),
+      Math.random(),
+    )) {
       // Critical Failure (manual p.31): a miss with roll 97-100 opens the
       // Critical Failure Table. The old auto-jam is replaced by the table flow
       // (result 2 = Weapon Jammed applies the jam via rollCritFailTable).
@@ -1599,7 +1678,59 @@ export default function CombatScreen() {
     setTimeout(() => setRolling(false), 350);
   }, [weaponBroken, hasAmmo, attacker, weapon, shotChances, totalCritChance, isAimed, targetedBodyPart,
       luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon, playCombatAttackSounds,
-      isMeleeOrUnarmed, isBurst, weaponCanBurst, burstShots, doubleShotActive]);
+      isMeleeOrUnarmed, isBurst, weaponCanBurst, burstShots, doubleShotActive, characters]);
+
+  const resolveDivineFavorChoice = useCallback((useFavor: boolean) => {
+    const pending = divineFavorRoll;
+    setDivineFavorRoll(null);
+    if (!pending || !attacker) return;
+    const jinxedPresent = characters.some(character =>
+      !character.inStorage && (character.traits ?? []).includes('jinxed'));
+    if (!useFavor) {
+      if (isCriticalFailureRoll(pending.roll, jinxedPresent, Math.random())) {
+        setIsCritFail(true);
+        setShowCritFailModal(true);
+      }
+      return;
+    }
+
+    updateCharacter({
+      ...attacker,
+      perkTrackers: {
+        ...(attacker.perkTrackers ?? {}),
+        divine_favor: { ...attacker.perkTrackers?.divine_favor, used: true },
+      },
+    });
+    const t = rollD10();
+    const u = rollD10();
+    const roll = percentileRoll(t, u);
+    setTensFace(t);
+    setUnitsFace(u);
+    setIsCritFail(false);
+    setShowCritFailModal(false);
+    setCritFailEntry(null);
+    setCritFailNotes([]);
+    setPrimaryIsCrit(false);
+    setAimedCritPart(null);
+    setAimedCritApplied(false);
+    setAimedCritNotes([]);
+    setShowCritModal(false);
+    setCritTableEntry(null);
+    setCritEffectNotes([]);
+    if (roll <= shotChances[0]) {
+      let isCrit = roll <= totalCritChance;
+      if (!isCrit && luckPerkApplies && rollD10() <= attackerLuck) isCrit = true;
+      if (isCrit) {
+        setPrimaryIsCrit(true);
+        if (isAimed && targetedBodyPart) setAimedCritPart(targetedBodyPart);
+        else setShowCritModal(true);
+      }
+    } else if (isCriticalFailureRoll(roll, jinxedPresent, Math.random())) {
+      setIsCritFail(true);
+      setShowCritFailModal(true);
+    }
+  }, [divineFavorRoll, attacker, characters, updateCharacter, shotChances, totalCritChance,
+    luckPerkApplies, attackerLuck, isAimed, targetedBodyPart]);
 
   const confirmPhysicalHit = useCallback(() => {
     if (isBurst) return;
@@ -1713,7 +1844,8 @@ export default function CombatScreen() {
     // Combined DT/DR from armor + defender natural protection.
     const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
     const damageResistanceCap = defender?.manualDerivedStats ? 100 : 90;
-    const defenderDRModifier = defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0);
+    const defenderDRModifier = defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
+      + empShieldingResistance(defender, loadedAmmo);
     // Optional manual base-damage override (replaces the rolled dice total).
     const overrideVal = damageOverride.trim() === '' ? null : Math.max(0, parseInt(damageOverride, 10) || 0);
 
@@ -1731,7 +1863,8 @@ export default function CombatScreen() {
     const damages = shotResults.map((shot, i) => {
       if (!shot.hit) return null;
       const notes: string[] = [];
-      let critMult = 1;
+      let critMult = perkBonuses.damageMultiplier;
+      if (critMult !== 1) notes.push(`Perk damage multiplier ×${critMult}`);
       let bypassArmor = false;
 
       // Crit damage multiplier (applied to PRE-DT/DR damage).
@@ -1786,7 +1919,7 @@ export default function CombatScreen() {
       }
       const protection = resolveDamageProtection({
         baseDT: prot.dt,
-        baseDR: prot.dr,
+        baseDR: tightNutsAdjustedDR(prot.dr, weapon?.damageType ?? 'normal', defender, defenderNatural),
         ammoIgnoresDT: loadedAmmo?.ignoresDT,
         ammoDRModifier: loadedAmmo?.drMod,
         ignoredDT: perkBonuses.ignoreDT,
@@ -1821,11 +1954,12 @@ export default function CombatScreen() {
               const typedDefenderPerks = computeDefensivePerkBonuses(defender, damageType, getPerkById);
               const resolved = resolveDamageProtection({
                 baseDT: typedProtection.dt,
-                baseDR: typedProtection.dr,
+                baseDR: tightNutsAdjustedDR(typedProtection.dr, damageType, defender, defenderNatural),
                 ammoIgnoresDT: loadedAmmo.ignoresDT,
                 ammoDRModifier: loadedAmmo.drMod,
                 ignoredDT: perkBonuses.ignoreDT,
-                defenderDRModifier: typedDefenderPerks.dr + (defenderEffectMods?.drMod ?? 0),
+                defenderDRModifier: typedDefenderPerks.dr + (defenderEffectMods?.drMod ?? 0)
+                  + empShieldingResistance(defender, loadedAmmo),
                 damageResistanceCap,
                 bypassesArmor: bypassArmor,
               });
@@ -1941,6 +2075,10 @@ export default function CombatScreen() {
   // stage as an ActiveEffect and resolves any HP heal/damage.
   const handleTakeChem = useCallback((chemId: string) => {
     if (!attacker) return;
+    if ((attacker.traits ?? []).includes('rabid')) {
+      notify('Chem Has No Effect', `${attacker.name} has the Rabid trait; chems and stimpaks have no effect.`);
+      return;
+    }
     const chem = getChem(chemId);
     if (!chem) return;
     if (!spendAP(attacker.id, CHEM_AP_COST)) {
@@ -1955,6 +2093,10 @@ export default function CombatScreen() {
 
   const handleTakeAlcohol = useCallback(() => {
     if (!attacker) return;
+    if ((attacker.traits ?? []).includes('rabid')) {
+      notify('Alcohol Has No Effect', `${attacker.name} has the Rabid trait; chems have no effect.`);
+      return;
+    }
     if (!spendAP(attacker.id, CHEM_AP_COST)) {
       notify('Not Enough AP', `Taking alcohol needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
       return;
@@ -2192,7 +2334,7 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     if (totalDamage > 0) applyCombatDamage(attackReceipt.current, defender.id, totalDamage,
       shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined,
-      selectedVehicleSystem?.id);
+      selectedVehicleSystem?.id, attacker?.id);
     if (hasDirectCombatDamage(totalDamage)) playCombatImpact();
     if (totalRadiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, totalRadiationExposure);
     if (hasAppliedPoison && !defender.vehicle) applyPoisonExposure(appliedPoisonResults);
@@ -2329,11 +2471,12 @@ export default function CombatScreen() {
   const displayProt = weapon ? combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot) : { dt: 0, dr: 0 };
   const displayProtectionBreakdown = resolveDamageProtection({
     baseDT: displayProt.dt,
-    baseDR: displayProt.dr,
+    baseDR: tightNutsAdjustedDR(displayProt.dr, weapon?.damageType ?? 'normal', defender, defenderNatural),
     ammoIgnoresDT: loadedAmmo?.ignoresDT,
     ammoDRModifier: loadedAmmo?.drMod,
     ignoredDT: perkBonuses.ignoreDT,
-    defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0),
+    defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
+      + empShieldingResistance(defender, loadedAmmo),
     damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
   });
 
@@ -2344,6 +2487,18 @@ export default function CombatScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
       <ScrollView ref={combatScrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
+        {attacker?.traits?.includes('glowing_one') && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => {
+              setGlowingAuraTargetIds(activeCharacters.filter(character => character.id !== attacker.id).map(character => character.id));
+              setShowGlowingAuraModal(true);
+            }}
+            style={{ alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, padding: 10, backgroundColor: colors.card }}
+          >
+            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 11 }}>GLOWING ONE — APPLY 1 HOUR OF EXPOSURE</Text>
+          </TouchableOpacity>
+        )}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>COMBAT CALCULATOR</Text>
           <TouchableOpacity
@@ -3560,7 +3715,8 @@ export default function CombatScreen() {
                   ammoIgnoresDT: loadedAmmo?.ignoresDT,
                   ammoDRModifier: loadedAmmo?.drMod,
                   ignoredDT: perkBonuses.ignoreDT,
-                  defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0),
+                  defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
+                    + empShieldingResistance(defender, loadedAmmo),
                   damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
                 });
                 const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
@@ -3589,10 +3745,12 @@ export default function CombatScreen() {
                         const typed = combinedProtectionFor(damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
                         const typedPerks = computeDefensivePerkBonuses(defender, damageType, getPerkById);
                         const resolved = resolveDamageProtection({
-                          baseDT: typed.dt, baseDR: typed.dr,
+                          baseDT: typed.dt,
+                          baseDR: tightNutsAdjustedDR(typed.dr, damageType, defender, defenderNatural),
                           ammoIgnoresDT: loadedAmmo.ignoresDT, ammoDRModifier: loadedAmmo.drMod,
                           ignoredDT: perkBonuses.ignoreDT,
-                          defenderDRModifier: typedPerks.dr + (defenderEffectMods?.drMod ?? 0),
+                          defenderDRModifier: typedPerks.dr + (defenderEffectMods?.drMod ?? 0)
+                            + empShieldingResistance(defender, loadedAmmo),
                           damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
                         });
                         return { damageThreshold: resolved.effectiveDT, damageResistance: resolved.effectiveDR };
@@ -3620,7 +3778,7 @@ export default function CombatScreen() {
                 if (defender) {
                   if (totalBurstDmg > 0) applyCombatDamage(
                     attackReceipt.current, defender.id, totalBurstDmg, damagingHits, undefined,
-                    selectedVehicleSystem?.id,
+                    selectedVehicleSystem?.id, attacker?.id,
                   );
                     if (radiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, radiationExposure);
                   if (!defender.vehicle) applyPoisonExposure(poisonResults);
@@ -4033,6 +4191,87 @@ export default function CombatScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !c.vehicle && !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
+      <Modal
+        visible={showGlowingAuraModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGlowingAuraModal(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.82)' }}>
+          <View style={{ maxHeight: '80%', backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.primary, padding: 18, gap: 12 }}>
+            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 15 }}>GLOWING ONE — RADIATION AURA</Text>
+            <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11 }}>
+              Apply one hour of the 10 rads/hour aura. Choose affected combatants; each target’s resistance from race, perks, and worn armor reduces the exposure.
+            </Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {activeCharacters.filter(character => character.id !== attacker?.id).map(character => {
+                const selected = glowingAuraTargetIds.includes(character.id);
+                return (
+                  <TouchableOpacity
+                    key={character.id}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => setGlowingAuraTargetIds(ids => selected
+                      ? ids.filter(id => id !== character.id)
+                      : [...ids, character.id])}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                  >
+                    <Text style={{ color: selected ? colors.primary : colors.mutedForeground, fontFamily: 'Inter_700Bold', fontSize: 14 }}>{selected ? '☑' : '□'}</Text>
+                    <Text style={{ color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 12 }}>{character.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                onPress={() => {
+                  for (const characterId of glowingAuraTargetIds) {
+                    const target = activeCharacters.find(character => character.id === characterId);
+                    if (!target) continue;
+                    const targetSheet = resolveCombatSheet(
+                      target, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+                    );
+                    const resistance = Math.max(0, Math.min(100, targetSheet.radiationResistance ?? 0));
+                    adjustRadiation(target.id, Math.max(0, Math.round(10 * (1 - resistance / 100))));
+                  }
+                  setShowGlowingAuraModal(false);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 7, backgroundColor: colors.primary }}
+              >
+                <Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold', fontSize: 11 }}>APPLY EXPOSURE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowGlowingAuraModal(false)} style={{ alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 7, borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 11 }}>CANCEL</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={divineFavorRoll !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => resolveDivineFavorChoice(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.82)' }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.primary, padding: 18, gap: 12 }}>
+            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 15 }}>DIVINE FAVOR</Text>
+            <Text style={{ color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 12 }}>
+              {attacker?.name ?? 'This character'} failed the attack roll ({divineFavorRoll?.roll}). Use Divine Favor to reroll it? This does not spend AP or ammunition again.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => resolveDivineFavorChoice(true)} style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 7, backgroundColor: colors.primary }}>
+                <Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_700Bold', fontSize: 11 }}>REROLL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" onPress={() => resolveDivineFavorChoice(false)} style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 7, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary }}>
+                <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 11 }}>KEEP ROLL</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <CriticalHitModal
         visible={showCritModal}
         onClose={() => setShowCritModal(false)}

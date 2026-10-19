@@ -28,6 +28,8 @@ export type NumericSkills = Record<string, number>;
 export interface RankedPerk {
   perkId: string;
   rank?: number;
+  appliedSkillBonuses?: Readonly<Record<string, number>>;
+  bonusTaggedSkill?: string;
 }
 
 const SPECIAL_KEYS: readonly (keyof SpecialValues)[] = [
@@ -247,6 +249,23 @@ export interface EffectiveSkillOptions {
   includeTagBonus?: boolean;
 }
 
+/** Skill increases granted on acquisition; keeping these as a separate layer
+ * means a refund removes the effect without undoing purchased skill points. */
+export function oneTimePerkSkillBonuses(perkId: string): Record<string, number> {
+  switch (normalizeId(perkId)) {
+    case 'master_thief': return { lockpick: 15, steal: 15 };
+    case 'master_trader': return { barter: 30 };
+    case 'medic': return { firstAid: 10, doctor: 10 };
+    case 'mr_fixit': return { repair: 10, science: 10 };
+    case 'negotiator': return { speech: 10, barter: 10 };
+    case 'salesman': return { barter: 20 };
+    case 'speaker': return { speech: 20 };
+    case 'thief': return { sneak: 10, lockpick: 10, steal: 10, traps: 10 };
+    case 'gambler': return { gambling: 20 };
+    default: return {};
+  }
+}
+
 /**
  * Applies one-time trait adjustments and conditional perk adjustments.
  * Input skills are copied, and adjusted values are clamped at zero.
@@ -258,6 +277,23 @@ export function calculateEffectiveSkills<T extends object>(
   const selected = normalizedSet(options.traits);
   const tagged = normalizedSet(options.taggedSkills);
   const conditions = normalizedSet(options.conditions);
+  const perkSkillBonuses: Record<string, number> = {};
+  for (const owned of options.perks ?? []) {
+    if (typeof owned === 'string') continue;
+    if (owned.bonusTaggedSkill) tagged.add(normalizeId(owned.bonusTaggedSkill));
+    const id = normalizeId(owned.perkId);
+    const rank = Math.max(0, owned.rank ?? 1);
+    for (const [skill, amount] of Object.entries(owned.appliedSkillBonuses ?? oneTimePerkSkillBonuses(id))) {
+      perkSkillBonuses[skill] = (perkSkillBonuses[skill] ?? 0) + amount;
+    }
+    if (id === 'ranger') perkSkillBonuses.outdoorsman = (perkSkillBonuses.outdoorsman ?? 0) + 15 * rank;
+    if (id === 'living_anatomy') perkSkillBonuses.doctor = (perkSkillBonuses.doctor ?? 0) + 10 * rank;
+    if (id === 'jack_of_all_trades') {
+      for (const skill of Object.keys(skills)) {
+        perkSkillBonuses[skill] = (perkSkillBonuses[skill] ?? 0) + 5 * rank;
+      }
+    }
+  }
   const drunk = conditions.has('drunk') || conditions.has('intoxicated');
   const drunkenMaster = hasPerk(options.perks, 'drunken_master');
   const result: NumericSkills = {};
@@ -270,6 +306,7 @@ export function calculateEffectiveSkills<T extends object>(
     if (selected.has('ham_fisted') && HAM_FISTED_PENALTIES.has(skill)) adjusted -= 20;
     if (selected.has('tech_wizard') && TECH_WIZARD_SKILLS.has(skill)) adjusted += 15;
     if (skill === 'unarmed' && drunkenMaster && drunk) adjusted += 20;
+    adjusted += perkSkillBonuses[skill] ?? 0;
     if (options.includeTagBonus && tagged.has(normalizeId(skill))) adjusted += 20;
     result[skill] = Math.max(0, adjusted);
   }
@@ -311,10 +348,21 @@ export interface TagSkillRules {
 export function calculateTagSkillRules(
   traits?: readonly string[],
   baseSelectableCapacity = 3,
+  perks?: readonly (string | RankedPerk)[],
 ): TagSkillRules {
   const selected = normalizedSet(traits);
-  const selectableCapacity = baseSelectableCapacity + (selected.has('beta_software') ? 1 : 0);
-  const freeTagSkills = selected.has('ham_fisted') ? ['unarmed'] : [];
+  const perkCapacity = (perks ?? []).reduce((total, perk) => {
+    const id = typeof perk === 'string' ? perk : perk.perkId;
+    const rank = typeof perk === 'string' ? 1 : perk.rank ?? 1;
+    return total + (normalizeId(id) === 'tag' ? Math.max(0, rank) : 0);
+  }, 0);
+  const selectableCapacity = baseSelectableCapacity
+    + (selected.has('beta_software') ? 1 : 0)
+    + perkCapacity;
+  const freeTagSkills = [
+    ...(selected.has('ham_fisted') ? ['unarmed'] : []),
+    ...(perks ?? []).flatMap(perk => typeof perk === 'string' || !perk.bonusTaggedSkill ? [] : [perk.bonusTaggedSkill]),
+  ];
   return {
     selectableCapacity,
     freeTagSkills,

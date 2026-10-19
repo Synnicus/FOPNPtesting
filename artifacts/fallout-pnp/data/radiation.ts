@@ -84,6 +84,7 @@ export function applyRadiationGain(
 export const RAD_RESIST_PERK_BONUSES: Readonly<Record<string, number>> = Object.freeze({
   hide_of_scars: 15,
   tough_hide: 10,
+  rad_resistance: 15,
 });
 
 export function perkRadiationResistanceBonus(

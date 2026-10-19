@@ -23,6 +23,7 @@ import {
   perkRadiationResistanceBonus,
   type GhoulRadiationHealingOption,
 } from './radiation.ts';
+import { getRaceById } from './races.ts';
 import { wornArmor } from './armorCondition.ts';
 import type { ArmorConditionState } from '../context/types.ts';
 
@@ -196,6 +197,13 @@ function armorClassPerkBonus(perks: ArmorResolverInput['perks']): number {
 export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmorSheet {
   const { bodyArmor, helmet } = wornArmor({ ...input, armorConditionStates: input.armorConditionStates ? [...input.armorConditionStates] : undefined }, input.allArmor);
   const armorEffects = aggregateArmorEffects(bodyArmor, helmet);
+  const fastMetabolism = hasTrait(input.traits, 'fast_metabolism');
+  const racialRadiationResistance = getRaceById(input.raceId ?? '')?.naturalDR ?? 0;
+  const baseRadiationResistance = fastMetabolism
+    ? Math.max(0, numeric(input.radiationResistance) - racialRadiationResistance)
+    : numeric(input.radiationResistance);
+  const basePoisonResistance = fastMetabolism ? 0 : numeric(input.poisonResistance);
+  const fastMetabolismRacialRadiationModifier = fastMetabolism ? racialRadiationResistance : 0;
   const radiationRules = {
     mutantGhoulRadiationRules: input.mutantGhoulRadiationRules ?? false,
     ghoulRadiationHealingOption: input.ghoulRadiationHealingOption ?? 1,
@@ -306,9 +314,9 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     meleeDamage: Math.max(1, effectiveSpecial.strength - 5),
     carryWeight: calculateCarryWeight(effectiveSpecial.strength, input.traits),
     gasResistance: clamp(numeric(input.gasResistance) + armorEffects.gasResistance, 0, 100),
-    poisonResistance: clamp(numeric(input.poisonResistance) + poisonEffectMod + armorEffects.poisonResistance, 0, 100),
+    poisonResistance: clamp(basePoisonResistance + poisonEffectMod + armorEffects.poisonResistance, 0, 100),
     radiationResistance: radiationResistanceLocked ? 100 : clamp(
-      (ghoulHealingDivisor !== null ? 0 : numeric(input.radiationResistance))
+      (ghoulHealingDivisor !== null ? 0 : baseRadiationResistance + fastMetabolismRacialRadiationModifier)
         + (hasTrait(input.traits, 'glowing_one') ? 50 : 0)
         + radEffectMod
         + armorEffects.radiationResistance
