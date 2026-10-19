@@ -11,7 +11,10 @@ test('custom NPC editor retains AC-only protection and restores it on edit', () 
   assert.match(source, /naturalProtection: hasNaturalProtection \? naturalProtection : undefined/);
   assert.match(source, /setNaturalProtection\(t\.naturalProtection \? \{ \.\.\.t\.naturalProtection \}/);
   assert.match(source, /const derivedAC = special\.agility \+ naturalAC \+/);
-  assert.match(source, /armorClass: derivedAC, usesDerivedArmorClass: true/);
+  assert.match(source, /armorClass: derivedAC, usesDerivedArmorClass/);
+  assert.match(source, /ARMOR CLASS POLICY/);
+  assert.match(source, /testID=\{`custom-npc-ac-\$\{option\.label\.toLowerCase\(\)\}`\}/);
+  assert.match(source, /setUsesDerivedArmorClass\(t\.usesDerivedArmorClass !== false\)/);
 });
 
 test('protection tab provides labeled natural AC controls and a total', () => {

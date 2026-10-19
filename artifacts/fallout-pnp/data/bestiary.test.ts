@@ -295,6 +295,19 @@ test('custom NPC armor is derived once and changes normally with Agility', () =>
   assert.equal(agilityEight.armorClassBreakdown.manual, 0);
 });
 
+test('custom fixed-AC templates retain their policy on spawn', () => {
+  const template = {
+    ...byId('brahmin'),
+    id: 'custom-fixed-ac',
+    name: 'Custom Fixed-AC NPC',
+    isCustom: true,
+    usesDerivedArmorClass: false,
+  };
+  assert.equal(normalizeCustomTemplateArmorClass(template).usesDerivedArmorClass, false);
+  const character = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, template.name, 'custom-fixed-ac-npc');
+  assert.equal(character.usesDerivedArmorClass, false);
+});
+
 test('custom natural AC survives template serialization and spawning without double counting', () => {
   for (const armored of [false, true]) {
     const template = {
@@ -360,6 +373,10 @@ test('legacy custom templates and their spawned NPCs migrate to derived AC', () 
     usesDerivedArmorClass: undefined,
   };
   assert.equal(normalizeCustomTemplateArmorClass(legacyTemplate).usesDerivedArmorClass, true);
+  assert.equal(normalizeCustomTemplateArmorClass({
+    ...legacyTemplate,
+    usesDerivedArmorClass: false,
+  }).usesDerivedArmorClass, false);
   assert.equal(shouldMigrateSpawnedNpcArmorClass({
     type: 'npc',
     bestiaryTemplateId: legacyTemplate.id,

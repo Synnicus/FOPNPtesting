@@ -437,8 +437,7 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
   };
   const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => ({
     ...normalizeCustomTemplateArmorClass(template),
-    // The custom creator stores its displayed Agility + equipment total in
-    // armorClass. Treat it as derived so equipped armor is not added twice.
+    // Preserve explicit fixed-AC choices; older templates still default to derived.
     poisonResistance: template.poisonResistance ?? 0,
     sequence: template.sequence ?? template.special.perception * 2,
   });

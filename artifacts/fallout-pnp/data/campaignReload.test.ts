@@ -230,21 +230,25 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       }
     });
 
-    await t.test('importCampaign preserves an explicit fixed-AC policy on a linked custom NPC', async () => {
+    await t.test('importCampaign preserves template AC policy and existing NPC policy independently', async () => {
       storage.clear();
       campaign = undefined;
       const fixedTemplate: BestiaryTemplate = {
         ...legacyTemplate,
         id: 'fixed-custom-armored',
         name: 'Fixed Custom Armored NPC',
-        usesDerivedArmorClass: true,
+        usesDerivedArmorClass: false,
       };
       const fixedNpc = {
         ...spawnBestiaryTemplate(fixedTemplate, BUILT_IN_WEAPONS, fixedTemplate.name, 'fixed-custom-npc'),
         usesDerivedArmorClass: false,
       };
+      const existingDerivedNpc = {
+        ...spawnBestiaryTemplate(fixedTemplate, BUILT_IN_WEAPONS, 'Existing Derived NPC', 'existing-derived-npc'),
+        usesDerivedArmorClass: true,
+      };
       const fixedCampaign = {
-        characters: [fixedNpc],
+        characters: [fixedNpc, existingDerivedNpc],
         customBestiaryTemplates: [fixedTemplate],
         customWeapons: [],
         customArmor: [],
@@ -271,9 +275,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
           assert.equal(state.customBestiaryTemplates.length, 1, stage);
           const template = state.customBestiaryTemplates[0];
           assert.equal(template.id, fixedTemplate.id, stage);
-          assert.equal(template.usesDerivedArmorClass, true, `${stage}: custom template remains derived`);
-          assert.equal(state.characters.length, 1, stage);
-          const npc = state.characters[0];
+          assert.equal(template.usesDerivedArmorClass, false, `${stage}: fixed-AC template retained`);
+          assert.equal(state.characters.length, 2, stage);
+          const npc = state.characters.find(character => character.id === fixedNpc.id)!;
           assert.equal(npc.bestiaryTemplateId, template.id, stage);
           assert.equal(npc.usesDerivedArmorClass, false, `${stage}: explicit fixed-AC policy preserved`);
           assert.equal(npc.manualDerivedStats?.armorClass, 36, `${stage}: manual AC preserved`);
@@ -285,6 +289,14 @@ test('AppProvider campaign storage lifecycle', async (t) => {
           assert.equal(resolved.armorClassBreakdown.manual, 31, stage);
           assert.equal(resolved.armorClassBreakdown.bodyArmor, 25, stage);
           assert.equal(resolved.armorClassBreakdown.helmet, 6, stage);
+
+          const derivedNpc = state.characters.find(character => character.id === existingDerivedNpc.id)!;
+          assert.ok(derivedNpc, `${stage}: existing derived NPC present`);
+          assert.equal(derivedNpc.usesDerivedArmorClass, true, `${stage}: existing NPC policy is not replaced by template policy`);
+          assert.equal(sheet(derivedNpc).armorClass, 36, `${stage}: existing derived NPC still resolves from Agility and armor`);
+
+          const freshSpawn = spawnBestiaryTemplate(template, BUILT_IN_WEAPONS, 'New fixed NPC', `${stage}-new-fixed-npc`);
+          assert.equal(freshSpawn.usesDerivedArmorClass, false, `${stage}: new NPC inherits fixed template policy`);
         };
 
         assertFixedArmor(campaign, 'imported state');

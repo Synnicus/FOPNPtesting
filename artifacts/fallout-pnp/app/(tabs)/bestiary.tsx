@@ -224,6 +224,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
   const [bodyArmorId, setBodyArmorId] = useState(editTemplate?.equippedBodyArmorId ?? '');
   const [helmetId, setHelmetId] = useState(editTemplate?.equippedHelmetId ?? '');
   const [naturalProtection, setNaturalProtection] = useState<NaturalProtection>(editTemplate?.naturalProtection ?? { ...EMPTY_NATURAL_PROTECTION });
+  const [usesDerivedArmorClass, setUsesDerivedArmorClass] = useState(editTemplate?.usesDerivedArmorClass !== false);
   const [useComputed, setUseComputed] = useState(false);
   const [tab, setTab] = useState<'basics' | 'special' | 'skills' | 'protect'>('basics');
   const [showPreset, setShowPreset] = useState(false);
@@ -245,6 +246,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     setBodyArmorId(t.equippedBodyArmorId ?? '');
     setHelmetId(t.equippedHelmetId ?? '');
     setNaturalProtection(t.naturalProtection ? { ...t.naturalProtection } : { ...EMPTY_NATURAL_PROTECTION });
+    setUsesDerivedArmorClass(t.usesDerivedArmorClass !== false);
   };
 
   React.useEffect(() => {
@@ -271,6 +273,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
       setBodyArmorId('');
       setHelmetId('');
       setNaturalProtection({ ...EMPTY_NATURAL_PROTECTION });
+      setUsesDerivedArmorClass(true);
     }
   }, [visible]);
 
@@ -320,7 +323,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
     const t: BestiaryTemplate = {
       id: editTemplate?.id ?? genId(),
       name: name.trim(), category, description,
-      special, maxHp, armorClass: derivedAC, usesDerivedArmorClass: true, maxAP, sequence, skills,
+      special, maxHp, armorClass: derivedAC, usesDerivedArmorClass, maxAP, sequence, skills,
       equippedWeaponId: weaponId || undefined,
       equippedBodyArmorId: bodyArmorId || undefined,
       equippedHelmetId: helmetId || undefined,
@@ -422,10 +425,31 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
                   </View>
                 ))}
 
-                {/* Derived AC (agility + natural + armor acBonus) */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>ARMOR CLASS POLICY</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[
+                    { derived: true, label: 'Derived', detail: 'Recalculates from Agility, natural AC, and armor.' },
+                    { derived: false, label: 'Fixed', detail: 'Keeps this template AC policy for new NPCs.' },
+                  ].map(option => (
+                    <TouchableOpacity
+                      key={option.label}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: usesDerivedArmorClass === option.derived }}
+                      accessibilityLabel={`${option.label} armor class`}
+                      testID={`custom-npc-ac-${option.label.toLowerCase()}`}
+                      style={{ flex: 1, padding: 10, borderRadius: colors.radius, backgroundColor: usesDerivedArmorClass === option.derived ? colors.primary + '22' : colors.secondary, borderWidth: 1, borderColor: usesDerivedArmorClass === option.derived ? colors.primary : colors.border }}
+                      onPress={() => setUsesDerivedArmorClass(option.derived)}
+                    >
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: usesDerivedArmorClass === option.derived ? colors.primary : colors.foreground }}>{option.label}</Text>
+                      <Text style={{ marginTop: 4, fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{option.detail}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* AC preview (agility + natural + armor acBonus) */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
                   <View>
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Armor Class (derived)</Text>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Armor Class preview</Text>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>AGI {special.agility} + natural {naturalAC} + armor {(bodyArmor?.acBonus ?? 0) + (helmet?.acBonus ?? 0)}</Text>
                   </View>
                   <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.primary }}>{derivedAC}</Text>
