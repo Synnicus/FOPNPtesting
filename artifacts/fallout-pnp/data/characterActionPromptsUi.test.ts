@@ -65,3 +65,10 @@ test('native action flow covers cancellation and confirmation for every prompted
   assert.match(nativeFlowSource, /Edit \$\{TEST_NAME\}-Alpha backstory[\s\S]*?assertNotVisible: "Heal Character\?"/);
   assert.match(characterSource, /testID="character-backstory-close"/);
 });
+
+test('native character action flow verifies confirmed and canceled state after a cold restart', () => {
+  assert.match(nativeFlowSource, /# Cold app restart[\s\S]*?- stopApp\s*- launchApp\s*- tapOn: "Characters"/);
+  assert.match(nativeFlowSource, /assertVisible: "\$\{TEST_NAME\}-Alpha \(Clone\)"[\s\S]*?inputText: "\$\{TEST_NAME\}-Beta \(Clone\)"[\s\S]*?assertVisible: "No results"[\s\S]*?inputText: "\$\{TEST_NAME\}-Gamma \(Clone\)"[\s\S]*?assertVisible: "No results"/);
+  assert.match(nativeFlowSource, /Move \$\{TEST_NAME\}-Gamma down[\s\S]*?Move \$\{TEST_NAME\}-Gamma one position down in the list\?/);
+  assert.match(nativeFlowSource, /Return \$\{TEST_NAME\}-Alpha from storage[\s\S]*?assertVisible: "HP 30\/30"/);
+});

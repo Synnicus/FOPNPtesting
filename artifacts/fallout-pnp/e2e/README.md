@@ -30,7 +30,7 @@ Run the character action flow against an installed, launchable Android or iOS bu
 pnpm --filter @workspace/fallout-pnp run test:native:character-actions
 ```
 
-The flow adds three uniquely named characters and removes only the copy it creates. It verifies that canceling and confirming healing, storage/return, copying, reordering, and deletion have the intended effect, and that backstory opens without an action prompt. Use a disposable campaign because the original test characters remain in the campaign after the run. This must run on a native device or simulator; the rule test covers the shared web/native modal wiring but does not replace device interaction testing.
+The flow adds three uniquely named characters and deletes only its own Beta copy. It verifies canceling and confirming healing, storage/return, copying, reordering, and deletion, then cold-restarts the app to confirm the healed and stored Alpha, surviving Alpha copy, deleted Beta copy, and Gamma-before-Beta order persist. The canceled Gamma copy, canceled storage return, and canceled reorder remain unapplied. Backstory opens without an action prompt. Use a disposable campaign because the test characters remain in the campaign after the run. This must run on a native device or simulator; the rule test covers the shared web/native modal wiring but does not replace device interaction testing.
 
 # Native combatant picker regression
 

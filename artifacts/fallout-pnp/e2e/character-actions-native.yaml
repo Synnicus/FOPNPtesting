@@ -1,6 +1,6 @@
 # Run against an installed, launchable Android or iOS build (not the web preview).
 # Supply a unique TEST_NAME with maestro -e. This adds several uniquely named
-# characters and deletes only its own copied test character; use a disposable campaign.
+# characters and deletes only its own Beta clone; use a disposable campaign.
 appId: ${APP_ID}
 ---
 - launchApp
@@ -91,31 +91,45 @@ appId: ${APP_ID}
 - assertVisible: "Store ${TEST_NAME}-Alpha"
 
 # Canceling copy creates nothing; confirming creates one named copy.
-- tapOn: "Copy ${TEST_NAME}-Alpha"
+- tapOn: "Copy ${TEST_NAME}-Gamma"
 - assertVisible: "Copy Character?"
 - tapOn:
     id: character-action-confirmation-cancel
-- assertNotVisible: "${TEST_NAME}-Alpha (Clone)"
+- assertNotVisible: "${TEST_NAME}-Gamma (Clone)"
 - tapOn: "Copy ${TEST_NAME}-Alpha"
 - tapOn:
     id: character-action-confirmation-confirm
 - assertVisible: "${TEST_NAME}-Alpha (Clone)"
 
-# Canceling delete preserves the copy; confirming removes only that copy.
-- tapOn: "Delete ${TEST_NAME}-Alpha (Clone)"
+# A separately confirmed Beta copy is deleted; canceling first leaves it intact.
+- scrollUntilVisible:
+    element: "Copy ${TEST_NAME}-Beta"
+    direction: DOWN
+- tapOn: "Copy ${TEST_NAME}-Beta"
+- tapOn:
+    id: character-action-confirmation-confirm
+- assertVisible: "${TEST_NAME}-Beta (Clone)"
+- scrollUntilVisible:
+    element: "Delete ${TEST_NAME}-Beta (Clone)"
+    direction: DOWN
+- tapOn: "Delete ${TEST_NAME}-Beta (Clone)"
 - assertVisible: "Delete Character?"
-- assertVisible: "Permanently remove ${TEST_NAME}-Alpha (Clone) from the campaign? This cannot be undone."
+- assertVisible: "Permanently remove ${TEST_NAME}-Beta (Clone) from the campaign? This cannot be undone."
 - tapOn:
     id: character-delete-confirmation-cancel
-- assertVisible: "${TEST_NAME}-Alpha (Clone)"
-- tapOn: "Delete ${TEST_NAME}-Alpha (Clone)"
+- assertVisible: "${TEST_NAME}-Beta (Clone)"
+- tapOn: "Delete ${TEST_NAME}-Beta (Clone)"
 - tapOn:
     id: character-delete-confirmation-confirm
-- assertNotVisible: "${TEST_NAME}-Alpha (Clone)"
+- assertNotVisible: "${TEST_NAME}-Beta (Clone)"
+- assertVisible: "${TEST_NAME}-Alpha (Clone)"
 - assertVisible: ${TEST_NAME}-Alpha
 
-# Gamma is the last test character. Cancel its move-up, confirm it, then verify
-# the newly enabled move-down action opens a prompt and can restore its position.
+# Cancel Gamma's move-up, then confirm it and cancel its move-down. Gamma should
+# remain between Alpha and Beta after restart.
+- scrollUntilVisible:
+    element: "Move ${TEST_NAME}-Gamma up"
+    direction: DOWN
 - tapOn: "Move ${TEST_NAME}-Gamma up"
 - assertVisible: "Move Character Up?"
 - assertVisible: "Move ${TEST_NAME}-Gamma one position up in the list?"
@@ -128,7 +142,68 @@ appId: ${APP_ID}
 - assertVisible: "Move Character Down?"
 - tapOn:
     id: character-action-confirmation-cancel
-- tapOn: "Move ${TEST_NAME}-Gamma down"
+
+# Store Alpha again and cancel its return, leaving a confirmed storage change
+# and a canceled return as the final states to check after restart.
+- scrollUntilVisible:
+    element: "Store ${TEST_NAME}-Alpha"
+    direction: UP
+- tapOn: "Store ${TEST_NAME}-Alpha"
 - tapOn:
     id: character-action-confirmation-confirm
+- scrollUntilVisible:
+    element:
+      id: character-storage-toggle
+    direction: DOWN
+- tapOn:
+    id: character-storage-toggle
+- assertVisible: "Return ${TEST_NAME}-Alpha from storage"
+- tapOn: "Return ${TEST_NAME}-Alpha from storage"
+- assertVisible: "Return Character?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- assertVisible: "Return ${TEST_NAME}-Alpha from storage"
+
+# Cold app restart must preserve confirmed healing, storage, copy, deletion, and
+# order actions, while the canceled copy and canceled moves remain unapplied.
+- stopApp
+- launchApp
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: "${TEST_NAME}-Alpha (Clone)"
+    direction: DOWN
+- assertVisible: "${TEST_NAME}-Alpha (Clone)"
+- tapOn: "Search…"
+- inputText: "${TEST_NAME}-Beta (Clone)"
+- hideKeyboard
+- assertVisible: "No results"
+- tapOn: "Search…"
+- eraseText: 60
+- inputText: "${TEST_NAME}-Gamma (Clone)"
+- hideKeyboard
+- assertVisible: "No results"
+- tapOn: "Search…"
+- eraseText: 60
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Move ${TEST_NAME}-Gamma down"
+    direction: DOWN
+- tapOn: "Move ${TEST_NAME}-Gamma down"
+- assertVisible: "Move Character Down?"
+- assertVisible: "Move ${TEST_NAME}-Gamma one position down in the list?"
+- tapOn:
+    id: character-action-confirmation-cancel
+- scrollUntilVisible:
+    element:
+      id: character-storage-toggle
+    direction: DOWN
+- tapOn:
+    id: character-storage-toggle
+- scrollUntilVisible:
+    element: "Return ${TEST_NAME}-Alpha from storage"
+    direction: DOWN
+- assertVisible: "${TEST_NAME}-Alpha"
+- assertVisible: "HP 30/30"
+- assertVisible: "Return ${TEST_NAME}-Alpha from storage"
+- assertNotVisible: "Store ${TEST_NAME}-Alpha"
 
