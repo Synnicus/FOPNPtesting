@@ -18,6 +18,7 @@ import customRulesUi from './locales/custom-rules.json';
 import customEditorsUi from './locales/custom-editors.json';
 import equipmentTagUi from './locales/equipment-tags.json';
 import catalogImagesUi from './locales/catalog-images.json';
+import consumablesUi from './locales/consumables-ui.json';
 import appTourUi from './locales/app-tour.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
@@ -510,6 +511,7 @@ const customRulesUiTranslations = customRulesUi as Partial<Record<AppLocale, Rec
 const customEditorsUiTranslations = customEditorsUi as Partial<Record<AppLocale, Record<string, string>>>;
 const equipmentTagUiTranslations = equipmentTagUi as Partial<Record<AppLocale, Record<string, string>>>;
 const catalogImagesUiTranslations = catalogImagesUi as Partial<Record<AppLocale, Record<string, string>>>;
+const consumablesUiTranslations = consumablesUi as Partial<Record<AppLocale, Record<string, string>>>;
 const appTourTranslationData = appTourUi as { keys: string[] } & Partial<Record<AppLocale, string[]>>;
 const appTourUiTranslations = Object.fromEntries(
   APP_LANGUAGES
@@ -536,6 +538,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(customEditorsUiTranslations[locale] ?? {}),
       ...(equipmentTagUiTranslations[locale] ?? {}),
       ...(catalogImagesUiTranslations[locale] ?? {}),
+      ...(consumablesUiTranslations[locale] ?? {}),
       ...(appTourUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;

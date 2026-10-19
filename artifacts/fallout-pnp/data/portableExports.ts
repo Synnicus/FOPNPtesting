@@ -10,6 +10,7 @@ import type {
   CampaignRuleTag,
   CustomPerkDefinition,
   CustomWeaponMod,
+  CustomConsumable,
   CatalogPortraitSettings,
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
@@ -20,6 +21,7 @@ import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
 import { isValidAreaProfileRangeOverrides, type AreaProfileRangeOverrides } from './areaEffects.ts';
 import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
+import { isCustomConsumableRecord } from './consumables.ts';
 import {
   isCatalogImageDataUri,
   normalizeCatalogPortraitMap,
@@ -47,6 +49,7 @@ export interface CampaignStateSnapshot {
   customPerks?: CustomPerkDefinition[];
   campaignRuleTags?: CampaignRuleTag[];
   customVehicles?: VehicleProfile[];
+  customConsumables?: CustomConsumable[];
   lootTables?: CampaignTable[];
   encounterTables?: CampaignTable[];
   campaignMaps?: CampaignMap[];
@@ -373,6 +376,10 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
   return Array.isArray(value.characters)
     && Array.isArray(value.customWeapons ?? [])
     && Array.isArray(value.customArmor ?? [])
+    && (value.customConsumables === undefined
+      || (Array.isArray(value.customConsumables)
+        && value.customConsumables.every(isCustomConsumableRecord)
+        && hasUniqueIds(value.customConsumables as CustomConsumable[])))
     && (value.customVehicles === undefined
       || (Array.isArray(value.customVehicles) && value.customVehicles.every(isVehicleProfileRecord)))
     && (value.lootTables === undefined
@@ -635,6 +642,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !Array.isArray(value.customWeapons)
     || !Array.isArray(value.customArmor)
     || (value.customVehicles !== undefined && !Array.isArray(value.customVehicles))
+    || (value.customConsumables !== undefined && !Array.isArray(value.customConsumables))
     || (value.lootTables !== undefined && !Array.isArray(value.lootTables))
     || (value.encounterTables !== undefined && !Array.isArray(value.encounterTables))
     || (value.campaignMaps !== undefined && !Array.isArray(value.campaignMaps))
@@ -654,6 +662,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !value.customWeapons.every(isWeaponRecord)
     || !value.customArmor.every(isArmorRecord)
     || !((value.customVehicles ?? []) as unknown[]).every(isVehicleProfileRecord)
+    || !((value.customConsumables ?? []) as unknown[]).every(isCustomConsumableRecord)
     || !((value.lootTables ?? []) as unknown[]).every(validCampaignTable)
     || !((value.encounterTables ?? []) as unknown[]).every(validCampaignTable)
     || !((value.campaignMaps ?? []) as unknown[]).every(validCampaignMap)
@@ -672,6 +681,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && hasUniqueIds(value.customWeapons)
     && hasUniqueIds(value.customArmor)
     && hasUniqueIds((value.customVehicles ?? []) as VehicleProfile[])
+    && hasUniqueIds((value.customConsumables ?? []) as CustomConsumable[])
     && hasUniqueIds((value.lootTables ?? []) as CampaignTable[])
     && hasUniqueIds((value.encounterTables ?? []) as CampaignTable[])
     && hasUniqueIds((value.campaignMaps ?? []) as CampaignMap[])

@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod, CatalogPortraitSelection, CatalogPortraitSettings } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -85,6 +85,7 @@ import {
 } from '@/data/campaignOptions';
 import { normalizeCampaignMap, normalizeCampaignTable } from '@/data/campaignTools';
 import { validateCustomPerk, validateCustomWeaponMod } from '@/data/customRules';
+import { isCustomConsumableRecord, sanitizeCustomConsumables, validateCustomConsumable } from '@/data/consumables';
 import {
   isCatalogImageDataUri,
   normalizeCatalogPortraitMap,
@@ -357,6 +358,7 @@ interface AppState extends CampaignOptions {
   customWeapons: Weapon[];
   customArmor: Armor[];
   customAmmo: AmmoType[];
+  customConsumables: CustomConsumable[];
   customVehicles: VehicleProfile[];
   customBestiaryTemplates: BestiaryTemplate[];
   builtInBestiaryOverrides: BestiaryTemplate[];
@@ -397,6 +399,7 @@ const CAMPAIGN_COLLECTIONS = [
   'customWeapons',
   'customArmor',
   'customAmmo',
+  'customConsumables',
   'customVehicles',
   'customBestiaryTemplates',
   'builtInBestiaryOverrides',
@@ -494,6 +497,10 @@ function hasValidCampaignImport(value: unknown): value is AppState {
     && (!Array.isArray(value.customWeaponMods) || !value.customWeaponMods.every(validateCustomWeaponMod))) return false;
   if (value.customPerks !== undefined
     && (!Array.isArray(value.customPerks) || !value.customPerks.every(validateCustomPerk))) return false;
+  if (value.customConsumables !== undefined
+    && (!Array.isArray(value.customConsumables)
+      || !value.customConsumables.every(isCustomConsumableRecord)
+      || sanitizeCustomConsumables(value.customConsumables).length !== value.customConsumables.length)) return false;
   if (value.campaignRuleTags !== undefined
     && (!Array.isArray(value.campaignRuleTags) || !value.campaignRuleTags.every(tag =>
       isRecord(tag) && typeof tag.id === 'string' && typeof tag.label === 'string'
@@ -658,6 +665,7 @@ function normalizePersistedState(parsed: AppState): AppState {
       ? normalized.campaignName.trim().slice(0, 80)
       : 'My Campaign',
     ...normalizeCampaignOptions(normalized),
+    customConsumables: sanitizeCustomConsumables(normalized.customConsumables),
     areaProfileRangeOverrides: normalizeAreaProfileRangeOverrides(normalized.areaProfileRangeOverrides),
     hardcoreRadiationRules: normalized.hardcoreRadiationRules !== undefined
       ? normalized.hardcoreRadiationRules === true
@@ -771,6 +779,9 @@ interface AppContextValue extends AppState {
   addCustomAmmo: (a: AmmoType) => void;
   updateCustomAmmo: (a: AmmoType) => void;
   deleteCustomAmmo: (id: string) => void;
+  addCustomConsumable: (consumable: CustomConsumable) => void;
+  updateCustomConsumable: (consumable: CustomConsumable) => void;
+  deleteCustomConsumable: (id: string) => void;
   addCustomVehicle: (vehicle: VehicleProfile) => void;
   updateCustomVehicle: (vehicle: VehicleProfile) => void;
   deleteCustomVehicle: (id: string) => void;
@@ -805,6 +816,7 @@ const defaultState: AppState = markConditionSemanticsV2({
   customWeapons: [],
   customArmor: [],
   customAmmo: [],
+  customConsumables: [],
   customVehicles: [],
   customBestiaryTemplates: [],
   builtInBestiaryOverrides: [],
@@ -2172,6 +2184,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // ─── Custom Consumables ────────────────────────────────────────────────────
+  const addCustomConsumable = useCallback((consumable: CustomConsumable) => {
+    setState(s => {
+      const candidate = { ...consumable, isCustom: true };
+      if (validateCustomConsumable(candidate, s.customConsumables).length > 0) return s;
+      return { ...s, customConsumables: [...s.customConsumables, candidate] };
+    });
+  }, []);
+  const updateCustomConsumable = useCallback((consumable: CustomConsumable) => {
+    setState(s => {
+      const candidate = { ...consumable, isCustom: true };
+      const catalog = s.customConsumables.filter(existing => existing.id !== candidate.id);
+      if (validateCustomConsumable(candidate, catalog).length > 0) return s;
+      return {
+        ...s,
+        customConsumables: s.customConsumables.map(existing =>
+          existing.id === candidate.id ? candidate : existing),
+      };
+    });
+  }, []);
+  const deleteCustomConsumable = useCallback((id: string) => {
+    setState(s => ({
+      ...s,
+      customConsumables: s.customConsumables.filter(consumable => consumable.id !== id),
+    }));
+  }, []);
+
   const addCustomVehicle = useCallback((vehicle: VehicleProfile) => {
     setState(s => ({
       ...s,
@@ -2492,6 +2531,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,
       addCustomWeapon, updateCustomWeapon, deleteCustomWeapon, addCustomArmor, updateCustomArmor, deleteCustomArmor,
       addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
+      addCustomConsumable, updateCustomConsumable, deleteCustomConsumable,
       addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
        saveBuiltInBestiaryOverride, removeBuiltInBestiaryTemplate, restoreBuiltInBestiaryDefaults,

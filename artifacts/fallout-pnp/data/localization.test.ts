@@ -39,6 +39,9 @@ const equipmentTagTranslations = JSON.parse(
 const catalogImagesTranslations = JSON.parse(
   readFileSync(new URL('catalog-images.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
+const consumablesTranslations = JSON.parse(
+  readFileSync(new URL('consumables-ui.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
 const factionReputationTranslations = JSON.parse(
   readFileSync(new URL('faction-reputation.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
@@ -231,6 +234,7 @@ test('nested interface actions and prompts are translated in every locale', () =
       ...(customEditorsTranslations[locale] ?? {}),
       ...(equipmentTagTranslations[locale] ?? {}),
       ...(catalogImagesTranslations[locale] ?? {}),
+      ...(consumablesTranslations[locale] ?? {}),
     };
     assert.ok(Object.keys(supplemental).length > 350, `${locale} includes supplemental interface translations`);
 
@@ -248,6 +252,42 @@ test('nested interface actions and prompts are translated in every locale', () =
         [...translated.matchAll(/\{\d+\}/g)].map(match => match[0]).sort(),
         `${locale} preserves placeholders in “${source}”`,
       );
+    }
+  }
+});
+
+test('consumable catalog and custom editor text is translated in every locale', () => {
+  const required = [
+    'CONSUMABLES',
+    'CUSTOM CONSUMABLE',
+    'EDIT CUSTOM CONSUMABLE',
+    'CREATE CUSTOM CONSUMABLE',
+    'Consumable name*',
+    'CHEM',
+    'MEDICAL',
+    'FOOD',
+    'DRINK',
+    'OTHER',
+    'VALUE (CAPS)',
+    'NO LISTED VALUE',
+    'Description (optional)',
+    'Effects / use notes (optional)',
+    'Custom effect notes are descriptive for now; they do not automatically change character stats or combat.',
+    'Close consumable editor',
+    'CREATE CONSUMABLE',
+    'Consumable filters',
+    'Built-in chems and alcohol, plus campaign-specific consumables. Custom effect notes are reference-only.',
+    'Copy {0} as a custom consumable',
+    'Edit {0}',
+    'Delete {0}',
+  ];
+
+  for (const locale of localeIds) {
+    const translations = consumablesTranslations[locale];
+    assert.ok(translations, `${locale} has consumable translations`);
+    for (const source of required) {
+      assert.ok(translations[source]?.trim(), `${locale} translates “${source}”`);
+      assert.notEqual(translations[source], source, `${locale} does not display English for “${source}”`);
     }
   }
 });

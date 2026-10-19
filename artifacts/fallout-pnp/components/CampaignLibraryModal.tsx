@@ -195,7 +195,8 @@ function campaignCounts(json: string) {
     characters: state.characters.length,
     npcs: state.characters.filter(character => character.type === 'npc').length,
     equipment: (state.customWeapons?.length ?? 0) + (state.customArmor?.length ?? 0)
-      + (state.customVehicles?.length ?? 0) + customAmmo.length,
+      + (state.customVehicles?.length ?? 0) + customAmmo.length
+      + (state.customConsumables?.length ?? 0),
   };
 }
 

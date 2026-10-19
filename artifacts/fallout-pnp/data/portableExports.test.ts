@@ -175,6 +175,31 @@ test('legacy campaign JSON remains accepted', () => {
   if (parsed.ok) assert.equal(parsed.source, 'legacy');
 });
 
+test('portable campaigns preserve custom consumable catalog entries and reject malformed ones', () => {
+  const consumable = {
+    id: 'custom-tonic',
+    name: 'Sunset Tonic',
+    category: 'drink',
+    value: 25,
+    description: 'A bitter homemade drink.',
+    effectText: 'The GM determines its effects.',
+    isCustom: true,
+  } as const;
+  const bundle = createCampaignBundle({ ...state, customConsumables: [consumable] }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'portable') {
+    assert.deepEqual(parsed.bundle.state.customConsumables, [consumable]);
+  }
+
+  const malformed = {
+    ...bundle,
+    state: { ...bundle.state, customConsumables: [{ ...consumable, category: 'weapon' }] },
+  };
+  assert.equal(parseCampaignFile(JSON.stringify(malformed)).ok, false);
+});
+
 test('portable campaign round-trips injury attribution, descriptions, and effects', () => {
   const injury = {
     id: 'injury-1',

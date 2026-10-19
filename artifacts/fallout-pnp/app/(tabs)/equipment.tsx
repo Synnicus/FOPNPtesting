@@ -21,9 +21,11 @@ import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
+import { ALCOHOL_CONSUMABLES, CHEMS } from '@/data/chems';
+import { CONSUMABLE_CATEGORIES, validateCustomConsumable } from '@/data/consumables';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
-import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile } from '@/context/types';
+import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile, CustomConsumable, ConsumableCategory } from '@/context/types';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { CatalogImageEditor } from '@/components/CatalogImageEditor';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
@@ -841,6 +843,154 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   );
 }
 
+// ─── Consumable Form Modal ────────────────────────────────────────────────────
+function ConsumableFormModal({ visible, onClose, onSave, editConsumable, catalog }: {
+  visible: boolean;
+  onClose: () => void;
+  onSave: (consumable: CustomConsumable) => void;
+  editConsumable?: CustomConsumable | null;
+  catalog: readonly CustomConsumable[];
+}) {
+  const colors = useColors();
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState<ConsumableCategory>('other');
+  const [value, setValue] = useState(0);
+  const [description, setDescription] = useState('');
+  const [effectText, setEffectText] = useState('');
+
+  React.useEffect(() => {
+    if (!visible) return;
+    setName(editConsumable?.name ?? '');
+    setCategory(editConsumable?.category ?? 'other');
+    setValue(editConsumable?.value ?? 0);
+    setDescription(editConsumable?.description ?? '');
+    setEffectText(editConsumable?.effectText ?? '');
+  }, [visible, editConsumable]);
+
+  const candidate: CustomConsumable = {
+    id: editConsumable?.id ?? '__new_custom_consumable__',
+    name: name.trim(),
+    category,
+    value,
+    description: description.trim(),
+    effectText: effectText.trim(),
+    isCustom: true,
+  };
+  const validationCatalog = catalog.filter(item => item.id !== editConsumable?.id);
+  const errors = validateCustomConsumable(candidate, validationCatalog);
+  const isValid = name.trim().length > 0 && errors.length === 0;
+  const categoryLabels: Record<ConsumableCategory, string> = {
+    chem: 'CHEM',
+    medical: 'MEDICAL',
+    food: 'FOOD',
+    drink: 'DRINK',
+    other: 'OTHER',
+  };
+
+  const save = () => {
+    if (!isValid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSave({ ...candidate, id: editConsumable?.id ?? genId() });
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
+        <View style={{ maxHeight: '94%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
+              {editConsumable ? 'EDIT CUSTOM CONSUMABLE' : 'CREATE CUSTOM CONSUMABLE'}
+            </Text>
+            <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel="Close consumable editor">
+              <Feather name="x" size={22} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 13, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+            <TextInput
+              testID="custom-consumable-name"
+              style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: name.trim() ? colors.border : colors.destructive + '88', borderRadius: colors.radius, padding: 12, color: colors.foreground }}
+              placeholder="Consumable name*"
+              placeholderTextColor={colors.mutedForeground}
+              value={name}
+              onChangeText={setName}
+              maxLength={120}
+            />
+            <View style={{ gap: 7 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CATEGORY</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                {CONSUMABLE_CATEGORIES.map(item => (
+                  <TouchableOpacity
+                    key={item}
+                    testID={`custom-consumable-category-${item}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: category === item }}
+                    onPress={() => setCategory(item)}
+                    style={{ paddingHorizontal: 11, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: category === item ? colors.primary : colors.secondary, borderWidth: 1, borderColor: category === item ? colors.primary : colors.border }}
+                  >
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: category === item ? colors.primaryForeground : colors.mutedForeground }}>
+                      {categoryLabels[item]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>VALUE (CAPS)</Text>
+              <TextInput
+                testID="custom-consumable-value"
+                style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 11, color: colors.foreground }}
+                keyboardType="number-pad"
+                value={String(value)}
+                onChangeText={text => {
+                  const parsed = Number.parseInt(text, 10);
+                  setValue(Number.isFinite(parsed) ? Math.max(0, Math.min(1_000_000, parsed)) : 0);
+                }}
+              />
+            </View>
+            <TextInput
+              testID="custom-consumable-description"
+              style={{ minHeight: 82, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 11, color: colors.foreground, textAlignVertical: 'top' }}
+              multiline
+              placeholder="Description (optional)"
+              placeholderTextColor={colors.mutedForeground}
+              value={description}
+              onChangeText={setDescription}
+              maxLength={4000}
+            />
+            <TextInput
+              testID="custom-consumable-effect-notes"
+              style={{ minHeight: 82, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 11, color: colors.foreground, textAlignVertical: 'top' }}
+              multiline
+              placeholder="Effects / use notes (optional)"
+              placeholderTextColor={colors.mutedForeground}
+              value={effectText}
+              onChangeText={setEffectText}
+              maxLength={4000}
+            />
+            <Text style={{ fontSize: 11, lineHeight: 16, color: colors.mutedForeground }}>
+              Custom effect notes are descriptive for now; they do not automatically change character stats or combat.
+            </Text>
+            {!isValid && errors[0] && <Text style={{ fontSize: 11, color: colors.destructive }}>{errors[0]}</Text>}
+          </ScrollView>
+          <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <TouchableOpacity
+              testID="custom-consumable-save"
+              disabled={!isValid}
+              onPress={save}
+              style={{ paddingVertical: 14, alignItems: 'center', borderRadius: colors.radius, backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }}
+            >
+              <Text style={{ fontFamily: 'Inter_700Bold', color: isValid ? colors.primaryForeground : colors.mutedForeground }}>
+                {editConsumable ? 'SAVE CHANGES' : 'CREATE CONSUMABLE'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Ammo Form Modal ──────────────────────────────────────────────────────────
 function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
   visible: boolean;
@@ -1239,6 +1389,60 @@ function AmmoRow({ ammo, onCopy, onEdit, onDelete }: { ammo: AmmoType; onCopy?: 
   );
 }
 
+interface EquipmentConsumableRow {
+  id: string;
+  name: string;
+  category: ConsumableCategory;
+  value: number | null;
+  description: string;
+  effectText: string;
+  isCustom: boolean;
+}
+
+function ConsumableRow({ consumable, onCopy, onEdit, onDelete }: {
+  consumable: EquipmentConsumableRow;
+  onCopy?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={{ marginHorizontal: 16, marginBottom: 10, padding: 14, borderRadius: colors.radius, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ flex: 1, gap: 5 }}>
+          <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{consumable.name}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            <View style={{ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+              <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.5 }}>{consumable.category.toUpperCase()}</Text>
+            </View>
+            {consumable.isCustom && (
+              <View style={{ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: colors.primary + '22', borderWidth: 1, borderColor: colors.primary }}>
+                <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.5 }}>CUSTOM</Text>
+              </View>
+            )}
+            <Text style={{ alignSelf: 'center', fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
+              {consumable.value === null ? 'NO LISTED VALUE' : `${consumable.value.toLocaleString()} CAPS`}
+            </Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row' }}>
+          {onCopy && <TouchableOpacity onPress={onCopy} style={{ padding: 6 }} accessibilityLabel={`Copy ${consumable.name} as a custom consumable`}><Feather name="copy" size={16} color={colors.mutedForeground} /></TouchableOpacity>}
+          {onEdit && <TouchableOpacity onPress={onEdit} style={{ padding: 6 }} accessibilityLabel={`Edit ${consumable.name}`}><Feather name="edit-2" size={16} color={colors.primary} /></TouchableOpacity>}
+          {onDelete && <TouchableOpacity onPress={onDelete} style={{ padding: 6 }} accessibilityLabel={`Delete ${consumable.name}`}><Feather name="trash-2" size={16} color={colors.destructive} /></TouchableOpacity>}
+        </View>
+      </View>
+      {consumable.description ? (
+        <Text style={{ fontSize: 12, lineHeight: 17, color: colors.mutedForeground }}>{consumable.description}</Text>
+      ) : null}
+      {consumable.effectText ? (
+        <View style={{ padding: 9, borderRadius: 5, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
+          <Text style={{ fontSize: 11, lineHeight: 16, color: colors.foreground }}>{consumable.effectText}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ─── Vehicle catalog row ──────────────────────────────────────────────────────
 function VehicleRow({ vehicle, onView, onCopy, onEdit, onDelete }: {
   vehicle: VehicleProfile;
@@ -1418,27 +1622,58 @@ export default function EquipmentScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
-    customWeapons, customArmor, customAmmo, allAmmo, customVehicles, allVehicles,
+    customWeapons, customArmor, customAmmo, allAmmo, customConsumables, customVehicles, allVehicles,
     vehicleCatalogPortraits, vehicleCatalogPortraitSettings, setVehicleCatalogPortrait,
     addCharacter,
     addCustomWeapon, updateCustomWeapon, deleteCustomWeapon,
     addCustomArmor, updateCustomArmor, deleteCustomArmor,
     addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
+    addCustomConsumable, updateCustomConsumable, deleteCustomConsumable,
     addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
   } = useApp();
-  const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo' | 'vehicles'>('weapons');
+  const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo' | 'consumables' | 'vehicles'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [showArmorForm, setShowArmorForm] = useState(false);
   const [showAmmoForm, setShowAmmoForm] = useState(false);
+  const [showConsumableForm, setShowConsumableForm] = useState(false);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [vehicleDetails, setVehicleDetails] = useState<VehicleProfile | null>(null);
   const [editingWeapon, setEditingWeapon] = useState<Weapon | null>(null);
   const [editingArmor, setEditingArmor] = useState<Armor | null>(null);
   const [editingAmmo, setEditingAmmo] = useState<AmmoType | null>(null);
+  const [editingConsumable, setEditingConsumable] = useState<CustomConsumable | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<VehicleProfile | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all' | 'custom'>('all');
   const [armorFilter, setArmorFilter] = useState<'all' | 'custom'>('all');
+  const [consumableFilter, setConsumableFilter] = useState<'all' | 'custom'>('all');
+  const consumableRows: EquipmentConsumableRow[] = [
+    ...CHEMS.map(chem => ({
+      id: chem.id,
+      name: chem.name,
+      category: 'chem' as const,
+      value: chem.value ?? null,
+      description: chem.description,
+      effectText: chem.stages.map(stage =>
+        `${stage.label}: ${stage.notes ?? 'See stage details'} (${stage.durationText})`,
+      ).join('\n'),
+      isCustom: false,
+    })),
+    ...ALCOHOL_CONSUMABLES.map(alcohol => ({
+      id: alcohol.id,
+      name: alcohol.name,
+      category: 'drink' as const,
+      value: null,
+      description: alcohol.description,
+      effectText: 'Activates the Drunk condition only. The manual gives no universal duration or stat modifiers.',
+      isCustom: false,
+    })),
+    ...customConsumables.map(consumable => ({
+      ...consumable,
+      value: consumable.value,
+      isCustom: true,
+    })),
+  ];
   const catalogVehicles = allVehicles.map(vehicle => ({
     ...vehicle,
     portrait: vehicle.isCustom
@@ -1463,7 +1698,7 @@ export default function EquipmentScreen() {
   useEffect(() => {
     if (!manualTab) return;
 
-    if (manualTab === 'weapons' || manualTab === 'armor' || manualTab === 'ammo') {
+    if (manualTab === 'weapons' || manualTab === 'armor' || manualTab === 'ammo' || manualTab === 'consumables') {
       setTab(manualTab);
       setSearch(typeof manualSearch === 'string' ? manualSearch : '');
       if (
@@ -1480,6 +1715,7 @@ export default function EquipmentScreen() {
   const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
   const openNewAmmo = () => { setEditingAmmo(null); setShowAmmoForm(true); };
+  const openNewConsumable = () => { setEditingConsumable(null); setShowConsumableForm(true); };
   const openNewVehicle = () => {
     setEditingVehicle({
       id: genId(), name: '', category: 'car', description: '', isCustom: true,
@@ -1495,6 +1731,7 @@ export default function EquipmentScreen() {
   const openEditWeapon = (w: Weapon) => { setEditingWeapon(w); setShowWeaponForm(true); };
   const openEditArmor = (a: Armor) => { setEditingArmor(a); setShowArmorForm(true); };
   const openEditAmmo = (ammo: AmmoType) => { setEditingAmmo(ammo); setShowAmmoForm(true); };
+  const openEditConsumable = (consumable: CustomConsumable) => { setEditingConsumable(consumable); setShowConsumableForm(true); };
   const openEditVehicle = (vehicle: VehicleProfile) => { setEditingVehicle(vehicle); setShowVehicleForm(true); };
   const spawnSelectedVehicle = () => {
     if (!selectedVehicle) return;
@@ -1517,6 +1754,18 @@ export default function EquipmentScreen() {
       }]).map(component => ({ ...component, id: genId() })),
     });
     setShowAmmoForm(true);
+  };
+  const openCopyConsumable = (consumable: EquipmentConsumableRow) => {
+    setEditingConsumable({
+      id: genId(),
+      name: `${consumable.name} (Copy)`,
+      category: consumable.category,
+      value: consumable.value ?? 0,
+      description: consumable.description,
+      effectText: consumable.effectText,
+      isCustom: true,
+    });
+    setShowConsumableForm(true);
   };
   const openCopyVehicle = (vehicle: VehicleProfile) => {
     setEditingVehicle({
@@ -1552,9 +1801,20 @@ export default function EquipmentScreen() {
     && (armorFilter === 'all' || !!a.isCustom)
   );
   const filteredAmmo = allAmmo.filter(ammo => !search || ammo.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredConsumables = consumableRows.filter(consumable =>
+    (consumableFilter === 'all' || consumable.isCustom)
+    && (!search || `${consumable.name} ${consumable.category} ${consumable.description} ${consumable.effectText}`
+      .toLowerCase().includes(search.toLowerCase())));
   const filteredVehicles = catalogVehicles.filter(vehicle =>
     !search || `${vehicle.name} ${vehicle.description} ${vehicle.category} ${vehicle.mountedWeapons.join(' ')}`
       .toLowerCase().includes(search.toLowerCase()));
+  const equipmentTabs = [
+    { key: 'weapons', label: `WEAPONS (${filteredWeapons.length})` },
+    { key: 'armor', label: `ARMOR (${filteredArmor.length})` },
+    { key: 'ammo', label: `AMMO (${filteredAmmo.length})` },
+    { key: 'consumables', label: `CONSUMABLES (${filteredConsumables.length})` },
+    { key: 'vehicles', label: `VEHICLES (${filteredVehicles.length})` },
+  ] as const;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
@@ -1564,11 +1824,17 @@ export default function EquipmentScreen() {
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
           <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
-            onPress={() => tab === 'weapons' ? openNewWeapon() : tab === 'armor' ? openNewArmor() : tab === 'ammo' ? openNewAmmo() : openNewVehicle()}
+            onPress={() => {
+              if (tab === 'weapons') openNewWeapon();
+              else if (tab === 'armor') openNewArmor();
+              else if (tab === 'ammo') openNewAmmo();
+              else if (tab === 'consumables') openNewConsumable();
+              else openNewVehicle();
+            }}
           >
             <Feather name="plus" size={14} color={colors.primaryForeground} />
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
-              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'armor' ? 'CUSTOM ARMOR' : tab === 'ammo' ? 'CUSTOM AMMO' : 'CUSTOM VEHICLE'}
+              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'armor' ? 'CUSTOM ARMOR' : tab === 'ammo' ? 'CUSTOM AMMO' : tab === 'consumables' ? 'CUSTOM CONSUMABLE' : 'CUSTOM VEHICLE'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1586,20 +1852,20 @@ export default function EquipmentScreen() {
 
         {/* Tab bar */}
         <ScrollableTabStrip accessibilityLabel="Equipment categories" colors={colors} contentContainerStyle={{ flexDirection: 'row', gap: 8 }}>
-          {(['weapons', 'armor', 'ammo'] as const).map(t => (
-            <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === t ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === t ? colors.primary : colors.border }} onPress={() => setTab(t)}>
-              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === t ? colors.primaryForeground : colors.mutedForeground }}>
-                {t === 'weapons'
-                  ? `WEAPONS (${filteredWeapons.length})`
-                  : t === 'armor'
-                    ? `ARMOR (${filteredArmor.length})`
-                    : `AMMO (${filteredAmmo.length})`}
+          {equipmentTabs.map(item => (
+            <TouchableOpacity
+              key={item.key}
+              testID={`equipment-tab-${item.key}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: tab === item.key }}
+              style={{ flexShrink: 0, paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === item.key ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === item.key ? colors.primary : colors.border }}
+              onPress={() => setTab(item.key)}
+            >
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === item.key ? colors.primaryForeground : colors.mutedForeground }}>
+                {item.label}
               </Text>
             </TouchableOpacity>
           ))}
-          <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: tab === 'vehicles' ? colors.primary : colors.secondary, borderWidth: 1, borderColor: tab === 'vehicles' ? colors.primary : colors.border }} onPress={() => setTab('vehicles')}>
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: tab === 'vehicles' ? colors.primaryForeground : colors.mutedForeground }}>VEHICLES ({filteredVehicles.length})</Text>
-          </TouchableOpacity>
         </ScrollableTabStrip>
 
         {/* Category filter chips (weapons only) */}
@@ -1634,6 +1900,31 @@ export default function EquipmentScreen() {
                   testID={`equipment-armor-filter-${filter}`}
                   style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}
                   onPress={() => setArmorFilter(filter)}
+                >
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: active ? colors.primaryForeground : colors.mutedForeground }}>
+                    {filter === 'all' ? 'All' : 'Custom'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollableTabStrip>
+        )}
+        {tab === 'consumables' && (
+          <ScrollableTabStrip
+            accessibilityLabel="Consumable filters"
+            colors={colors}
+            contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 2 }}
+          >
+            {(['all', 'custom'] as const).map(filter => {
+              const active = consumableFilter === filter;
+              return (
+                <TouchableOpacity
+                  key={filter}
+                  testID={`equipment-consumable-filter-${filter}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}
+                  onPress={() => setConsumableFilter(filter)}
                 >
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: active ? colors.primaryForeground : colors.mutedForeground }}>
                     {filter === 'all' ? 'All' : 'Custom'}
@@ -1697,6 +1988,27 @@ export default function EquipmentScreen() {
             />
           )}
         />
+      ) : tab === 'consumables' ? (
+        <MouseDraggableFlatList
+          data={filteredConsumables}
+          keyExtractor={consumable => consumable.id}
+          contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
+          ListHeaderComponent={(
+            <Text style={{ marginHorizontal: 16, marginBottom: 10, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              Built-in chems and alcohol, plus campaign-specific consumables. Custom effect notes are reference-only.
+            </Text>
+          )}
+          renderItem={({ item }) => (
+            <ConsumableRow
+              consumable={item}
+              onCopy={() => openCopyConsumable(item)}
+              onEdit={item.isCustom ? () => openEditConsumable(item as CustomConsumable) : undefined}
+              onDelete={item.isCustom
+                ? () => confirmDelete(item.name, () => deleteCustomConsumable(item.id))
+                : undefined}
+            />
+          )}
+        />
       ) : (
         <MouseDraggableFlatList
           data={filteredVehicles}
@@ -1747,6 +2059,17 @@ export default function EquipmentScreen() {
         onSave={ammo => {
           if (customAmmo.some(candidate => candidate.id === ammo.id)) updateCustomAmmo(ammo);
           else addCustomAmmo(ammo);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
+      <ConsumableFormModal
+        visible={showConsumableForm}
+        editConsumable={editingConsumable}
+        catalog={customConsumables}
+        onClose={() => { setShowConsumableForm(false); setEditingConsumable(null); }}
+        onSave={consumable => {
+          if (customConsumables.some(existing => existing.id === consumable.id)) updateCustomConsumable(consumable);
+          else addCustomConsumable(consumable);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />

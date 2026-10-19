@@ -9,6 +9,7 @@ export const DAMAGE_TYPE_NAMES: Record<DamageType, string> = {
 
 export type WeaponCategory = 'smallGuns' | 'bigGuns' | 'energyWeapons' | 'meleeWeapons' | 'unarmed' | 'throwing' | 'minesTraps' | 'natural';
 export type ArmorSlot = 'body' | 'helmet';
+export type ConsumableCategory = 'chem' | 'medical' | 'food' | 'drink' | 'other';
 export type CharacterType = 'pc' | 'npc';
 export type VehicleCategory =
   | 'car' | 'truck' | 'motorcycle' | 'boat' | 'aircraft' | 'apc' | 'tank' | 'trailer' | 'artillery';
@@ -85,6 +86,18 @@ export interface CustomWeaponMod {
   programmatic: boolean;
   appliesToTags?: string[];
   effects: CustomRuleEffect[];
+}
+
+/** Campaign-defined consumable catalog entry. Effect text is descriptive only;
+ * custom entries do not alter character stats or combat automatically. */
+export interface CustomConsumable {
+  id: string;
+  name: string;
+  category: ConsumableCategory;
+  value: number;
+  description: string;
+  effectText: string;
+  isCustom?: boolean;
 }
 
 export interface CustomPerkDefinition {
