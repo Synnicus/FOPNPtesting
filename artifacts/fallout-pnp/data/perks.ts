@@ -1,4 +1,4 @@
-import { Character, CharacterSkills, RaceType, SPECIALStats, SkillType } from '@/context/types';
+import type { Character, CharacterSkills, RaceType, SPECIALStats, SkillType } from '@/context/types';
 import { calcBaseSkills } from './derived';
 import { computePerkStatBonuses } from './effects';
 import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './effectiveRules';
@@ -893,13 +893,6 @@ export const PERKS: Perk[] = [
   // ─── EXISTING PERKS PRESERVED FOR ID STABILITY (not in the manual perks
   //     chapter as-worded, or referenced by combat/UI code). ─────────────────
   {
-    id: 'finesse', name: 'Finesse', category: 'combat',
-    description: 'Your attacks show a lot of finesse. +10% crit chance, but −30% crit damage. (Note: in the Fallout PnP 2.0 manual, Finesse is a Trait — see data/traits.ts. Kept here for backward compatibility.)',
-    minLevel: 9, maxRanks: 1,
-    requirements: { level: 9 },
-    combatEffect: { critChanceBonus: 10, critDamageMultiplier: 0.7, combatNote: '+10% crit, −30% crit damage' },
-  },
-  {
     id: 'gunslinger', name: 'Gunslinger', category: 'combat',
     description: 'Your skill with single-handed ranged weapons makes you deadly. One-handed ranged attacks are always critical hits.',
     minLevel: 12, maxRanks: 1, minAGI: 6,
@@ -919,21 +912,6 @@ export const PERKS: Perk[] = [
     minLevel: 12, maxRanks: 1, minSTR: 5, minAGI: 5,
     requirements: { level: 12, stats: { strength: 5, agility: 5 } },
     combatEffect: { weaponStrReqReduction: 2, combatNote: 'Weapon STR req −2' },
-  },
-  {
-    id: 'fast_metabolism', name: 'Fast Metabolism', category: 'defense',
-    description: 'Your metabolic rate is faster. +2 Healing Rate. (Note: in the manual this is a Trait — see data/traits.ts. Kept here for backward compatibility.)',
-    minLevel: 3, maxRanks: 1,
-    requirements: { level: 3 },
-    combatEffect: { combatNote: '+2 Healing Rate' },
-  },
-  {
-    id: 'chem_resistant', name: 'Chem Resistant', category: 'utility',
-    description: 'Chems only have a 50% chance of getting you addicted. (Note: in the manual this is a Trait — see data/traits.ts. Kept here for backward compatibility.)',
-    minLevel: 9, maxRanks: 1, minEND: 6,
-    requirements: { level: 9, stats: { endurance: 6 } },
-    excludedRaces: ['robot'],
-    combatEffect: null,
   },
   {
     id: 'natural_chem_resistant', name: 'Natural Chem Resistant', category: 'utility',

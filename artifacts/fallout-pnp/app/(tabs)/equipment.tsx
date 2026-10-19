@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  FlatList, Image, Modal, Platform, ScrollView, View,
+  Image, Modal, Platform, ScrollView, View,
 } from 'react-native';
 import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,14 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { inferWeaponTags, parseRuleTagList, computeCustomWeaponModEffects } from '@/data/customRules';
+import {
+  BUILT_IN_RULE_TAGS,
+  getSelectableWeaponTags,
+  inferWeaponTags,
+  normalizeRuleTag,
+  parseRuleTagList,
+  computeCustomWeaponModEffects,
+} from '@/data/customRules';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
@@ -18,6 +25,10 @@ import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
 import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile } from '@/context/types';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
+import { CatalogImageEditor } from '@/components/CatalogImageEditor';
+import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
+import CustomRulesPanel from '@/components/CustomRulesPanel';
+import { SelectableTagMenu } from '@/components/SelectableTagMenu';
 import { spawnVehicleCharacter, VEHICLE_CATEGORIES } from '@/data/vehicles';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -111,7 +122,9 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   editWeapon?: Weapon | null;
 }) {
   const colors = useColors();
-  const { allAmmo, customWeaponMods } = useApp();
+  const {
+    allAmmo, customWeaponMods, customPerks, campaignRuleTags, saveCustomRules,
+  } = useApp();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<WeaponCategory>('smallGuns');
   const [damageType, setDamageType] = useState<DamageType>('normal');
@@ -132,6 +145,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [compatibleAmmo, setCompatibleAmmo] = useState<string[]>([]);
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   const [tagText, setTagText] = useState('');
+  const [showCustomModsManager, setShowCustomModsManager] = useState(false);
   const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
   const [showPresets, setShowPresets] = useState(false);
   const [areaAttackProfileId, setAreaAttackProfileId] = useState<string | undefined>();
@@ -166,6 +180,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     if (!visible) return;
     setTab('basic');
     setShowPresets(false);
+    setShowCustomModsManager(false);
     if (editWeapon) {
       applyWeaponFields(editWeapon);
     } else {
@@ -223,6 +238,43 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     tags: parseRuleTagList(tagText),
   } as Weapon;
   const customModEffects = computeCustomWeaponModEffects(selectedMods, customWeaponMods, previewWeapon);
+  const visibleWeaponTags = getSelectableWeaponTags(campaignRuleTags, parseRuleTagList(tagText));
+
+  const toggleWeaponTag = (tagId: string) => {
+    setTagText(current => {
+      const selected = parseRuleTagList(current);
+      return (selected.includes(tagId)
+        ? selected.filter(item => item !== tagId)
+        : [...selected, tagId]).join(', ');
+    });
+  };
+
+  const addCustomWeaponTag = (value: string) => {
+    const label = value.trim();
+    const tagId = normalizeRuleTag(label);
+    if (!tagId) return;
+    const builtIn = BUILT_IN_RULE_TAGS.find(tag => tag.id === tagId);
+    if (builtIn) {
+      if (builtIn.appliesTo === 'weapon' || builtIn.appliesTo === 'both') {
+        setTagText(current => {
+          const selected = parseRuleTagList(current);
+          return selected.includes(tagId) ? current : [...selected, tagId].join(', ');
+        });
+      }
+      return;
+    }
+    const existing = campaignRuleTags.find(tag => tag.id === tagId);
+    const nextTags = existing
+      ? campaignRuleTags.map(tag => tag.id === tagId && tag.appliesTo === 'armor'
+        ? { ...tag, appliesTo: 'both' as const }
+        : tag)
+      : [...campaignRuleTags, { id: tagId, label, appliesTo: 'weapon' as const }];
+    saveCustomRules({ customWeaponMods, customPerks, campaignRuleTags: nextTags });
+    setTagText(current => {
+      const selected = parseRuleTagList(current);
+      return selected.includes(tagId) ? current : [...selected, tagId].join(', ');
+    });
+  };
 
   const toggleMod = (id: string) => {
     setSelectedMods(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
@@ -315,12 +367,15 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   placeholder="Weapon name*" placeholderTextColor={colors.mutedForeground}
                   value={name} onChangeText={setName}
                 />
-                <TextInput
-                  style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 12 }}
-                  placeholder="Weapon tags (comma-separated; e.g. assault-rifle, vault-tech)"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={tagText}
-                  onChangeText={setTagText}
+                <SelectableTagMenu
+                  title="WEAPON TAGS"
+                  buttonLabel="SELECT WEAPON TAGS"
+                  customTagButtonLabel="+ CUSTOM WEAPON TAG"
+                  testID="custom-weapon-tag-menu"
+                  options={visibleWeaponTags}
+                  selectedTagIds={parseRuleTagList(tagText)}
+                  onToggle={toggleWeaponTag}
+                  onAddCustomTag={addCustomWeaponTag}
                 />
                 {/* Category */}
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CATEGORY</Text>
@@ -442,6 +497,18 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
 
             {tab === 'mods' && (
               <>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showCustomModsManager }}
+                  onPress={() => setShowCustomModsManager(value => !value)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '16' }}
+                >
+                  <Feather name={showCustomModsManager ? 'minus-circle' : 'plus-circle'} size={15} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.6 }}>
+                    {showCustomModsManager ? 'HIDE CUSTOM MODS' : '+ CUSTOM MOD'}
+                  </Text>
+                </TouchableOpacity>
+                {showCustomModsManager && <CustomRulesPanel section="mods" />}
                 {(() => {
                   const summaryParts: string[] = [];
                   if (modEffects.toHit !== 0) summaryParts.push(`${modEffects.toHit > 0 ? '+' : ''}${modEffects.toHit}% to-hit`);
@@ -1215,15 +1282,17 @@ function VehicleRow({ vehicle, onView, onCopy, onEdit, onDelete }: {
   );
 }
 
-function VehicleDetailsModal({ vehicle, onClose, onSpawn, onCopy, onEdit }: {
+function VehicleDetailsModal({ vehicle, onClose, onSpawn, onCopy, onEdit, onSetPortrait }: {
   vehicle: VehicleProfile | null;
   onClose: () => void;
   onSpawn: () => void;
   onCopy: () => void;
   onEdit?: () => void;
+  onSetPortrait: (selection: import('@/context/types').CatalogPortraitSelection) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const [cropDragging, setCropDragging] = useState(false);
   if (!vehicle) return null;
   const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
   const detailRows: [string, string][] = [
@@ -1259,8 +1328,20 @@ function VehicleDetailsModal({ vehicle, onClose, onSpawn, onCopy, onEdit }: {
               <Feather name="x" size={20} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
-            {vehicle.portrait && <Image source={{ uri: vehicle.portrait }} style={{ width: '100%', height: 170, borderRadius: colors.radius, backgroundColor: colors.secondary }} resizeMode="contain" />}
+          <ScrollView
+            scrollEnabled={!cropDragging}
+            contentContainerStyle={{ padding: 16, gap: 12 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <CatalogImageEditor
+              uri={vehicle.portrait}
+              name={vehicle.name}
+              portraitFit={vehicle.portraitFit}
+              portraitOffset={vehicle.portraitOffset}
+              onChange={onSetPortrait}
+              onDragStateChange={setCropDragging}
+              testID={`vehicle-photo-${vehicle.id}`}
+            />
             {vehicle.description ? <Text style={{ color: colors.foreground, fontSize: 13, lineHeight: 19 }}>{vehicle.description}</Text> : null}
             <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, overflow: 'hidden' }}>
               {detailRows.map(([label, value]) => (
@@ -1333,6 +1414,7 @@ export default function EquipmentScreen() {
   const insets = useSafeAreaInsets();
   const {
     customWeapons, customArmor, customAmmo, allAmmo, customVehicles, allVehicles,
+    vehicleCatalogPortraits, vehicleCatalogPortraitSettings, setVehicleCatalogPortrait,
     addCharacter,
     addCustomWeapon, updateCustomWeapon, deleteCustomWeapon,
     addCustomArmor, updateCustomArmor, deleteCustomArmor,
@@ -1350,7 +1432,23 @@ export default function EquipmentScreen() {
   const [editingAmmo, setEditingAmmo] = useState<AmmoType | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<VehicleProfile | null>(null);
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<WeaponCategory | 'all' | 'custom'>('all');
+  const [armorFilter, setArmorFilter] = useState<'all' | 'custom'>('all');
+  const catalogVehicles = allVehicles.map(vehicle => ({
+    ...vehicle,
+    portrait: vehicle.isCustom
+      ? vehicle.portrait
+      : vehicleCatalogPortraits[vehicle.id] ?? vehicle.portrait,
+    portraitFit: vehicle.isCustom
+      ? vehicle.portraitFit
+      : vehicleCatalogPortraitSettings[vehicle.id]?.portraitFit ?? vehicle.portraitFit,
+    portraitOffset: vehicle.isCustom
+      ? vehicle.portraitOffset
+      : vehicleCatalogPortraitSettings[vehicle.id]?.portraitOffset ?? vehicle.portraitOffset,
+  }));
+  const selectedVehicle = vehicleDetails
+    ? catalogVehicles.find(vehicle => vehicle.id === vehicleDetails.id) ?? vehicleDetails
+    : null;
   const { manualTab, manualCategory, manualSearch } = useLocalSearchParams<{
     manualTab?: string;
     manualCategory?: string;
@@ -1394,8 +1492,8 @@ export default function EquipmentScreen() {
   const openEditAmmo = (ammo: AmmoType) => { setEditingAmmo(ammo); setShowAmmoForm(true); };
   const openEditVehicle = (vehicle: VehicleProfile) => { setEditingVehicle(vehicle); setShowVehicleForm(true); };
   const spawnSelectedVehicle = () => {
-    if (!vehicleDetails) return;
-    addCharacter(spawnVehicleCharacter(vehicleDetails, genId()));
+    if (!selectedVehicle) return;
+    addCharacter(spawnVehicleCharacter(selectedVehicle, genId()));
     setVehicleDetails(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -1442,11 +1540,14 @@ export default function EquipmentScreen() {
 
   const filteredWeapons = allWeapons.filter(w =>
     (!search || w.name.toLowerCase().includes(search.toLowerCase())) &&
-    (categoryFilter === 'all' || w.category === categoryFilter)
+    (categoryFilter === 'all' || (categoryFilter === 'custom' ? !!w.isCustom : w.category === categoryFilter))
   );
-  const filteredArmor = allArmor.filter(a => !search || a.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredArmor = allArmor.filter(a =>
+    (!search || a.name.toLowerCase().includes(search.toLowerCase()))
+    && (armorFilter === 'all' || !!a.isCustom)
+  );
   const filteredAmmo = allAmmo.filter(ammo => !search || ammo.name.toLowerCase().includes(search.toLowerCase()));
-  const filteredVehicles = allVehicles.filter(vehicle =>
+  const filteredVehicles = catalogVehicles.filter(vehicle =>
     !search || `${vehicle.name} ${vehicle.description} ${vehicle.category} ${vehicle.mountedWeapons.join(' ')}`
       .toLowerCase().includes(search.toLowerCase()));
 
@@ -1503,12 +1604,35 @@ export default function EquipmentScreen() {
             colors={colors}
             contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 2 }}
           >
-            {(['all', ...WEAPON_CATEGORY_ORDER] as const).map(cat => {
+            {(['all', ...WEAPON_CATEGORY_ORDER, 'custom'] as const).map(cat => {
               const active = categoryFilter === cat;
-              const label = cat === 'all' ? 'All' : WEAPON_CATEGORY_LABELS[cat];
+              const label = cat === 'all' ? 'All' : cat === 'custom' ? 'Custom' : WEAPON_CATEGORY_LABELS[cat];
               return (
-                <TouchableOpacity key={cat} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }} onPress={() => setCategoryFilter(cat)}>
+                <TouchableOpacity key={cat} testID={`equipment-weapon-filter-${cat}`} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }} onPress={() => setCategoryFilter(cat)}>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: active ? colors.primaryForeground : colors.mutedForeground }}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollableTabStrip>
+        )}
+        {tab === 'armor' && (
+          <ScrollableTabStrip
+            accessibilityLabel="Armor filters"
+            colors={colors}
+            contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 2 }}
+          >
+            {(['all', 'custom'] as const).map(filter => {
+              const active = armorFilter === filter;
+              return (
+                <TouchableOpacity
+                  key={filter}
+                  testID={`equipment-armor-filter-${filter}`}
+                  style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: active ? colors.primary : colors.secondary, borderWidth: 1, borderColor: active ? colors.primary : colors.border }}
+                  onPress={() => setArmorFilter(filter)}
+                >
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: active ? colors.primaryForeground : colors.mutedForeground }}>
+                    {filter === 'all' ? 'All' : 'Custom'}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -1518,7 +1642,7 @@ export default function EquipmentScreen() {
 
       {/* List */}
       {tab === 'weapons' ? (
-        <FlatList
+        <MouseDraggableFlatList
           data={filteredWeapons}
           keyExtractor={w => w.id}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
@@ -1534,7 +1658,7 @@ export default function EquipmentScreen() {
           )}
         />
       ) : tab === 'armor' ? (
-        <FlatList
+        <MouseDraggableFlatList
           data={filteredArmor}
           keyExtractor={a => a.id}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
@@ -1550,7 +1674,7 @@ export default function EquipmentScreen() {
           )}
         />
       ) : tab === 'ammo' ? (
-        <FlatList
+        <MouseDraggableFlatList
           data={filteredAmmo}
           keyExtractor={ammo => ammo.id}
           contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
@@ -1569,7 +1693,7 @@ export default function EquipmentScreen() {
           )}
         />
       ) : (
-        <FlatList
+        <MouseDraggableFlatList
           data={filteredVehicles}
           keyExtractor={vehicle => vehicle.id}
           contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
@@ -1622,19 +1746,32 @@ export default function EquipmentScreen() {
         }}
       />
       <VehicleDetailsModal
-        vehicle={vehicleDetails}
+        vehicle={selectedVehicle}
         onClose={() => setVehicleDetails(null)}
         onSpawn={spawnSelectedVehicle}
         onCopy={() => {
-          if (!vehicleDetails) return;
-          const copy = vehicleDetails;
+          if (!selectedVehicle) return;
+          const copy = selectedVehicle;
           setVehicleDetails(null);
           openCopyVehicle(copy);
         }}
-        onEdit={vehicleDetails?.isCustom ? () => {
-          const selectedVehicle = vehicleDetails;
+        onSetPortrait={selection => {
+          if (!selectedVehicle) return;
+          if (selectedVehicle.isCustom) {
+            updateCustomVehicle({
+              ...selectedVehicle,
+              ...selection,
+              portraitFit: selection.portrait ? selection.portraitFit : undefined,
+              portraitOffset: selection.portrait ? selection.portraitOffset : undefined,
+            });
+          } else {
+            setVehicleCatalogPortrait(selectedVehicle.id, selection);
+          }
+        }}
+        onEdit={selectedVehicle?.isCustom ? () => {
+          const vehicleToEdit = selectedVehicle;
           setVehicleDetails(null);
-          openEditVehicle(selectedVehicle);
+          openEditVehicle(vehicleToEdit);
         } : undefined}
       />
       <VehicleFormModal

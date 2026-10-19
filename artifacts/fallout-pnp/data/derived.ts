@@ -143,10 +143,6 @@ export function computePerkDerivedBonuses(
         out.healingRate += 2 * cp.rank;
         out.notes.push(`Faster Healing: +${2 * cp.rank} Healing Rate`);
         break;
-      case 'fast_metabolism':
-        out.healingRate += 2;
-        out.notes.push('Fast Metabolism: +2 Healing Rate');
-        break;
       case 'cancerous_growth':
         out.healingRate += 2;
         out.notes.push('Cancerous Growth: +2 Healing Rate');

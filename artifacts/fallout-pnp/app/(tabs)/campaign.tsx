@@ -19,7 +19,6 @@ import { useApp } from '@/context/AppContext';
 import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import CampaignToolsPanel from '@/components/CampaignToolsPanel';
-import CustomRulesPanel from '@/components/CustomRulesPanel';
 import QuickRulesReference from '@/components/ManualQuickRulesReference';
 import type { Armor, Character, VehicleProfile, Weapon } from '@/context/types';
 import {
@@ -258,6 +257,7 @@ export default function CampaignScreen() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCampaignOptions, setShowCampaignOptions] = useState(false);
   const [showCampaignLibrary, setShowCampaignLibrary] = useState(false);
+  const [showCampaignToolChest, setShowCampaignToolChest] = useState(false);
   const [expandedExportCategory, setExpandedExportCategory] = useState<CampaignExportCategory | null>(null);
   const [exportName, setExportName] = useState(defaultExportName());
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -869,15 +869,39 @@ export default function CampaignScreen() {
           </View>
         )}
 
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Open Campaign Tool Chest"
+          testID="campaign-tool-chest-open"
+          onPress={() => setShowCampaignToolChest(true)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 9,
+            padding: 14,
+            marginBottom: 16,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.primary + '77',
+            borderRadius: colors.radius,
+          }}
+        >
+          <Feather name="briefcase" size={17} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 1 }}>
+            CAMPAIGN TOOL CHEST
+          </Text>
+          <Feather name="arrow-up-right" size={14} color={colors.primary} />
+        </TouchableOpacity>
         <CampaignToolsPanel
+          visible={showCampaignToolChest}
+          onClose={() => setShowCampaignToolChest(false)}
           lootTables={lootTables}
           encounterTables={encounterTables}
           campaignMaps={campaignMaps}
           characters={characters}
           onChange={saveCampaignTools}
         />
-        <CustomRulesPanel />
-
         {/* Campaign asset summary and individual JSON exports */}
         <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 4 }}>CAMPAIGN ASSETS</Text>

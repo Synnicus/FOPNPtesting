@@ -1,11 +1,12 @@
 import type { Weapon } from '../context/types.ts';
+import { inferWeaponTags } from './customRules.ts';
 
 /**
  * Manual vehicle-mounted cannons that are not otherwise present in the
  * infantry weapon catalog. Ammunition capacity is not stated in the vehicle
  * entries, so these use the app's untracked-capacity convention.
  */
-export const BUILT_IN_VEHICLE_WEAPONS: Weapon[] = [
+const BUILT_IN_VEHICLE_WEAPON_DEFINITIONS: Weapon[] = [
   {
     id: 'vehicle_20mm_cannon',
     name: '20mm Cannon',
@@ -122,3 +123,8 @@ export const BUILT_IN_VEHICLE_WEAPONS: Weapon[] = [
     isCustom: false,
   },
 ];
+
+export const BUILT_IN_VEHICLE_WEAPONS: Weapon[] = BUILT_IN_VEHICLE_WEAPON_DEFINITIONS.map(weapon => ({
+  ...weapon,
+  tags: inferWeaponTags(weapon),
+}));

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Platform, ScrollView, View } from 'react-native';
+import { Modal, Platform, View } from 'react-native';
 import {
   LocalizedAlert as Alert,
   LocalizedText as Text,
@@ -16,10 +16,7 @@ import type {
 } from '@/context/types';
 import {
   applyFactionReputationAdjustment,
-  DEFAULT_FACTION_THRESHOLD_PROFILE,
-  FACTION_THRESHOLD_PROFILES,
   factionReputationTitle,
-  getFactionThresholdProfile,
   MAX_FACTION_COUNT,
   MAX_FACTION_LOG_ENTRIES,
   MAX_FACTION_NAME_LENGTH,
@@ -75,7 +72,6 @@ function FactionCard({
     && !atHistoryLimit
     && trimmedReason.length > 0
     && trimmedReason.length <= MAX_FACTION_REASON_LENGTH;
-  const currentProfile = getFactionThresholdProfile(faction.thresholdProfile);
   const automatedTitle = factionReputationTitle({ ...faction, customTitle: undefined });
 
   const updateCustomTitle = (value: string) => {
@@ -175,9 +171,6 @@ function FactionCard({
         <Text style={{ fontSize: 17, lineHeight: 23, fontFamily: 'Inter_700Bold', color: colors.foreground, textAlign: 'center' }}>
           {faction.customTitle?.trim() ? `${faction.customTitle.trim()} - ` : ''}
           {automatedTitle}
-        </Text>
-        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
-          {currentProfile.name} · {currentProfile.thresholds.join(' / ')}
         </Text>
       </View>
 
@@ -393,8 +386,7 @@ function FactionCard({
 export default function FactionReputationTracker({ character, onChange }: FactionReputationTrackerProps) {
   const colors = useColors();
   const [newFactionName, setNewFactionName] = useState('');
-  const [thresholdProfile, setThresholdProfile] = useState(DEFAULT_FACTION_THRESHOLD_PROFILE);
-  const [showProfilePicker, setShowProfilePicker] = useState(false);
+  const [showThresholdHelp, setShowThresholdHelp] = useState(false);
   const [addError, setAddError] = useState('');
   const factions = character.factionReputations ?? [];
 
@@ -415,7 +407,6 @@ export default function FactionReputationTracker({ character, onChange }: Factio
     const faction: FactionReputation = {
       id: createId(),
       name: name.slice(0, MAX_FACTION_NAME_LENGTH),
-      thresholdProfile,
       fame: 0,
       infamy: 0,
       log: [],
@@ -423,7 +414,6 @@ export default function FactionReputationTracker({ character, onChange }: Factio
     onChange({ ...character, factionReputations: [...factions, faction] });
     setNewFactionName('');
     setAddError('');
-    setShowProfilePicker(false);
   };
 
   const updateFaction = (id: string, next: FactionReputation) => {
@@ -440,16 +430,87 @@ export default function FactionReputationTracker({ character, onChange }: Factio
     });
   };
 
-  const selectedProfile = getFactionThresholdProfile(thresholdProfile);
-
   return (
     <View style={{ gap: 14 }}>
+      <Modal
+        visible={showThresholdHelp}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowThresholdHelp(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.78)' }}>
+          <View
+            testID="faction-threshold-help-modal"
+            style={{ gap: 14, padding: 18, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text accessibilityRole="header" style={{ flex: 1, fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>
+                REPUTATION THRESHOLDS
+              </Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                testID="faction-threshold-help-close"
+                onPress={() => setShowThresholdHelp(false)}
+                style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Feather name="x" size={19} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 12, lineHeight: 18, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+              Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.
+            </Text>
+            <View style={{ overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius }}>
+              <View style={{ flexDirection: 'row', paddingVertical: 9, paddingHorizontal: 12, backgroundColor: colors.secondary }}>
+                <Text style={{ flex: 1, fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.8 }}>
+                  FAME OR INFAMY POINTS
+                </Text>
+                <Text style={{ width: 52, textAlign: 'center', fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.8 }}>
+                  TIER
+                </Text>
+              </View>
+              {(['0–24', '25–49', '50–74', '75+'] as const).map((range, index) => (
+                <View
+                  key={range}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: colors.border }}
+                >
+                  <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+                    {range}
+                  </Text>
+                  <Text
+                    accessibilityLabel={`Threshold tier ${index + 1}`}
+                    style={{ width: 52, textAlign: 'center', fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}
+                  >
+                    {index + 1}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{ fontSize: 11, lineHeight: 17, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
       <View style={{ gap: 6 }}>
-        <Text accessibilityRole="header" style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>
-          FACTION REPUTATION
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text accessibilityRole="header" style={{ flex: 1, fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>
+            FACTION REPUTATION
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Reputation threshold help"
+            accessibilityHint="Shows how Fame and Infamy points map to reputation tiers"
+            testID="faction-threshold-help"
+            onPress={() => setShowThresholdHelp(true)}
+            style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 20 }}
+          >
+            <Feather name="help-circle" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
         <Text style={{ fontSize: 11, lineHeight: 17, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-          Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.
+          Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.
         </Text>
       </View>
 
@@ -478,46 +539,6 @@ export default function FactionReputationTracker({ character, onChange }: Factio
             fontSize: 14,
           }}
         />
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.8 }}>
-            THRESHOLD PROFILE
-          </Text>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Threshold profile"
-            accessibilityState={{ expanded: showProfilePicker }}
-            testID="faction-threshold-profile-picker"
-            onPress={() => setShowProfilePicker(value => !value)}
-            style={{ minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}
-          >
-            <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
-              {selectedProfile.name} · {selectedProfile.thresholds.join(' / ')}
-            </Text>
-            <Feather name={showProfilePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} />
-          </TouchableOpacity>
-          {showProfilePicker && (
-            <ScrollView
-              nestedScrollEnabled
-              keyboardShouldPersistTaps="handled"
-              style={{ maxHeight: 220, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.background }}
-            >
-              {FACTION_THRESHOLD_PROFILES.map(profile => (
-                <TouchableOpacity
-                  key={profile.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: profile.id === thresholdProfile }}
-                  testID={`faction-threshold-profile-${profile.id}`}
-                  onPress={() => { setThresholdProfile(profile.id); setShowProfilePicker(false); }}
-                  style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                >
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: profile.id === thresholdProfile ? colors.primary : colors.foreground }}>
-                    {profile.name} · {profile.thresholds.join(' / ')}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-        </View>
         {addError ? (
           <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.destructive }}>{addError}</Text>
         ) : null}

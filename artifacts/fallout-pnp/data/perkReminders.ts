@@ -40,9 +40,9 @@ const REMINDERS: Readonly<Record<string, string>> = {
 export function getCharacterPerkReminders(perks: readonly CharacterPerk[] | undefined): string[] {
   return (perks ?? [])
     .filter(perk => perk.rank > 0 && REMINDERS[perk.perkId])
-    .map(perk => `${perk.perkId === 'fear_the_reaper' || perk.perkId === 'divine_favor' ? '' : ''}${REMINDERS[perk.perkId]}`);
+    .map(perk => REMINDERS[perk.perkId]);
 }
 
 export function getCharacterPerkReminderCount(perks: readonly CharacterPerk[] | undefined): number {
-  return (perks ?? []).filter(perk => perk.rank > 0 && !!REMINDERS[perk.perkId]).length;
+  return getCharacterPerkReminders(perks).length;
 }

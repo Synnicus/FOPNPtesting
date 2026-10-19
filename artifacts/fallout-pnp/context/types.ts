@@ -289,7 +289,10 @@ export interface CampaignTableEntry {
   id: string;
   name: string;
   description: string;
+  /** Relative selection weight in loot tables; encounter entries remain equally likely. */
   weight: number;
+  quantityMin?: number;
+  quantityMax?: number;
 }
 
 export interface CampaignTable {
@@ -297,6 +300,9 @@ export interface CampaignTable {
   name: string;
   description: string;
   entries: CampaignTableEntry[];
+  /** Number of item draws per loot roll. */
+  rollCountMin?: number;
+  rollCountMax?: number;
 }
 
 export interface CampaignMapMarker {
@@ -361,8 +367,8 @@ export interface FactionReputationLogEntry {
 export interface FactionReputation {
   id: string;
   name: string;
-  /** Profile controls the four per-faction Fame and Infamy title thresholds. */
-  thresholdProfile: string;
+  /** Legacy profile identifier; ignored and removed during normalization. */
+  thresholdProfile?: string;
   fame: number;
   infamy: number;
   /** Optional role prefix shown before the automated New Vegas reputation title. */
@@ -437,6 +443,22 @@ export interface VehicleWeaponSlot {
   quantity: number;
 }
 
+export type PortraitFitMode = 'cover' | 'contain';
+
+export interface PortraitOffset {
+  x: number;
+  y: number;
+}
+
+export interface CatalogPortraitSettings {
+  portraitFit: PortraitFitMode;
+  portraitOffset: PortraitOffset;
+}
+
+export interface CatalogPortraitSelection extends CatalogPortraitSettings {
+  portrait?: string;
+}
+
 /**
  * Manual vehicle profile and persistent system condition. Vehicles do not use
  * DT; their five damage-resistance percentages apply directly to each system.
@@ -448,6 +470,8 @@ export interface VehicleProfile {
   description: string;
   isCustom?: boolean;
   portrait?: string;
+  portraitFit?: PortraitFitMode;
+  portraitOffset?: PortraitOffset;
   topSpeedKph: number | null;
   accelerationKphPerRound: number | null;
   brakingKphPerRound: number | null;
@@ -706,6 +730,8 @@ export interface BestiaryTemplate {
   naturalProtection?: NaturalProtection;
 
   portrait?: string;
+  portraitFit?: PortraitFitMode;
+  portraitOffset?: PortraitOffset;
 }
 
 // ─── Initiative Entry ─────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  Animated,
   PanResponder,
   Platform,
   ScrollView,
@@ -28,6 +29,8 @@ type Props = {
 
 const DRAG_THRESHOLD = 6;
 const ARROW_SIZE = 30;
+const ARROW_OPACITY = 0.8;
+const ARROW_FADE_DURATION_MS = 180;
 
 export function ScrollableTabStrip({
   children,
@@ -43,6 +46,27 @@ export function ScrollableTabStrip({
   const [hasOverflow, setHasOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const leftArrowOpacity = useRef(new Animated.Value(0)).current;
+  const rightArrowOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const leftAnimation = Animated.timing(leftArrowOpacity, {
+      toValue: hasOverflow && canScrollLeft ? ARROW_OPACITY : 0,
+      duration: ARROW_FADE_DURATION_MS,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    const rightAnimation = Animated.timing(rightArrowOpacity, {
+      toValue: hasOverflow && canScrollRight ? ARROW_OPACITY : 0,
+      duration: ARROW_FADE_DURATION_MS,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    leftAnimation.start();
+    rightAnimation.start();
+    return () => {
+      leftAnimation.stop();
+      rightAnimation.stop();
+    };
+  }, [canScrollLeft, canScrollRight, hasOverflow, leftArrowOpacity, rightArrowOpacity]);
 
   const updateIndicators = (offset: number) => {
     const { contentWidth, viewportWidth } = metrics.current;
@@ -117,15 +141,30 @@ export function ScrollableTabStrip({
       {...panResponder.panHandlers}
       accessibilityLabel={accessibilityLabel}
       style={[
-        { width: '100%', flexGrow: 0, flexDirection: 'row', alignItems: 'center' },
+        { width: '100%', flexGrow: 0, position: 'relative' },
         style,
       ]}
     >
-      {hasOverflow && canScrollLeft ? (
+      <Animated.View
+        pointerEvents={hasOverflow && canScrollLeft ? 'auto' : 'none'}
+        accessibilityElementsHidden={!hasOverflow || !canScrollLeft}
+        importantForAccessibility={hasOverflow && canScrollLeft ? 'auto' : 'no-hide-descendants'}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 2,
+          elevation: 2,
+          opacity: leftArrowOpacity,
+        }}
+      >
         <TouchableOpacity
           testID={`${testIdPrefix}-scroll-left`}
           accessibilityRole="button"
           accessibilityLabel="Scroll tabs left"
+          accessibilityState={{ disabled: !canScrollLeft }}
+          disabled={!canScrollLeft}
           onPress={() => scrollByPage(-1)}
           style={{
             width: ARROW_SIZE,
@@ -136,7 +175,6 @@ export function ScrollableTabStrip({
             borderColor: colors.border,
             borderRadius: colors.radius,
             backgroundColor: colors.background,
-            marginRight: 4,
           }}
         >
           <Feather
@@ -145,7 +183,7 @@ export function ScrollableTabStrip({
             color={colors.primary}
           />
         </TouchableOpacity>
-      ) : null}
+      </Animated.View>
 
       <ScrollView
         ref={scrollRef}
@@ -156,18 +194,33 @@ export function ScrollableTabStrip({
         onContentSizeChange={handleContentSizeChange}
         onScroll={handleScroll}
         contentContainerStyle={contentContainerStyle}
-        style={{ flex: 1, minWidth: 0 }}
+        style={{ width: '100%', minWidth: 0 }}
         accessibilityRole="tablist"
         accessibilityHint="Swipe or drag horizontally, or use the arrow buttons to see more tabs."
       >
         {children}
       </ScrollView>
 
-      {hasOverflow && canScrollRight ? (
+      <Animated.View
+        pointerEvents={hasOverflow && canScrollRight ? 'auto' : 'none'}
+        accessibilityElementsHidden={!hasOverflow || !canScrollRight}
+        importantForAccessibility={hasOverflow && canScrollRight ? 'auto' : 'no-hide-descendants'}
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 2,
+          elevation: 2,
+          opacity: rightArrowOpacity,
+        }}
+      >
         <TouchableOpacity
           testID={`${testIdPrefix}-scroll-right`}
           accessibilityRole="button"
           accessibilityLabel="Scroll tabs right"
+          accessibilityState={{ disabled: !canScrollRight }}
+          disabled={!canScrollRight}
           onPress={() => scrollByPage(1)}
           style={{
             width: ARROW_SIZE,
@@ -178,7 +231,6 @@ export function ScrollableTabStrip({
             borderColor: colors.border,
             borderRadius: colors.radius,
             backgroundColor: colors.background,
-            marginLeft: 4,
           }}
         >
           <Feather
@@ -187,7 +239,7 @@ export function ScrollableTabStrip({
             color={colors.primary}
           />
         </TouchableOpacity>
-      ) : null}
+      </Animated.View>
     </View>
   );
 }

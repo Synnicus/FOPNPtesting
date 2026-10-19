@@ -4,8 +4,7 @@ import test from 'node:test';
 import { URL } from 'node:url';
 import {
   applyFactionReputationAdjustment,
-  DEFAULT_FACTION_THRESHOLD_PROFILE,
-  FACTION_THRESHOLD_PROFILES,
+  FACTION_REPUTATION_THRESHOLDS,
   FNV_REPUTATION_TITLES,
   factionReputationTitle,
   isFactionReputation,
@@ -19,7 +18,6 @@ import type { FactionReputation } from '../context/types.ts';
 const faction: FactionReputation = {
   id: 'faction-1',
   name: 'Great Khans',
-  thresholdProfile: 'great-khans',
   fame: 5,
   infamy: 5,
   log: [
@@ -28,28 +26,16 @@ const faction: FactionReputation = {
   ],
 };
 
-test('all New Vegas faction and settlement fame/infamy thresholds match the reference chart', () => {
-  assert.deepEqual(FACTION_THRESHOLD_PROFILES.map(profile => [profile.name, profile.thresholds]), [
-    ['Boomers', [0, 8, 25, 50]],
-    ['Brotherhood of Steel', [0, 3, 10, 20]],
-    ["Caesar's Legion", [0, 15, 50, 100]],
-    ['Followers of the Apocalypse', [0, 8, 25, 50]],
-    ['Freeside', [0, 11, 35, 70]],
-    ['Goodsprings', [0, 3, 8, 15]],
-    ['Great Khans', [0, 5, 15, 30]],
-    ['New California Republic', [0, 12, 40, 80]],
-    ['Novac', [0, 3, 10, 20]],
-    ['Powder Gangers', [0, 5, 15, 50]],
-    ['Primm', [0, 5, 15, 30]],
-    ['The Strip', [0, 6, 20, 40]],
-    ['White Glove Society', [0, 2, 5, 10]],
-  ]);
-  assert.equal(DEFAULT_FACTION_THRESHOLD_PROFILE, 'great-khans');
-  assert.deepEqual([0, 4, 5, 14, 15, 30].map(points => reputationRange(points, [0, 5, 15, 30])), [0, 0, 1, 1, 2, 3]);
+test('one universal threshold profile is used for Fame and Infamy', () => {
+  assert.deepEqual(FACTION_REPUTATION_THRESHOLDS, [0, 25, 50, 75]);
+  assert.deepEqual(
+    [0, 24, 25, 49, 50, 74, 75, 100].map(points => reputationRange(points, FACTION_REPUTATION_THRESHOLDS)),
+    [0, 0, 1, 1, 2, 2, 3, 3],
+  );
 });
 
 test('separate Fame and Infamy ranges select the complete New Vegas title matrix', () => {
-  const thresholds = [0, 5, 15, 30];
+  const thresholds = FACTION_REPUTATION_THRESHOLDS;
   for (let infamyRange = 0; infamyRange < 4; infamyRange += 1) {
     for (let fameRange = 0; fameRange < 4; fameRange += 1) {
       assert.equal(
@@ -62,10 +48,10 @@ test('separate Fame and Infamy ranges select the complete New Vegas title matrix
       );
     }
   }
-  assert.equal(factionReputationTitle(faction), 'Mixed');
-  assert.equal(factionReputationTitle({ ...faction, fame: 15, infamy: 5 }), 'Smiling Troublemaker');
-  assert.equal(factionReputationTitle({ ...faction, fame: 30, infamy: 30 }), 'Wild Child');
-  assert.equal(factionReputationTitle({ ...faction, fame: 30, infamy: 30, customTitle: 'Paladin' }), 'Paladin - Wild Child');
+  assert.equal(factionReputationTitle(faction), 'Neutral');
+  assert.equal(factionReputationTitle({ ...faction, fame: 50, infamy: 25 }), 'Smiling Troublemaker');
+  assert.equal(factionReputationTitle({ ...faction, fame: 75, infamy: 75 }), 'Wild Child');
+  assert.equal(factionReputationTitle({ ...faction, fame: 75, infamy: 75, customTitle: 'Paladin' }), 'Paladin - Wild Child');
   assert.equal(factionReputationTitle({ ...faction, fame: 0, infamy: 0, customTitle: 'Paladin' }), 'Paladin - Neutral');
 });
 
@@ -92,6 +78,12 @@ test('saved faction history is validated and legacy characters normalize to an e
   assert.equal(isFactionReputation(faction), true);
   assert.equal(isFactionReputation({ ...faction, fame: 4 }), false);
   assert.equal(isFactionReputation({ ...faction, thresholdProfile: 'unknown' }), false);
+  const legacyProfileFaction = { ...faction, thresholdProfile: 'brotherhood-of-steel' };
+  assert.equal(isFactionReputation(legacyProfileFaction), true);
+  assert.equal(factionReputationTitle(legacyProfileFaction), factionReputationTitle(faction));
+  const normalized = normalizeFactionReputations([legacyProfileFaction]);
+  assert.equal(normalized.length, 1);
+  assert.equal('thresholdProfile' in normalized[0], false);
   assert.deepEqual(normalizeFactionReputations(undefined), []);
   assert.deepEqual(normalizeFactionReputations([faction, { ...faction, id: 'faction-1' }]).map(item => item.id), ['faction-1']);
 });
@@ -99,10 +91,13 @@ test('saved faction history is validated and legacy characters normalize to an e
 test('character editor combines Karma and faction reputation in one tab with edit and delete controls', () => {
   const editor = readFileSync(new URL('../components/FactionReputationTracker.tsx', import.meta.url), 'utf8');
   const characterEditor = readFileSync(new URL('../app/(tabs)/characters.tsx', import.meta.url), 'utf8');
-  assert.match(characterEditor, /'Effects', 'Karma & Factions'/);
+  assert.match(characterEditor, /'Effects', 'Karma & Reputation'/);
   assert.match(characterEditor, /<KarmaTracker[\s\S]*?<FactionReputationTracker/);
   assert.match(editor, /testID="faction-name-input"/);
-  assert.match(editor, /testID="faction-threshold-profile-picker"/);
+  assert.match(editor, /testID="faction-threshold-help"/);
+  assert.match(editor, /testID="faction-threshold-help-modal"/);
+  assert.match(editor, /0–24[\s\S]*25–49[\s\S]*50–74[\s\S]*75\+/);
+  assert.doesNotMatch(editor, /faction-threshold-profile-picker|THRESHOLD PROFILE/);
   assert.match(editor, /testID=\{`faction-custom-title-\$\{faction\.id\}`\}/);
   assert.match(editor, /testID=\{`faction-record-change-\$\{faction\.id\}`\}/);
   assert.match(editor, /removeFactionReputationLogEntry\(faction, entryId\)/);

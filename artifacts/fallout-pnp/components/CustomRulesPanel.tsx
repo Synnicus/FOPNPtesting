@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import {
   LocalizedText as Text,
@@ -6,6 +6,7 @@ import {
   LocalizedTouchableOpacity as TouchableOpacity,
 } from '@/components/LocalizedText';
 import { useApp } from '@/context/AppContext';
+import { SelectableTagMenu } from '@/components/SelectableTagMenu';
 import type {
   CampaignRuleTag,
   CustomPerkCategory,
@@ -17,15 +18,21 @@ import type {
   RuleAttackMode,
   SkillType,
 } from '@/context/types';
-import { BUILT_IN_RULE_TAGS, normalizeRuleTag, parseRuleTagList } from '@/data/customRules';
+import {
+  BUILT_IN_RULE_TAGS,
+  getSelectableArmorTags,
+  getSelectableWeaponTags,
+  normalizeRuleTag,
+  parseRuleTagList,
+} from '@/data/customRules';
 import { useColors } from '@/hooks/useColors';
 
-type Tab = 'tags' | 'mods' | 'perks';
+type Section = 'mods' | 'perks';
 
 const MOD_EFFECTS: { kind: CustomRuleEffectKind; label: string }[] = [
   { kind: 'toHit', label: 'To-hit' },
   { kind: 'damage', label: 'Typed damage' },
-  { kind: 'radiationExposure', label: 'Radiation exposure' },
+  { kind: 'radiationExposure', label: 'Radiation damage' },
   { kind: 'range', label: 'Range (squares)' },
   { kind: 'attackApDiscount', label: 'Attack AP discount' },
   { kind: 'reloadAp', label: 'Reload AP cost' },
@@ -200,18 +207,16 @@ function EffectEditor({ available, effects, setEffects, scaleByRank = false }: {
   );
 }
 
-export default function CustomRulesPanel() {
+export default function CustomRulesPanel({ section }: { section: Section }) {
   const colors = useColors();
   const {
     customWeaponMods, customPerks, campaignRuleTags, saveCustomRules,
   } = useApp();
-  const [tab, setTab] = useState<Tab>('tags');
-  const [tagLabel, setTagLabel] = useState('');
-  const [tagScope, setTagScope] = useState<CampaignRuleTag['appliesTo']>('weapon');
+  const tab = section;
   const [editingModId, setEditingModId] = useState<string | null>(null);
   const [modName, setModName] = useState('');
   const [modDescription, setModDescription] = useState('');
-  const [modAppliesToTags, setModAppliesToTags] = useState('');
+  const [modAppliesToTags, setModAppliesToTags] = useState<string[]>([]);
   const [modProgrammatic, setModProgrammatic] = useState(false);
   const [modEffects, setModEffects] = useState<CustomRuleEffect[]>([]);
   const [editingPerkId, setEditingPerkId] = useState<string | null>(null);
@@ -221,13 +226,11 @@ export default function CustomRulesPanel() {
   const [perkLevel, setPerkLevel] = useState('1');
   const [perkMaxRanks, setPerkMaxRanks] = useState('1');
   const [perkProgrammatic, setPerkProgrammatic] = useState(true);
-  const [perkWeaponTags, setPerkWeaponTags] = useState('');
-  const [perkArmorTags, setPerkArmorTags] = useState('');
+  const [perkWeaponTags, setPerkWeaponTags] = useState<string[]>([]);
+  const [perkArmorTags, setPerkArmorTags] = useState<string[]>([]);
   const [perkStatuses, setPerkStatuses] = useState('');
   const [perkModes, setPerkModes] = useState<RuleAttackMode[]>([]);
   const [perkEffects, setPerkEffects] = useState<CustomRuleEffect[]>([]);
-  const tagOptions = useMemo(() => [...BUILT_IN_RULE_TAGS, ...campaignRuleTags], [campaignRuleTags]);
-
   const changeRules = (changes: Partial<{
     customWeaponMods: CustomWeaponMod[];
     customPerks: CustomPerkDefinition[];
@@ -238,20 +241,56 @@ export default function CustomRulesPanel() {
     campaignRuleTags: changes.campaignRuleTags ?? campaignRuleTags,
   });
 
-  const addTag = () => {
-    const label = tagLabel.trim();
-    const tagId = normalizeRuleTag(label);
-    if (!tagId || tagOptions.some(tag => tag.id === tagId)) return;
-    changeRules({ campaignRuleTags: [...campaignRuleTags, { id: tagId, label, appliesTo: tagScope }] });
-    setTagLabel('');
+  const visibleModWeaponTags = getSelectableWeaponTags(campaignRuleTags, modAppliesToTags);
+  const visiblePerkWeaponTags = getSelectableWeaponTags(campaignRuleTags, perkWeaponTags);
+  const visiblePerkArmorTags = getSelectableArmorTags(campaignRuleTags, perkArmorTags);
+
+  const toggleModWeaponTag = (tagId: string) => {
+    setModAppliesToTags(current => current.includes(tagId)
+      ? current.filter(id => id !== tagId)
+      : [...current, tagId]);
   };
+
+  const registerCampaignTag = (
+    value: string,
+    appliesTo: 'weapon' | 'armor',
+    setSelected: React.Dispatch<React.SetStateAction<string[]>>,
+  ) => {
+    const label = value.trim();
+    const tagId = normalizeRuleTag(label);
+    if (!tagId) return;
+
+    const builtIn = BUILT_IN_RULE_TAGS.find(tag => tag.id === tagId);
+    if (builtIn) {
+      if (builtIn.appliesTo === appliesTo || builtIn.appliesTo === 'both')
+        setSelected(current => current.includes(tagId) ? current : [...current, tagId]);
+      return;
+    }
+
+    const existing = campaignRuleTags.find(tag => tag.id === tagId);
+    const nextTags = existing
+      ? campaignRuleTags.map(tag => tag.id === tagId && tag.appliesTo === 'armor'
+        ? { ...tag, appliesTo: appliesTo === 'weapon' ? 'both' as const : appliesTo }
+        : tag.id === tagId && tag.appliesTo === 'weapon' && appliesTo === 'armor'
+          ? { ...tag, appliesTo: 'both' as const }
+        : tag)
+      : [...campaignRuleTags, { id: tagId, label, appliesTo }];
+    changeRules({ campaignRuleTags: nextTags });
+    setSelected(current => current.includes(tagId) ? current : [...current, tagId]);
+  };
+
+  const addCustomModWeaponTag = (label: string) => registerCampaignTag(label, 'weapon', setModAppliesToTags);
+  const addCustomPerkWeaponTag = (label: string) => registerCampaignTag(label, 'weapon', setPerkWeaponTags);
+  const addCustomPerkArmorTag = (label: string) => registerCampaignTag(label, 'armor', setPerkArmorTags);
+
   const resetMod = () => {
-    setEditingModId(null); setModName(''); setModDescription(''); setModAppliesToTags('');
+    setEditingModId(null); setModName(''); setModDescription(''); setModAppliesToTags([]);
     setModProgrammatic(false); setModEffects([]);
   };
   const editMod = (mod: CustomWeaponMod) => {
-    setTab('mods'); setEditingModId(mod.id); setModName(mod.name); setModDescription(mod.description);
-    setModAppliesToTags((mod.appliesToTags ?? []).join(', ')); setModProgrammatic(mod.programmatic);
+    setEditingModId(mod.id); setModName(mod.name); setModDescription(mod.description);
+    setModAppliesToTags([...(mod.appliesToTags ?? [])]);
+    setModProgrammatic(mod.programmatic);
     setModEffects(mod.effects);
   };
   const saveMod = () => {
@@ -261,7 +300,7 @@ export default function CustomRulesPanel() {
       name: modName.trim(),
       description: modDescription.trim(),
       programmatic: modProgrammatic,
-      appliesToTags: parseRuleTagList(modAppliesToTags),
+      appliesToTags: modAppliesToTags,
       effects: modProgrammatic ? modEffects : [],
     };
     changeRules({ customWeaponMods: editingModId
@@ -272,22 +311,22 @@ export default function CustomRulesPanel() {
   const resetPerk = () => {
     setEditingPerkId(null); setPerkName(''); setPerkDescription(''); setPerkCategory('combat');
     setPerkLevel('1'); setPerkMaxRanks('1'); setPerkProgrammatic(true);
-    setPerkWeaponTags(''); setPerkArmorTags(''); setPerkStatuses(''); setPerkModes([]); setPerkEffects([]);
+    setPerkWeaponTags([]); setPerkArmorTags([]); setPerkStatuses(''); setPerkModes([]); setPerkEffects([]);
   };
   const editPerk = (perk: CustomPerkDefinition) => {
-    setTab('perks'); setEditingPerkId(perk.id); setPerkName(perk.name); setPerkDescription(perk.description);
+    setEditingPerkId(perk.id); setPerkName(perk.name); setPerkDescription(perk.description);
     setPerkCategory(perk.category); setPerkLevel(String(perk.minLevel)); setPerkMaxRanks(String(perk.maxRanks));
     setPerkProgrammatic(perk.programmatic);
-    setPerkWeaponTags((perk.conditions?.weaponTags ?? []).join(', '));
-    setPerkArmorTags((perk.conditions?.armorTags ?? []).join(', '));
+    setPerkWeaponTags([...(perk.conditions?.weaponTags ?? [])]);
+    setPerkArmorTags([...(perk.conditions?.armorTags ?? [])]);
     setPerkStatuses((perk.conditions?.statuses ?? []).join(', '));
     setPerkModes(perk.conditions?.attackModes ?? []);
     setPerkEffects(perk.effects);
   };
   const savePerk = () => {
     if (!perkName.trim()) return;
-    const weaponTags = parseRuleTagList(perkWeaponTags);
-    const armorTags = parseRuleTagList(perkArmorTags);
+    const weaponTags = perkWeaponTags;
+    const armorTags = perkArmorTags;
     const statuses = parseRuleTagList(perkStatuses);
     const conditions = weaponTags.length || armorTags.length || statuses.length || perkModes.length
       ? { weaponTags, armorTags, statuses, attackModes: perkModes }
@@ -316,56 +355,28 @@ export default function CustomRulesPanel() {
 
   return (
     <View style={sectionStyle}>
-      <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 2, marginBottom: 4 }}>CUSTOM RULES</Text>
-      <Text style={{ color: colors.mutedForeground, fontSize: 10, marginBottom: 12 }}>
-        Mods apply direct weapon adjustments. Perks can be unconditional or require matching tags, action modes, or statuses. Each filled condition group is required; any listed value within a group can match.
+      <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 2, marginBottom: 4 }}>
+        {section === 'mods' ? 'CUSTOM WEAPON MODS' : 'CUSTOM PERKS'}
       </Text>
-      <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 12 }}>
-        {([
-          ['tags', 'TAGS'],
-          ['mods', 'WEAPON MODS'],
-          ['perks', 'CUSTOM PERKS'],
-        ] as const).map(([value, label]) => (
-          <TouchableOpacity key={value} onPress={() => setTab(value)} style={{ paddingVertical: 9, paddingHorizontal: 10, borderBottomWidth: tab === value ? 2 : 0, borderBottomColor: colors.primary }}>
-            <Text style={{ color: tab === value ? colors.primary : colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_700Bold' }}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {tab === 'tags' && (
-        <View>
-          <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 7 }}>BUILT-IN TAGS</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 }}>
-            {BUILT_IN_RULE_TAGS.map(tag => (
-              <View key={tag.id} style={{ borderWidth: 1, borderColor: colors.border, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6, marginRight: 6, marginBottom: 6 }}>
-                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{tag.label} · {tag.appliesTo}</Text>
-              </View>
-            ))}
-          </View>
-          <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 7 }}>CAMPAIGN TAGS</Text>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-            <View style={{ flex: 1 }}><Field label="TAG NAME" value={tagLabel} onChangeText={setTagLabel} placeholder="e.g. vault-tech" /></View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', maxWidth: 130, paddingTop: 14 }}>
-              {(['weapon', 'armor', 'both'] as const).map(scope => <Choice key={scope} label={scope.toUpperCase()} selected={tagScope === scope} onPress={() => setTagScope(scope)} />)}
-            </View>
-          </View>
-          <PanelButton label="ADD CAMPAIGN TAG" onPress={addTag} />
-          {campaignRuleTags.map(tag => (
-            <View key={tag.id} style={{ flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: 7 }}>
-              <Text style={{ color: colors.foreground, flex: 1, fontSize: 11 }}>{tag.label} <Text style={{ color: colors.mutedForeground }}>({tag.id} · {tag.appliesTo})</Text></Text>
-              <TouchableOpacity onPress={() => changeRules({ campaignRuleTags: campaignRuleTags.filter(item => item.id !== tag.id) })}>
-                <Text style={{ color: colors.destructive, paddingHorizontal: 8, fontSize: 15 }}>×</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
-
+      <Text style={{ color: colors.mutedForeground, fontSize: 10, marginBottom: 12 }}>
+        {section === 'mods'
+          ? 'Create direct weapon adjustments or description-only modifications.'
+          : 'Create perks with automatic effects or roleplay-only descriptions. Conditions are checked when the perk applies.'}
+      </Text>
       {tab === 'mods' && (
         <ScrollView nestedScrollEnabled style={{ maxHeight: 620 }} keyboardShouldPersistTaps="handled">
           <Field label="MOD NAME" value={modName} onChangeText={setModName} placeholder="Muzzle flash" />
           <Field label="DESCRIPTION / TACTICAL NOTE" value={modDescription} onChangeText={setModDescription} placeholder="Bright flash may reveal the shooter's position in a dark room." multiline />
-          <Field label="ELIGIBLE WEAPON TAGS (COMMA-SEPARATED; BLANK = ANY)" value={modAppliesToTags} onChangeText={setModAppliesToTags} placeholder="rifle, assault-rifle" />
+          <SelectableTagMenu
+            title="ELIGIBLE WEAPON TAGS"
+            buttonLabel="SELECT WEAPON TAGS"
+            customTagButtonLabel="+ CUSTOM WEAPON TAG"
+            testID="custom-mod-weapon-tag-menu-toggle"
+            options={visibleModWeaponTags}
+            selectedTagIds={modAppliesToTags}
+            onToggle={toggleModWeaponTag}
+            onAddCustomTag={addCustomModWeaponTag}
+          />
           <Choice label={`AUTOMATE EFFECTS: ${modProgrammatic ? 'ON' : 'OFF (DESCRIPTION ONLY)'}`} selected={modProgrammatic} onPress={() => setModProgrammatic(!modProgrammatic)} />
           {modProgrammatic && <EffectEditor available={MOD_EFFECTS} effects={modEffects} setEffects={setModEffects} />}
           <PanelButton label={editingModId ? 'SAVE MOD' : 'CREATE MOD'} onPress={saveMod} />
@@ -401,8 +412,30 @@ export default function CustomRulesPanel() {
           </View>
           <Choice label={`AUTOMATE EFFECTS: ${perkProgrammatic ? 'ON' : 'OFF (ROLEPLAY ONLY)'}`} selected={perkProgrammatic} onPress={() => setPerkProgrammatic(!perkProgrammatic)} />
           <Text style={{ color: colors.mutedForeground, fontSize: 10, marginVertical: 6 }}>Conditional requirements: a matching weapon tag, worn armor tag, action mode, or status can activate the perk.</Text>
-          <Field label="REQUIRES WIELDED WEAPON TAG (ANY MATCH)" value={perkWeaponTags} onChangeText={setPerkWeaponTags} placeholder="assault-rifle, small-guns" />
-          <Field label="REQUIRES WORN ARMOR TAG (ANY MATCH)" value={perkArmorTags} onChangeText={setPerkArmorTags} placeholder="power-armor" />
+          <SelectableTagMenu
+            title="REQUIRES WIELDED WEAPON TAG (ANY MATCH)"
+            buttonLabel="SELECT WEAPON TAGS"
+            customTagButtonLabel="+ CUSTOM WEAPON TAG"
+            testID="custom-perk-weapon-tag-menu"
+            options={visiblePerkWeaponTags}
+            selectedTagIds={perkWeaponTags}
+            onToggle={tagId => setPerkWeaponTags(current => current.includes(tagId)
+              ? current.filter(id => id !== tagId)
+              : [...current, tagId])}
+            onAddCustomTag={addCustomPerkWeaponTag}
+          />
+          <SelectableTagMenu
+            title="REQUIRES WORN ARMOR TAG (ANY MATCH)"
+            buttonLabel="SELECT ARMOR TAGS"
+            customTagButtonLabel="+ CUSTOM ARMOR TAG"
+            testID="custom-perk-armor-tag-menu"
+            options={visiblePerkArmorTags}
+            selectedTagIds={perkArmorTags}
+            onToggle={tagId => setPerkArmorTags(current => current.includes(tagId)
+              ? current.filter(id => id !== tagId)
+              : [...current, tagId])}
+            onAddCustomTag={addCustomPerkArmorTag}
+          />
           <Field label="REQUIRES STATUS (ANY MATCH)" value={perkStatuses} onChangeText={setPerkStatuses} placeholder="aiming, hidden" />
           <Text style={{ color: colors.mutedForeground, fontSize: 10, marginBottom: 5 }}>When selected, every condition group above must be satisfied.</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>

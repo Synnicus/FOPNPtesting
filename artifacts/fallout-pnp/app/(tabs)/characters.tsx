@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo, findNodeHandle, FlatList, Image, Modal, PanResponder, Platform, ScrollView,
-  View, useWindowDimensions,
+  Keyboard, View, useWindowDimensions,
 } from 'react-native';
 import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +22,7 @@ import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import KarmaTracker from '@/components/KarmaTracker';
 import FactionReputationTracker from '@/components/FactionReputationTracker';
+import CustomRulesPanel from '@/components/CustomRulesPanel';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import HPBar from '@/components/HPBar';
 import {
@@ -52,6 +53,7 @@ import {
 } from '@/data/skillAdvancement';
 import { refundPerk } from '@/data/perkRefund';
 import { getCharacterPerkReminders } from '@/data/perkReminders';
+import { hasUnsavedCharacterChanges, snapshotCharacterDraft } from '@/data/characterDraft';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { getLegacyPremadeRepairCandidateWeaponIds } from '@/data/condition';
 import { vehicleSystemStatus } from '@/data/vehicles';
@@ -71,9 +73,8 @@ import {
   type GhoulRadiationHealingOption,
 } from '@/data/radiation';
 
-// ─── Perk ids that are actually traits in the manual; hide from perk browser
-//     but do NOT delete saved Character.perks entries or remove lookup/effects.
-const LEGACY_TRAIT_PERK_IDS = new Set(['finesse', 'fast_metabolism', 'chem_resistant', 'glowing_one']);
+// Glowing One is managed separately from the regular perk picker.
+const HIDDEN_PERK_PICKER_IDS = new Set(['glowing_one']);
 
 const DAMAGE_TYPES: DamageType[] = ['normal', 'laser', 'fire', 'plasma', 'explosion'];
 const PREMADE_WEAPON_IDS = [...new Set(PREMADE_CHARACTERS.flatMap(p => [
@@ -360,6 +361,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     return custom ? customPerkAsPerk(custom) : undefined;
   }, [customPerks]);
   const [char, setChar] = useState<Character>(character ?? makeDefaultCharacter());
+  const initialDraftRef = useRef<unknown>(snapshotCharacterDraft(char));
+  const [showUnsavedChangesPrompt, setShowUnsavedChangesPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [specialPoolTotal, setSpecialPoolTotal] = useState(40);
   const [perkSearch, setPerkSearch] = useState('');
@@ -375,6 +378,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   // Perks tab: only-show-available toggle
   const [onlyAvailablePerks, setOnlyAvailablePerks] = useState(false);
+  const [showCustomPerkManager, setShowCustomPerkManager] = useState(false);
   const [perkRefundId, setPerkRefundId] = useState<string | null>(null);
   const [tagPerkPickerId, setTagPerkPickerId] = useState<string | null>(null);
   const [mutatePerkPickerId, setMutatePerkPickerId] = useState<string | null>(null);
@@ -395,12 +399,16 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       // Modal is closing — always restore scrollability in case a crop drag was
       // interrupted (e.g. modal dismissed by swipe while dragging).
       setCropDragging(false);
+      setShowUnsavedChangesPrompt(false);
       return;
     }
     const c = character ?? makeDefaultCharacter();
     setChar(c);
+    initialDraftRef.current = snapshotCharacterDraft(c);
+    setShowUnsavedChangesPrompt(false);
     setActiveTab(0);
     setPerkSearch('');
+    setShowCustomPerkManager(false);
     // Estimate pool from current SPECIAL sum
     const sum = Object.values(c.special).reduce((a, b) => a + b, 0);
     setSpecialPoolTotal(Math.max(40, sum));
@@ -985,7 +993,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // preserved — we just don't display or allow adding them here.
   const perkList = useMemo(() =>
     [...PERKS, ...customPerks.map(customPerkAsPerk)].filter(p => {
-      if (LEGACY_TRAIT_PERK_IDS.has(p.id)) return false;
+      if (HIDDEN_PERK_PICKER_IDS.has(p.id)) return false;
       if (perkSearch && !p.name.toLowerCase().includes(perkSearch.toLowerCase()) && !p.description.toLowerCase().includes(perkSearch.toLowerCase())) return false;
       return true;
     }), [perkSearch, customPerks]);
@@ -994,19 +1002,38 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   const handleSave = () => {
     if (!isValid) return;
+    setShowUnsavedChangesPrompt(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSave(recomputeDerived(char));
   };
 
-  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects', 'Karma & Factions'];
+  const hasUnsavedChanges = hasUnsavedCharacterChanges(initialDraftRef.current, char);
+  const requestClose = () => {
+    Keyboard.dismiss();
+    if (hasUnsavedChanges) setShowUnsavedChangesPrompt(true);
+    else onClose();
+  };
+  const handleSystemBack = () => {
+    if (showUnsavedChangesPrompt) {
+      setShowUnsavedChangesPrompt(false);
+      return;
+    }
+    requestClose();
+  };
+  const discardChangesAndLeave = () => {
+    setShowUnsavedChangesPrompt(false);
+    onClose();
+  };
+
+  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects', 'Karma & Reputation'];
   const INJURY_LOCATIONS: Injury['location'][] = ['head', 'eyes', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleSystemBack}>
       <View style={{ flex: 1, paddingTop: modalTopInset, backgroundColor: colors.background }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card }}>
-          <TouchableOpacity onPress={onClose}><Feather name="x" size={24} color={colors.mutedForeground} /></TouchableOpacity>
+          <TouchableOpacity testID="character-editor-close" accessibilityRole="button" accessibilityLabel="Close character editor" onPress={requestClose}><Feather name="x" size={24} color={colors.mutedForeground} /></TouchableOpacity>
           <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
             {character ? 'EDIT CHARACTER' : 'NEW CHARACTER'}
           </Text>
@@ -1486,6 +1513,18 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             <>
               <PointCounter label="PERK POINTS REMAINING" remaining={perkPointsRemaining} total={perkPointsAvailable} warn />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Each rank costs 1 perk point. Adding ranks and refunding a perk are separate actions; refunding removes every rank and returns every point spent on that perk.</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showCustomPerkManager }}
+                onPress={() => setShowCustomPerkManager(value => !value)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '16' }}
+              >
+                <Feather name={showCustomPerkManager ? 'minus-circle' : 'plus-circle'} size={15} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.6 }}>
+                  {showCustomPerkManager ? 'HIDE CUSTOM PERKS' : '+ CUSTOM PERK'}
+                </Text>
+              </TouchableOpacity>
+              {showCustomPerkManager && <CustomRulesPanel section="perks" />}
               {char.breakTheRulesPending && (
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>
                   BREAK THE RULES READY — your next perk point may select any perk, regardless of requirements or race.
@@ -2345,6 +2384,50 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           value={char.biography ?? ''}
           onClose={next => { setChar(c => ({ ...c, biography: next })); setShowBioEditor(false); }}
         />
+        {showUnsavedChangesPrompt && (
+          <View
+            testID="character-unsaved-changes-prompt"
+            accessibilityViewIsModal
+            importantForAccessibility="yes"
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 100, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.8)', padding: 24 }}
+          >
+            <View style={{ width: '100%', maxWidth: 380, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+              <View style={{ padding: 20, gap: 8 }}>
+                <Text accessibilityRole="header" style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>Save changes before leaving?</Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground, lineHeight: 20 }}>You have unsaved character changes. Save them before leaving?</Text>
+                {!isValid && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.destructive }}>A character name is required before it can be saved.</Text>}
+              </View>
+              <TouchableOpacity
+                testID="character-unsaved-save"
+                accessibilityRole="button"
+                accessibilityLabel="Save changes"
+                disabled={!isValid}
+                style={{ paddingVertical: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, opacity: isValid ? 1 : 0.45 }}
+                onPress={handleSave}
+              >
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>SAVE CHANGES</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="character-unsaved-discard"
+                accessibilityRole="button"
+                accessibilityLabel="Discard changes"
+                style={{ paddingVertical: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}
+                onPress={discardChangesAndLeave}
+              >
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 1 }}>DISCARD CHANGES</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="character-unsaved-keep-editing"
+                accessibilityRole="button"
+                accessibilityLabel="Keep editing"
+                style={{ paddingVertical: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border }}
+                onPress={() => setShowUnsavedChangesPrompt(false)}
+              >
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>KEEP EDITING</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
     </Modal>
   );

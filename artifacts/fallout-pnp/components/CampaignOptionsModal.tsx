@@ -9,7 +9,7 @@ import {
   Text as NativeText,
   View,
 } from 'react-native';
-import { LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
+import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -455,6 +455,7 @@ export default function CampaignOptionsModal({
     setMusicEnabled,
     musicVolume,
     setMusicVolume,
+    restoreBuiltInBestiaryDefaults,
   } = useApp();
   const { locale, setLocale } = useLocalization();
   const {
@@ -500,6 +501,17 @@ export default function CampaignOptionsModal({
   };
 
   const chooseTheme = (theme: CampaignVisualTheme) => setVisualTheme(theme);
+  const restoreBestiary = () => {
+    const message = 'This restores the current built-in NPC roster and removes its edits and removals. Custom NPCs and catalog photos are kept.';
+    if (Platform.OS === 'web') {
+      if (localizedConfirm('Restore default Bestiary?', message)) restoreBuiltInBestiaryDefaults();
+      return;
+    }
+    Alert.alert('Restore default Bestiary?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Restore defaults', style: 'destructive', onPress: restoreBuiltInBestiaryDefaults },
+    ]);
+  };
 
   return (
     <>
@@ -787,6 +799,21 @@ export default function CampaignOptionsModal({
                 Vault Radio is unavailable. Check the connection and track files.
               </Text>
             )}
+
+            <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+              Restore built-in NPCs hidden or edited in the Bestiary. Custom NPCs and catalog photos are kept.
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              testID="restore-default-bestiary"
+              onPress={restoreBestiary}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, borderWidth: 1, borderColor: palette.destructive, borderRadius: palette.radius, backgroundColor: palette.destructive + '12' }}
+            >
+              <Feather name="rotate-ccw" size={15} color={palette.destructive} />
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.destructive, letterSpacing: 0.7 }}>
+                RESTORE DEFAULT BESTIARY
+              </Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </Modal>

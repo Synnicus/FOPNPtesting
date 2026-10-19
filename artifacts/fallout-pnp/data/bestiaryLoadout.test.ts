@@ -66,6 +66,21 @@ test('missing loadout weapons fail explicitly rather than spawning unarmed', () 
   assert.throws(() => spawnBestiaryTemplate(template, [], template.name, 'missing'), /missing weapon/);
 });
 
+test('spawned bestiary entries inherit their user-supplied catalog photo', () => {
+  const template = BUILT_IN_BESTIARY[0];
+  const portrait = 'data:image/png;base64,AQID';
+  const portraitOffset = { x: 0.3, y: 0.7 };
+  const character = spawnBestiaryTemplate(
+    { ...template, portrait, portraitFit: 'contain', portraitOffset },
+    BUILT_IN_WEAPONS,
+    template.name,
+    'photo-test',
+  );
+  assert.equal(character.portrait, portrait);
+  assert.equal(character.portraitFit, 'contain');
+  assert.deepEqual(character.portraitOffset, portraitOffset);
+});
+
 test('restored bestiary categories retain unique templates alongside manual creatures', () => {
   for (const category of ['human', 'robot', 'ghoul', 'mutant']) {
     assert.ok(BUILT_IN_BESTIARY.some(t => t.category === category && !t.naturalAttacks?.length), category);

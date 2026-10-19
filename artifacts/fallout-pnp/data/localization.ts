@@ -12,8 +12,13 @@ import zhHant from './locales/zh-Hant.json';
 import languageSettings from './locales/language-settings.json';
 import uiSupplemental from './locales/ui-supplemental.json';
 import factionReputationTranslations from './locales/faction-reputation.json';
+import factionReputationHelpTranslations from './locales/faction-reputation-help.json';
 import vehicleUi from './locales/vehicle-ui.json';
 import customRulesUi from './locales/custom-rules.json';
+import customEditorsUi from './locales/custom-editors.json';
+import equipmentTagUi from './locales/equipment-tags.json';
+import catalogImagesUi from './locales/catalog-images.json';
+import appTourUi from './locales/app-tour.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -477,16 +482,39 @@ const dynamicPatterns: Partial<Record<AppLocale, Record<string, string>>> = {
 const languageSettingsTranslations = languageSettings as Record<string, Record<string, string>>;
 const uiSupplementalBase = uiSupplemental as Partial<Record<AppLocale, Record<string, string>>>;
 const factionReputationUiTranslations = factionReputationTranslations as Partial<Record<AppLocale, Record<string, string>>>;
+const factionReputationHelpUiTranslations = factionReputationHelpTranslations as Partial<Record<AppLocale, Record<string, string>>>;
 const vehicleUiTranslations = vehicleUi as Partial<Record<AppLocale, Record<string, string>>>;
 const customRulesUiTranslations = customRulesUi as Partial<Record<AppLocale, Record<string, string>>>;
+const customEditorsUiTranslations = customEditorsUi as Partial<Record<AppLocale, Record<string, string>>>;
+const equipmentTagUiTranslations = equipmentTagUi as Partial<Record<AppLocale, Record<string, string>>>;
+const catalogImagesUiTranslations = catalogImagesUi as Partial<Record<AppLocale, Record<string, string>>>;
+const appTourTranslationData = appTourUi as { keys: string[] } & Partial<Record<AppLocale, string[]>>;
+const appTourUiTranslations = Object.fromEntries(
+  APP_LANGUAGES
+    .filter(({ locale }) => locale !== 'en')
+    .map(({ locale }) => {
+      const translatedValues = appTourTranslationData[locale];
+      if (!translatedValues || translatedValues.length !== appTourTranslationData.keys.length) {
+        throw new Error(`Incomplete app-tour translations for ${locale}`);
+      }
+      return [locale, Object.fromEntries(
+        appTourTranslationData.keys.map((key, index) => [key, translatedValues[index]]),
+      )];
+    }),
+) as Partial<Record<AppLocale, Record<string, string>>>;
 const uiSupplementalTranslations = Object.fromEntries(
   APP_LANGUAGES
     .filter(({ locale }) => locale !== 'en')
     .map(({ locale }) => [locale, {
       ...(uiSupplementalBase[locale] ?? {}),
       ...(factionReputationUiTranslations[locale] ?? {}),
+      ...(factionReputationHelpUiTranslations[locale] ?? {}),
       ...(vehicleUiTranslations[locale] ?? {}),
       ...(customRulesUiTranslations[locale] ?? {}),
+      ...(customEditorsUiTranslations[locale] ?? {}),
+      ...(equipmentTagUiTranslations[locale] ?? {}),
+      ...(catalogImagesUiTranslations[locale] ?? {}),
+      ...(appTourUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();

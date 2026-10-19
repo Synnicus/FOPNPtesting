@@ -64,9 +64,8 @@ export const PERK_RECORD_IDS = [
   'silent_death', 'silent_running', 'slayer', 'smooth_talker', 'snakeater',
   'sniper', 'speaker', 'stat', 'steady_arm', 'stonewall', 'strong_back',
   'stunt_devil', 'survivalist', 'swift_learner', 'tag', 'talon_of_fear',
-  'team_player', 'thief', 'tough_hide', 'toughness', 'awareness', 'finesse',
-  'gunslinger', 'penetrate', 'weapon_handling', 'fast_metabolism',
-  'chem_resistant', 'natural_chem_resistant', 'jack_of_all_trades',
+  'team_player', 'thief', 'tough_hide', 'toughness', 'awareness',
+  'gunslinger', 'penetrate', 'weapon_handling', 'natural_chem_resistant', 'jack_of_all_trades',
   'treasure_hunter', 'pilot', 'glowing_one', 'feral_reversion',
   'super_mutant_upgrade', 'cyborg_systems', 'deathclaw_rampage',
 ] as const;
@@ -161,7 +160,7 @@ const PERK_GROUPS: readonly AuditGroup[] = [
       'faster_healing', 'gain_agility', 'gain_charisma', 'gain_endurance',
       'gain_intelligence', 'gain_luck', 'gain_perception', 'gain_strength',
       'lifegiver', 'more_criticals', 'pack_rat', 'pyromaniac', 'toughness',
-      'finesse', 'penetrate', 'weapon_handling', 'cyborg_systems',
+      'penetrate', 'weapon_handling', 'cyborg_systems',
     ],
     reason: 'The current derived/combat rules consume this numeric record directly, including ranks, without requiring an unrepresented choice.',
     reasons: {
@@ -213,8 +212,8 @@ const PERK_GROUPS: readonly AuditGroup[] = [
       'quick_pockets', 'quick_recovery', 'rad_child', 'rad_resistance',
       'road_warrior', 'sharpshooter', 'silent_death', 'silent_running',
       'snakeater', 'stonewall', 'strong_back', 'stunt_devil', 'survivalist',
-      'swift_learner', 'talon_of_fear', 'tough_hide', 'fast_metabolism',
-      'chem_resistant', 'natural_chem_resistant', 'jack_of_all_trades', 'pilot',
+      'swift_learner', 'talon_of_fear', 'tough_hide',
+      'natural_chem_resistant', 'jack_of_all_trades', 'pilot',
       'glowing_one', 'feral_reversion', 'super_mutant_upgrade',
     ],
     reason: 'This is a mechanical rule, but its full effect or trigger is not represented by a current rules path; a description or combatNote by itself is not automation.',
@@ -222,8 +221,7 @@ const PERK_GROUPS: readonly AuditGroup[] = [
 ];
 
 const LEGACY_PERK_IDS = new Set([
-  'finesse', 'gunslinger', 'penetrate', 'weapon_handling', 'fast_metabolism',
-  'chem_resistant', 'natural_chem_resistant', 'jack_of_all_trades',
+  'gunslinger', 'penetrate', 'weapon_handling', 'natural_chem_resistant', 'jack_of_all_trades',
   'treasure_hunter', 'pilot', 'glowing_one', 'feral_reversion',
   'super_mutant_upgrade', 'cyborg_systems', 'deathclaw_rampage',
 ]);

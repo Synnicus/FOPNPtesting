@@ -14,12 +14,14 @@ import type {
 import type { Perk as BuiltInPerk } from './perks';
 
 export const BUILT_IN_RULE_TAGS: CampaignRuleTag[] = [
+  { id: 'unarmed', label: 'Unarmed', appliesTo: 'weapon' },
+  { id: 'natural-attack', label: 'Natural Attack', appliesTo: 'weapon' },
+  { id: 'melee-weapons', label: 'Melee Weapons', appliesTo: 'weapon' },
   { id: 'small-guns', label: 'Small Guns', appliesTo: 'weapon' },
   { id: 'big-guns', label: 'Big Guns', appliesTo: 'weapon' },
   { id: 'energy-weapons', label: 'Energy Weapons', appliesTo: 'weapon' },
-  { id: 'melee-weapons', label: 'Melee Weapons', appliesTo: 'weapon' },
-  { id: 'unarmed', label: 'Unarmed', appliesTo: 'weapon' },
   { id: 'throwing', label: 'Throwing', appliesTo: 'weapon' },
+  { id: 'mines-traps', label: 'Mines & Traps', appliesTo: 'weapon' },
   { id: 'pistol', label: 'Pistol', appliesTo: 'weapon' },
   { id: 'revolver', label: 'Revolver', appliesTo: 'weapon' },
   { id: 'shotgun', label: 'Shotgun', appliesTo: 'weapon' },
@@ -27,18 +29,79 @@ export const BUILT_IN_RULE_TAGS: CampaignRuleTag[] = [
   { id: 'rifle', label: 'Rifle', appliesTo: 'weapon' },
   { id: 'single-shot-rifle', label: 'Single-shot Rifle', appliesTo: 'weapon' },
   { id: 'assault-rifle', label: 'Assault Rifle', appliesTo: 'weapon' },
+  { id: 'battle-rifle', label: 'Battle Rifle', appliesTo: 'weapon' },
+  { id: 'carbine', label: 'Carbine', appliesTo: 'weapon' },
   { id: 'sniper-rifle', label: 'Sniper Rifle', appliesTo: 'weapon' },
   { id: 'launcher', label: 'Launcher', appliesTo: 'weapon' },
+  { id: 'grenade-launcher', label: 'Grenade Launcher', appliesTo: 'weapon' },
+  { id: 'missile-rocket-launcher', label: 'Missile/Rocket Launcher', appliesTo: 'weapon' },
+  { id: 'mortar', label: 'Mortar', appliesTo: 'weapon' },
+  { id: 'cannon', label: 'Cannon', appliesTo: 'weapon' },
+  { id: 'flamethrower', label: 'Flamethrower', appliesTo: 'weapon' },
+  { id: 'bow', label: 'Bow', appliesTo: 'weapon' },
+  { id: 'crossbow', label: 'Crossbow', appliesTo: 'weapon' },
+  { id: 'blowgun', label: 'Blowgun', appliesTo: 'weapon' },
+  { id: 'sling', label: 'Sling', appliesTo: 'weapon' },
   { id: 'heavy-weapon', label: 'Heavy Weapon', appliesTo: 'weapon' },
   { id: 'energy-pistol', label: 'Energy Pistol', appliesTo: 'weapon' },
   { id: 'energy-rifle', label: 'Energy Rifle', appliesTo: 'weapon' },
   { id: 'burst-capable', label: 'Burst-capable', appliesTo: 'weapon' },
   { id: 'explosive', label: 'Explosive', appliesTo: 'weapon' },
+  { id: 'grenade', label: 'Grenade', appliesTo: 'weapon' },
+  { id: 'mine', label: 'Mine', appliesTo: 'weapon' },
+  { id: 'trap', label: 'Trap', appliesTo: 'weapon' },
+  { id: 'armor', label: 'Armor', appliesTo: 'armor' },
+  { id: 'body-armor', label: 'Body Armor', appliesTo: 'armor' },
   { id: 'power-armor', label: 'Power Armor', appliesTo: 'armor' },
   { id: 'combat-armor', label: 'Combat Armor', appliesTo: 'armor' },
+  { id: 'leather-armor', label: 'Leather Armor', appliesTo: 'armor' },
+  { id: 'metal-armor', label: 'Metal Armor', appliesTo: 'armor' },
+  { id: 'chitin-armor', label: 'Chitin Armor', appliesTo: 'armor' },
+  { id: 'environmental-armor', label: 'Environmental Armor', appliesTo: 'armor' },
+  { id: 'clothing', label: 'Clothing', appliesTo: 'armor' },
   { id: 'helmet', label: 'Helmet', appliesTo: 'armor' },
   { id: 'radiation-suit', label: 'Radiation Suit', appliesTo: 'armor' },
 ];
+
+export function getSelectableWeaponTags(
+  campaignTags: readonly CampaignRuleTag[],
+  selectedTagIds: readonly string[] = [],
+): CampaignRuleTag[] {
+  const tags = new Map<string, CampaignRuleTag>();
+  const isWeaponTag = (tag: CampaignRuleTag) => tag.appliesTo === 'weapon' || tag.appliesTo === 'both';
+
+  for (const tag of BUILT_IN_RULE_TAGS) {
+    if (isWeaponTag(tag)) tags.set(tag.id, tag);
+  }
+  for (const tag of campaignTags) {
+    if (isWeaponTag(tag) && !tags.has(tag.id)) tags.set(tag.id, tag);
+  }
+  for (const tagId of selectedTagIds) {
+    if (!tags.has(tagId)) tags.set(tagId, { id: tagId, label: tagId, appliesTo: 'weapon' });
+  }
+
+  return [...tags.values()];
+}
+
+export function getSelectableArmorTags(
+  campaignTags: readonly CampaignRuleTag[],
+  selectedTagIds: readonly string[] = [],
+): CampaignRuleTag[] {
+  const tags = new Map<string, CampaignRuleTag>();
+  const isArmorTag = (tag: CampaignRuleTag) => tag.appliesTo === 'armor' || tag.appliesTo === 'both';
+
+  for (const tag of BUILT_IN_RULE_TAGS) {
+    if (isArmorTag(tag)) tags.set(tag.id, tag);
+  }
+  for (const tag of campaignTags) {
+    if (isArmorTag(tag) && !tags.has(tag.id)) tags.set(tag.id, tag);
+  }
+  for (const tagId of selectedTagIds) {
+    if (!tags.has(tagId)) tags.set(tagId, { id: tagId, label: tagId, appliesTo: 'armor' });
+  }
+
+  return [...tags.values()];
+}
 
 export function normalizeRuleTag(value: string): string {
   return value.trim()
@@ -53,40 +116,102 @@ export function parseRuleTagList(value: string): string[] {
 }
 
 export function inferWeaponTags(weapon: Weapon): string[] {
-  const tags = new Set<string>([normalizeRuleTag(weapon.skill)]);
+  const categoryTag: Record<Weapon['category'], string> = {
+    unarmed: 'unarmed',
+    natural: 'natural-attack',
+    meleeWeapons: 'melee-weapons',
+    smallGuns: 'small-guns',
+    bigGuns: 'big-guns',
+    energyWeapons: 'energy-weapons',
+    throwing: 'throwing',
+    minesTraps: 'mines-traps',
+  };
+  const tags = new Set<string>([normalizeRuleTag(weapon.skill), categoryTag[weapon.category]]);
   const name = weapon.name.toLowerCase();
+  const id = weapon.id.toLowerCase();
   const category = weapon.category;
+
+  if (category === 'natural') tags.add('unarmed');
+  if (category === 'bigGuns') tags.add('heavy-weapon');
+  // Retain the old broad condition tag for campaign perks already saved with "traps".
+  if (category === 'minesTraps') tags.add('traps');
+
   if (category === 'unarmed') tags.add('unarmed');
   if (category === 'meleeWeapons') tags.add('melee-weapons');
   if (category === 'throwing') tags.add('throwing');
-  if (category === 'bigGuns') tags.add('heavy-weapon');
-  if (category === 'smallGuns') tags.add('small-guns');
-  if (category === 'energyWeapons') tags.add('energy-weapons');
-  if (weapon.burstLimit > 1) tags.add('burst-capable');
-  if (/shotgun/.test(name)) tags.add('shotgun');
-  if (/\bsmg\b|submachine/.test(name)) tags.add('smg');
-  if (/revolver/.test(name)) tags.add('revolver');
-  if (/pistol|sidearm|10mm|14mm/.test(name)) tags.add(category === 'energyWeapons' ? 'energy-pistol' : 'pistol');
-  if (/rifle/.test(name)) {
-    tags.add('rifle');
-    if (/assault/.test(name)) tags.add('assault-rifle');
-    if (/sniper|marksman/.test(name)) tags.add('sniper-rifle');
-    if (/single.?shot|bolt.?action|lever.?action/.test(name) || weapon.burstLimit <= 1) tags.add('single-shot-rifle');
-    if (category === 'energyWeapons') tags.add('energy-rifle');
+  if (category === 'minesTraps') {
+    if (/mine/.test(id) || /\bmine\b/.test(name)) tags.add('mine');
+    else tags.add('trap');
   }
-  if (/launcher|missile|rocket|grenade/.test(name)) tags.add('launcher');
-  if (/explosive|grenade|mine/.test(name)) tags.add('explosive');
+  if (weapon.burstLimit > 1) tags.add('burst-capable');
+
+  if (/shotgun|12[- ]?guage|12[- ]?gauge/.test(name)) tags.add('shotgun');
+  if (/\bsmg\b|submachine|machine pistol/.test(name)
+    || ['sten_gun', 'mp_38', 'handk_mp_5', 'm3a1_grease_gun_smg', 'walther_mpl', 'handk_p90c'].includes(id)) {
+    tags.add('smg');
+  }
+  if (/revolver/.test(name)) {
+    tags.add('revolver');
+    tags.add('pistol');
+  }
+  if (/pistol|sidearm/.test(name) || id === 'calico_m_950') {
+    tags.add(category === 'energyWeapons' ? 'energy-pistol' : 'pistol');
+  }
+  const isKnownRifle = /rifle|carbine|battle rifle/.test(name)
+    || ['ruger_ac556f', 'ak_74', 'm16a2', 'steyr_aug', 'xl70e3', 'handk_g11_e', 'svd_4000'].includes(id);
+  if (isKnownRifle) tags.add('rifle');
+  if (/carbine/.test(name)) tags.add('carbine');
+  if (/battle rifle/.test(name) || ['m14', 'fn_fal'].includes(id)) tags.add('battle-rifle');
+  if (/assault/.test(name) || [
+    'ruger_ac556f', 'ak_74', 'm16a2', 'steyr_aug', 'xl70e3', 'handk_g11_e',
+  ].includes(id)) tags.add('assault-rifle');
+  if (/sniper|marksman/.test(name) || id === 'svd_4000') tags.add('sniper-rifle');
+  if (category === 'energyWeapons' && isKnownRifle) tags.add('energy-rifle');
+  if (/single[- ]?shot|bolt[- ]?action|lever[- ]?action/.test(name)) {
+    tags.add('single-shot-rifle');
+  }
+
+  const isGrenadeLauncher = /grenade (launcher|rifle)/.test(name)
+    || ['m203', 'mk_19_personal_artillery_device', 'bg_1_grenade_launcher', 'ags_17_grenade_launcher'].includes(id);
+  const isMissileRocketLauncher = /missile|rocket/.test(name) || id === 'vehicle_152mm_shillelagh';
+  const isMortar = /mortar/.test(name);
+  if (isGrenadeLauncher || isMissileRocketLauncher || isMortar || /launcher/.test(name)) tags.add('launcher');
+  if (isGrenadeLauncher) tags.add('grenade-launcher');
+  if (isMissileRocketLauncher) tags.add('missile-rocket-launcher');
+  if (isMortar) tags.add('mortar');
+  if (/cannon/.test(name) || /\d+mm gun/.test(name)) {
+    tags.add('cannon');
+    tags.add('heavy-weapon');
+  }
+  if (/gatling/.test(name)) tags.add('heavy-weapon');
+  if (/flamethrower|flamer/.test(name)) tags.add('flamethrower');
+  if (/bow/.test(name)) tags.add('bow');
+  if (/crossbow/.test(name)) tags.add('crossbow');
+  if (/blowgun/.test(name)) tags.add('blowgun');
+  if (/sling/.test(name)) tags.add('sling');
+  if (category === 'throwing' && /grenade/.test(name)) tags.add('grenade');
+  if (category === 'minesTraps') {
+    if (tags.has('mine')) tags.add('explosive');
+    if (tags.has('trap') && /explosive|claymore/.test(name)) tags.add('explosive');
+  } else if (weapon.damageType === 'explosion' || /explosive/.test(name)) {
+    tags.add('explosive');
+  }
   return [...new Set([...(weapon.tags ?? []).map(normalizeRuleTag), ...tags])];
 }
 
 export function inferArmorTags(armor: Armor): string[] {
-  const tags = new Set<string>([armor.slot === 'helmet' ? 'helmet' : 'body-armor']);
+  const tags = new Set<string>(['armor']);
+  if (armor.slot === 'helmet') tags.add('helmet');
+  else if (armor.id !== 'clothing') tags.add('body-armor');
   const name = armor.name.toLowerCase();
   if (/power armor|powered armor|power armour/.test(name)) tags.add('power-armor');
-  if (/combat armor|combat armour/.test(name)) tags.add('combat-armor');
+  if (/combat (armor|armour|helmet)/.test(name)) tags.add('combat-armor');
   if (/radiation|hazmat/.test(name)) tags.add('radiation-suit');
+  if (/environmental/.test(name)) tags.add('environmental-armor');
   if (/leather/.test(name)) tags.add('leather-armor');
   if (/metal/.test(name)) tags.add('metal-armor');
+  if (/chitin/.test(name)) tags.add('chitin-armor');
+  if (armor.id === 'clothing') tags.add('clothing');
   return [...new Set([...(armor.tags ?? []).map(normalizeRuleTag), ...tags])];
 }
 

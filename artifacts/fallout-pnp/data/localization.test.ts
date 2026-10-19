@@ -12,14 +12,38 @@ const localeIds = [
 ];
 const localeDirectory = new URL('./locales/', import.meta.url);
 const localizationSource = readFileSync(new URL('./localization.ts', import.meta.url), 'utf8');
+const appTourTranslationData = JSON.parse(
+  readFileSync(new URL('app-tour.json', localeDirectory), 'utf8'),
+) as { keys: string[] } & Record<string, string[]>;
+const appTourSourceFiles = [
+  '../data/appTour.ts',
+  '../components/AboutThisAppModal.tsx',
+  '../components/AppTourOverlay.tsx',
+  '../app/index.tsx',
+];
+const appTourRenderedSource = appTourSourceFiles
+  .map(path => readFileSync(new URL(path, import.meta.url), 'utf8'))
+  .join('\n');
 const uiSupplemental = JSON.parse(
   readFileSync(new URL('ui-supplemental.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
 const customRulesTranslations = JSON.parse(
   readFileSync(new URL('custom-rules.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
+const customEditorsTranslations = JSON.parse(
+  readFileSync(new URL('custom-editors.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
+const equipmentTagTranslations = JSON.parse(
+  readFileSync(new URL('equipment-tags.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
+const catalogImagesTranslations = JSON.parse(
+  readFileSync(new URL('catalog-images.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
 const factionReputationTranslations = JSON.parse(
   readFileSync(new URL('faction-reputation.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
+const factionReputationHelpTranslations = JSON.parse(
+  readFileSync(new URL('faction-reputation-help.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
 const localizationFilePath = fileURLToPath(new URL('./localization.ts', import.meta.url));
 const nodeModule = createRequire(import.meta.url)('node:module') as any;
@@ -96,9 +120,32 @@ test('nested interface actions and prompts are translated in every locale', () =
     'PREPARING CAMPAIGN…',
     'LOAD JSON FILE',
     'EDIT CHARACTER',
+    'Save changes before leaving?',
+    'You have unsaved character changes. Save them before leaving?',
+    'SAVE CHANGES',
+    'DISCARD CHANGES',
+    'KEEP EDITING',
+    'A character name is required before it can be saved.',
+    'Close character editor',
+    'Save changes',
+    'Discard changes',
+    'Keep editing',
     'ADD SKILL',
     'APPLY RESISTANCE',
     'REFUND PERK?',
+    'Enter a positive or negative  number. Add an explanation. The total is Limited to −1000 to +1000.',
+    'EDIT ENTRY',
+    'REMOVE ENTRY',
+    'EDIT PRE-MADE NPC',
+    'Edit built-in NPC?',
+    'Editing this built-in NPC will override its default data. You can restore the default roster in Campaign Options.',
+    'Remove built-in NPC?',
+    'This hides the NPC from the Bestiary. You can restore the default roster in Campaign Options.',
+    'Restore default Bestiary?',
+    'This restores the current built-in NPC roster and removes its edits and removals. Custom NPCs and catalog photos are kept.',
+    'Restore built-in NPCs hidden or edited in the Bestiary. Custom NPCs and catalog photos are kept.',
+    'RESTORE DEFAULT BESTIARY',
+    'AOE ATTACK',
     'Heal Character?',
     'Restore {0} to full HP and clear unconsciousness?',
     'Store Character?',
@@ -119,6 +166,59 @@ test('nested interface actions and prompts are translated in every locale', () =
     'REPAIR ARMOR',
     'REPAIR WEAPON (-2 BOXES)',
     'Swipe or drag horizontally, or use the arrow buttons to see more tabs.',
+    'CUSTOM WEAPON MODS',
+    'WEAPON TAGS',
+    'ELIGIBLE WEAPON TAGS',
+    'SELECT WEAPON TAGS',
+    'SELECT ARMOR TAGS',
+    '+ CUSTOM WEAPON TAG',
+    '+ CUSTOM ARMOR TAG',
+    'CANCEL',
+    'All',
+    'Custom',
+    'ADD TAG',
+    '+ CUSTOM MOD',
+    '+ CUSTOM PERK',
+    'Create direct weapon adjustments or description-only modifications.',
+    'Create perks with automatic effects or roleplay-only descriptions. Conditions are checked when the perk applies.',
+    'Natural Attack',
+    'Mines & Traps',
+    'Battle Rifle',
+    'Carbine',
+    'Grenade Launcher',
+    'Missile/Rocket Launcher',
+    'Mortar',
+    'Cannon',
+    'Flamethrower',
+    'Bow',
+    'Crossbow',
+    'Blowgun',
+    'Sling',
+    'Grenade',
+    'Mine',
+    'Trap',
+    'Armor',
+    'Body Armor',
+    'Leather Armor',
+    'Metal Armor',
+    'Chitin Armor',
+    'Environmental Armor',
+    'Clothing',
+    'Pistol',
+    'Revolver',
+    'Shotgun',
+    'Submachine Gun',
+    'Rifle',
+    'Single-shot Rifle',
+    'Assault Rifle',
+    'Sniper Rifle',
+    'Launcher',
+    'Heavy Weapon',
+    'Energy Pistol',
+    'Energy Rifle',
+    'Burst-capable',
+    'Explosive',
+    'Helmet',
   ];
 
   for (const locale of localeIds) {
@@ -128,6 +228,9 @@ test('nested interface actions and prompts are translated in every locale', () =
     const supplemental = {
       ...(uiSupplemental[locale] ?? {}),
       ...(customRulesTranslations[locale] ?? {}),
+      ...(customEditorsTranslations[locale] ?? {}),
+      ...(equipmentTagTranslations[locale] ?? {}),
+      ...(catalogImagesTranslations[locale] ?? {}),
     };
     assert.ok(Object.keys(supplemental).length > 350, `${locale} includes supplemental interface translations`);
 
@@ -149,19 +252,25 @@ test('nested interface actions and prompts are translated in every locale', () =
   }
 });
 
-test('faction reputation UI, profile names, and every automated title are translated in every locale', () => {
+test('faction reputation UI, threshold guide, and every automated title are translated in every locale', () => {
   const required = [
-    'Karma & Factions',
+    'Karma & Reputation',
     'FACTION REPUTATION',
-    "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.",
+    'Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.',
+    'Reputation threshold help',
+    'Shows how Fame and Infamy points map to reputation tiers',
+    'REPUTATION THRESHOLDS',
+    'Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.',
+    'FAME OR INFAMY POINTS',
+    'TIER',
+    'Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.',
+    'Close',
     'ADD A FACTION',
     'Add faction',
     'Faction name',
     'Enter a faction name.',
     'The faction tracker is full.',
     'A faction with that name is already being tracked.',
-    'THRESHOLD PROFILE',
-    'Threshold profile',
     'FACTION',
     'Current faction reputation',
     'FAME',
@@ -191,24 +300,24 @@ test('faction reputation UI, profile names, and every automated title are transl
     'Hated', 'Sneering Punk', 'Unpredictable', 'Dark Hero',
     'Vilified', 'Merciful Thug', 'Soft-Hearted Devil', 'Wild Child',
   ];
-  const factionProfiles = [
-    'Boomers', 'Brotherhood of Steel', "Caesar's Legion", 'Followers of the Apocalypse',
-    'Freeside', 'Goodsprings', 'Great Khans', 'New California Republic', 'Novac',
-    'Powder Gangers', 'Primm', 'The Strip', 'White Glove Society',
-  ];
 
   for (const locale of localeIds) {
-    const translations = factionReputationTranslations[locale] ?? {};
+    const translations = {
+      ...(factionReputationTranslations[locale] ?? {}),
+      ...(factionReputationHelpTranslations[locale] ?? {}),
+    };
     for (const source of required) {
       assert.ok(translations[source]?.trim(), `${locale} translates faction UI text “${source}”`);
       if (source !== 'Neutral') {
         assert.notEqual(translations[source], source, `${locale} does not show English for “${source}”`);
       }
     }
-    for (const profile of factionProfiles) {
-      assert.ok(translations[profile]?.trim(), `${locale} has a display name for faction profile “${profile}”`);
-    }
   }
+
+  const tracker = readFileSync(new URL('../components/FactionReputationTracker.tsx', import.meta.url), 'utf8');
+  assert.match(tracker, /testID="faction-threshold-help"/);
+  assert.match(tracker, /testID="faction-threshold-help-modal"/);
+  assert.doesNotMatch(tracker, /THRESHOLD PROFILE|faction-threshold-profile-picker/);
 });
 
 test('translated interface fallbacks override English identity entries and match dynamic prompts', () => {
@@ -276,5 +385,30 @@ test('status-cleanup prompt text is translated for every supported non-English l
       assert.ok(translation[1].trim(), `${locale} has a non-empty translation for “${source}”`);
       assert.notEqual(translation[1], source, `${locale} does not show English for “${source}”`);
     }
+  }
+});
+
+test('About and guided-tour copy is translated and wired for every supported locale', () => {
+  assert.equal(new Set(appTourTranslationData.keys).size, appTourTranslationData.keys.length);
+  for (const locale of localeIds) {
+    const values = appTourTranslationData[locale];
+    assert.ok(values, `${locale} has app-tour translations`);
+    assert.equal(values.length, appTourTranslationData.keys.length, `${locale} has one value for each app-tour string`);
+    appTourTranslationData.keys.forEach((source, index) => {
+      if (!source.includes('{0}') && !source.includes('{1}')) {
+        assert.ok(appTourRenderedSource.includes(source), `app-tour source contains “${source}”`);
+      }
+      const translated = values[index];
+      assert.ok(translated?.trim(), `${locale} translates “${source}”`);
+      assert.notEqual(translated, source, `${locale} does not show English for “${source}”`);
+      const sample = source
+        .replace('{0}', '2')
+        .replace('{1}', '5');
+      const runtimeValue = runtimeTranslateText(sample, locale);
+      assert.notEqual(runtimeValue, sample, `${locale} resolves “${source}” at runtime`);
+      if (source.includes('{0}') || source.includes('{1}')) {
+        assert.equal(runtimeValue, translated.replace('{0}', '2').replace('{1}', '5'));
+      }
+    });
   }
 });

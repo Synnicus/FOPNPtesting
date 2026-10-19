@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  FlatList, Modal, Platform, ScrollView, View,
+  Image, Modal, Platform, ScrollView, View,
 } from 'react-native';
 import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,10 +11,12 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BestiaryTemplate, BestiaryCategory, CharacterSkills, SPECIALStats, DEFAULT_SKILLS, NaturalProtection, EMPTY_NATURAL_PROTECTION, Armor, DamageType, DAMAGE_TYPE_NAMES } from '@/context/types';
-import { BUILT_IN_BESTIARY, BESTIARY_CATEGORIES, spawnBestiaryTemplate } from '@/data/bestiary';
+import { BUILT_IN_BESTIARY, BESTIARY_CATEGORIES, resolveBestiaryTemplates, spawnBestiaryTemplate } from '@/data/bestiary';
 import { calcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills } from '@/data/derived';
 import { RACES, getRaceById } from '@/data/races';
 import { computeCombinedProtection } from '@/data/armor';
+import { CatalogImageEditor } from '@/components/CatalogImageEditor';
+import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -49,15 +51,18 @@ function combinedProtectionFor(
 }
 
 // ─── Bestiary detail page ────────────────────────────────────────────────────
-function BestiaryDetailModal({ template, visible, onClose, onSpawn, allWeapons, allArmor }: {
+function BestiaryDetailModal({ template, visible, onClose, onSpawn, onSetPortrait, onEdit, onDelete, allWeapons, allArmor }: {
   template: BestiaryTemplate | null; visible: boolean;
   onClose: () => void; onSpawn: (name: string) => void;
+  onSetPortrait: (selection: import('@/context/types').CatalogPortraitSelection) => void;
+  onEdit?: () => void; onDelete?: () => void;
   allWeapons: import('@/context/types').Weapon[];
   allArmor: Armor[];
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [customName, setCustomName] = useState('');
+  const [cropDragging, setCropDragging] = useState(false);
   useEffect(() => {
     setCustomName('');
   }, [template?.id, visible]);
@@ -95,7 +100,19 @@ function BestiaryDetailModal({ template, visible, onClose, onSpawn, allWeapons, 
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 14 }}>
+        <ScrollView
+          scrollEnabled={!cropDragging}
+          contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 14 }}
+        >
+          <CatalogImageEditor
+            uri={template.portrait}
+            name={template.name}
+            portraitFit={template.portraitFit}
+            portraitOffset={template.portraitOffset}
+            onChange={onSetPortrait}
+            onDragStateChange={setCropDragging}
+            testID={`bestiary-photo-${template.id}`}
+          />
           {template.description && (
             <Text style={{ fontSize: 14, lineHeight: 20, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
               {template.description}
@@ -188,6 +205,33 @@ function BestiaryDetailModal({ template, visible, onClose, onSpawn, allWeapons, 
             value={customName}
             onChangeText={setCustomName}
           />
+
+          {(onEdit || onDelete) && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {onEdit && (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  testID={`bestiary-edit-${template.id}`}
+                  onPress={onEdit}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.secondary }}
+                >
+                  <Feather name="edit-2" size={14} color={colors.primary} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.7 }}>EDIT ENTRY</Text>
+                </TouchableOpacity>
+              )}
+              {onDelete && (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  testID={`bestiary-remove-${template.id}`}
+                  onPress={onDelete}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive, backgroundColor: colors.destructive + '12' }}
+                >
+                  <Feather name="trash-2" size={14} color={colors.destructive} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive, letterSpacing: 0.7 }}>REMOVE ENTRY</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: colors.radius, backgroundColor: colors.primary }}
@@ -321,6 +365,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Name required'); return; }
     const t: BestiaryTemplate = {
+      ...(editTemplate ?? {}),
       id: editTemplate?.id ?? genId(),
       name: name.trim(), category, description,
       special, maxHp, armorClass: derivedAC, usesDerivedArmorClass, maxAP, sequence, skills,
@@ -329,7 +374,7 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
       equippedHelmetId: helmetId || undefined,
       naturalProtection: hasNaturalProtection ? naturalProtection : undefined,
       radiationResistance: radRes, gasResistance: 0, electricityResistance: 0,
-      isCustom: true,
+      isCustom: editTemplate?.isCustom ?? true,
     };
     onSave(t);
   };
@@ -339,7 +384,9 @@ function CustomNPCModal({ visible, onClose, onSave, editTemplate, allWeapons, al
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'flex-end' }}>
         <View style={{ maxHeight: '95%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{editTemplate ? 'EDIT' : 'CREATE'} CUSTOM NPC</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
+              {editTemplate ? (editTemplate.isCustom ? 'EDIT CUSTOM NPC' : 'EDIT PRE-MADE NPC') : 'CREATE CUSTOM NPC'}
+            </Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
 
@@ -658,6 +705,13 @@ function BestiaryCard({ template, onPress, onEdit, onDelete, allWeapons }: {
         style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: template.isCustom ? colors.primary + '66' : colors.border, padding: 12, paddingTop: 12, gap: 8 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          {template.portrait && (
+            <Image
+              source={{ uri: template.portrait }}
+              resizeMode="cover"
+              style={{ width: 58, height: 54, borderRadius: 6, backgroundColor: colors.secondary, marginRight: 9 }}
+            />
+          )}
           <View style={{ flex: 1, paddingRight: onEdit || onDelete ? 48 : 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               {template.isCustom && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 4 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}
@@ -666,7 +720,6 @@ function BestiaryCard({ template, onPress, onEdit, onDelete, allWeapons }: {
             <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, marginTop: 3, letterSpacing: 0.6 }}>{cat?.label.toUpperCase() ?? 'NPC'}</Text>
             {template.description && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 3 }} numberOfLines={2}>{template.description}</Text>}
           </View>
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
         </View>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -719,7 +772,13 @@ function BestiaryCard({ template, onPress, onEdit, onDelete, allWeapons }: {
 export default function BestiaryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addCharacter, customBestiaryTemplates, addCustomBestiaryTemplate, removeCustomBestiaryTemplate, allWeapons, allArmor } = useApp();
+  const {
+    addCharacter, customBestiaryTemplates, builtInBestiaryOverrides,
+    removedBuiltInBestiaryTemplateIds, bestiaryPortraits, bestiaryPortraitSettings, setBestiaryPortrait,
+    addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
+    saveBuiltInBestiaryOverride, removeBuiltInBestiaryTemplate,
+    allWeapons, allArmor,
+  } = useApp();
 
   const [activeCategory, setActiveCategory] = useState<BestiaryCategory>('beast');
   const [detailTarget, setDetailTarget] = useState<BestiaryTemplate | null>(null);
@@ -742,7 +801,20 @@ export default function BestiaryScreen() {
   }, [manualAll, manualSearch]);
 
   // Combine built-in + custom templates
-  const allTemplates = [...BUILT_IN_BESTIARY, ...customBestiaryTemplates];
+  const allTemplates = resolveBestiaryTemplates(
+    BUILT_IN_BESTIARY,
+    builtInBestiaryOverrides,
+    removedBuiltInBestiaryTemplateIds,
+    customBestiaryTemplates,
+  ).map(template => ({
+    ...template,
+    portrait: bestiaryPortraits[template.id] ?? template.portrait,
+    portraitFit: bestiaryPortraitSettings[template.id]?.portraitFit ?? template.portraitFit,
+    portraitOffset: bestiaryPortraitSettings[template.id]?.portraitOffset ?? template.portraitOffset,
+  }));
+  const currentDetailTemplate = detailTarget
+    ? allTemplates.find(template => template.id === detailTarget.id) ?? detailTarget
+    : null;
   const searchQuery = search.trim().toLowerCase();
   const searchingAllCategories = searchQuery.length > 0;
   const filteredTemplates = allTemplates.filter(t => {
@@ -759,26 +831,89 @@ export default function BestiaryScreen() {
   };
 
   const handleSaveCustom = (t: BestiaryTemplate) => {
-    if (editingTemplate) {
+    const editingBuiltIn = !!editingTemplate
+      && BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === editingTemplate.id);
+    if (editingBuiltIn) {
+      saveBuiltInBestiaryOverride(t);
+    } else if (editingTemplate) {
       removeCustomBestiaryTemplate(editingTemplate.id);
+      addCustomBestiaryTemplate(t);
+    } else {
+      addCustomBestiaryTemplate(t);
     }
-    addCustomBestiaryTemplate(t);
     setShowCustomForm(false);
     setEditingTemplate(null);
+    setDetailTarget(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const handleDelete = (t: BestiaryTemplate) => {
-    // Alert.alert with buttons is a silent no-op on react-native-web — use
-    // window.confirm there so the delete button actually works in the browser.
+  const confirmAction = (
+    title: string,
+    message: string,
+    confirmLabel: string,
+    onConfirm: () => void,
+    destructive = false,
+  ) => {
     if (Platform.OS === 'web') {
-      if (localizedConfirm(`Remove ${t.name} from the bestiary?`)) removeCustomBestiaryTemplate(t.id);
+      if (localizedConfirm(title, message)) onConfirm();
       return;
     }
-    Alert.alert('Delete NPC', `Remove ${t.name} from the bestiary?`, [
+    Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => removeCustomBestiaryTemplate(t.id) },
+      { text: confirmLabel, style: destructive ? 'destructive' : 'default', onPress: onConfirm },
     ]);
+  };
+
+  const handleEdit = (template: BestiaryTemplate) => {
+    const isBuiltIn = BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === template.id);
+    if (!isBuiltIn) {
+      setEditingTemplate(template);
+      setShowCustomForm(true);
+      setDetailTarget(null);
+      return;
+    }
+    confirmAction(
+      'Edit built-in NPC?',
+      'Editing this built-in NPC will override its default data. You can restore the default roster in Campaign Options.',
+      'Continue',
+      () => {
+        setEditingTemplate(template);
+        setShowCustomForm(true);
+        setDetailTarget(null);
+      },
+    );
+  };
+
+  const handleDelete = (t: BestiaryTemplate) => {
+    const isBuiltIn = BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === t.id);
+    if (isBuiltIn) {
+      confirmAction(
+        'Remove built-in NPC?',
+        'This hides the NPC from the Bestiary. You can restore the default roster in Campaign Options.',
+        'Remove',
+        () => {
+          removeBuiltInBestiaryTemplate(t.id);
+          setDetailTarget(null);
+        },
+        true,
+      );
+      return;
+    }
+    confirmAction(
+      'Delete NPC',
+      `Remove ${t.name} from the bestiary?`,
+      'Delete',
+      () => {
+        removeCustomBestiaryTemplate(t.id);
+        setBestiaryPortrait(t.id, {
+          portrait: undefined,
+          portraitFit: 'cover',
+          portraitOffset: { x: 0.5, y: 0.5 },
+        });
+        setDetailTarget(null);
+      },
+      true,
+    );
   };
 
   return (
@@ -858,7 +993,7 @@ export default function BestiaryScreen() {
           )}
         </View>
       ) : (
-        <FlatList
+        <MouseDraggableFlatList
           data={filteredTemplates}
           keyExtractor={t => t.id}
           numColumns={2}
@@ -871,8 +1006,12 @@ export default function BestiaryScreen() {
                 template={item}
                 allWeapons={allWeapons}
                 onPress={() => setDetailTarget(item)}
-                onEdit={item.isCustom ? () => { setEditingTemplate(item); setShowCustomForm(true); } : undefined}
-                onDelete={item.isCustom ? () => handleDelete(item) : undefined}
+                onEdit={item.isCustom || BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === item.id)
+                  ? () => handleEdit(item)
+                  : undefined}
+                onDelete={item.isCustom || BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === item.id)
+                  ? () => handleDelete(item)
+                  : undefined}
               />
             </View>
           )}
@@ -880,10 +1019,21 @@ export default function BestiaryScreen() {
       )}
 
       <BestiaryDetailModal
-        template={detailTarget}
+        template={currentDetailTemplate}
         visible={!!detailTarget}
         onClose={() => setDetailTarget(null)}
-        onSpawn={name => detailTarget && handleSpawn(detailTarget, name)}
+        onSpawn={name => currentDetailTemplate && handleSpawn(currentDetailTemplate, name)}
+        onSetPortrait={selection => {
+          if (currentDetailTemplate) setBestiaryPortrait(currentDetailTemplate.id, selection);
+        }}
+        onEdit={currentDetailTemplate
+          && BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === currentDetailTemplate.id)
+          ? () => handleEdit(currentDetailTemplate)
+          : undefined}
+        onDelete={currentDetailTemplate
+          && BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === currentDetailTemplate.id)
+          ? () => handleDelete(currentDetailTemplate)
+          : undefined}
         allWeapons={allWeapons}
         allArmor={allArmor}
       />

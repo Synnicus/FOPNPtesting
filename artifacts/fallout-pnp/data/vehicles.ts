@@ -314,6 +314,8 @@ export function spawnVehicleCharacter(vehicle: VehicleProfile, id: string): Char
     gasResistance: 0,
     electricityResistance: 0,
     portrait: snapshot.portrait,
+    portraitFit: snapshot.portraitFit,
+    portraitOffset: snapshot.portraitOffset,
     vehicle: snapshot,
   };
 }

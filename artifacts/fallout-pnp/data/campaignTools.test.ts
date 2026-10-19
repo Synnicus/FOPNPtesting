@@ -1,22 +1,102 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeCampaignMap, normalizeCampaignTable, validCampaignMap, validCampaignTable } from './campaignTools.ts';
+import {
+  normalizeCampaignMap,
+  normalizeCampaignTable,
+  rollEncounterTable,
+  rollLootTable,
+  validCampaignMap,
+  validCampaignTable,
+} from './campaignTools.ts';
+import type { CampaignTable } from '../context/types.ts';
 
-test('normalizes campaign tables and preserves configurable weighted entries', () => {
+test('normalizes campaign tables with loot defaults and preserves configurable weights', () => {
   const table = normalizeCampaignTable({
     id: 'loot-1',
     name: 'Ruins',
     description: 'Scavenge list',
-    entries: [{ id: 'water', name: 'Purified water', description: 'A bottle', weight: 4 }],
+    rollCountMin: 1,
+    rollCountMax: 1,
+    entries: [{
+      id: 'water',
+      name: 'Purified water',
+      description: 'A bottle',
+      weight: 4,
+      quantityMin: 1,
+      quantityMax: 1,
+    }],
   });
   assert.deepEqual(table, {
     id: 'loot-1',
     name: 'Ruins',
     description: 'Scavenge list',
-    entries: [{ id: 'water', name: 'Purified water', description: 'A bottle', weight: 4 }],
+    rollCountMin: 1,
+    rollCountMax: 1,
+    entries: [{
+      id: 'water',
+      name: 'Purified water',
+      description: 'A bottle',
+      weight: 4,
+      quantityMin: 1,
+      quantityMax: 1,
+    }],
   });
   assert.equal(validCampaignTable(table), true);
   assert.equal(validCampaignTable({ ...table!, entries: [{ ...table!.entries[0], weight: 0 }] }), false);
+});
+
+test('normalizes loot ranges so maximum rolls and quantities cannot be below their minimums', () => {
+  const table = normalizeCampaignTable({
+    id: 'range',
+    name: 'Range',
+    rollCountMin: 3,
+    rollCountMax: 2,
+    entries: [{ id: 'ammo', name: 'Ammo', weight: 1, quantityMin: 4, quantityMax: 2 }],
+  });
+
+  assert.equal(table?.rollCountMin, 3);
+  assert.equal(table?.rollCountMax, 3);
+  assert.equal(table?.entries[0].quantityMin, 4);
+  assert.equal(table?.entries[0].quantityMax, 4);
+});
+
+test('encounter tables give every entry the same chance, regardless of weight', () => {
+  const table: CampaignTable = {
+    id: 'encounters',
+    name: 'Encounters',
+    description: '',
+    entries: [
+      { id: 'raiders', name: 'Raiders', description: '', weight: 1 },
+      { id: 'geckos', name: 'Geckos', description: '', weight: 99 },
+    ],
+  };
+
+  assert.equal(rollEncounterTable(table, () => 0.25)[0].name, 'Raiders');
+  assert.equal(rollEncounterTable(table, () => 0.75)[0].name, 'Geckos');
+  assert.deepEqual(rollEncounterTable({ ...table, entries: [] }, () => 0), []);
+});
+
+test('loot rolls draw a configurable count, choose weighted entries, and roll their quantities', () => {
+  const table: CampaignTable = {
+    id: 'loot',
+    name: 'Loot',
+    description: '',
+    rollCountMin: 2,
+    rollCountMax: 2,
+    entries: [
+      { id: 'common', name: 'Scrap', description: 'Metal pieces', weight: 1, quantityMin: 2, quantityMax: 4 },
+      { id: 'rare', name: 'Stimpak', description: '', weight: 3, quantityMin: 1, quantityMax: 1 },
+    ],
+  };
+  const values = [0.1, 0.5, 0.9];
+  let index = 0;
+  const results = rollLootTable(table, () => values[index++]);
+
+  assert.deepEqual(results.map(result => [result.name, result.quantity]), [
+    ['Scrap', 3],
+    ['Stimpak', 1],
+  ]);
+  assert.equal(validCampaignTable(table), true);
 });
 
 test('campaign map normalizes portable image and normalized marker coordinates', () => {

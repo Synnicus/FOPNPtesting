@@ -16,8 +16,10 @@ import Animated, {
 import { LocalizedAlert, LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
+import AboutThisAppModal from '@/components/AboutThisAppModal';
 import { useApp } from '@/context/AppContext';
 import { useLocalization } from '@/context/LocalizationContext';
+import { useAppTour } from '@/context/AppTourContext';
 import { APP_LANGUAGES, translateText } from '@/data/localization';
 import { useColors } from '@/hooks/useColors';
 
@@ -167,11 +169,13 @@ export default function MainMenuScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const { loaded, importCampaign, systemSoundsEnabled } = useApp();
   const { locale } = useLocalization();
+  const { startTour } = useAppTour();
   const neonBuzzPlayer = useAudioPlayer(require('../assets/neon-flicker-buzz.mp3'));
   const menuButtonPlayer = useAudioPlayer(require('../assets/main-menu-button-press.mp3'));
   const continueButtonPlayer = useAudioPlayer(require('../assets/main-menu-continue.mp3'));
   const [showOptions, setShowOptions] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [showLanguages, setShowLanguages] = useState(false);
   const [isContinuePending, setIsContinuePending] = useState(false);
   const logoLineSize = Math.min(50, Math.max(32, (windowWidth - 80) / 7));
@@ -394,6 +398,7 @@ export default function MainMenuScreen() {
             <MenuButton label="New Campaign" icon="file-plus" onPress={() => handleMainMenuAction(startNewCampaign)} disabled={!loaded || isContinuePending} testID="new-campaign" />
             <MenuButton label="Load Campaign" icon="folder" onPress={() => handleMainMenuAction(() => setShowLibrary(true))} disabled={!loaded || isContinuePending} testID="open-campaign-library" />
             <MenuButton label="Options" icon="settings" onPress={() => handleMainMenuAction(() => setShowOptions(true))} disabled={!loaded || isContinuePending} testID="open-menu-options" />
+            <MenuButton label="About This App" icon="info" onPress={() => handleMainMenuAction(() => setShowAbout(true))} testID="open-about-this-app" />
           </View>
         </View>
       </ScrollView>
@@ -409,6 +414,14 @@ export default function MainMenuScreen() {
         onCampaignLoaded={() => {
           setShowLibrary(false);
           router.push('/(tabs)');
+        }}
+      />
+      <AboutThisAppModal
+        visible={showAbout}
+        onClose={() => setShowAbout(false)}
+        onTakeTour={() => {
+          setShowAbout(false);
+          startTour();
         }}
       />
       <LanguagePicker visible={showLanguages} onClose={() => setShowLanguages(false)} />

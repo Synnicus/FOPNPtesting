@@ -2831,7 +2831,7 @@ export default function CombatScreen() {
               <View style={{ gap: 7 }}>
                 <TouchableOpacity testID="open-aoe-damage" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={() => { setAreaAttackPreset(null); setShowAreaAttack(true); }}>
                   <Feather name="target" size={14} color="#fff" />
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY AOE DAMAGE</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>AOE ATTACK</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, borderStyle: 'dashed' }} onPress={() => setShowAddCombatantPicker(true)}>
                   <Feather name="user-plus" size={14} color={colors.primary} />
@@ -4628,7 +4628,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
         <View style={{ maxHeight: '92%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: Math.max(insets.bottom, 12), borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View>
-              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{summary ? 'AREA EFFECT RESULTS' : profileMode ? 'TRIGGER MINE / TRAP' : 'APPLY AOE DAMAGE'}</Text>
+              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{summary ? 'AREA EFFECT RESULTS' : profileMode ? 'TRIGGER MINE / TRAP' : 'AOE ATTACK'}</Text>
               <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : profileMode ? `${sourceWeaponName ?? (catalogProfileId ? catalogProfileLabel(catalogProfileId) : 'Device')} — choose a printed component and resolve its affected targets.` : 'Select an effect and every active combatant in its area.'}</Text>
             </View>
             <TouchableOpacity testID="aoe-close" onPress={close}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>

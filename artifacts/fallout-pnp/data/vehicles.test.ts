@@ -30,6 +30,23 @@ test('vehicle hit systems are independent and structure HP backs the combatant H
   assert.equal(damaged.systems.find(system => system.kind === 'structure')?.currentHp, 300);
 });
 
+test('spawned vehicles inherit their user-supplied catalog photo', () => {
+  const humvee = BUILT_IN_VEHICLES.find(vehicle => vehicle.id === 'humvee');
+  assert.ok(humvee);
+  const portrait = 'data:image/png;base64,AQID';
+  const portraitOffset = { x: 0.4, y: 0.6 };
+  const character = spawnVehicleCharacter({
+    ...humvee,
+    portrait,
+    portraitFit: 'contain',
+    portraitOffset,
+  }, 'photo-test');
+  assert.equal(character.portrait, portrait);
+  assert.equal(character.vehicle?.portrait, portrait);
+  assert.equal(character.portraitFit, 'contain');
+  assert.deepEqual(character.portraitOffset, portraitOffset);
+});
+
 test('vehicle system is disabled only after losing more than 66 percent of its HP', () => {
   assert.equal(vehicleSystemStatus({ id: 'engine', name: 'Engine', kind: 'engine', currentHp: 34, maxHp: 100 }), 'operational');
   assert.equal(vehicleSystemStatus({ id: 'engine', name: 'Engine', kind: 'engine', currentHp: 33, maxHp: 100 }), 'disabled');

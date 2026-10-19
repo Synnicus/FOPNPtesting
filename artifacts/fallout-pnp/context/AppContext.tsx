@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod, CatalogPortraitSelection, CatalogPortraitSettings } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -21,6 +21,7 @@ import {
   getBuiltInBestiaryRace,
   shouldMigrateSpawnedNpcArmorClass,
 } from '@/data/bestiary';
+import { isBestiaryTemplateRecord } from '@/data/portableExports';
 import { AP_COSTS } from '@/data/apCosts';
 import {
   advanceCombatSkillTurn,
@@ -48,6 +49,7 @@ import {
 import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { computeDefensivePerkBonuses } from '@/data/attackResolution';
 import { getPerkById } from '@/data/perks';
+import { migrateLegacyTraitPerks } from '@/data/legacyPerkMigration';
 import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
@@ -74,6 +76,12 @@ import {
 } from '@/data/campaignOptions';
 import { normalizeCampaignMap, normalizeCampaignTable } from '@/data/campaignTools';
 import { validateCustomPerk, validateCustomWeaponMod } from '@/data/customRules';
+import {
+  isCatalogImageDataUri,
+  normalizeCatalogPortraitMap,
+  normalizeCatalogPortraitSettings,
+  normalizeCatalogPortraitSettingsMap,
+} from '@/data/catalogImages';
 
 function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
   if (Platform.OS === 'web') return;
@@ -341,6 +349,12 @@ interface AppState extends CampaignOptions {
   customAmmo: AmmoType[];
   customVehicles: VehicleProfile[];
   customBestiaryTemplates: BestiaryTemplate[];
+  builtInBestiaryOverrides: BestiaryTemplate[];
+  removedBuiltInBestiaryTemplateIds: string[];
+  bestiaryPortraits: Record<string, string>;
+  vehicleCatalogPortraits: Record<string, string>;
+  bestiaryPortraitSettings: Record<string, CatalogPortraitSettings>;
+  vehicleCatalogPortraitSettings: Record<string, CatalogPortraitSettings>;
   customWeaponMods: CustomWeaponMod[];
   customPerks: CustomPerkDefinition[];
   campaignRuleTags: CampaignRuleTag[];
@@ -373,6 +387,7 @@ const CAMPAIGN_COLLECTIONS = [
   'customAmmo',
   'customVehicles',
   'customBestiaryTemplates',
+  'builtInBestiaryOverrides',
   'customWeaponMods',
   'customPerks',
   'campaignRuleTags',
@@ -463,6 +478,11 @@ function hasValidCampaignImport(value: unknown): value is AppState {
     && (!Array.isArray(value.campaignRuleTags) || !value.campaignRuleTags.every(tag =>
       isRecord(tag) && typeof tag.id === 'string' && typeof tag.label === 'string'
       && ['weapon', 'armor', 'both'].includes(tag.appliesTo as string)))) return false;
+  if (value.builtInBestiaryOverrides !== undefined
+    && (!Array.isArray(value.builtInBestiaryOverrides)
+      || !value.builtInBestiaryOverrides.every(isBestiaryTemplateRecord))) return false;
+  if (value.removedBuiltInBestiaryTemplateIds !== undefined
+    && !isStringArray(value.removedBuiltInBestiaryTemplateIds)) return false;
   if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
   return true;
 }
@@ -503,9 +523,10 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     ? armor
     : { ...armor, effects: { special: {}, skills: {} } };
   const normalizeCharacter = (character: Character): Character => {
-    let normalized = typeof character.poisonResistance === 'number'
-      ? character
-      : { ...character, poisonResistance: 0 };
+    let normalized = migrateLegacyTraitPerks(character);
+    if (typeof normalized.poisonResistance !== 'number') {
+      normalized = { ...normalized, poisonResistance: 0 };
+    }
     const accumulatedRadiation = normalizeRadiation(normalized.accumulatedRadiation);
     if (accumulatedRadiation !== normalized.accumulatedRadiation) {
       normalized = { ...normalized, accumulatedRadiation };
@@ -550,18 +571,50 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     }
     return normalized;
   };
-  const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => ({
-    ...normalizeCustomTemplateArmorClass(template),
-    // Preserve explicit fixed-AC choices; older templates still default to derived.
-    poisonResistance: template.poisonResistance ?? 0,
-    sequence: template.sequence ?? template.special.perception * 2,
+  const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => {
+    const portraitSettings = normalizeCatalogPortraitSettings(template);
+    return {
+      ...normalizeCustomTemplateArmorClass(template),
+      // Preserve explicit fixed-AC choices; older templates still default to derived.
+      portrait: isCatalogImageDataUri(template.portrait) ? template.portrait : undefined,
+      portraitFit: portraitSettings?.portraitFit,
+      portraitOffset: portraitSettings?.portraitOffset,
+      poisonResistance: template.poisonResistance ?? 0,
+      sequence: template.sequence ?? template.special.perception * 2,
+    };
+  };
+  const normalizedTemplates = (parsed.customBestiaryTemplates ?? []).map(normalizeTemplate);
+  const builtInTemplateIds = new Set(BUILT_IN_BESTIARY.map(template => template.id));
+  const normalizedBuiltInOverrides = (parsed.builtInBestiaryOverrides ?? [])
+    .filter(template => isBestiaryTemplateRecord(template) && builtInTemplateIds.has(template.id))
+    .map(normalizeTemplate);
+  const removedBuiltInBestiaryTemplateIds = [...new Set(
+    (parsed.removedBuiltInBestiaryTemplateIds ?? [])
+      .filter(id => typeof id === 'string' && builtInTemplateIds.has(id)),
+  )];
+  const bestiaryPortraits = normalizeCatalogPortraitMap({
+    ...Object.fromEntries([...normalizedTemplates, ...normalizedBuiltInOverrides]
+      .filter(template => isCatalogImageDataUri(template.portrait))
+      .map(template => [template.id, template.portrait!])),
+    ...(parsed.bestiaryPortraits ?? {}),
+  });
+  const bestiaryPortraitSettings = normalizeCatalogPortraitSettingsMap({
+    ...Object.fromEntries([...normalizedTemplates, ...normalizedBuiltInOverrides]
+      .map(template => [template.id, template])),
+    ...(parsed.bestiaryPortraitSettings ?? {}),
   });
 
   return {
     ...parsed,
     characters: (parsed.characters ?? []).map(normalizeCharacter),
     customArmor: (parsed.customArmor ?? []).map(normalizeArmor),
-    customBestiaryTemplates: (parsed.customBestiaryTemplates ?? []).map(normalizeTemplate),
+    customBestiaryTemplates: normalizedTemplates.map(({ portrait: _portrait, ...template }) => template),
+    builtInBestiaryOverrides: normalizedBuiltInOverrides.map(({ portrait: _portrait, ...template }) => template),
+    removedBuiltInBestiaryTemplateIds,
+    bestiaryPortraits,
+    bestiaryPortraitSettings,
+    vehicleCatalogPortraits: normalizeCatalogPortraitMap(parsed.vehicleCatalogPortraits),
+    vehicleCatalogPortraitSettings: normalizeCatalogPortraitSettingsMap(parsed.vehicleCatalogPortraitSettings),
   };
 }
 
@@ -592,6 +645,7 @@ function normalizePersistedState(parsed: AppState): AppState {
       && ['weapon', 'armor', 'both'].includes(tag.appliesTo)),
     customVehicles: (parsed.customVehicles ?? []).map(vehicle => ({
       ...vehicle,
+      ...(normalizeCatalogPortraitSettings(vehicle) ?? {}),
       isCustom: true,
       damageResistance: { ...vehicle.damageResistance },
       systems: (vehicle.systems ?? []).map(system => ({
@@ -697,6 +751,11 @@ interface AppContextValue extends AppState {
 
   addCustomBestiaryTemplate: (t: BestiaryTemplate) => void;
   removeCustomBestiaryTemplate: (id: string) => void;
+  saveBuiltInBestiaryOverride: (t: BestiaryTemplate) => void;
+  removeBuiltInBestiaryTemplate: (id: string) => void;
+  restoreBuiltInBestiaryDefaults: () => void;
+  setBestiaryPortrait: (id: string, selection: CatalogPortraitSelection) => void;
+  setVehicleCatalogPortrait: (id: string, selection: CatalogPortraitSelection) => void;
 
   exportCampaign: () => string;
   importCampaign: (json: string) => boolean;
@@ -721,6 +780,12 @@ const defaultState: AppState = markConditionSemanticsV2({
   customAmmo: [],
   customVehicles: [],
   customBestiaryTemplates: [],
+  builtInBestiaryOverrides: [],
+  removedBuiltInBestiaryTemplateIds: [],
+  bestiaryPortraits: {},
+  vehicleCatalogPortraits: {},
+  bestiaryPortraitSettings: {},
+  vehicleCatalogPortraitSettings: {},
   customWeaponMods: [],
   customPerks: [],
   campaignRuleTags: [],
@@ -774,48 +839,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Character CRUD ─────────────────────────────────────────────────────────
 
   const addCharacter = useCallback((char: Character) => {
+    const migratedCharacter = migrateLegacyTraitPerks(char);
     setState(s => ({
       ...markConditionSemanticsV2(s),
       characters: [
         ...s.characters,
-        normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo], s.customWeaponMods),
+        normalizeCharacterAmmoStates(migratedCharacter, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo], s.customWeaponMods),
       ],
     }));
   }, []);
 
   const updateCharacter = useCallback((char: Character) => {
+    const migratedCharacter = migrateLegacyTraitPerks(char);
     setState(s => {
       const allArmor = [...BUILT_IN_ARMOR, ...s.customArmor];
       const sheet = resolveCharacterArmorSheet(
-        char, allArmor, false, s.hardcoreRadiationRules, s.mutantGhoulRadiationRules, s.ghoulRadiationHealingOption,
+        migratedCharacter, allArmor, false, s.hardcoreRadiationRules, s.mutantGhoulRadiationRules, s.ghoulRadiationHealingOption,
       );
-      const vehicleStructure = char.vehicle?.systems.find(system => system.kind === 'structure')
-        ?? char.vehicle?.systems[0];
+      const vehicleStructure = migratedCharacter.vehicle?.systems.find(system => system.kind === 'structure')
+        ?? migratedCharacter.vehicle?.systems[0];
       const normalized = normalizeCharacterAmmoStates(
         {
-          ...char,
-          ...(char.vehicle && vehicleStructure ? {
+          ...migratedCharacter,
+          ...(migratedCharacter.vehicle && vehicleStructure ? {
             maxHp: vehicleStructure.maxHp,
             currentHp: vehicleStructure.currentHp,
-            armorClass: char.vehicle.armorClass,
-            manualDerivedStats: { ...char.manualDerivedStats, armorClass: char.vehicle.armorClass, maxAP: 0, sequence: 0 },
+            armorClass: migratedCharacter.vehicle.armorClass,
+            manualDerivedStats: { ...migratedCharacter.manualDerivedStats, armorClass: migratedCharacter.vehicle.armorClass, maxAP: 0, sequence: 0 },
           } : {}),
-          currentAP: char.vehicle ? 0 : Math.min(char.currentAP, sheet.maxAP),
+          currentAP: migratedCharacter.vehicle ? 0 : Math.min(migratedCharacter.currentAP, sheet.maxAP),
         },
         [...BUILT_IN_WEAPONS, ...s.customWeapons],
         [...AMMO_TYPES, ...s.customAmmo],
       );
       return {
         ...s,
-        characters: s.characters.map(c => c.id === char.id ? normalized : c),
+        characters: s.characters.map(c => c.id === migratedCharacter.id ? normalized : c),
         initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry =>
-          entry.characterId === char.id
-            ? char.vehicle
+          entry.characterId === migratedCharacter.id
+            ? migratedCharacter.vehicle
               ? {
                   ...syncInitiativeEntrySheet(entry, sheet),
                   currentHp: normalized.currentHp,
                   maxHp: normalized.maxHp,
-                  armorClass: char.vehicle.armorClass,
+                  armorClass: migratedCharacter.vehicle.armorClass,
                   maxAP: 0,
                   currentAP: 0,
                 }
@@ -2083,6 +2150,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const removeCustomBestiaryTemplate = useCallback((id: string) => {
     setState(s => ({ ...s, customBestiaryTemplates: s.customBestiaryTemplates.filter(t => t.id !== id) }));
   }, []);
+  const saveBuiltInBestiaryOverride = useCallback((template: BestiaryTemplate) => {
+    if (!BUILT_IN_BESTIARY.some(defaultTemplate => defaultTemplate.id === template.id)) return;
+    setState(s => ({
+      ...s,
+      builtInBestiaryOverrides: [
+        ...s.builtInBestiaryOverrides.filter(existing => existing.id !== template.id),
+        { ...template, isCustom: false, poisonResistance: template.poisonResistance ?? 0 },
+      ],
+      removedBuiltInBestiaryTemplateIds: s.removedBuiltInBestiaryTemplateIds.filter(id => id !== template.id),
+    }));
+  }, []);
+  const removeBuiltInBestiaryTemplate = useCallback((id: string) => {
+    if (!BUILT_IN_BESTIARY.some(template => template.id === id)) return;
+    setState(s => ({
+      ...s,
+      builtInBestiaryOverrides: s.builtInBestiaryOverrides.filter(template => template.id !== id),
+      removedBuiltInBestiaryTemplateIds: s.removedBuiltInBestiaryTemplateIds.includes(id)
+        ? s.removedBuiltInBestiaryTemplateIds
+        : [...s.removedBuiltInBestiaryTemplateIds, id],
+    }));
+  }, []);
+  const restoreBuiltInBestiaryDefaults = useCallback(() => {
+    setState(s => ({
+      ...s,
+      builtInBestiaryOverrides: [],
+      removedBuiltInBestiaryTemplateIds: [],
+    }));
+  }, []);
+  const setBestiaryPortrait = useCallback((id: string, selection: CatalogPortraitSelection) => {
+    setState(s => {
+      const bestiaryPortraits = { ...s.bestiaryPortraits };
+      const bestiaryPortraitSettings = { ...s.bestiaryPortraitSettings };
+      if (selection.portrait) {
+        bestiaryPortraits[id] = selection.portrait;
+        bestiaryPortraitSettings[id] = normalizeCatalogPortraitSettings(selection) ?? {
+          portraitFit: 'cover',
+          portraitOffset: { x: 0.5, y: 0.5 },
+        };
+      } else {
+        delete bestiaryPortraits[id];
+        delete bestiaryPortraitSettings[id];
+      }
+      return { ...s, bestiaryPortraits, bestiaryPortraitSettings };
+    });
+  }, []);
+  const setVehicleCatalogPortrait = useCallback((id: string, selection: CatalogPortraitSelection) => {
+    setState(s => {
+      const vehicleCatalogPortraits = { ...s.vehicleCatalogPortraits };
+      const vehicleCatalogPortraitSettings = { ...s.vehicleCatalogPortraitSettings };
+      if (selection.portrait) {
+        vehicleCatalogPortraits[id] = selection.portrait;
+        vehicleCatalogPortraitSettings[id] = normalizeCatalogPortraitSettings(selection) ?? {
+          portraitFit: 'cover',
+          portraitOffset: { x: 0.5, y: 0.5 },
+        };
+      } else {
+        delete vehicleCatalogPortraits[id];
+        delete vehicleCatalogPortraitSettings[id];
+      }
+      return { ...s, vehicleCatalogPortraits, vehicleCatalogPortraitSettings };
+    });
+  }, []);
 
   // ─── Campaign ────────────────────────────────────────────────────────────────
 
@@ -2285,6 +2414,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
       addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
+       saveBuiltInBestiaryOverride, removeBuiltInBestiaryTemplate, restoreBuiltInBestiaryDefaults,
+      setBestiaryPortrait, setVehicleCatalogPortrait,
       exportCampaign, importCampaign, saveCampaignTools, saveCustomRules,
     }}>
       {children}

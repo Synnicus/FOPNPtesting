@@ -1,6 +1,6 @@
 {
   "fr": {
-    "Karma & Factions": "Karma et factions",
+    "Karma & Reputation": "Karma et réputation",
     "FACTION REPUTATION": "RÉPUTATION DE FACTION",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Suivez séparément la Renommée et l’Infamie. Le profil de seuil de la faction détermine son titre de réputation façon New Vegas.",
     "ADD A FACTION": "AJOUTER UNE FACTION",
@@ -67,7 +67,7 @@
     "White Glove Society": "Société du Gant Blanc"
   },
   "it": {
-    "Karma & Factions": "Karma e fazioni",
+    "Karma & Reputation": "Karma e reputazione",
     "FACTION REPUTATION": "REPUTAZIONE FAZIONE",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Tieni separati Fama e Infamia. Il profilo delle soglie della fazione determina il titolo di reputazione in stile New Vegas.",
     "ADD A FACTION": "AGGIUNGI FAZIONE",
@@ -134,7 +134,7 @@
     "White Glove Society": "Società dei Guanti Bianchi"
   },
   "de": {
-    "Karma & Factions": "Karma & Fraktionen",
+    "Karma & Reputation": "Karma & Ruf",
     "FACTION REPUTATION": "RUHM UND RUF",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Ruhm und Verrufenheit werden getrennt geführt. Das Schwellenprofil der Fraktion bestimmt den New-Vegas-Ruftitel.",
     "ADD A FACTION": "FRAKTION HINZUFÜGEN",
@@ -201,7 +201,7 @@
     "White Glove Society": "Weißhandschuh-Gesellschaft"
   },
   "es-ES": {
-    "Karma & Factions": "Karma y facciones",
+    "Karma & Reputation": "Karma y reputación",
     "FACTION REPUTATION": "REPUTACIÓN DE FACCIÓN",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Registra la fama y la infamia por separado. El perfil de umbrales de la facción determina su título de reputación al estilo de New Vegas.",
     "ADD A FACTION": "AÑADIR UNA FACCIÓN",
@@ -268,7 +268,7 @@
     "White Glove Society": "Sociedad del Guante Blanco"
   },
   "es-MX": {
-    "Karma & Factions": "Karma y facciones",
+    "Karma & Reputation": "Karma y reputación",
     "FACTION REPUTATION": "REPUTACIÓN DE FACCIÓN",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Registra la Fama y la Infamia por separado. El perfil de umbrales de la facción determina su título de reputación al estilo de New Vegas.",
     "ADD A FACTION": "AGREGAR UNA FACCIÓN",
@@ -335,7 +335,7 @@
     "White Glove Society": "Sociedad del Guante Blanco"
   },
   "ja": {
-    "Karma & Factions": "カルマと勢力",
+    "Karma & Reputation": "カルマと評判",
     "FACTION REPUTATION": "勢力の評判",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "名声と悪評を別々に記録します。勢力のしきい値プロファイルでNew Vegas風の評判称号が決まります。",
     "ADD A FACTION": "勢力を追加",
@@ -402,7 +402,7 @@
     "White Glove Society": "ホワイトグローブ協会"
   },
   "pl": {
-    "Karma & Factions": "Karma i frakcje",
+    "Karma & Reputation": "Karma i reputacja",
     "FACTION REPUTATION": "REPUTACJA FRAKCJI",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Śledź oddzielnie sławę i niesławę. Profil progów frakcji określa tytuł reputacji w stylu New Vegas.",
     "ADD A FACTION": "DODAJ FRAKCJĘ",
@@ -469,7 +469,7 @@
     "White Glove Society": "Towarzystwo Białej Rękawiczki"
   },
   "pt-BR": {
-    "Karma & Factions": "Karma e facções",
+    "Karma & Reputation": "Karma e reputação",
     "FACTION REPUTATION": "REPUTAÇÃO DA FACÇÃO",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Acompanhe fama e infâmia separadamente. O perfil de limites da facção define o título de reputação no estilo New Vegas.",
     "ADD A FACTION": "ADICIONAR FACÇÃO",
@@ -536,7 +536,7 @@
     "White Glove Society": "Sociedade da Luva Branca"
   },
   "ru": {
-    "Karma & Factions": "Карма и фракции",
+    "Karma & Reputation": "Карма и репутация",
     "FACTION REPUTATION": "РЕПУТАЦИЯ ФРАКЦИИ",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "Слава и дурная слава учитываются отдельно. Пороговый профиль фракции определяет звание репутации в стиле New Vegas.",
     "ADD A FACTION": "ДОБАВИТЬ ФРАКЦИЮ",
@@ -603,7 +603,7 @@
     "White Glove Society": "Общество Белых Перчаток"
   },
   "zh-Hans": {
-    "Karma & Factions": "业力与派系",
+    "Karma & Reputation": "业力与声望",
     "FACTION REPUTATION": "派系声望",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "分别记录声望与恶名。派系的阈值配置决定新维加斯风格的声望称号。",
     "ADD A FACTION": "添加派系",
@@ -670,7 +670,7 @@
     "White Glove Society": "白手套协会"
   },
   "zh-Hant": {
-    "Karma & Factions": "業力與派系",
+    "Karma & Reputation": "業力與聲望",
     "FACTION REPUTATION": "派系聲望",
     "Track Fame and Infamy separately. The faction's threshold profile determines its New Vegas-style reputation title.": "分別記錄聲望與惡名。派系的門檻設定會決定新維加斯風格的聲望稱號。",
     "ADD A FACTION": "新增派系",

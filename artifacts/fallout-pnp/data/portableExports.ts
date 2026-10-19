@@ -10,6 +10,7 @@ import type {
   CampaignRuleTag,
   CustomPerkDefinition,
   CustomWeaponMod,
+  CatalogPortraitSettings,
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 import { isFactionReputationList } from './factionReputation.ts';
@@ -18,6 +19,11 @@ import type { GhoulRadiationHealingOption } from './radiation.ts';
 import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
 import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
+import {
+  isCatalogImageDataUri,
+  normalizeCatalogPortraitMap,
+  normalizeCatalogPortraitSettingsMap,
+} from './catalogImages.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -42,7 +48,14 @@ export interface CampaignStateSnapshot {
   lootTables?: CampaignTable[];
   encounterTables?: CampaignTable[];
   campaignMaps?: CampaignMap[];
+  /** Campaign-local photos for catalog entries; values are validated data URIs. */
+  bestiaryPortraits?: Record<string, string>;
+  vehicleCatalogPortraits?: Record<string, string>;
+  bestiaryPortraitSettings?: Record<string, CatalogPortraitSettings>;
+  vehicleCatalogPortraitSettings?: Record<string, CatalogPortraitSettings>;
   customBestiaryTemplates: BestiaryTemplate[];
+  builtInBestiaryOverrides?: BestiaryTemplate[];
+  removedBuiltInBestiaryTemplateIds?: string[];
   initiativeEntries: InitiativeEntry[];
   currentRound: number;
   combatActive: boolean;
@@ -216,6 +229,15 @@ export function createCampaignBundle(
 ): PortableCampaignBundle {
   const characterIds = new Set(state.characters.map(character => character.id));
   const vehicleIds = new Set((state.customVehicles ?? []).map(vehicle => vehicle.id));
+  const bestiaryPortraits = normalizeCatalogPortraitMap({
+    ...Object.fromEntries([
+      ...(state.customBestiaryTemplates ?? []),
+      ...(state.builtInBestiaryOverrides ?? []),
+    ]
+      .filter(template => isCatalogImageDataUri(template.portrait))
+      .map(template => [template.id, template.portrait!])),
+    ...(state.bestiaryPortraits ?? {}),
+  });
   const embeddedIds = new Set<string>();
   let totalBytes = 0;
   const validAssets: PortablePortraitAsset[] = [];
@@ -251,6 +273,13 @@ export function createCampaignBundle(
       characters: state.characters.map(character =>
         characterForBundle(character)),
       customVehicles: (state.customVehicles ?? []).map(vehicleForBundle),
+      customBestiaryTemplates: state.customBestiaryTemplates.map(({ portrait: _portrait, ...template }) => template),
+      builtInBestiaryOverrides: (state.builtInBestiaryOverrides ?? [])
+        .map(({ portrait: _portrait, ...template }) => template),
+      bestiaryPortraits,
+      vehicleCatalogPortraits: normalizeCatalogPortraitMap(state.vehicleCatalogPortraits),
+      bestiaryPortraitSettings: normalizeCatalogPortraitSettingsMap(state.bestiaryPortraitSettings),
+      vehicleCatalogPortraitSettings: normalizeCatalogPortraitSettingsMap(state.vehicleCatalogPortraitSettings),
     },
     assets: validAssets,
   };
@@ -546,7 +575,7 @@ function isArmorRecord(value: unknown): value is Armor {
     && (value.tags === undefined || isStringArray(value.tags));
 }
 
-function isBestiaryTemplateRecord(value: unknown): value is BestiaryTemplate {
+export function isBestiaryTemplateRecord(value: unknown): value is BestiaryTemplate {
   if (!isRecord(value)) return false;
   return typeof value.id === 'string'
     && value.id.length > 0
@@ -554,6 +583,7 @@ function isBestiaryTemplateRecord(value: unknown): value is BestiaryTemplate {
     && typeof value.category === 'string'
     && hasFiniteNumbers(value.special, SPECIAL_KEYS)
     && hasFiniteNumbers(value.skills, SKILL_KEYS)
+    && (value.portrait === undefined || isCatalogImageDataUri(value.portrait))
     && ['maxHp', 'armorClass', 'maxAP', 'sequence', 'radiationResistance', 'gasResistance', 'electricityResistance']
       .every(field => isFiniteNumber(value[field]));
 }
@@ -574,6 +604,27 @@ function hasUniqueIds(items: readonly { id: string }[]): boolean {
   return new Set(items.map(item => item.id)).size === items.length;
 }
 
+function isCatalogPortraitMap(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value) || Object.keys(value).length > 500) return false;
+  return Object.entries(value).every(([id, uri]) =>
+    id.length > 0 && id.length <= 128 && isCatalogImageDataUri(uri));
+}
+
+function isCatalogPortraitSettingsMap(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value) || Object.keys(value).length > 500) return false;
+  return Object.entries(value).every(([id, settings]) => {
+    if (id.length === 0 || id.length > 128 || !isRecord(settings)
+      || !['cover', 'contain'].includes(String(settings.portraitFit))
+      || !isRecord(settings.portraitOffset)) return false;
+    const { x, y } = settings.portraitOffset;
+    return [x, y].every(coordinate =>
+      typeof coordinate === 'number' && Number.isFinite(coordinate)
+      && coordinate >= 0 && coordinate <= 1);
+  });
+}
+
 function isCompletePortableCampaignState(value: unknown): value is CampaignStateSnapshot {
   if (!isRecord(value)
     || !Array.isArray(value.characters)
@@ -583,7 +634,13 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || (value.lootTables !== undefined && !Array.isArray(value.lootTables))
     || (value.encounterTables !== undefined && !Array.isArray(value.encounterTables))
     || (value.campaignMaps !== undefined && !Array.isArray(value.campaignMaps))
+    || !isCatalogPortraitMap(value.bestiaryPortraits)
+    || !isCatalogPortraitMap(value.vehicleCatalogPortraits)
+    || !isCatalogPortraitSettingsMap(value.bestiaryPortraitSettings)
+    || !isCatalogPortraitSettingsMap(value.vehicleCatalogPortraitSettings)
     || !Array.isArray(value.customBestiaryTemplates)
+    || (value.builtInBestiaryOverrides !== undefined && !Array.isArray(value.builtInBestiaryOverrides))
+    || (value.removedBuiltInBestiaryTemplateIds !== undefined && !isStringArray(value.removedBuiltInBestiaryTemplateIds))
     || (value.customWeaponMods !== undefined && !Array.isArray(value.customWeaponMods))
     || (value.customPerks !== undefined && !Array.isArray(value.customPerks))
     || (value.campaignRuleTags !== undefined && !Array.isArray(value.campaignRuleTags))
@@ -596,6 +653,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !((value.encounterTables ?? []) as unknown[]).every(validCampaignTable)
     || !((value.campaignMaps ?? []) as unknown[]).every(validCampaignMap)
     || !value.customBestiaryTemplates.every(isBestiaryTemplateRecord)
+    || !((value.builtInBestiaryOverrides ?? []) as unknown[]).every(isBestiaryTemplateRecord)
     || !((value.customWeaponMods ?? []) as unknown[]).every(validateCustomWeaponMod)
     || !((value.customPerks ?? []) as unknown[]).every(validateCustomPerk)
     || !((value.campaignRuleTags ?? []) as unknown[]).every(tag => {
@@ -613,6 +671,8 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && hasUniqueIds((value.encounterTables ?? []) as CampaignTable[])
     && hasUniqueIds((value.campaignMaps ?? []) as CampaignMap[])
     && hasUniqueIds(value.customBestiaryTemplates)
+    && hasUniqueIds((value.builtInBestiaryOverrides ?? []) as BestiaryTemplate[])
+    && new Set(value.removedBuiltInBestiaryTemplateIds ?? []).size === (value.removedBuiltInBestiaryTemplateIds ?? []).length
     && hasUniqueIds((value.customWeaponMods ?? []) as CustomWeaponMod[])
     && hasUniqueIds((value.customPerks ?? []) as CustomPerkDefinition[])
     && hasUniqueIds((value.campaignRuleTags ?? []) as CampaignRuleTag[])

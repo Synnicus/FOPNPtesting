@@ -351,6 +351,26 @@ export const BUILT_IN_BESTIARY: BestiaryTemplate[] = [
   ...RESTORED_BESTIARY,
 ];
 
+/** Build the campaign-visible roster from the current code defaults and per-campaign edits. */
+export function resolveBestiaryTemplates(
+  defaults: readonly BestiaryTemplate[],
+  overrides: readonly BestiaryTemplate[],
+  removedDefaultIds: readonly string[],
+  customTemplates: readonly BestiaryTemplate[],
+): BestiaryTemplate[] {
+  const overrideById = new Map(overrides.map(template => [template.id, template]));
+  const removedIds = new Set(removedDefaultIds);
+  const builtIn = defaults
+    .filter(template => !removedIds.has(template.id))
+    .map(template => {
+      const override = overrideById.get(template.id);
+      return override
+        ? { ...template, ...override, id: template.id, isCustom: template.isCustom }
+        : template;
+    });
+  return [...builtIn, ...customTemplates];
+}
+
 export function getBuiltInBestiaryRace(templateId: string): RaceType | undefined {
   return BUILT_IN_BESTIARY.find(template => template.id === templateId)?.race;
 }
@@ -410,6 +430,9 @@ export function spawnBestiaryTemplate(
     id,
     name,
     type: 'npc',
+    portrait: template.portrait,
+    portraitFit: template.portraitFit,
+    portraitOffset: template.portraitOffset,
     race: template.race ?? (template.category === 'robot' ? 'robot' : 'customRace'),
     level: 1,
     xp: 0,

@@ -4,6 +4,7 @@ import { URL } from 'node:url';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../app/(tabs)/bestiary.tsx', import.meta.url), 'utf8');
+const optionsSource = readFileSync(new URL('../components/CampaignOptionsModal.tsx', import.meta.url), 'utf8');
 
 test('custom NPC editor retains AC-only protection and restores it on edit', () => {
   assert.match(source, /const naturalAC = naturalProtection\.armorClass \?\? 0/);
@@ -43,4 +44,15 @@ test('bestiary summary cards open full details and no longer expose a spawn butt
   assert.match(detail, /DAMAGE PROTECTION/);
   assert.match(detail, /SKILLS/);
   assert.match(detail, /SPAWN TO CHARACTERS/);
+});
+
+test('pre-made NPC edit and removal actions warn and can be restored from campaign options', () => {
+  assert.match(source, /resolveBestiaryTemplates\(/);
+  assert.match(source, /'Edit built-in NPC\?'[\s\S]*'Editing this built-in NPC will override its default data\./);
+  assert.match(source, /'Remove built-in NPC\?'[\s\S]*'This hides the NPC from the Bestiary\./);
+  assert.match(source, /testID=\{`bestiary-edit-\$\{template\.id\}`\}/);
+  assert.match(source, /testID=\{`bestiary-remove-\$\{template\.id\}`\}/);
+  assert.match(optionsSource, /testID="restore-default-bestiary"/);
+  assert.match(optionsSource, /restoreBuiltInBestiaryDefaults\(\)/);
+  assert.match(optionsSource, /'This restores the current built-in NPC roster/);
 });

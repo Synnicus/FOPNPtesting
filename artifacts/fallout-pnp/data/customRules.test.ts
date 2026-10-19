@@ -8,14 +8,20 @@ import type {
   Weapon,
 } from '../context/types.ts';
 import {
+  BUILT_IN_RULE_TAGS,
   computeCustomPerkEffects,
   computeCustomWeaponModEffects,
   customRuleConditionMatches,
+  getSelectableArmorTags,
+  getSelectableWeaponTags,
   inferArmorTags,
   inferWeaponTags,
   validateCustomPerk,
   validateCustomWeaponMod,
 } from './customRules.ts';
+import { BUILT_IN_WEAPONS } from './weapons.ts';
+import { BUILT_IN_VEHICLE_WEAPONS } from './vehicleWeapons.ts';
+import { BUILT_IN_ARMOR } from './armor.ts';
 
 const weapon = {
   id: 'rifle',
@@ -51,6 +57,164 @@ test('weapon and armor tags infer common built-in classifications and preserve c
   assert.deepEqual(inferWeaponTags(weapon), ['small-guns', 'burst-capable', 'rifle', 'assault-rifle']);
   assert.ok(inferArmorTags(armor).includes('power-armor'));
   assert.ok(inferArmorTags({ ...armor, tags: ['vault-tech'] }).includes('vault-tech'));
+});
+
+test('weapon-tag selection includes built-in, campaign, and previously selected custom tags without armor-only tags', () => {
+  const options = getSelectableWeaponTags([
+    { id: 'weapon-custom', label: 'Campaign Rifle', appliesTo: 'weapon' },
+    { id: 'both-custom', label: 'Campaign Shared', appliesTo: 'both' },
+    { id: 'armor-only', label: 'Armor Only', appliesTo: 'armor' },
+    { id: 'small-guns', label: 'Duplicate Small Guns', appliesTo: 'weapon' },
+  ], ['orphaned-legacy-tag', 'armor-only']);
+
+  const byId = new Map(options.map(tag => [tag.id, tag]));
+  assert.equal(byId.get('small-guns')?.label, 'Small Guns');
+  assert.equal(byId.get('weapon-custom')?.label, 'Campaign Rifle');
+  assert.equal(byId.get('both-custom')?.label, 'Campaign Shared');
+  assert.equal(byId.get('armor-only')?.label, 'armor-only');
+  assert.equal(byId.get('orphaned-legacy-tag')?.label, 'orphaned-legacy-tag');
+  assert.equal(options.some(tag => tag.id === 'armor-only' && tag.label === 'Armor Only'), false);
+});
+
+test('armor-tag selection includes built-in and campaign armor tags while preserving selected legacy tags', () => {
+  const options = getSelectableArmorTags([
+    { id: 'armor-custom', label: 'Campaign Armor', appliesTo: 'armor' },
+    { id: 'shared-custom', label: 'Campaign Shared', appliesTo: 'both' },
+    { id: 'weapon-only', label: 'Weapon Only', appliesTo: 'weapon' },
+  ], ['orphaned-armor-tag']);
+
+  const byId = new Map(options.map(tag => [tag.id, tag]));
+  assert.equal(byId.get('power-armor')?.label, 'Power Armor');
+  assert.equal(byId.get('armor-custom')?.label, 'Campaign Armor');
+  assert.equal(byId.get('shared-custom')?.label, 'Campaign Shared');
+  assert.equal(byId.has('weapon-only'), false);
+  assert.equal(byId.get('orphaned-armor-tag')?.label, 'orphaned-armor-tag');
+});
+
+test('every built-in weapon and vehicle weapon has explicit, registered family tags', () => {
+  const familyTagByCategory: Record<Weapon['category'], string> = {
+    unarmed: 'unarmed',
+    natural: 'natural-attack',
+    meleeWeapons: 'melee-weapons',
+    smallGuns: 'small-guns',
+    bigGuns: 'big-guns',
+    energyWeapons: 'energy-weapons',
+    throwing: 'throwing',
+    minesTraps: 'mines-traps',
+  };
+  const registeredTags = new Set(BUILT_IN_RULE_TAGS.filter(tag => tag.appliesTo === 'weapon').map(tag => tag.id));
+  const allBuiltInWeapons = [...BUILT_IN_WEAPONS, ...BUILT_IN_VEHICLE_WEAPONS];
+
+  assert.ok(allBuiltInWeapons.length > BUILT_IN_WEAPONS.length);
+  for (const builtIn of allBuiltInWeapons) {
+    assert.ok(builtIn.tags?.includes(familyTagByCategory[builtIn.category]), `${builtIn.name} has its category tag`);
+    assert.ok(builtIn.tags && builtIn.tags.length > 0, `${builtIn.name} has persisted tags`);
+    for (const tag of builtIn.tags ?? []) {
+      assert.ok(tag === 'traps' || registeredTags.has(tag), `${builtIn.name} uses registered tag ${tag}`);
+    }
+  }
+  for (const natural of BUILT_IN_WEAPONS.filter(item => item.category === 'natural')) {
+    assert.ok(natural.tags?.includes('natural-attack'), `${natural.name} has natural-attack`);
+    assert.ok(natural.tags?.includes('unarmed'), `${natural.name} also matches unarmed`);
+  }
+  for (const bigGun of [...BUILT_IN_WEAPONS, ...BUILT_IN_VEHICLE_WEAPONS].filter(item => item.category === 'bigGuns')) {
+    assert.ok(bigGun.tags?.includes('heavy-weapon'), `${bigGun.name} has heavy-weapon`);
+  }
+});
+
+test('weapon subtype tags distinguish shotguns, launchers, thrown grenades, mines, and traps', () => {
+  const findWeapon = (id: string) => {
+    const found = BUILT_IN_WEAPONS.find(item => item.id === id);
+    assert.ok(found, `expected built-in weapon ${id}`);
+    return found;
+  };
+  const shotgun = findWeapon('shotgun');
+  assert.ok(shotgun.tags?.includes('small-guns'));
+  assert.ok(shotgun.tags?.includes('shotgun'));
+
+  const grenadeLauncher = findWeapon('m79_grenade_rifle');
+  assert.ok(grenadeLauncher.tags?.includes('launcher'));
+  assert.ok(grenadeLauncher.tags?.includes('grenade-launcher'));
+  assert.ok(grenadeLauncher.tags?.includes('explosive'));
+  assert.ok(!grenadeLauncher.tags?.includes('grenade'));
+
+  const missileSystem = findWeapon('tow_ii_missile_defense_system');
+  assert.ok(missileSystem.tags?.includes('launcher'));
+  assert.ok(missileSystem.tags?.includes('missile-rocket-launcher'));
+
+  const handGrenade = findWeapon('frag_grenade');
+  assert.ok(handGrenade.tags?.includes('grenade'));
+  assert.ok(handGrenade.tags?.includes('explosive'));
+  assert.ok(!handGrenade.tags?.includes('launcher'));
+  assert.ok(!handGrenade.tags?.includes('grenade-launcher'));
+
+  assert.ok(findWeapon('t13_antipersonnel_mine').tags?.includes('mine'));
+  assert.ok(findWeapon('t13_antipersonnel_mine').tags?.includes('mines-traps'));
+  assert.ok(findWeapon('explosive_trap').tags?.includes('trap'));
+  assert.ok(findWeapon('explosive_trap').tags?.includes('explosive'));
+  assert.ok(findWeapon('m2_60mm_portable_mortar').tags?.includes('mortar'));
+  assert.ok(findWeapon('m2_60mm_portable_mortar').tags?.includes('launcher'));
+  assert.ok(BUILT_IN_VEHICLE_WEAPONS.find(item => item.id === 'rheinmetall_120mm_gun')?.tags?.includes('cannon'));
+  assert.ok(BUILT_IN_VEHICLE_WEAPONS.find(item => item.id === 'vehicle_152mm_shillelagh')?.tags?.includes('missile-rocket-launcher'));
+});
+
+test('firearm subtype tags use named actions and known model roles rather than burst absence', () => {
+  const m1Garand = BUILT_IN_WEAPONS.find(item => item.id === 'm1_garand_rifle');
+  const ak74 = BUILT_IN_WEAPONS.find(item => item.id === 'ak_74');
+  const svd = BUILT_IN_WEAPONS.find(item => item.id === 'svd_4000');
+  const m14 = BUILT_IN_WEAPONS.find(item => item.id === 'm14');
+  assert.ok(m1Garand?.tags?.includes('rifle'));
+  assert.ok(!m1Garand?.tags?.includes('single-shot-rifle'));
+  assert.ok(ak74?.tags?.includes('assault-rifle'));
+  assert.ok(svd?.tags?.includes('sniper-rifle'));
+  assert.ok(m14?.tags?.includes('battle-rifle'));
+
+  const explicitlySingleShot = inferWeaponTags({
+    ...weapon,
+    id: 'manual_single_shot_rifle',
+    name: 'Single-shot Rifle',
+    burstLimit: 1,
+  });
+  assert.ok(explicitlySingleShot.includes('single-shot-rifle'));
+});
+
+test('built-in catalog tags satisfy the same conditions custom perks evaluate', () => {
+  const shotgun = BUILT_IN_WEAPONS.find(item => item.id === 'shotgun');
+  const combatArmor = BUILT_IN_ARMOR.find(item => /combat armor/i.test(item.name));
+  assert.ok(shotgun);
+  assert.ok(combatArmor);
+  assert.equal(customRuleConditionMatches(character, shotgun, [combatArmor], null, {
+    weaponTags: ['small-guns', 'shotgun'],
+    armorTags: ['combat-armor'],
+  }), true);
+
+  const vehicleCannon = BUILT_IN_VEHICLE_WEAPONS.find(item => item.id === 'rheinmetall_120mm_gun');
+  assert.ok(vehicleCannon);
+  assert.equal(customRuleConditionMatches(character, vehicleCannon, [], null, {
+    weaponTags: ['cannon'],
+  }), true);
+});
+
+test('every built-in armor entry has explicit category and name-backed material tags', () => {
+  const registeredTags = new Set(BUILT_IN_RULE_TAGS.filter(tag => tag.appliesTo === 'armor').map(tag => tag.id));
+  for (const item of BUILT_IN_ARMOR) {
+    assert.ok(item.tags?.includes('armor'), `${item.name} has armor`);
+    assert.ok(item.tags?.includes(item.slot === 'helmet' ? 'helmet' : item.id === 'clothing' ? 'clothing' : 'body-armor'), `${item.name} has its slot/type tag`);
+    for (const tag of item.tags ?? []) {
+      assert.ok(registeredTags.has(tag), `${item.name} uses registered armor tag ${tag}`);
+    }
+  }
+  for (const item of BUILT_IN_ARMOR.filter(armor => /leather/i.test(armor.name))) {
+    assert.ok(item.tags?.includes('leather-armor'), `${item.name} has leather-armor`);
+  }
+  for (const item of BUILT_IN_ARMOR.filter(armor => /metal/i.test(armor.name))) {
+    assert.ok(item.tags?.includes('metal-armor'), `${item.name} has metal-armor`);
+  }
+  assert.ok(BUILT_IN_ARMOR.find(item => item.id === 'pseudo_chitin_armor')?.tags?.includes('chitin-armor'));
+  assert.ok(BUILT_IN_ARMOR.find(item => item.id === 'environmental_helmet')?.tags?.includes('environmental-armor'));
+  assert.ok(!BUILT_IN_ARMOR.find(item => item.id === 'raider_armor')?.tags?.includes('metal-armor'));
+  assert.ok(!BUILT_IN_ARMOR.find(item => item.id === 'reaver_banding')?.tags?.includes('metal-armor'));
+  assert.ok(!BUILT_IN_ARMOR.find(item => item.id === 'clothing')?.tags?.includes('body-armor'));
 });
 
 test('custom mod applies its direct typed damage, meter-only radiation, and weapon modifiers', () => {

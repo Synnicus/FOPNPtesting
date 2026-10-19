@@ -1,9 +1,10 @@
 import type { Armor } from '@/context/types';
+import { inferArmorTags } from './customRules.ts';
 
 // Damage formula: finalDmg = max(0, (baseDmg - DT) * (1 - DR/100))
 // DT = flat threshold, DR = percentage resistance
 
-export const BUILT_IN_ARMOR: Armor[] = [
+const BUILT_IN_ARMOR_DEFINITIONS: Armor[] = [
   // ─── BODY ARMOR ─────────────────────────────────────────────────────────────
   // Legacy convenience option; not a printed armor-table entry.
   {
@@ -295,6 +296,11 @@ export const BUILT_IN_ARMOR: Armor[] = [
     effects: { gasResistance: 100 },
   },
 ];
+
+export const BUILT_IN_ARMOR: Armor[] = BUILT_IN_ARMOR_DEFINITIONS.map(armor => ({
+  ...armor,
+  tags: inferArmorTags(armor),
+}));
 
 export function getArmorById(id: string): Armor | undefined {
   return BUILT_IN_ARMOR.find(a => a.id === id);

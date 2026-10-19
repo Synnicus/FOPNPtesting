@@ -3,6 +3,7 @@ import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
 import type { Armor, Character, VehicleProfile, Weapon } from '../context/types.ts';
 import { BUILT_IN_VEHICLES } from './vehicles.ts';
+import { BUILT_IN_BESTIARY } from './bestiary.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
   createCampaignBundle,
@@ -535,7 +536,6 @@ test('faction Fame and Infamy totals and explanatory history survive portable ex
   const factionReputations: NonNullable<Character['factionReputations']> = [{
     id: 'faction-rep-1',
     name: 'Brotherhood of Steel',
-    thresholdProfile: 'brotherhood-of-steel',
     fame: 3,
     infamy: 0,
     customTitle: 'Paladin',
@@ -549,7 +549,16 @@ test('faction Fame and Infamy totals and explanatory history survive portable ex
   assert.equal(parsed.ok, true);
   if (parsed.ok && parsed.kind === 'character') {
     assert.deepEqual(parsed.bundle.character.factionReputations, factionReputations);
+    assert.equal('thresholdProfile' in parsed.bundle.character.factionReputations![0], false);
   }
+  const legacyProfileFile = parseIndividualFile(JSON.stringify({
+    ...bundle,
+    character: {
+      ...bundle.character,
+      factionReputations: [{ ...factionReputations[0], thresholdProfile: 'brotherhood-of-steel' }],
+    },
+  }));
+  assert.equal(legacyProfileFile.ok, true);
 
   const campaignBundle = createCampaignBundle({ ...state, characters: [{ ...character, factionReputations }] }, []);
   const parsedCampaign = parseCampaignFile(JSON.stringify(campaignBundle));
@@ -824,4 +833,46 @@ test('portrait restoration runs sequentially to bound memory and filesystem pres
   });
   assert.equal(restored.restored, 2);
   assert.equal(maxActive, 1);
+});
+
+test('catalog photos stay embedded in portable campaigns and reject external image URLs', () => {
+  const portrait = 'data:image/png;base64,AQID';
+  const bundle = createCampaignBundle({
+    ...state,
+    bestiaryPortraits: { giant_rat: portrait },
+    vehicleCatalogPortraits: { humvee: portrait },
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'portable') {
+    assert.deepEqual(parsed.bundle.state.bestiaryPortraits, { giant_rat: portrait });
+    assert.deepEqual(parsed.bundle.state.vehicleCatalogPortraits, { humvee: portrait });
+  } else {
+    assert.fail('Expected the exported campaign to be recognized as a portable bundle.');
+  }
+
+  const invalid = parseCampaignFile(JSON.stringify({
+    ...bundle,
+    state: { ...bundle.state, bestiaryPortraits: { giant_rat: 'https://example.com/image.png' } },
+  }));
+  assert.equal(invalid.ok, false);
+});
+
+test('portable campaigns preserve edited and removed built-in Bestiary entries', () => {
+  const edited = { ...BUILT_IN_BESTIARY[0], name: 'Edited premade NPC' };
+  const removedId = BUILT_IN_BESTIARY[1].id;
+  const bundle = createCampaignBundle({
+    ...state,
+    builtInBestiaryOverrides: [edited],
+    removedBuiltInBestiaryTemplateIds: [removedId],
+  }, []);
+
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'portable') {
+    assert.equal(parsed.bundle.state.builtInBestiaryOverrides?.[0]?.name, 'Edited premade NPC');
+    assert.deepEqual(parsed.bundle.state.removedBuiltInBestiaryTemplateIds, [removedId]);
+  } else {
+    assert.fail('Expected the exported campaign to be recognized as a portable bundle.');
+  }
 });

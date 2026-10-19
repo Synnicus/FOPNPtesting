@@ -15,13 +15,16 @@
 - [Ammo combat breakdown placement](fallout-pnp-ammo-breakdown.md) — show ammo AC adjustments under chance to hit; keep DT bypass and DR changes in damage protection.
 - [Native regression verification](fallout-pnp-native-verification.md) — a browser preview cannot validate native modal or storage interactions; run device automation against an installed native build.
 - [Generic Karma titles](fallout-pnp-karma-titles.md) — replace “Vault” with “Wasteland” when adapting Fallout 3 titles, as requested for generic characters.
+- [Faction reputation thresholds](fallout-pnp-faction-reputation.md) — apply shared 0/25/50/75 Fame and Infamy tiers; ignore legacy faction-specific profiles.
 - [Manual rules-reference scope](fallout-pnp-manual-reference.md) — organize all manual rules/tables by its sections; keep item and creature catalogs in their app tabs.
 - [Fallout PnP localization](fallout-pnp-localization.md) — language choice is device-local, separate from campaigns; player-authored names and notes stay unchanged.
 - [Vault Radio](fallout-pnp-vault-radio.md) — user-described free-to-use 1920s score stays in App Storage and caches on first play, not in the app bundle.
 - [Scrollable tab interaction](fallout-pnp-scrollable-tabs.md) — keep arrows, touch swipe, and mouse-drag support on overflowing tab strips.
 - [Post-merge database push](post-merge-db-push.md) — dependency installation plus Drizzle schema inspection needs more than a 20-second setup timeout.
 - [Campaign library archives](fallout-pnp-campaign-library.md) — keep library snapshots portable and embed portraits so campaign switching cannot break saved portrait references.
-- [Node test imports](node-test-imports.md) — direct `node:test` TypeScript runs cannot resolve the app’s `@/` aliases; keep tested data modules on relative imports.
+- [Node test imports](node-test-imports.md) — direct `node:test` TypeScript runs need relative paths with explicit `.ts`; app `@/` aliases and extensionless imports fail.
 - [Expo workflow restarts](expo-workflow-restarts.md) — check for an existing Metro process before restarting; duplicate Expo sessions can prompt to move off the injected port.
 - [Vehicle AC default](fallout-pnp-vehicle-ac.md) — built-in manual vehicles start at editable AC 0 when no printed model AC exists.
 - [Vehicle targeting](fallout-pnp-vehicle-targeting.md) — targeted parts follow the defender; moving vehicles default to −10% to hit, with no carryover to nonvehicles.
+- [Catalog photo portability](fallout-pnp-catalog-images.md) — catalog images are user-supplied campaign data; embed validated image data in portable state so spawned entries survive campaign transfer.
+- [Expo web font loading](fallout-pnp-expo-web-font-fallback.md) — a pending font hook can leave the browser preview blank even when Metro is healthy; don't gate web rendering on fonts.

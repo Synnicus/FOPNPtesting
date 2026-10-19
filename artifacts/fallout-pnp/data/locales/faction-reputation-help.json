@@ -1,0 +1,123 @@
+{
+  "fr": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Suivez séparément la Renommée et l’Infamie. Les deux utilisent les mêmes seuils pour déterminer le titre de réputation.",
+    "Reputation threshold help": "Aide sur les seuils de réputation",
+    "Shows how Fame and Infamy points map to reputation tiers": "Explique comment les points de Renommée et d’Infamie correspondent aux niveaux de réputation",
+    "REPUTATION THRESHOLDS": "SEUILS DE RÉPUTATION",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "La Renommée et l’Infamie utilisent chacune ces plages de points. Leurs niveaux combinés déterminent le titre de réputation automatique.",
+    "FAME OR INFAMY POINTS": "POINTS DE RENOMMÉE OU D’INFAMIE",
+    "TIER": "NIVEAU",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "La Renommée et l’Infamie sont mesurées séparément. Combinez les niveaux obtenus pour consulter le titre de réputation façon New Vegas.",
+    "Close": "Fermer"
+  },
+  "it": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Tieni separate Fama e Infamia. Entrambe usano le stesse soglie per determinare il titolo di reputazione.",
+    "Reputation threshold help": "Guida alle soglie di reputazione",
+    "Shows how Fame and Infamy points map to reputation tiers": "Mostra come i punti Fama e Infamia corrispondono ai livelli di reputazione",
+    "REPUTATION THRESHOLDS": "SOGLIE DI REPUTAZIONE",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "Fama e Infamia usano separatamente questi intervalli di punti. I livelli combinati determinano il titolo automatico di reputazione.",
+    "FAME OR INFAMY POINTS": "PUNTI FAMA O INFAMIA",
+    "TIER": "LIVELLO",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "Fama e Infamia vengono misurate separatamente. Combina i livelli ottenuti per trovare il titolo di reputazione in stile New Vegas.",
+    "Close": "Chiudi"
+  },
+  "de": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Ruhm und Verrufenheit werden getrennt erfasst. Für den Ruf gelten dieselben Schwellenwerte.",
+    "Reputation threshold help": "Hilfe zu Rufschwellen",
+    "Shows how Fame and Infamy points map to reputation tiers": "Zeigt, wie Ruhm- und Verrufenheitspunkte den Rufstufen zugeordnet werden",
+    "REPUTATION THRESHOLDS": "RUFSCHWELLEN",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "Ruhm und Verrufenheit verwenden jeweils diese Punktebereiche. Ihre Stufen bestimmen gemeinsam den automatischen Ruf.",
+    "FAME OR INFAMY POINTS": "RUHM- ODER VERRUFENHEITSPUNKTE",
+    "TIER": "STUFE",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "Ruhm und Verrufenheit werden getrennt gemessen. Kombiniere die Stufen, um den Rufstitel im New-Vegas-Stil zu bestimmen.",
+    "Close": "Schließen"
+  },
+  "es-ES": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Registra la fama y la infamia por separado. Ambas usan los mismos umbrales para determinar el título de reputación.",
+    "Reputation threshold help": "Ayuda sobre los umbrales de reputación",
+    "Shows how Fame and Infamy points map to reputation tiers": "Muestra cómo se asignan los puntos de fama e infamia a los niveles de reputación",
+    "REPUTATION THRESHOLDS": "UMBRALES DE REPUTACIÓN",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "La fama y la infamia usan estos intervalos de puntos por separado. La combinación de sus niveles determina el título de reputación automático.",
+    "FAME OR INFAMY POINTS": "PUNTOS DE FAMA O INFAMIA",
+    "TIER": "NIVEL",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "La fama y la infamia se miden por separado. Combina los niveles resultantes para consultar el título de reputación al estilo de New Vegas.",
+    "Close": "Cerrar"
+  },
+  "es-MX": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Registra la fama y la infamia por separado. Ambas usan los mismos umbrales para determinar el título de reputación.",
+    "Reputation threshold help": "Ayuda sobre los umbrales de reputación",
+    "Shows how Fame and Infamy points map to reputation tiers": "Muestra cómo corresponden los puntos de fama e infamia a los niveles de reputación",
+    "REPUTATION THRESHOLDS": "UMBRALES DE REPUTACIÓN",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "La fama y la infamia usan estos rangos de puntos por separado. La combinación de sus niveles determina el título de reputación automático.",
+    "FAME OR INFAMY POINTS": "PUNTOS DE FAMA O INFAMIA",
+    "TIER": "NIVEL",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "La fama y la infamia se miden por separado. Combina los niveles resultantes para consultar el título de reputación al estilo de New Vegas.",
+    "Close": "Cerrar"
+  },
+  "ja": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "名声と悪評を別々に記録します。評判称号の判定には同じしきい値を使います。",
+    "Reputation threshold help": "評判しきい値のヘルプ",
+    "Shows how Fame and Infamy points map to reputation tiers": "名声と悪評のポイントが評判ランクにどう対応するかを表示します",
+    "REPUTATION THRESHOLDS": "評判のしきい値",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "名声と悪評にはそれぞれこのポイント範囲が適用されます。両方のランクを組み合わせて自動称号が決まります。",
+    "FAME OR INFAMY POINTS": "名声または悪評ポイント",
+    "TIER": "ランク",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "名声と悪評は別々に計算します。得られたランクを組み合わせてNew Vegas風の評判称号を確認します。",
+    "Close": "閉じる"
+  },
+  "pl": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Śledź osobno sławę i niesławę. Obie wartości korzystają z tych samych progów tytułu reputacji.",
+    "Reputation threshold help": "Pomoc dotycząca progów reputacji",
+    "Shows how Fame and Infamy points map to reputation tiers": "Pokazuje, jak punkty sławy i niesławy przekładają się na poziomy reputacji",
+    "REPUTATION THRESHOLDS": "PROGI REPUTACJI",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "Sława i niesława korzystają osobno z tych przedziałów punktów. Połączone poziomy wyznaczają automatyczny tytuł reputacji.",
+    "FAME OR INFAMY POINTS": "PUNKTY SŁAWY LUB NIESŁAWY",
+    "TIER": "POZIOM",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "Sława i niesława są mierzone osobno. Połącz uzyskane poziomy, aby sprawdzić tytuł reputacji w stylu New Vegas.",
+    "Close": "Zamknij"
+  },
+  "pt-BR": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Registre Fama e Infâmia separadamente. Ambas usam os mesmos limites para determinar o título de reputação.",
+    "Reputation threshold help": "Ajuda sobre limites de reputação",
+    "Shows how Fame and Infamy points map to reputation tiers": "Mostra como os pontos de Fama e Infâmia correspondem aos níveis de reputação",
+    "REPUTATION THRESHOLDS": "LIMITES DE REPUTAÇÃO",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "Fama e Infâmia usam estas faixas de pontos separadamente. A combinação dos níveis determina o título automático de reputação.",
+    "FAME OR INFAMY POINTS": "PONTOS DE FAMA OU INFÂMIA",
+    "TIER": "NÍVEL",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "Fama e Infâmia são medidas separadamente. Combine os níveis obtidos para consultar o título de reputação no estilo New Vegas.",
+    "Close": "Fechar"
+  },
+  "ru": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "Отслеживайте славу и дурную славу отдельно. Для обеих используются одинаковые пороги звания.",
+    "Reputation threshold help": "Подсказка о порогах репутации",
+    "Shows how Fame and Infamy points map to reputation tiers": "Показывает, как очки славы и дурной славы определяют уровни репутации",
+    "REPUTATION THRESHOLDS": "ПОРОГИ РЕПУТАЦИИ",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "Для славы и дурной славы отдельно применяются эти диапазоны очков. Их уровни вместе определяют звание репутации.",
+    "FAME OR INFAMY POINTS": "ОЧКИ СЛАВЫ ИЛИ ДУРНОЙ СЛАВЫ",
+    "TIER": "УРОВЕНЬ",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "Слава и дурная слава рассчитываются отдельно. Сочетайте уровни, чтобы определить звание репутации в стиле New Vegas.",
+    "Close": "Закрыть"
+  },
+  "zh-Hans": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "分别记录声望与恶名。两者使用相同的阈值来确定声望称号。",
+    "Reputation threshold help": "声望阈值说明",
+    "Shows how Fame and Infamy points map to reputation tiers": "说明声望与恶名点数如何对应声望等级",
+    "REPUTATION THRESHOLDS": "声望阈值",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "声望和恶名分别使用这些点数范围。两者等级组合后决定自动声望称号。",
+    "FAME OR INFAMY POINTS": "声望或恶名点数",
+    "TIER": "等级",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "声望和恶名分别计算。结合所得等级即可查出新维加斯风格的声望称号。",
+    "Close": "关闭"
+  },
+  "zh-Hant": {
+    "Track Fame and Infamy separately. Both use the same thresholds to determine the reputation title.": "分別記錄聲望與惡名。兩者使用相同的門檻來決定聲望稱號。",
+    "Reputation threshold help": "聲望門檻說明",
+    "Shows how Fame and Infamy points map to reputation tiers": "說明聲望與惡名點數如何對應聲望等級",
+    "REPUTATION THRESHOLDS": "聲望門檻",
+    "Fame and Infamy each use these point ranges. Their combined tiers determine the automated reputation title.": "聲望與惡名分別使用這些點數範圍。兩者等級組合後會決定自動聲望稱號。",
+    "FAME OR INFAMY POINTS": "聲望或惡名點數",
+    "TIER": "等級",
+    "Fame and Infamy are measured separately. Use the resulting tiers together to look up the New Vegas-style reputation title.": "聲望與惡名分開計算。結合所得等級即可查出新維加斯風格的聲望稱號。",
+    "Close": "關閉"
+  }
+}

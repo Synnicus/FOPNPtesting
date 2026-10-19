@@ -1,6 +1,7 @@
 import type { Weapon, DamageType, WeaponCategory } from '../context/types.ts';
 import { MINE_TRAP_PROFILES } from './areaEffects.ts';
 import type { AreaAttack } from './areaEffects.ts';
+import { inferWeaponTags } from './customRules.ts';
 
 export { MINE_TRAP_PROFILES } from './areaEffects.ts';
 
@@ -71,7 +72,7 @@ WEAPON_MODS.forEach(m => {
 // we bake a representative base die + the manual's bonus so each weapon is
 // self-contained. AP costs (apSingle/apTargeted/apBurst) are the manual's
 // per-weapon "AP S / T / B" values (null = not available for that mode).
-export const BUILT_IN_WEAPONS: Weapon[] = [
+const BUILT_IN_WEAPON_DEFINITIONS: Weapon[] = [
 
   // ─── UNARMED ─────────────────────────────────────────────────────
   { id: "unarmed", name: "Fists and Feet", category: "unarmed", damageType: "normal", damageDieCount: 1, damageDie: 4, damageBonus: 0, skill: "unarmed", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 1, knockdownChance: 0, apSingle: 3, apTargeted: 4, apBurst: null, hands: 1, mods: [], isCustom: false },
@@ -341,6 +342,11 @@ export const BUILT_IN_WEAPONS: Weapon[] = [
   { id: "golden_gecko_claw", name: "Golden Gecko Claw", category: "natural", damageType: "normal", damageDieCount: 1, damageDie: 12, damageBonus: 0, skill: "unarmed", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 1, knockdownChance: 0, apSingle: 3, apTargeted: null, apBurst: null, hands: 1, mods: [], isCustom: false },
   { id: "golden_gecko_bite", name: "Golden Gecko Bite", category: "natural", damageType: "normal", damageDieCount: 1, damageDie: 20, damageBonus: 0, skill: "unarmed", burstLimit: 1, isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 1, knockdownChance: 0, apSingle: 4, apTargeted: null, apBurst: null, hands: 1, mods: [], isCustom: false },
 ];
+
+export const BUILT_IN_WEAPONS: Weapon[] = BUILT_IN_WEAPON_DEFINITIONS.map(weapon => ({
+  ...weapon,
+  tags: inferWeaponTags(weapon),
+}));
 
 export function getWeaponById(id: string): Weapon | undefined {
   return BUILT_IN_WEAPONS.find(w => w.id === id);

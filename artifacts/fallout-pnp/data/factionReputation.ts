@@ -10,30 +10,24 @@ export const MAX_FACTION_REASON_LENGTH = 500;
 export const MAX_FACTION_COUNT = 100;
 export const MAX_FACTION_LOG_ENTRIES = 1000;
 
-export interface FactionThresholdProfile {
-  id: string;
-  name: string;
-  thresholds: readonly [number, number, number, number];
-}
+/** Fame and Infamy independently use these shared New Vegas-style point thresholds. */
+export const FACTION_REPUTATION_THRESHOLDS = [0, 25, 50, 75] as const;
 
-/** Thresholds are the minimum points for Fame/Infamy ranges 1–4 on the linked wiki. */
-export const FACTION_THRESHOLD_PROFILES: readonly FactionThresholdProfile[] = [
-  { id: 'boomers', name: 'Boomers', thresholds: [0, 8, 25, 50] },
-  { id: 'brotherhood-of-steel', name: 'Brotherhood of Steel', thresholds: [0, 3, 10, 20] },
-  { id: 'caesars-legion', name: "Caesar's Legion", thresholds: [0, 15, 50, 100] },
-  { id: 'followers-of-the-apocalypse', name: 'Followers of the Apocalypse', thresholds: [0, 8, 25, 50] },
-  { id: 'freeside', name: 'Freeside', thresholds: [0, 11, 35, 70] },
-  { id: 'goodsprings', name: 'Goodsprings', thresholds: [0, 3, 8, 15] },
-  { id: 'great-khans', name: 'Great Khans', thresholds: [0, 5, 15, 30] },
-  { id: 'new-california-republic', name: 'New California Republic', thresholds: [0, 12, 40, 80] },
-  { id: 'novac', name: 'Novac', thresholds: [0, 3, 10, 20] },
-  { id: 'powder-gangers', name: 'Powder Gangers', thresholds: [0, 5, 15, 50] },
-  { id: 'primm', name: 'Primm', thresholds: [0, 5, 15, 30] },
-  { id: 'the-strip', name: 'The Strip', thresholds: [0, 6, 20, 40] },
-  { id: 'white-glove-society', name: 'White Glove Society', thresholds: [0, 2, 5, 10] },
-] as const;
-
-export const DEFAULT_FACTION_THRESHOLD_PROFILE = 'great-khans';
+const LEGACY_FACTION_THRESHOLD_PROFILE_IDS = new Set([
+  'boomers',
+  'brotherhood-of-steel',
+  'caesars-legion',
+  'followers-of-the-apocalypse',
+  'freeside',
+  'goodsprings',
+  'great-khans',
+  'new-california-republic',
+  'novac',
+  'powder-gangers',
+  'primm',
+  'the-strip',
+  'white-glove-society',
+]);
 
 /** Rows are Infamy ranges 1–4; columns are Fame ranges 1–4. */
 export const FNV_REPUTATION_TITLES: readonly (readonly string[])[] = [
@@ -42,11 +36,6 @@ export const FNV_REPUTATION_TITLES: readonly (readonly string[])[] = [
   ['Hated', 'Sneering Punk', 'Unpredictable', 'Dark Hero'],
   ['Vilified', 'Merciful Thug', 'Soft-Hearted Devil', 'Wild Child'],
 ];
-
-export function getFactionThresholdProfile(id: string): FactionThresholdProfile {
-  return FACTION_THRESHOLD_PROFILES.find(profile => profile.id === id)
-    ?? FACTION_THRESHOLD_PROFILES.find(profile => profile.id === DEFAULT_FACTION_THRESHOLD_PROFILE)!;
-}
 
 export function reputationRange(points: number, thresholds: readonly number[]): number {
   const amount = Number.isSafeInteger(points) && points >= 0 ? points : 0;
@@ -59,11 +48,10 @@ export function reputationRange(points: number, thresholds: readonly number[]): 
 
 export function factionReputationTitle(faction: Pick<
   FactionReputation,
-  'fame' | 'infamy' | 'thresholdProfile' | 'customTitle'
+  'fame' | 'infamy' | 'customTitle'
 >): string {
-  const thresholds = getFactionThresholdProfile(faction.thresholdProfile).thresholds;
-  const fameRange = reputationRange(faction.fame, thresholds);
-  const infamyRange = reputationRange(faction.infamy, thresholds);
+  const fameRange = reputationRange(faction.fame, FACTION_REPUTATION_THRESHOLDS);
+  const infamyRange = reputationRange(faction.infamy, FACTION_REPUTATION_THRESHOLDS);
   const automatedTitle = FNV_REPUTATION_TITLES[infamyRange][fameRange];
   const customTitle = faction.customTitle?.trim();
   return customTitle ? `${customTitle} - ${automatedTitle}` : automatedTitle;
@@ -130,8 +118,10 @@ export function normalizeFactionReputations(value: unknown): FactionReputation[]
     if (!isFactionReputation(candidate) || seenIds.has(candidate.id)) continue;
     seenIds.add(candidate.id);
     const replayed = replayFactionLog(candidate.log);
+    const normalizedFaction = { ...candidate };
+    delete normalizedFaction.thresholdProfile;
     result.push({
-      ...candidate,
+      ...normalizedFaction,
       name: candidate.name.trim(),
       customTitle: candidate.customTitle?.trim() || undefined,
       ...replayed,
@@ -151,8 +141,9 @@ export function isFactionReputation(value: unknown): value is FactionReputation 
     || typeof faction.name !== 'string'
     || faction.name.trim().length === 0
     || faction.name.length > MAX_FACTION_NAME_LENGTH
-    || typeof faction.thresholdProfile !== 'string'
-    || !FACTION_THRESHOLD_PROFILES.some(profile => profile.id === faction.thresholdProfile)
+    || (faction.thresholdProfile !== undefined
+      && (typeof faction.thresholdProfile !== 'string'
+        || !LEGACY_FACTION_THRESHOLD_PROFILE_IDS.has(faction.thresholdProfile)))
     || typeof faction.fame !== 'number'
     || !Number.isSafeInteger(faction.fame)
     || faction.fame < 0

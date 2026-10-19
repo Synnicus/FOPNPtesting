@@ -140,7 +140,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
           RECORD KARMA CHANGE
         </Text>
         <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-          Enter a non-zero positive or negative whole number. Add an explanation. The total is limited to −1000 to +1000.
+          Enter a positive or negative  number. Add an explanation. The total is Limited to −1000 to +1000.
         </Text>
         <TextInput
           accessibilityLabel="Karma change amount"

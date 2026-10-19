@@ -14,3 +14,9 @@ Direct Node tests also cannot import the app localization module as-is because i
 **Why:** The app bundler accepts the existing JSON import syntax, but Node's direct TypeScript test runner enforces ESM JSON import attributes before tests execute.
 
 **How to apply:** Test localization data without importing that bundled module directly, or isolate the tested translation logic from its JSON-loading layer.
+
+Relative imports from a tested TypeScript data module should include the `.ts` extension when they must run directly under Node's type stripping.
+
+**Why:** Node's ESM resolver does not apply the extensionless resolution behavior used by the app bundler.
+
+**How to apply:** Keep imports between directly tested data modules relative and explicit, including the `.ts` extension.
