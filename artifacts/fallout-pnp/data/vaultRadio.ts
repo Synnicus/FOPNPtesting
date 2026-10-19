@@ -5,6 +5,11 @@ export type VaultRadioTrack = {
   artist: string | null;
 };
 
+export type VaultRadioTrackMetadata = {
+  title: string;
+  artist: string | null;
+};
+
 export const VAULT_RADIO_TRACKS: readonly VaultRadioTrack[] = [
   {
     id: 'aint-misbehavin',
@@ -51,6 +56,36 @@ export const VAULT_RADIO_TRACKS: readonly VaultRadioTrack[] = [
 ];
 
 const knownTrackByFile = new Map(VAULT_RADIO_TRACKS.map(track => [track.file, track]));
+
+export function normalizeVaultRadioTrackMetadata(value: unknown): Record<string, VaultRadioTrackMetadata> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  const metadata: Record<string, VaultRadioTrackMetadata> = {};
+  for (const [file, entry] of Object.entries(value)) {
+    if (knownTrackByFile.has(file) || !entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const candidate = entry as Record<string, unknown>;
+    if (typeof candidate.title !== 'string') continue;
+    if (candidate.artist !== null && typeof candidate.artist !== 'string') continue;
+
+    metadata[file] = {
+      title: candidate.title.trim(),
+      artist: typeof candidate.artist === 'string' ? candidate.artist.trim() || null : null,
+    };
+  }
+  return metadata;
+}
+
+export function applyVaultRadioTrackMetadata(
+  track: VaultRadioTrack,
+  metadata?: VaultRadioTrackMetadata,
+): VaultRadioTrack {
+  if (knownTrackByFile.has(track.file) || !metadata) return track;
+  return {
+    ...track,
+    title: metadata.title.trim() || track.title,
+    artist: metadata.artist?.trim() || null,
+  };
+}
 
 export function createVaultRadioTrack(file: string): VaultRadioTrack {
   const knownTrack = knownTrackByFile.get(file);

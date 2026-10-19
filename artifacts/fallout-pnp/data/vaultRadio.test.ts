@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyVaultRadioTrackMetadata,
   createVaultRadioTrack,
   getAdjacentVaultRadioIndex,
+  normalizeVaultRadioTrackMetadata,
   VAULT_RADIO_TRACKS,
 } from './vaultRadio.ts';
 
@@ -29,6 +31,30 @@ test('uploaded tracks without curated metadata get a readable filename and unkno
     title: 'New song demo',
     artist: null,
   });
+});
+
+test('uploaded track metadata is normalized and applied without changing curated tracks', () => {
+  const metadata: ReturnType<typeof normalizeVaultRadioTrackMetadata> = normalizeVaultRadioTrackMetadata({
+    'New_song-demo.mp3': { title: '  Demo Song  ', artist: '  A Player  ' },
+    'missing-title.mp3': { artist: 'No title' },
+    [VAULT_RADIO_TRACKS[0].file]: { title: 'Changed', artist: 'Changed' },
+    'invalid-artist.mp3': { title: 'Valid title', artist: 42 },
+  });
+  const uploadedTrack = createVaultRadioTrack('New_song-demo.mp3');
+  const uploadedMetadata = metadata[uploadedTrack.file];
+
+  assert.deepEqual(metadata, {
+    'New_song-demo.mp3': { title: 'Demo Song', artist: 'A Player' },
+  });
+  assert.deepEqual(applyVaultRadioTrackMetadata(uploadedTrack, uploadedMetadata), {
+    ...uploadedTrack,
+    title: 'Demo Song',
+    artist: 'A Player',
+  });
+  assert.deepEqual(
+    applyVaultRadioTrackMetadata(VAULT_RADIO_TRACKS[0], { title: 'Changed', artist: 'Changed' }),
+    VAULT_RADIO_TRACKS[0],
+  );
 });
 
 test('previous and next controls wrap around the ordered playlist', () => {

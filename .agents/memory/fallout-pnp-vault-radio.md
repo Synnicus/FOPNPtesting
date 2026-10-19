@@ -1,6 +1,6 @@
 ---
 name: Fallout PnP Vault Radio
-description: User's soundtrack source and storage choice for music playback.
+description: Soundtrack storage, playback, and custom-label scope.
 ---
 
 The user describes the supplied 1920s recordings as free to use and intends them to serve as the app's score. They chose App Storage with local caching on first play rather than bundling the collection into the mobile app.
@@ -11,3 +11,9 @@ The user confirmed playback started after moving the folder to public storage.
 **Why:** The supplied collection is about 49 MiB; the user accepted external storage and first-play caching to keep the app bundle smaller while supporting repeat listening.
 
 **How to apply:** Keep future soundtrack additions in the public `vault-radio/` folder, separate from system and combat effects, and do not package the large recordings in the native app.
+
+Custom titles and artists for added tracks are device-local persistent settings keyed by the uploaded filename. They do not belong to campaign data, do not override built-in catalog metadata, and must not affect playlist order.
+
+**Why:** The user asked for labels to remain after app restarts; sharing labels across devices or campaigns was outside that request.
+
+**How to apply:** Keep added-track label edits in local app storage and apply them only after uploaded files have been ordered. Treat cross-device sharing as a separate feature.

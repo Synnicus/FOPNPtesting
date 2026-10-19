@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { File, Directory, Paths } from 'expo-file-system';
 import { useAudioPlayer } from 'expo-audio';
@@ -8,17 +9,27 @@ import {
 } from '@workspace/api-client-react';
 import { useApp } from '@/context/AppContext';
 import {
+  applyVaultRadioTrackMetadata,
   createVaultRadioTrack,
   getAdjacentVaultRadioIndex,
+  normalizeVaultRadioTrackMetadata,
   VAULT_RADIO_TRACKS,
   type VaultRadioTrack,
+  type VaultRadioTrackMetadata,
 } from '@/data/vaultRadio';
 
 const RADIO_FOLDER = 'vault-radio';
 const CACHE_FOLDER = 'vault-radio-cache';
+const METADATA_STORAGE_KEY = 'fallout_pnp_vault_radio_metadata_v1';
 type VaultRadioStatus = {
   hasPlaybackError: boolean;
   currentTrack: VaultRadioTrack | null;
+  customTracks: VaultRadioTrack[];
+  isTrackListLoading: boolean;
+  isMetadataLoading: boolean;
+  metadataLoadFailed: boolean;
+  metadataSaveFailed: boolean;
+  updateTrackMetadata: (file: string, field: keyof VaultRadioTrackMetadata, value: string) => void;
   canSkip: boolean;
   skipPrevious: () => void;
   skipNext: () => void;
@@ -27,6 +38,12 @@ type VaultRadioStatus = {
 const VaultRadioStatusContext = createContext<VaultRadioStatus>({
   hasPlaybackError: false,
   currentTrack: null,
+  customTracks: [],
+  isTrackListLoading: true,
+  isMetadataLoading: true,
+  metadataLoadFailed: false,
+  metadataSaveFailed: false,
+  updateTrackMetadata: () => {},
   canSkip: false,
   skipPrevious: () => {},
   skipNext: () => {},
@@ -63,24 +80,61 @@ async function getPlayableTrackUri(fileName: string): Promise<string> {
 export function VaultRadioProvider({ children }: { children: React.ReactNode }) {
   const { musicEnabled, musicVolume } = useApp();
   const player = useAudioPlayer(null, { updateInterval: 500 });
+  const [trackMetadata, setTrackMetadata] = useState<Record<string, VaultRadioTrackMetadata>>({});
+  const [isMetadataLoading, setIsMetadataLoading] = useState(true);
+  const [metadataLoadFailed, setMetadataLoadFailed] = useState(false);
+  const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
+  const metadataRef = useRef(trackMetadata);
+  const metadataWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const { data: trackList, isLoading: trackListLoading } = useListVaultRadioTracks({
     query: {
       enabled: musicEnabled,
       queryKey: getListVaultRadioTracksQueryKey(),
     },
   });
-  const radioTracks = useMemo(() => {
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(METADATA_STORAGE_KEY)
+      .then(raw => {
+        if (!active) return;
+        const parsed = raw ? JSON.parse(raw) as unknown : {};
+        const normalized = normalizeVaultRadioTrackMetadata(parsed);
+        metadataRef.current = normalized;
+        setTrackMetadata(normalized);
+      })
+      .catch(error => {
+        if (!active) return;
+        console.warn('Vault Radio saved labels could not be loaded.', error);
+        setMetadataLoadFailed(true);
+      })
+      .finally(() => {
+        if (active) setIsMetadataLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const { radioTracks, customTracks } = useMemo(() => {
     const uploadedFiles = trackList?.tracks ?? [];
     const uploadedSet = new Set(uploadedFiles);
     const knownTracks = VAULT_RADIO_TRACKS.filter(track => uploadedSet.has(track.file));
     const knownFiles = new Set<string>(knownTracks.map(track => track.file));
-    const additionalTracks = uploadedFiles
+    const additionalFiles = uploadedFiles
       .filter(file => !knownFiles.has(file))
-      .sort((a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }))
-      .map(createVaultRadioTrack);
-    return [...knownTracks, ...additionalTracks];
-  }, [trackList]);
+      .sort((a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }));
+    const additionalTracks = additionalFiles
+      .map(file => applyVaultRadioTrackMetadata(createVaultRadioTrack(file), trackMetadata[file]));
+    return {
+      radioTracks: [...knownTracks, ...additionalTracks],
+      customTracks: additionalFiles.map(file => {
+        const track = createVaultRadioTrack(file);
+        const metadata = trackMetadata[file];
+        return metadata ? { ...track, ...metadata } : track;
+      }),
+    };
+  }, [trackList, trackMetadata]);
   const generation = useRef(0);
+  const radioTracksRef = useRef(radioTracks);
+  radioTracksRef.current = radioTracks;
   const currentTrackIndex = useRef<number | null>(null);
   const finishedTrack = useRef(false);
   const enabledRef = useRef(musicEnabled);
@@ -91,8 +145,38 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
   enabledRef.current = musicEnabled;
   volumeRef.current = musicVolume;
 
+  const updateTrackMetadata = useCallback((
+    file: string,
+    field: keyof VaultRadioTrackMetadata,
+    value: string,
+  ) => {
+    if (
+      isMetadataLoading
+      || metadataLoadFailed
+      || VAULT_RADIO_TRACKS.some(track => track.file === file)
+      || !trackList?.tracks.includes(file)
+    ) return;
+
+    const fallback = createVaultRadioTrack(file);
+    const existing = metadataRef.current[file] ?? { title: fallback.title, artist: fallback.artist };
+    const nextEntry: VaultRadioTrackMetadata = field === 'title'
+      ? { ...existing, title: value }
+      : { ...existing, artist: value.trim() || null };
+    const nextMetadata = { ...metadataRef.current, [file]: nextEntry };
+    metadataRef.current = nextMetadata;
+    setTrackMetadata(nextMetadata);
+    metadataWriteQueue.current = metadataWriteQueue.current
+      .catch(() => {})
+      .then(() => AsyncStorage.setItem(METADATA_STORAGE_KEY, JSON.stringify(nextMetadata)))
+      .then(() => setMetadataSaveFailed(false))
+      .catch(error => {
+        console.warn('Vault Radio saved labels could not be written.', error);
+        setMetadataSaveFailed(true);
+      });
+  }, [isMetadataLoading, metadataLoadFailed, trackList]);
+
   const playTrack = useCallback(async (index: number, playbackGeneration: number) => {
-    const track = radioTracks[index];
+    const track = radioTracksRef.current[index];
     if (!track) return;
     try {
       const uri = await getPlayableTrackUri(track.file);
@@ -112,7 +196,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
       setCurrentTrack(null);
       setHasPlaybackError(true);
     }
-  }, [player, radioTracks]);
+  }, [player]);
 
   const skipTrack = useCallback((direction: -1 | 1) => {
     if (!enabledRef.current || radioTracks.length < 2) return;
@@ -197,7 +281,15 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
   return (
     <VaultRadioStatusContext.Provider value={{
       hasPlaybackError,
-      currentTrack,
+      currentTrack: currentTrack
+        ? radioTracks.find(track => track.file === currentTrack.file) ?? currentTrack
+        : null,
+      customTracks,
+      isTrackListLoading: trackListLoading,
+      isMetadataLoading,
+      metadataLoadFailed,
+      metadataSaveFailed,
+      updateTrackMetadata,
       canSkip: musicEnabled && radioTracks.length > 1 && (currentTrack !== null || hasPlaybackError),
       skipPrevious,
       skipNext,

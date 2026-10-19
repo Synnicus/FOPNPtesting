@@ -9,10 +9,11 @@ import {
   Text as NativeText,
   View,
 } from 'react-native';
-import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
+import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useApp } from '@/context/AppContext';
 import { useLocalization } from '@/context/LocalizationContext';
 import { useColors } from '@/hooks/useColors';
@@ -23,6 +24,7 @@ import {
   HARDCORE_RADIATION_RULES,
   type GhoulRadiationHealingOption,
 } from '@/data/radiation';
+import type { VaultRadioTrack, VaultRadioTrackMetadata } from '@/data/vaultRadio';
 import type { CampaignVisualTheme } from '@/data/campaignOptions';
 import { APP_LANGUAGES } from '@/data/localization';
 
@@ -143,6 +145,117 @@ function VaultRadioNowPlaying({
           <Feather name="skip-forward" size={17} color={canSkip ? palette.primary : palette.mutedForeground} />
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+function VaultRadioTrackLabels({
+  tracks,
+  isLoading,
+  metadataLoading,
+  loadFailed,
+  saveFailed,
+  onChange,
+}: {
+  tracks: VaultRadioTrack[];
+  isLoading: boolean;
+  metadataLoading: boolean;
+  loadFailed: boolean;
+  saveFailed: boolean;
+  onChange: (file: string, field: keyof VaultRadioTrackMetadata, value: string) => void;
+}) {
+  const palette = useColors();
+  const inputStyle = {
+    minHeight: 42,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: palette.radius,
+    backgroundColor: palette.background,
+    color: palette.foreground,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular' as const,
+  };
+
+  return (
+    <View style={{ gap: 10 }}>
+      <SectionHeading title="Added Track Labels" />
+      {loadFailed ? (
+        <Text accessibilityRole="alert" style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: palette.destructive }}>
+          Saved Vault Radio labels could not be loaded. Restart the app before editing them.
+        </Text>
+      ) : isLoading || metadataLoading ? (
+        <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+          Loading uploaded tracks…
+        </Text>
+      ) : tracks.length === 0 ? (
+        <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+          No additional uploaded tracks are available.
+        </Text>
+      ) : (
+        <>
+          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+            Set titles and artists for tracks added outside the built-in collection.
+          </Text>
+          {tracks.map((track, index) => (
+            <View
+              key={track.file}
+              style={{
+                padding: 12,
+                borderWidth: 1,
+                borderColor: palette.border,
+                borderRadius: palette.radius,
+                backgroundColor: palette.secondary,
+                gap: 9,
+              }}
+            >
+              <NativeText
+                numberOfLines={1}
+                style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}
+              >
+                {track.file}
+              </NativeText>
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
+                  Title
+                </Text>
+                <LocalizedTextInput
+                  accessibilityLabel={`Title for ${track.file}`}
+                  accessibilityHint="Saved on this device and used when the track plays."
+                  testID={`vault-radio-track-title-${index}`}
+                  value={track.title}
+                  onChangeText={value => onChange(track.file, 'title', value)}
+                  placeholder="Track title"
+                  placeholderTextColor={palette.mutedForeground}
+                  autoCapitalize="sentences"
+                  style={inputStyle}
+                />
+              </View>
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
+                  Artist
+                </Text>
+                <LocalizedTextInput
+                  accessibilityLabel={`Artist for ${track.file}`}
+                  accessibilityHint="Saved on this device and used when the track plays."
+                  testID={`vault-radio-track-artist-${index}`}
+                  value={track.artist ?? ''}
+                  onChangeText={value => onChange(track.file, 'artist', value)}
+                  placeholder="Artist (optional)"
+                  placeholderTextColor={palette.mutedForeground}
+                  autoCapitalize="words"
+                  style={inputStyle}
+                />
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+      {saveFailed && (
+        <Text accessibilityRole="alert" style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: palette.destructive }}>
+          Vault Radio labels could not be saved. Check available device storage and try again.
+        </Text>
+      )}
     </View>
   );
 }
@@ -461,6 +574,12 @@ export default function CampaignOptionsModal({
   const {
     hasPlaybackError,
     currentTrack,
+    customTracks,
+    isTrackListLoading,
+    isMetadataLoading,
+    metadataLoadFailed,
+    metadataSaveFailed,
+    updateTrackMetadata,
     canSkip,
     skipPrevious,
     skipNext,
@@ -549,9 +668,10 @@ export default function CampaignOptionsModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView
+          <KeyboardAwareScrollViewCompat
             contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 28, gap: 10 }}
             keyboardShouldPersistTaps="handled"
+            bottomOffset={20}
           >
             <SectionHeading title="Gameplay Options" />
             <View style={{
@@ -787,6 +907,16 @@ export default function CampaignOptionsModal({
                 onNext={skipNext}
               />
             )}
+            {musicEnabled && (
+              <VaultRadioTrackLabels
+                tracks={customTracks}
+                isLoading={isTrackListLoading}
+                metadataLoading={isMetadataLoading}
+                loadFailed={metadataLoadFailed}
+                saveFailed={metadataSaveFailed}
+                onChange={updateTrackMetadata}
+              />
+            )}
             <PreferenceSliderRow
               label="Vault Radio volume"
               description="Set the volume for Vault Radio music."
@@ -814,7 +944,7 @@ export default function CampaignOptionsModal({
                 RESTORE DEFAULT BESTIARY
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </KeyboardAwareScrollViewCompat>
         </View>
       </Modal>
 
