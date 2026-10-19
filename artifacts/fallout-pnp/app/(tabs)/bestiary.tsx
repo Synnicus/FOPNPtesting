@@ -17,6 +17,7 @@ import { RACES, getRaceById } from '@/data/races';
 import { computeCombinedProtection } from '@/data/armor';
 import { CatalogImageEditor } from '@/components/CatalogImageEditor';
 import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
+import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -702,16 +703,15 @@ function BestiaryCard({ template, onPress, onEdit, onDelete, allWeapons }: {
         accessibilityLabel={`Open ${template.name} details`}
         onPress={onPress}
         activeOpacity={0.86}
-        style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: template.isCustom ? colors.primary + '66' : colors.border, padding: 12, paddingTop: 12, gap: 8 }}
+        style={{ position: 'relative', overflow: 'hidden', backgroundColor: template.portrait ? 'transparent' : colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: template.isCustom ? colors.primary + '66' : colors.border, padding: 12, paddingTop: 12, gap: 8 }}
       >
+        <PortraitCardBackground
+          uri={template.portrait}
+          fit={template.portraitFit ?? 'cover'}
+          offset={template.portraitOffset}
+          scrimColor={colors.card}
+        />
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          {template.portrait && (
-            <Image
-              source={{ uri: template.portrait }}
-              resizeMode="cover"
-              style={{ width: 58, height: 54, borderRadius: 6, backgroundColor: colors.secondary, marginRight: 9 }}
-            />
-          )}
           <View style={{ flex: 1, paddingRight: onEdit || onDelete ? 48 : 0 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               {template.isCustom && <View style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.primary + '33', borderRadius: 4 }}><Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>CUSTOM</Text></View>}

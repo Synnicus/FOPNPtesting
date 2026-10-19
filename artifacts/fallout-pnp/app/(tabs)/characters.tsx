@@ -24,6 +24,7 @@ import KarmaTracker from '@/components/KarmaTracker';
 import FactionReputationTracker from '@/components/FactionReputationTracker';
 import CustomRulesPanel from '@/components/CustomRulesPanel';
 import CharacterAvatar from '@/components/CharacterAvatar';
+import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import HPBar from '@/components/HPBar';
 import {
   calcMaxHP, calcNpcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
@@ -2595,9 +2596,15 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
   ];
   return (
     <View style={{ gap: 6 }}>
-    <TouchableOpacity style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
+    <TouchableOpacity style={{ position: 'relative', overflow: 'hidden', backgroundColor: character.portrait ? 'transparent' : colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: character.type === 'pc' ? colors.primary + '44' : colors.destructive + '44', padding: 14, gap: 10 }} onPress={onEdit} activeOpacity={0.8}>
+      <PortraitCardBackground
+        uri={character.portrait}
+        fit={character.portraitFit ?? 'cover'}
+        offset={character.portraitOffset}
+        scrimColor={colors.card}
+      />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <CharacterAvatar portrait={character.portrait} name={character.name} size={48} fit={character.portraitFit ?? 'cover'} offset={character.portraitOffset} />
+        {!character.portrait && <CharacterAvatar portrait={null} name={character.name} size={48} />}
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{character.name}</Text>

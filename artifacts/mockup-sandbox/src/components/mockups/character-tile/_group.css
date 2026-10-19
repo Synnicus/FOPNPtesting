@@ -1,0 +1,28 @@
+:root {
+  --tile-background: #07100a;
+  --tile-card: #0e1b11;
+  --tile-foreground: #d8e8c2;
+  --tile-primary: #a8d475;
+  --tile-secondary: #15261a;
+  --tile-muted: #91a383;
+  --tile-border: #27412b;
+  --tile-danger: #d05f45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 100%;
+  min-height: 100%;
+  background: var(--tile-background);
+}
+
+body {
+  color: var(--tile-foreground);
+  font-family: Inter, Arial, sans-serif;
+}

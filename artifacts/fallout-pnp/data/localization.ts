@@ -212,6 +212,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Chargement de la campagne actuelle…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Aucune campagne enregistrée. Enregistrez la campagne actuelle ou importez un fichier JSON.',
     'Start New Campaign': 'Commencer une nouvelle campagne',
+    'Export Campaign': 'Exporter la campagne', 'Export file name': 'Nom du fichier d’exportation',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Gérez les ressources de la campagne, enregistrez ou chargez des campagnes et utilisez les outils.',
   },
   it: {
     Continue: 'Continua', 'Main Menu': 'Menu principale', 'New Campaign': 'Nuova campagna', 'Load Campaign': 'Carica campagna',
@@ -238,6 +240,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Caricamento della campagna corrente…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Nessuna campagna salvata. Salva quella corrente o carica un file JSON.',
     'Start New Campaign': 'Inizia nuova campagna',
+    'Export Campaign': 'Esporta campagna', 'Export file name': 'Nome del file esportato',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Gestisci le risorse della campagna, salva o carica le campagne e usa gli strumenti.',
   },
   de: {
     Continue: 'Fortfahren', 'Main Menu': 'Hauptmenü', 'New Campaign': 'Neue Kampagne', 'Load Campaign': 'Kampagne laden',
@@ -264,6 +268,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Aktuelle Kampagne wird geladen…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Noch keine Kampagnen gespeichert. Speichere die aktuelle Kampagne oder lade eine JSON-Datei hoch.',
     'Start New Campaign': 'Neue Kampagne starten',
+    'Export Campaign': 'Kampagne exportieren', 'Export file name': 'Exportdateiname',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Kampagneninhalte verwalten, Kampagnen speichern oder laden und Kampagnenwerkzeuge nutzen.',
   },
   'es-ES': {
     Continue: 'Continuar', 'Main Menu': 'Menú principal', 'New Campaign': 'Nueva campaña', 'Load Campaign': 'Cargar campaña',
@@ -290,6 +296,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Cargando campaña actual…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Aún no hay campañas guardadas. Guarda la campaña actual o sube un archivo JSON.',
     'Start New Campaign': 'Iniciar campaña nueva',
+    'Export Campaign': 'Exportar campaña', 'Export file name': 'Nombre del archivo de exportación',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Gestiona los recursos, guarda o carga campañas y accede a las herramientas.',
   },
   'es-MX': {
     Continue: 'Continuar', 'Main Menu': 'Menú principal', 'New Campaign': 'Nueva campaña', 'Load Campaign': 'Cargar campaña',
@@ -316,6 +324,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Cargando la campaña actual…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Aún no hay campañas guardadas. Guarda la campaña actual o sube un archivo JSON.',
     'Start New Campaign': 'Iniciar campaña nueva',
+    'Export Campaign': 'Exportar campaña', 'Export file name': 'Nombre del archivo para exportar',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Administra los recursos, guarda o carga campañas y usa las herramientas.',
   },
   ja: {
     Continue: '続ける', 'Main Menu': 'メインメニュー', 'New Campaign': '新しいキャンペーン', 'Load Campaign': 'キャンペーンを読み込む',
@@ -342,6 +352,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': '現在のキャンペーンを読み込み中…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': '保存済みキャンペーンはありません。現在のキャンペーンを保存するか、JSONファイルをアップロードしてください。',
     'Start New Campaign': '新しいキャンペーンを開始',
+    'Export Campaign': 'キャンペーンをエクスポート', 'Export file name': 'エクスポートファイル名',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'キャンペーンのアセット管理、保存・読み込み、キャンペーンツールを利用できます。',
   },
   pl: {
     Continue: 'Kontynuuj', 'Main Menu': 'Menu główne', 'New Campaign': 'Nowa kampania', 'Load Campaign': 'Wczytaj kampanię',
@@ -368,6 +380,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Wczytywanie bieżącej kampanii…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Brak zapisanych kampanii. Zapisz bieżącą kampanię lub prześlij plik JSON.',
     'Start New Campaign': 'Rozpocznij nową kampanię',
+    'Export Campaign': 'Eksportuj kampanię', 'Export file name': 'Nazwa pliku eksportu',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Zarządzaj zasobami kampanii, zapisuj lub wczytuj kampanie i korzystaj z narzędzi.',
   },
   'pt-BR': {
     Continue: 'Continuar', 'Main Menu': 'Menu principal', 'New Campaign': 'Nova campanha', 'Load Campaign': 'Carregar campanha',
@@ -394,6 +408,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Carregando a campanha atual…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Ainda não há campanhas salvas. Salve a campanha atual ou envie um arquivo JSON.',
     'Start New Campaign': 'Iniciar nova campanha',
+    'Export Campaign': 'Exportar campanha', 'Export file name': 'Nome do arquivo de exportação',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Gerencie recursos, salve ou carregue campanhas e use as ferramentas.',
   },
   ru: {
     Continue: 'Продолжить', 'Main Menu': 'Главное меню', 'New Campaign': 'Новая кампания', 'Load Campaign': 'Загрузить кампанию',
@@ -420,6 +436,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': 'Загрузка текущей кампании…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': 'Сохранённых кампаний нет. Сохраните текущую кампанию или загрузите файл JSON.',
     'Start New Campaign': 'Начать новую кампанию',
+    'Export Campaign': 'Экспортировать кампанию', 'Export file name': 'Имя файла экспорта',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': 'Управляйте ресурсами кампании, сохраняйте или загружайте кампании и используйте инструменты.',
   },
   'zh-Hans': {
     Continue: '继续', 'Main Menu': '主菜单', 'New Campaign': '新建战役', 'Load Campaign': '加载战役',
@@ -446,6 +464,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': '正在加载当前战役…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': '尚无已保存的战役。请保存当前战役或上传 JSON 文件。',
     'Start New Campaign': '开始新战役',
+    'Export Campaign': '导出战役', 'Export file name': '导出文件名',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': '管理战役资源、保存或加载战役，并使用战役工具。',
   },
   'zh-Hant': {
     Continue: '繼續', 'Main Menu': '主選單', 'New Campaign': '建立新戰役', 'Load Campaign': '載入戰役',
@@ -472,6 +492,8 @@ const campaignMenuTranslations: Partial<Record<AppLocale, Record<string, string>
     'Loading current campaign…': '正在載入目前戰役…',
     'No saved campaigns yet. Save the current campaign or upload a JSON file.': '尚無已儲存的戰役。請儲存目前戰役或上傳 JSON 檔案。',
     'Start New Campaign': '開始新戰役',
+    'Export Campaign': '匯出戰役', 'Export file name': '匯出檔案名稱',
+    'Manage campaign assets, save/load campaigns, and use campaign tools.': '管理戰役資產、儲存或載入戰役，並使用戰役工具。',
   },
 };
 const dynamicPatterns: Partial<Record<AppLocale, Record<string, string>>> = {

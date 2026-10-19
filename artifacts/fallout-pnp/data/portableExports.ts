@@ -38,6 +38,7 @@ const SUPPORTED_PORTRAIT_MIME_TYPES = new Set([
 ]);
 
 export interface CampaignStateSnapshot {
+  campaignName?: string;
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];

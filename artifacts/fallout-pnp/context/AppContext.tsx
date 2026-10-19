@@ -343,6 +343,7 @@ function normalizeCharacterAmmoStates(
 const STORAGE_KEY = '@fallout_pnp_v4';
 
 interface AppState extends CampaignOptions {
+  campaignName: string;
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
@@ -633,6 +634,9 @@ function normalizePersistedState(parsed: AppState): AppState {
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   return {
     ...currentState,
+    campaignName: typeof normalized.campaignName === 'string' && normalized.campaignName.trim()
+      ? normalized.campaignName.trim().slice(0, 80)
+      : 'My Campaign',
     ...normalizeCampaignOptions(normalized),
     hardcoreRadiationRules: normalized.hardcoreRadiationRules !== undefined
       ? normalized.hardcoreRadiationRules === true
@@ -774,6 +778,7 @@ interface AppContextValue extends AppState {
 const AppContext = createContext<AppContextValue | null>(null);
 
 const defaultState: AppState = markConditionSemanticsV2({
+  campaignName: 'My Campaign',
   characters: [],
   customWeapons: [],
   customArmor: [],

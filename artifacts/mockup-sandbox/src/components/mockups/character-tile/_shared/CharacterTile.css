@@ -1,0 +1,391 @@
+.preview-stage {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  background: var(--tile-background);
+}
+
+.character-card {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid rgba(168, 212, 117, .28);
+  border-radius: 6px;
+  background: var(--tile-card);
+  color: var(--tile-foreground);
+  isolation: isolate;
+}
+
+.character-card.portrait-background {
+  border-color: rgba(168, 212, 117, .35);
+  background: transparent;
+}
+
+.card-content {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 10px;
+}
+
+.character-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.small-portrait {
+  position: relative;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border: 2px solid var(--tile-primary);
+  border-radius: 50%;
+  background: var(--tile-secondary);
+}
+
+.identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.identity p {
+  margin: 2px 0 0;
+  color: var(--tile-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.name-row h2 {
+  margin: 0;
+  color: var(--tile-foreground);
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.type-badge,
+.injury-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 9px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.type-badge {
+  color: var(--tile-primary);
+  background: rgba(168, 212, 117, .2);
+}
+
+.injury-badge {
+  color: var(--tile-danger);
+  background: rgba(208, 95, 69, .15);
+}
+
+.radiation-line {
+  color: var(--tile-foreground) !important;
+  font-weight: 700;
+}
+
+.character-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--tile-primary);
+}
+
+.character-actions svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+}
+
+.character-actions .action-delete,
+.character-actions .action-heal {
+  color: var(--tile-danger);
+}
+
+.action-pair {
+  display: flex;
+  gap: 3px;
+}
+
+.action-pair svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.trait-chip {
+  padding: 3px 8px;
+  border: 1px solid rgba(168, 212, 117, .35);
+  border-radius: 4px;
+  background: rgba(168, 212, 117, .1);
+  color: var(--tile-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.muted-chip {
+  color: var(--tile-muted);
+  border-color: var(--tile-border);
+  background: var(--tile-secondary);
+}
+
+.perk-reminder {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid rgba(168, 212, 117, .27);
+  border-radius: 7px;
+  background: rgba(168, 212, 117, .07);
+}
+
+.perk-reminder strong {
+  color: var(--tile-primary);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.perk-reminder span {
+  color: var(--tile-foreground);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.special-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.special-cell {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  border: 1px solid var(--tile-border);
+  border-radius: 4px;
+  background: var(--tile-secondary);
+}
+
+.special-cell span {
+  color: var(--tile-muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.special-cell strong {
+  color: var(--tile-foreground);
+  font-size: 13px;
+}
+
+.status-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--tile-danger);
+  font-size: 10px;
+}
+
+.health-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(208, 95, 69, .2);
+}
+
+.health-track span {
+  display: block;
+  width: 79%;
+  height: 100%;
+  background: var(--tile-primary);
+}
+
+.portrait-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 68% 26%, rgba(183, 151, 88, .55), transparent 34%),
+    linear-gradient(130deg, #243426 0%, #18261a 44%, #66543a 100%);
+}
+
+.portrait-sun {
+  position: absolute;
+  top: 9%;
+  right: 14%;
+  width: 35%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(224, 185, 105, .62);
+  filter: blur(1px);
+}
+
+.portrait-head {
+  position: absolute;
+  top: 15%;
+  right: 25%;
+  width: 24%;
+  height: 34%;
+  border-radius: 48% 48% 42% 42%;
+  background: linear-gradient(110deg, #b18460, #654b3a 70%);
+}
+
+.portrait-neck {
+  position: absolute;
+  top: 43%;
+  right: 30%;
+  width: 13%;
+  height: 13%;
+  background: #76523b;
+}
+
+.portrait-shoulders {
+  position: absolute;
+  right: 8%;
+  bottom: -16%;
+  width: 58%;
+  height: 56%;
+  border-radius: 52% 50% 0 0;
+  background: linear-gradient(110deg, #334032, #111b13 80%);
+}
+
+.portrait-coat {
+  position: absolute;
+  right: 10%;
+  bottom: -5%;
+  width: 52%;
+  height: 42%;
+  clip-path: polygon(50% 0, 100% 22%, 82% 100%, 18% 100%, 0 22%);
+  background: linear-gradient(110deg, #4f5744, #222a20);
+}
+
+.portrait-scarf {
+  position: absolute;
+  right: 25%;
+  top: 47%;
+  width: 22%;
+  height: 11%;
+  transform: rotate(-8deg);
+  background: #b27c3e;
+  opacity: .72;
+}
+
+.portrait-background .portrait-art {
+  z-index: -2;
+}
+
+.portrait-background .portrait-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(100deg, rgba(7, 16, 10, .94) 0%, rgba(7, 16, 10, .87) 42%, rgba(7, 16, 10, .57) 100%);
+}
+
+.portrait-background .identity p,
+.portrait-background .name-row h2,
+.portrait-background .status-line {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
+}
+
+.portrait-background .identity p {
+  color: #b1c59d;
+}
+
+.portrait-background .name-row h2 {
+  color: #e1f0d0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .95);
+}
+
+.portrait-background .type-badge,
+.portrait-background .injury-badge,
+.portrait-background .trait-chip,
+.portrait-background .special-cell,
+.portrait-background .perk-reminder {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+
+.portrait-background .type-badge,
+.portrait-background .injury-badge,
+.portrait-background .trait-chip,
+.portrait-background .special-cell {
+  background: rgba(7, 16, 10, .82);
+}
+
+.portrait-background .type-badge,
+.portrait-background .trait-chip,
+.portrait-background .special-cell {
+  border-color: rgba(168, 212, 117, .38);
+}
+
+.portrait-background .type-badge,
+.portrait-background .trait-chip,
+.portrait-background .special-cell strong,
+.portrait-background .perk-reminder span {
+  color: #d8e8c2;
+}
+
+.portrait-background .perk-reminder {
+  border-color: rgba(168, 212, 117, .42);
+  background: rgba(7, 16, 10, .78);
+}
+
+.portrait-background .perk-reminder strong,
+.portrait-background .special-cell span {
+  color: #bce794;
+}
+
+.portrait-background .health-track {
+  background: rgba(208, 95, 69, .42);
+}
+
+.portrait-background .health-track span {
+  background: #bce794;
+}
+
+@media (max-width: 390px) {
+  .preview-stage {
+    padding: 10px;
+  }
+
+  .character-card {
+    padding: 11px;
+  }
+
+  .character-header {
+    gap: 8px;
+  }
+
+  .identity p {
+    font-size: 11px;
+  }
+
+  .name-row h2 {
+    font-size: 15px;
+  }
+}

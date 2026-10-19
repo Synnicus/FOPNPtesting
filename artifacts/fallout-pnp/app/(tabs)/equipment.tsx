@@ -26,6 +26,7 @@ import { AP_COSTS } from '@/data/apCosts';
 import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile } from '@/context/types';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { CatalogImageEditor } from '@/components/CatalogImageEditor';
+import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
 import CustomRulesPanel from '@/components/CustomRulesPanel';
 import { SelectableTagMenu } from '@/components/SelectableTagMenu';
@@ -1248,7 +1249,13 @@ function VehicleRow({ vehicle, onView, onCopy, onEdit, onDelete }: {
 }) {
   const colors = useColors();
   return (
-    <View style={{ marginHorizontal: 16, marginBottom: 10, padding: 12, gap: 8, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
+    <View style={{ position: 'relative', overflow: 'hidden', marginHorizontal: 16, marginBottom: 10, padding: 12, gap: 8, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: vehicle.portrait ? 'transparent' : colors.card }}>
+      <PortraitCardBackground
+        uri={vehicle.portrait}
+        fit={vehicle.portraitFit ?? 'cover'}
+        offset={vehicle.portraitOffset}
+        scrimColor={colors.card}
+      />
       <TouchableOpacity
         onPress={onView}
         accessibilityRole="button"
@@ -1256,9 +1263,7 @@ function VehicleRow({ vehicle, onView, onCopy, onEdit, onDelete }: {
         style={{ gap: 8 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {vehicle.portrait
-            ? <Image source={{ uri: vehicle.portrait }} style={{ width: 58, height: 46, borderRadius: 6, backgroundColor: colors.secondary }} />
-            : <View style={{ width: 58, height: 46, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}><Feather name="truck" size={22} color={colors.mutedForeground} /></View>}
+          {!vehicle.portrait && <View style={{ width: 38, height: 38, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}><Feather name="truck" size={19} color={colors.mutedForeground} /></View>}
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ color: colors.foreground, fontSize: 15, fontFamily: 'Inter_700Bold' }}>{vehicle.name}</Text>
             <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>

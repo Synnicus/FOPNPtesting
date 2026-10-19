@@ -39,16 +39,25 @@ import {
   restoreVehiclePortrait,
 } from '@/data/portableExports';
 
-function defaultExportName() {
+function defaultExportName(campaignName: string) {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `fallout-campaign-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const stem = campaignName.trim()
+    .replace(/\.json$/i, '')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
+    .replace(/[. ]+$/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 80) || 'My-Campaign';
+  return `${stem}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function sanitizeFilename(name: string) {
   const trimmed = name.trim().replace(/\.json$/i, '');
-  const cleaned = trimmed.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '-');
-  const base = cleaned.length > 0 ? cleaned : defaultExportName();
+  const cleaned = trimmed
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
+    .replace(/[. ]+$/g, '')
+    .replace(/\s+/g, '-');
+  const base = cleaned.length > 0 ? cleaned : defaultExportName('My Campaign');
   return `${base}.json`;
 }
 
@@ -230,6 +239,7 @@ export default function CampaignScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
+    campaignName,
     characters,
     customWeapons,
     customArmor,
@@ -259,7 +269,8 @@ export default function CampaignScreen() {
   const [showCampaignLibrary, setShowCampaignLibrary] = useState(false);
   const [showCampaignToolChest, setShowCampaignToolChest] = useState(false);
   const [expandedExportCategory, setExpandedExportCategory] = useState<CampaignExportCategory | null>(null);
-  const [exportName, setExportName] = useState(defaultExportName());
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportName, setExportName] = useState(defaultExportName(campaignName));
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [conflictPrompt, setConflictPrompt] = useState<{
     title: string;
@@ -280,6 +291,11 @@ export default function CampaignScreen() {
     new Promise<'replace' | 'keep' | 'cancel'>(resolve => {
       setConflictPrompt({ title, message, resolve });
     });
+
+  const openExportModal = () => {
+    setExportName(defaultExportName(campaignName));
+    setShowExportModal(true);
+  };
 
   const settleConflictPrompt = (choice: 'replace' | 'keep' | 'cancel') => {
     const resolve = conflictPrompt?.resolve;
@@ -842,7 +858,7 @@ export default function CampaignScreen() {
           </View>
         </View>
         <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 20 }}>
-          Save and load campaign state as portable JSON
+          Manage campaign assets, save/load campaigns, and use campaign tools.
         </Text>
 
         {/* Status */}
@@ -891,7 +907,6 @@ export default function CampaignScreen() {
           <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 1 }}>
             CAMPAIGN TOOL CHEST
           </Text>
-          <Feather name="arrow-up-right" size={14} color={colors.primary} />
         </TouchableOpacity>
         <CampaignToolsPanel
           visible={showCampaignToolChest}
@@ -945,34 +960,6 @@ export default function CampaignScreen() {
 
         {/* Actions */}
         <View style={{ gap: 12 }}>
-          {/* Export filename */}
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 14 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 8 }}>EXPORT FILE NAME</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <TextInput
-                style={{
-                  flex: 1,
-                  backgroundColor: colors.input,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  borderRadius: colors.radius,
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  color: colors.foreground,
-                  fontFamily: 'Inter_400Regular',
-                  fontSize: 14,
-                }}
-                value={exportName}
-                onChangeText={setExportName}
-                placeholder={defaultExportName()}
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_500Medium', color: colors.mutedForeground, marginLeft: 8 }}>.json</Text>
-            </View>
-          </View>
-
           {/* Export */}
           <TouchableOpacity
             style={{
@@ -983,12 +970,12 @@ export default function CampaignScreen() {
               padding: 16,
               gap: 14,
             }}
-            onPress={handleExport}
+            onPress={openExportModal}
             disabled={busyAction !== null}
           >
             <Feather name="download" size={22} color={colors.primaryForeground} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>{busyAction === 'campaign' ? 'PREPARING CAMPAIGN…' : 'EXPORT CAMPAIGN'}</Text>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, textTransform: 'uppercase' }}>{busyAction === 'campaign' ? 'PREPARING CAMPAIGN…' : 'Export Campaign'}</Text>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.primaryForeground + 'cc', marginTop: 2 }}>
                 Save characters, portraits & custom equipment in one JSON file
               </Text>
@@ -1056,6 +1043,80 @@ export default function CampaignScreen() {
 
         <QuickRulesReference />
       </ScrollView>
+
+      <Modal
+        visible={showExportModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExportModal(false)}
+        testID="campaign-export-modal"
+      >
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.85)' }}>
+          <View style={{ width: '100%', maxWidth: 440, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 18 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text accessibilityRole="header" style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, textTransform: 'uppercase' }}>
+                Export Campaign
+              </Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+                onPress={() => setShowExportModal(false)}
+                style={{ padding: 6 }}
+              >
+                <Feather name="x" size={21} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 }}>
+              Export file name
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TextInput
+                testID="campaign-export-filename"
+                accessibilityLabel="Export file name"
+                style={{
+                  flex: 1,
+                  backgroundColor: colors.input,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  color: colors.foreground,
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 14,
+                }}
+                value={exportName}
+                onChangeText={setExportName}
+                placeholder={defaultExportName(campaignName)}
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_500Medium', color: colors.mutedForeground, marginLeft: 8 }}>.json</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <TouchableOpacity
+                testID="campaign-export-cancel"
+                onPress={() => setShowExportModal(false)}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+              >
+                <Text style={{ color: colors.foreground, fontSize: 12, fontFamily: 'Inter_700Bold' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="campaign-export-confirm"
+                disabled={busyAction !== null || !exportName.trim()}
+                onPress={() => {
+                  setShowExportModal(false);
+                  void handleExport();
+                }}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, borderRadius: colors.radius, backgroundColor: busyAction === null && exportName.trim() ? colors.primary : colors.secondary }}
+              >
+                <Text style={{ color: busyAction === null && exportName.trim() ? colors.primaryForeground : colors.mutedForeground, fontSize: 12, fontFamily: 'Inter_700Bold' }}>Export Campaign</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Cross-platform import conflict prompt */}
       <Modal visible={conflictPrompt !== null} transparent animationType="fade" onRequestClose={() => settleConflictPrompt('cancel')}>

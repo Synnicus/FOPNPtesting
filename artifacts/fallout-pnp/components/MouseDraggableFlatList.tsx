@@ -11,9 +11,11 @@ import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from 'react-native';
-import { calculateMouseDragScrollOffset } from '@/data/mouseDragScroll';
-
-const DRAG_THRESHOLD = 6;
+import {
+  calculateMouseDragScrollOffset,
+  shouldStartVerticalMouseDrag,
+  shouldSuppressClickAfterMouseDrag,
+} from '@/data/mouseDragScroll';
 
 /**
  * Keeps native touch and browser wheel scrolling intact, and adds grab-to-scroll
@@ -23,7 +25,18 @@ export function MouseDraggableFlatList<ItemT>(props: FlatListProps<ItemT>) {
   const listRef = useRef<FlatList<ItemT> | null>(null);
   const metrics = useRef({ offset: 0, contentHeight: 0, viewportHeight: 0 });
   const dragStartOffset = useRef(0);
+  const dragEndedAt = useRef(0);
   const [dragging, setDragging] = useState(false);
+
+  const handleClickCapture = (event: {
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }) => {
+    if (!shouldSuppressClickAfterMouseDrag(dragEndedAt.current, Date.now())) return;
+    dragEndedAt.current = 0;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     metrics.current.offset = Math.max(0, event.nativeEvent.contentOffset.y);
@@ -45,12 +58,10 @@ export function MouseDraggableFlatList<ItemT>(props: FlatListProps<ItemT>) {
     onStartShouldSetPanResponderCapture: () => false,
     onMoveShouldSetPanResponder: (_event, gesture) =>
       Platform.OS === 'web'
-      && Math.abs(gesture.dy) > DRAG_THRESHOLD
-      && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      && shouldStartVerticalMouseDrag(gesture.dx, gesture.dy),
     onMoveShouldSetPanResponderCapture: (_event, gesture) =>
       Platform.OS === 'web'
-      && Math.abs(gesture.dy) > DRAG_THRESHOLD
-      && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      && shouldStartVerticalMouseDrag(gesture.dx, gesture.dy),
     onPanResponderGrant: () => {
       dragStartOffset.current = metrics.current.offset;
       setDragging(true);
@@ -64,14 +75,21 @@ export function MouseDraggableFlatList<ItemT>(props: FlatListProps<ItemT>) {
       );
       listRef.current?.scrollToOffset({ offset, animated: false });
     },
-    onPanResponderRelease: () => setDragging(false),
-    onPanResponderTerminate: () => setDragging(false),
+    onPanResponderRelease: () => {
+      dragEndedAt.current = Date.now();
+      setDragging(false);
+    },
+    onPanResponderTerminate: () => {
+      dragEndedAt.current = Date.now();
+      setDragging(false);
+    },
     onPanResponderTerminationRequest: () => false,
   }), []);
 
   return (
     <View
       {...panResponder.panHandlers}
+      {...(Platform.OS === 'web' ? { onClickCapture: handleClickCapture } as any : {})}
       style={[
         { flex: 1 },
         Platform.OS === 'web' && { cursor: dragging ? 'grabbing' : 'grab' } as any,

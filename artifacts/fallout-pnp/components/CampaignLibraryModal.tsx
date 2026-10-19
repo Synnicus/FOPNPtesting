@@ -425,7 +425,10 @@ export default function CampaignLibraryModal({
           importSession = createPortraitImportSession();
           state = (await restoreCampaignPortraits(parsed.bundle, importSession.materialize)).state;
         }
-        if (!importCampaign(JSON.stringify(state))) {
+        if (!importCampaign(JSON.stringify({
+          ...state,
+          campaignName: record.name,
+        }))) {
           importSession?.cleanup();
           setStatus('Campaign could not be loaded.');
           return;

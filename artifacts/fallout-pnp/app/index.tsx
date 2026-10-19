@@ -13,7 +13,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { LocalizedAlert, LocalizedText as Text, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
+import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import AboutThisAppModal from '@/components/AboutThisAppModal';
@@ -177,6 +177,9 @@ export default function MainMenuScreen() {
   const [showLibrary, setShowLibrary] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showLanguages, setShowLanguages] = useState(false);
+  const [showNewCampaign, setShowNewCampaign] = useState(false);
+  const [newCampaignName, setNewCampaignName] = useState('My Campaign');
+  const [newCampaignNameError, setNewCampaignNameError] = useState(false);
   const [isContinuePending, setIsContinuePending] = useState(false);
   const logoLineSize = Math.min(50, Math.max(32, (windowWidth - 80) / 7));
   const logoPnpSize = logoLineSize * 1.35;
@@ -277,26 +280,26 @@ export default function MainMenuScreen() {
   };
 
   const startNewCampaign = () => {
-    const start = () => {
-      const ok = importCampaign(JSON.stringify({
-        characters: [],
-        customWeapons: [],
-        customArmor: [],
-      }));
-      if (ok) router.push('/(tabs)');
-    };
-    const title = translateText('Are you sure?', locale);
-    const message = translateText(
-      'This replaces the currently loaded campaign. Save it first if you want to keep it; you can load saved campaigns later.',
-      locale,
-    );
-    if (Platform.OS === 'web') {
-      if (window.confirm(`${title}\n\n${message}`)) start();
-    } else {
-      LocalizedAlert.alert('Are you sure?', 'This replaces the currently loaded campaign. Save it first if you want to keep it; you can load saved campaigns later.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Start New Campaign', style: 'destructive', onPress: start },
-      ]);
+    setNewCampaignName('My Campaign');
+    setNewCampaignNameError(false);
+    setShowNewCampaign(true);
+  };
+
+  const confirmNewCampaign = () => {
+    const name = newCampaignName.trim().slice(0, 80);
+    if (!name) {
+      setNewCampaignNameError(true);
+      return;
+    }
+    const ok = importCampaign(JSON.stringify({
+      campaignName: name,
+      characters: [],
+      customWeapons: [],
+      customArmor: [],
+    }));
+    if (ok) {
+      setShowNewCampaign(false);
+      router.push('/(tabs)');
     }
   };
 
@@ -402,6 +405,84 @@ export default function MainMenuScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showNewCampaign}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNewCampaign(false)}
+        testID="new-campaign-modal"
+      >
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.85)' }}>
+          <View style={{ width: '100%', maxWidth: 440, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 18 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text accessibilityRole="header" style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, textTransform: 'uppercase' }}>
+                New Campaign
+              </Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
+                onPress={() => setShowNewCampaign(false)}
+                style={{ padding: 6 }}
+              >
+                <Feather name="x" size={21} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 12, lineHeight: 18, fontFamily: 'Inter_400Regular', color: colors.foreground, marginBottom: 14 }}>
+              This replaces the currently loaded campaign. Save it first if you want to keep it; you can load saved campaigns later.
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.3, marginBottom: 7 }}>
+              Campaign name
+            </Text>
+            <TextInput
+              testID="new-campaign-name"
+              accessibilityLabel="Campaign name"
+              style={{
+                backgroundColor: colors.input,
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+                paddingHorizontal: 12,
+                paddingVertical: 11,
+                color: colors.foreground,
+                fontFamily: 'Inter_400Regular',
+                fontSize: 14,
+              }}
+              value={newCampaignName}
+              onChangeText={value => {
+                setNewCampaignName(value);
+                if (value.trim()) setNewCampaignNameError(false);
+              }}
+              placeholder="My Campaign"
+              placeholderTextColor={colors.mutedForeground}
+              maxLength={80}
+              autoCapitalize="sentences"
+              autoCorrect={false}
+            />
+            {newCampaignNameError && (
+              <Text style={{ color: colors.destructive, fontSize: 11, marginTop: 6 }}>
+                Campaign name is required.
+              </Text>
+            )}
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <TouchableOpacity
+                testID="new-campaign-cancel"
+                onPress={() => setShowNewCampaign(false)}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+              >
+                <Text style={{ color: colors.foreground, fontSize: 12, fontFamily: 'Inter_700Bold' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="new-campaign-confirm"
+                onPress={confirmNewCampaign}
+                style={{ paddingHorizontal: 14, paddingVertical: 11, borderRadius: colors.radius, backgroundColor: colors.destructive }}
+              >
+                <Text style={{ color: colors.destructiveForeground, fontSize: 12, fontFamily: 'Inter_700Bold' }}>Start New Campaign</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <CampaignOptionsModal
         visible={showOptions}

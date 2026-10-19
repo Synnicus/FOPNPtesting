@@ -49,6 +49,7 @@ export default function CampaignToolsPanel({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
   const [expanded, setExpanded] = useState<Record<ToolTab, boolean>>({
     loot: false,
     encounters: false,
@@ -761,21 +762,22 @@ export default function CampaignToolsPanel({
 
   return (
     <Modal visible={visible} transparent={false} animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }} testID="campaign-tools-panel">
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: colors.border }}>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Close Campaign Tool Chest"
-            onPress={onClose}
-            style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Feather name="arrow-left" size={20} color={colors.primary} />
-          </TouchableOpacity>
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: modalTopInset }} testID="campaign-tools-panel">
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 18,
+          paddingVertical: 14,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.card,
+        }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 14, letterSpacing: 1.4 }}>
+            <Text accessibilityRole="header" style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 17, letterSpacing: 1.5 }}>
               CAMPAIGN TOOL CHEST
             </Text>
-            <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 2 }}>
+            <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 3 }}>
               Campaign tables and maps save automatically.
             </Text>
           </View>
@@ -783,9 +785,9 @@ export default function CampaignToolsPanel({
             accessibilityRole="button"
             accessibilityLabel="Close Campaign Tool Chest"
             onPress={onClose}
-            style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+            style={{ padding: 6 }}
           >
-            <Feather name="x" size={20} color={colors.mutedForeground} />
+            <Feather name="x" size={22} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 28, gap: 10 }}>
