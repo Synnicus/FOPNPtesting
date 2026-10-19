@@ -1,0 +1,41 @@
+Fear the Reaper / Divine Favor: what calendar or elapsed-time tracking should define “monthly” and “once per 24 hours”? - make this like an effect that shows up on the character panel as a reminder, and the players will be able to keep track of the days in the effects panel for fear the reaper, 
+And the option to trip or reset the 24 hour timer for divine favor. I want divine favor to be useable in combat, if the character with divine favor fails a combat roll I want the app to check if they have used their divine favor for the day and if not it will ask them if they want to to re-roll the combat roll, which will also automatically trip the effect as "used" in the effects  panel. To be clear we are not implementing any actual clocks, and the way to clear the daily use is in the effects panel of the character editor.
+
+
+Glowing One / Rad Child: what exact radius, tick timing, targets, and interaction with the ghoul-radiation option should apply? - Make these work similarly the last perk we talked about, in that they should have a reminder in the boxes of the character tab. Make a special button that appears for glowing ones that acts like an AOE radiation attack and targets all the active characters, with the option to exclude individual characters in case they are not contextually "close" to the glowing one. 
+
+
+
+Tight Nuts: exactly which sources count as “base DR,” and how should its repair-HP penalty be calculated? - from the manual: "Robots are immune to the effects of 
+radiation, poison, gas attacks, and 
+chems. Robots never gain perks. They 
+enjoy a 40% Damage Resistance to all 
+kinds of attacks, but unfortunately are 
+affected by EMP (pulse) weapons." "
+Robots take damage as normal, but they 
+do not heal hit points back over time 
+(see Healing, below). Instead, robots 
+must be repaired. A successful use of 
+the Science skill on a robot will act 
+like a successful use of the First Aid 
+skill on a flesh-and-bone character, 
+healing 1d10 hit points. In addition, 
+if the robot has a crippled limb or 
+another medical malady such as 
+blindness, it takes a successful roll 
+against Repair to “heal” that body part."
+
+Rabid: when an opponent dies, how should its AP bonus interact with the AP cap and turn timing? - It should automatically fill the AP meter upon a kill. If a kill triggers the +5 AP bonus while you are already at or near your maximum AP, any points that go over your maximum are immediately lost. They do not carry over to the next round, nor do they expand your pool. 
+
+EMP Shielding: which attacks count as EMP, and what exact movement or resistance effects apply? - emp attacks come from specific types of weapon ammunition, if they don't currently have some sort of tag then make one so that they function with this. The effects in the manual as written:  " It takes you 2 AP to move 1 hex vecause of your heavy equipment, but you 
+have a 30% Resistance to all forms of 
+EMP attack. "
+
+Jinxed: how should “50% more likely to critically fail” change the current fixed critical-failure threshold? -
+Add 50% on top of the already 3% chance to critically fail.
+
+Movement and position perks such as Bonus Move, Team Player, and HtH Evade need a grid/hex-position model that the app currently lacks. - I am actually planning on implementing this in the future, keep updating this task in mind when we do implement the map/hexposition. 
+
+Social/reaction perks need a defined reaction/dialogue check flow; the app currently does not track NPC dispositions or dialogue state. - these will stay as role play only, but make sure that they appear on the characters tab as a reminder to both declare in the g and then they have this.
+
+Would you like me to implement the clear calculation bugs first—especially the weapon-family AP discounts, Living Anatomy, and Deathclaw Rampage? - do this and everything else.
