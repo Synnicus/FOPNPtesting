@@ -50,7 +50,16 @@ import { computeEffectModifiers, effectiveSpecial } from '@/data/effects';
 import { computeDefensivePerkBonuses } from '@/data/attackResolution';
 import { getPerkById } from '@/data/perks';
 import { migrateLegacyTraitPerks } from '@/data/legacyPerkMigration';
-import { advanceAreaEffect, AreaAttack, AreaResolution, resolveAreaTarget } from '@/data/areaEffects';
+import {
+  advanceAreaEffect,
+  AreaAttack,
+  AreaResolution,
+  isValidAreaProfileRangeOverrides,
+  normalizeAreaProfileRangeOverrides,
+  resolveAreaTarget,
+  resolveAreaZoneTarget,
+  type AreaProfileRangeOverrides,
+} from '@/data/areaEffects';
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import { AMMO_TYPES, filterCompatibleAmmoIds, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from '@/data/ammo';
@@ -368,6 +377,8 @@ interface AppState extends CampaignOptions {
   activeEntryId: string | null;
   /** Ephemeral receipt for the last atomic AoE transaction. */
   areaAttackReceipt?: { requestId: string; results: AreaResolution[] };
+  /** GM-defined blast ranges for profiles whose manual entries omit a distance. */
+  areaProfileRangeOverrides: AreaProfileRangeOverrides;
   /** Recent attack transactions; duplicate UI submissions must not charge HP/wear twice. */
   damageReceiptIds?: string[];
   /** Pending actions resolve only at the start of their actor's own turn. */
@@ -461,6 +472,14 @@ function hasValidCharacterRecord(value: unknown): value is Character {
     const collection = character[field];
     if (collection !== undefined && !isStringArray(collection)) return false;
   }
+  if (character.combatDevice !== undefined) {
+    const device = character.combatDevice;
+    if (!isRecord(device)
+      || (device.kind !== 'mine' && device.kind !== 'trap')
+      || typeof device.weaponId !== 'string' || !device.weaponId
+      || typeof device.ownerCharacterId !== 'string' || !device.ownerCharacterId
+      || (device.status !== 'armed' && device.status !== 'triggered')) return false;
+  }
   return true;
 }
 
@@ -485,6 +504,7 @@ function hasValidCampaignImport(value: unknown): value is AppState {
   if (value.removedBuiltInBestiaryTemplateIds !== undefined
     && !isStringArray(value.removedBuiltInBestiaryTemplateIds)) return false;
   if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
+  if (!isValidAreaProfileRangeOverrides(value.areaProfileRangeOverrides)) return false;
   return true;
 }
 
@@ -638,6 +658,7 @@ function normalizePersistedState(parsed: AppState): AppState {
       ? normalized.campaignName.trim().slice(0, 80)
       : 'My Campaign',
     ...normalizeCampaignOptions(normalized),
+    areaProfileRangeOverrides: normalizeAreaProfileRangeOverrides(normalized.areaProfileRangeOverrides),
     hardcoreRadiationRules: normalized.hardcoreRadiationRules !== undefined
       ? normalized.hardcoreRadiationRules === true
       : legacyRadiationRules === true,
@@ -688,6 +709,7 @@ interface AppContextValue extends AppState {
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
   setHardcoreRadiationRules: (enabled: boolean) => void;
+  setAreaProfileRangeOverride: (profileId: string, effectId: string, range: number) => void;
   setMutantGhoulRadiationRules: (enabled: boolean) => void;
   setGhoulRadiationHealingOption: (option: GhoulRadiationHealingOption) => void;
   setVisualTheme: (theme: CampaignVisualTheme) => void;
@@ -797,6 +819,7 @@ const defaultState: AppState = markConditionSemanticsV2({
   lootTables: [],
   encounterTables: [],
   campaignMaps: [],
+  areaProfileRangeOverrides: {},
   initiativeEntries: [],
   currentRound: 1,
   combatActive: false,
@@ -1287,6 +1310,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const results = characterIds.flatMap(id => {
         const c = s.characters.find(char => char.id === id);
         if (!c) return [];
+        const zoneId = attack.targetZones?.[id];
+        const zone = attack.zones?.find(candidate => candidate.id === zoneId);
+        if (attack.zones?.length && !zone) return [];
+        if (attack.nonBiologicalOnly && c.race !== 'robot' && !c.vehicle) {
+          return [{
+            targetId: c.id,
+            targetName: c.name,
+            damage: 0,
+            resisted: true,
+            unconsciousRounds: 0,
+            statuses: [],
+            notes: ['This profile only affects non-biological targets.'],
+            ...(zone ? { zoneId: zone.id, zoneLabel: zone.label } : {}),
+          } satisfies AreaResolution];
+        }
         const { bodyArmor: body, helmet } = wornArmor(c, armor);
         const natural = c.naturalProtection;
         const cap = attack.damageType === 'normal' ? 'Normal'
@@ -1343,7 +1381,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
           return out;
         }, {} as Record<'normal' | 'laser' | 'fire' | 'plasma' | 'explosion', { dt: number; dr: number }>);
-        const result = resolveAreaTarget(attack, {
+        const areaTarget = {
           id: c.id, name: c.name, endurance: armorSheet.effectiveSpecial.endurance,
           gasInhaledResistance: gasInhaled,
           gasContactResistance: gasContact,
@@ -1352,14 +1390,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           radiationResistance: armorSheet.radiationResistance,
           protectionByType,
           damageResistanceCap: c.manualDerivedStats ? 100 : 90,
-        }, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)]);
-        if (attack.kind !== 'gasInhaled' && attack.kind !== 'gasContact' && result.damage > 0) {
+        };
+        const result = zone
+          ? resolveAreaZoneTarget(zone, areaTarget, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)])
+          : resolveAreaTarget(attack, areaTarget, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)]);
+        const physicalExposure = zone
+          ? zone.effects.some(effect => effect.kind !== 'gasInhaled' && effect.kind !== 'gasContact')
+          : attack.kind !== 'gasInhaled' && attack.kind !== 'gasContact';
+        if (physicalExposure && result.damage > 0) {
           result.notes.push('Armor condition: one damaging area exposure recorded on body armor (aggregate result). Adjust individual hits in Equipment if the GM rules otherwise.');
         }
-        return [result];
+        return [{ ...result, ...(zone ? { zoneId: zone.id, zoneLabel: zone.label } : {}) }];
       });
       const byId = new Map(results.map(r => [r.targetId, r]));
       const characters = s.characters.map(c => {
+        if (c.id === attack.sourceDeviceId && c.combatDevice) {
+          return { ...c, combatDevice: { ...c.combatDevice, status: 'triggered' as const } };
+        }
         const result = byId.get(c.id);
         if (!result) return c;
         const areaEffects = result.ongoing
@@ -2406,6 +2453,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, musicVolume: normalizedVolume }));
   }, []);
 
+  const setAreaProfileRangeOverride = useCallback((profileId: string, effectId: string, range: number) => {
+    if (!profileId || !effectId || !Number.isInteger(range) || range < 0 || range > 100000) return;
+    setState(s => ({
+      ...s,
+      areaProfileRangeOverrides: {
+        ...s.areaProfileRangeOverrides,
+        [profileId]: {
+          ...(s.areaProfileRangeOverrides[profileId] ?? {}),
+          [effectId]: range,
+        },
+      },
+    }));
+  }, []);
+
   const allWeapons = [...BUILT_IN_WEAPONS, ...state.customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...state.customArmor];
   const allAmmo = [...AMMO_TYPES, ...state.customAmmo];
@@ -2418,7 +2479,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       allWeapons, allArmor, allAmmo, allVehicles,
        addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter,
         applyDamage, applyCombatDamage, healCharacter, adjustRadiation, setHardcoreRadiationRules,
-        setMutantGhoulRadiationRules, setGhoulRadiationHealingOption,
+        setMutantGhoulRadiationRules, setGhoulRadiationHealingOption, setAreaProfileRangeOverride,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
           setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled, setMusicVolume,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,

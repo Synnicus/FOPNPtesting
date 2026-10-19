@@ -18,6 +18,7 @@ import type { CampaignVisualTheme } from './campaignOptions.ts';
 import type { GhoulRadiationHealingOption } from './radiation.ts';
 import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
+import { isValidAreaProfileRangeOverrides, type AreaProfileRangeOverrides } from './areaEffects.ts';
 import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
 import {
   isCatalogImageDataUri,
@@ -49,6 +50,8 @@ export interface CampaignStateSnapshot {
   lootTables?: CampaignTable[];
   encounterTables?: CampaignTable[];
   campaignMaps?: CampaignMap[];
+  /** Per-campaign GM-defined blast ranges for area profiles missing manual distances. */
+  areaProfileRangeOverrides?: AreaProfileRangeOverrides;
   /** Campaign-local photos for catalog entries; values are validated data URIs. */
   bestiaryPortraits?: Record<string, string>;
   vehicleCatalogPortraits?: Record<string, string>;
@@ -635,6 +638,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || (value.lootTables !== undefined && !Array.isArray(value.lootTables))
     || (value.encounterTables !== undefined && !Array.isArray(value.encounterTables))
     || (value.campaignMaps !== undefined && !Array.isArray(value.campaignMaps))
+    || !isValidAreaProfileRangeOverrides(value.areaProfileRangeOverrides)
     || !isCatalogPortraitMap(value.bestiaryPortraits)
     || !isCatalogPortraitMap(value.vehicleCatalogPortraits)
     || !isCatalogPortraitSettingsMap(value.bestiaryPortraitSettings)

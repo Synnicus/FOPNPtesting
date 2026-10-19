@@ -2784,8 +2784,8 @@ export default function CharactersScreen() {
     : [];
 
   const matchesSearch = (c: Character) => !search || c.name.toLowerCase().includes(search.toLowerCase());
-  const active = characters.filter(c => !c.inStorage && matchesSearch(c));
-  const stored = characters.filter(c => c.inStorage && matchesSearch(c));
+  const active = characters.filter(c => !c.inStorage && !c.combatDevice && matchesSearch(c));
+  const stored = characters.filter(c => c.inStorage && !c.combatDevice && matchesSearch(c));
   const filtered = active;
 
   const toggleStorage = (c: Character) => {
@@ -3119,7 +3119,7 @@ export default function CharactersScreen() {
         title="EDIT VEHICLE"
         weaponOptions={allWeapons}
         crewCandidates={characters.filter(character =>
-          !character.inStorage && !character.vehicle && character.id !== editingVehicleCharacter?.id)}
+          !character.inStorage && !character.vehicle && !character.combatDevice && character.id !== editingVehicleCharacter?.id)}
         initialCrew={editingVehicleCharacter?.vehicleCrew}
         onClose={() => setEditingVehicleCharacter(null)}
         onSave={(vehicle, crew) => {

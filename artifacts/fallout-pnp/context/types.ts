@@ -552,6 +552,13 @@ export interface Character {
     pilotCharacterId?: string;
     gunnerCharacterId?: string;
   };
+  /** A placed mine or trap represented as a persistent combat-only combatant. */
+  combatDevice?: {
+    kind: 'mine' | 'trap';
+    weaponId: string;
+    ownerCharacterId: string;
+    status: 'armed' | 'triggered';
+  };
   /** Trait ids from data/traits.ts — chosen at creation; max 2, never more. */
 
   traits?: string[];

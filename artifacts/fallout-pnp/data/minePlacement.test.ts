@@ -11,14 +11,16 @@ test('Lay Mine costs six AP in the action catalog', () => {
 
 test('placement confirmation shows effective Traps and delegates the roll to the GM', () => {
   const source = readFileSync(new URL('../app/(tabs)/index.tsx', import.meta.url), 'utf8');
-  const handler = source.slice(source.indexOf('const handleLayMine ='), source.indexOf('// Defend:'));
-  assert.match(handler, /attackerSheet\.effectiveSkills\.traps/);
-  assert.match(handler, /roll for the GM/);
-  assert.match(handler, /does not roll Traps automatically or assume success/);
-  assert.match(handler, /if \(localizedConfirm\(message\)\) confirm\(\)/);
-  assert.match(handler, /style: 'cancel'/);
-  assert.match(handler, /spendAP\(attacker\.id, AP_COSTS\.LAYING_MINE\)/);
-  assert.doesNotMatch(handler, /Math\.random|rollDie|rollD10/);
+  const modal = source.slice(source.indexOf('function MineTrapPlacementModal'), source.indexOf('function AreaAttackModal'));
+  const placement = source.slice(source.indexOf('const resolveLayDeviceAttempt'), source.indexOf('const setVehicleMoving'));
+  assert.match(modal, /effectiveTraps/);
+  assert.match(modal, /Roll Traps yourself/);
+  assert.match(modal, /only places the device after a successful check/);
+  assert.match(modal, /CHECK SUCCEEDED — PLACE DEVICE/);
+  assert.match(modal, /CHECK FAILED — SPEND AP, PLACE NOTHING/);
+  assert.match(placement, /spendAP\(attacker\.id, AP_COSTS\.LAYING_MINE\)/);
+  assert.match(placement, /if \(succeeded\) \{/);
+  assert.doesNotMatch(modal, /Math\.random|rollDie|rollD10/);
   assert.match(source, /label: 'LAY MINE'.*onPress: handleLayMine/);
 });
 

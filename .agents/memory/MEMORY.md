@@ -13,6 +13,7 @@
 - [Fallout PnP Radiation](fallout-pnp-radiation.md) — accumulated radiation is a capped persistent meter, separate from HP; resolved combat exposure is already post-resistance
 - [Equipment condition](fallout-pnp-equipment-condition.md) — user confirmed five armor hits per box and whole-box weapons; helmet routing is GM policy, not a printed rule.
 - [Ammo combat breakdown placement](fallout-pnp-ammo-breakdown.md) — show ammo AC adjustments under chance to hit; keep DT bypass and DR changes in damage protection.
+- [Area blast profiles](fallout-pnp-area-blast-profiles.md) — use manual ranges, save GM-defined radii per campaign, assign targets to distance zones, and require GM-confirmed Traps success for placement.
 - [Native regression verification](fallout-pnp-native-verification.md) — a browser preview cannot validate native modal or storage interactions; run device automation against an installed native build.
 - [Generic Karma titles](fallout-pnp-karma-titles.md) — replace “Vault” with “Wasteland” when adapting Fallout 3 titles, as requested for generic characters.
 - [Faction reputation thresholds](fallout-pnp-faction-reputation.md) — apply shared 0/25/50/75 Fame and Infamy tiers; ignore legacy faction-specific profiles.

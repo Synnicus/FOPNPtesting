@@ -25,7 +25,7 @@ import {
 } from '@/data/condition';
 import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
-import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, compactWeaponCombatLabel, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
+import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, compactWeaponCombatLabel, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { computeCustomPerkEffects, computeCustomWeaponModEffects } from '@/data/customRules';
 import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
@@ -72,7 +72,18 @@ import {
   getSpecialUnarmedAttack,
 } from '@/data/specialUnarmedAttacks';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AreaAttack, AreaAttackKind, AreaResolution, formatAreaResolution } from '@/data/areaEffects';
+import {
+  ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+  buildAreaDamageZones,
+  formatAreaResolution,
+  MINE_TRAP_PROFILES,
+  missingAreaProfileRanges,
+  type AreaAttack,
+  type AreaAttackKind,
+  type AreaDamageProfile,
+  type AreaProfileRangeOverrides,
+  type AreaResolution,
+} from '@/data/areaEffects';
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
@@ -626,13 +637,6 @@ const AREA_ATTACK_OPTIONS: { kind: AreaAttackKind; label: string; note: string }
   { kind: 'acid', label: 'Acid', note: 'Fire protection + 1d6 ongoing' },
 ];
 
-function catalogProfileLabel(profileId: string): string {
-  return profileId
-    .split('_')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
 function LightPickerModal({ visible, value, onChange, onClose }: {
   visible: boolean; value: number; onChange: (v: number) => void; onClose: () => void;
 }) {
@@ -834,7 +838,7 @@ export default function CombatScreen() {
   const combatBladePlayer = useAudioPlayer(require('../../assets/combat-blade-slice.wav'));
   const combatBluntPlayer = useAudioPlayer(require('../../assets/combat-blunt-hit.wav'));
   const combatLaserPlayer = useAudioPlayer(require('../../assets/combat-energy-laser.wav'));
-  const { characters, allWeapons, allArmor, allAmmo, customWeaponMods, customPerks, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, allAmmo, customWeaponMods, customPerks, addCharacter, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
@@ -975,6 +979,8 @@ export default function CombatScreen() {
   const [showDefenderPicker, setShowDefenderPicker] = useState(false);
   const [showAddCombatantPicker, setShowAddCombatantPicker] = useState(false);
   const [showApActions, setShowApActions] = useState(false);
+  const [showLayDevicePicker, setShowLayDevicePicker] = useState(false);
+  const [pendingLayDevice, setPendingLayDevice] = useState<Weapon | null>(null);
   // A mine/trap opens the same area-attack modal as the GM AoE action, but
   // carries its catalog profile and selected defender into that modal.
   const [areaAttackPreset, setAreaAttackPreset] = useState<AreaAttack | null>(null);
@@ -1010,7 +1016,7 @@ export default function CombatScreen() {
 
   // Non-storage characters — used for pickers and initiative setup
   const activeCharacters = characters.filter(c => !c.inStorage);
-  const initiativeSetupCharacters = activeCharacters.filter(c => !c.vehicle && c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
+  const initiativeSetupCharacters = activeCharacters.filter(c => !c.vehicle && !c.combatDevice && c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
 
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
@@ -1087,7 +1093,17 @@ export default function CombatScreen() {
   ).values());
   // Every rule below consumes this one authoritative attack-session weapon.
   const weapon = resolveAttackWeapon(activeWeapon, attackWeaponId, attackCandidates);
-  const weaponAreaAttack = weapon ? getWeaponAreaAttack(weapon) : undefined;
+  const weaponAreaAttack = weapon
+    ? getWeaponAreaAttack(weapon) ?? (weapon.category === 'minesTraps' ? {
+        kind: 'explosion' as const,
+        rawDamage: 0,
+        damageDieCount: weapon.damageDieCount,
+        damageDie: weapon.damageDie,
+        damageBonus: weapon.damageBonus,
+        damageType: weapon.damageType,
+        notes: ['Custom device profile. Set a range for this campaign and enter GM-resolved damage if the weapon has no printed dice.'],
+      } : undefined)
+    : undefined;
   // Profiled devices use the area resolver. Legacy/custom mines and traps
   // without a profile deliberately retain the normal custom weapon dice path.
   const isMineTrap = weapon?.category === 'minesTraps' || !!weaponAreaAttack;
@@ -1454,7 +1470,7 @@ export default function CombatScreen() {
     return { index: i, chanceToHit: cth, penalty: burstPenalties[i], roll, hit, margin, isCrit, isCritFail: critFailResult };
   });
 
-  const canRoll = !!(attacker && defender && weapon && (!attacker.vehicle || vehicleGunner));
+  const canRoll = !!(attacker && !attacker.combatDevice && defender && weapon && (!attacker.vehicle || vehicleGunner));
   const attackResolved = rollTotal !== null || physicalHitConfirmed || manualCritFailConfirmed;
 
   // ─── AP cost (per-weapon apSingle/apTargeted/apBurst; fallback AP_COSTS) ───────
@@ -2072,20 +2088,33 @@ export default function CombatScreen() {
   }, [attackActor, effectiveAPCost, spendAP]);
 
   const openMineTrapAreaAttack = useCallback(() => {
+    if (attacker?.combatDevice?.status === 'triggered') {
+      notify('DEVICE ALREADY TRIGGERED', 'This placed mine or trap has already been used.');
+      return;
+    }
     if (!weaponAreaAttack || !weapon) {
       notify('Missing Area Profile', `${weapon?.name ?? 'This mine/trap'} has no catalog area profile yet.`);
       return;
     }
+    const profileId = weapon.areaAttackProfileId
+      ? `trap:${weapon.areaAttackProfileId}`
+      : `trap:custom-${weapon.id}`;
     setAreaAttackPreset(loadedAmmo?.components?.length
       ? {
           ...weaponAreaAttack,
+          ...(profileId ? { profileId } : {}),
+          ...(attacker?.combatDevice ? { sourceDeviceId: attacker.id } : {}),
           components: loadedAmmo.components,
           ammoIgnoresDT: loadedAmmo.ignoresDT,
           ammoDRModifier: loadedAmmo.drMod,
         }
-      : weaponAreaAttack);
+      : {
+          ...weaponAreaAttack,
+          ...(profileId ? { profileId } : {}),
+          ...(attacker?.combatDevice ? { sourceDeviceId: attacker.id } : {}),
+        });
     setShowAreaAttack(true);
-  }, [weaponAreaAttack, weapon, loadedAmmo]);
+  }, [attacker, weaponAreaAttack, weapon, loadedAmmo]);
 
   const selectAttackWeapon = useCallback((weaponId: string) => {
     if (weapon?.id === weaponId) return;
@@ -2325,20 +2354,89 @@ export default function CombatScreen() {
 
   const handleLayMine = () => {
     if (!attacker || !attackerSheet) return;
-    const message = `${attacker.name} — effective Traps ${attackerSheet.effectiveSkills.traps}%.\n\nTrap setting is a roll for the GM. The app does not roll Traps automatically or assume success.\n\nSpend ${AP_COSTS.LAYING_MINE} AP to attempt placement? Cancelling spends no AP.`;
-    const confirm = () => {
-      if (!spendAP(attacker.id, AP_COSTS.LAYING_MINE)) {
-        notify('Not Enough AP', `Lay Mine needs ${AP_COSTS.LAYING_MINE} AP.`);
-      }
-    };
-    if (Platform.OS === 'web') {
-      if (localizedConfirm(message)) confirm();
-    } else {
-      Alert.alert('Lay Mine — 6 AP', message, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Spend 6 AP — attempt placement', onPress: confirm },
-      ]);
+    if (attacker.currentAP < AP_COSTS.LAYING_MINE) {
+      notify('Not Enough AP', `Lay Mine needs ${AP_COSTS.LAYING_MINE} AP.`);
+      return;
     }
+    setShowLayDevicePicker(true);
+  };
+
+  const resolveLayDeviceAttempt = (succeeded: boolean) => {
+    if (!attacker || !attackerSheet || !pendingLayDevice) return;
+    if (!spendAP(attacker.id, AP_COSTS.LAYING_MINE)) {
+      notify('Not Enough AP', `Lay Mine needs ${AP_COSTS.LAYING_MINE} AP.`);
+      setPendingLayDevice(null);
+      return;
+    }
+    if (succeeded) {
+      const id = `device-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const zeroSkills = Object.fromEntries(Object.keys(attacker.skills).map(key => [key, 0])) as unknown as Character['skills'];
+      const neutralSpecial = Object.fromEntries(Object.keys(attacker.special).map(key => [key, 1])) as unknown as Character['special'];
+      app.addCharacter({
+        ...attacker,
+        id,
+        name: `${pendingLayDevice.name} — armed`,
+        type: 'npc',
+        race: 'robot',
+        level: 1,
+        xp: 0,
+        karma: 0,
+        karmaLog: [],
+        factionReputations: [],
+        portrait: undefined,
+        vehicle: undefined,
+        vehicleCrew: undefined,
+        traits: [],
+        special: neutralSpecial,
+        maxHp: 1,
+        currentHp: 1,
+        armorClass: 0,
+        tempAC: 0,
+        maxAP: 0,
+        currentAP: 0,
+        position: 'standing',
+        sequence: 0,
+        skills: zeroSkills,
+        taggedSkills: [],
+        unspentSkillPoints: 0,
+        perks: [],
+        perkTrackers: {},
+        radiationResistance: 0,
+        gasResistance: 0,
+        gasResistanceSecondary: 0,
+        gasResistanceInhaled: 0,
+        gasResistanceContact: 0,
+        electricityResistance: 0,
+        poisonResistance: 0,
+        equippedWeaponId: pendingLayDevice.id,
+        leftHandWeaponId: undefined,
+        rightHandWeaponId: undefined,
+        inventoryWeaponIds: [pendingLayDevice.id],
+        equippedBodyArmorId: undefined,
+        equippedHelmetId: undefined,
+        armorConditionStates: [],
+        weaponAmmoStates: [],
+        injuries: [],
+        effects: [],
+        isKnockedOut: false,
+        knockOutRoundsLeft: 0,
+        conditions: [],
+        biography: `Placed by ${attacker.name}.`,
+        naturalProtection: undefined,
+        inStorage: false,
+        areaEffects: [],
+        combatDevice: {
+          kind: pendingLayDevice.id.toLowerCase().includes('mine') || pendingLayDevice.name.toLowerCase().includes('mine') ? 'mine' : 'trap',
+          weaponId: pendingLayDevice.id,
+          ownerCharacterId: attacker.id,
+          status: 'armed',
+        },
+      });
+      setAttackerId(id);
+      setDefenderId(null);
+    }
+    setPendingLayDevice(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   // Defend: forfeit remaining AP, converting it to temporary AC.
@@ -2828,7 +2926,7 @@ export default function CombatScreen() {
             })}
 
             {/* Area effects and adding combatants during active combat */}
-            {combatActive && (
+            {combatActive && !attacker?.combatDevice && (
               <View style={{ gap: 7 }}>
                 <TouchableOpacity testID="open-aoe-damage" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.destructive }} onPress={() => { setAreaAttackPreset(null); setShowAreaAttack(true); }}>
                   <Feather name="target" size={14} color="#fff" />
@@ -3182,6 +3280,36 @@ export default function CombatScreen() {
               They must not use the normal percentile attack or weapon-dice
               damage path.  AP setup/placement remains in the AP actions owned
               by the combat screen, so this only opens the resolver modal. */}
+          {attacker?.combatDevice && (
+            <View style={{ gap: 8, padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: attacker.combatDevice.status === 'armed' ? colors.primary : colors.mutedForeground, backgroundColor: colors.secondary }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{attacker.combatDevice.status === 'armed' ? 'ARMED MINE / TRAP' : 'SPENT MINE / TRAP'}</Text>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                Placed by {characters.find(character => character.id === attacker.combatDevice?.ownerCharacterId)?.name ?? 'the party'}.
+                {weaponAreaAttack ? ' Select the character who triggered it, then assign every combatant to a blast zone.' : ' This device has no automatic area profile; use GM adjudication.'}
+              </Text>
+              {attacker.combatDevice.status === 'armed' && (
+                <TouchableOpacity
+                  testID="trigger-placed-device"
+                  disabled={!defender || !weaponAreaAttack}
+                  onPress={openMineTrapAreaAttack}
+                  style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, backgroundColor: defender && weaponAreaAttack ? colors.destructive : colors.border, opacity: defender && weaponAreaAttack ? 1 : 0.55 }}
+                >
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: defender && weaponAreaAttack ? '#fff' : colors.mutedForeground }}>
+                    {defender ? `TRIGGER ON ${defender.name.toUpperCase()}` : 'SELECT THE TRIGGERER'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {attacker.combatDevice.status === 'armed' && (
+                <TouchableOpacity
+                  onPress={() => updateCharacter({ ...attacker, combatDevice: { ...attacker.combatDevice!, status: 'triggered' } })}
+                  style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}
+                >
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DISARM / MARK SPENT</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {canRoll && isMineTrap && usesAreaAttackProfile && (
             <View style={{ gap: 6, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: weaponAreaAttack ? colors.primary : colors.destructive, backgroundColor: colors.secondary }}>
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>MINE / TRAP TRIGGER</Text>
@@ -4191,7 +4319,7 @@ export default function CombatScreen() {
         onClear={() => { setDefenderId(null); setSelectedVehicleSystemId(null); }}
         clearRole="Defender"
         title="SELECT DEFENDER"
-        characters={activeCharacters.filter(c => c.id !== attackerId)}
+        characters={activeCharacters.filter(c => c.id !== attackerId && !c.combatDevice)}
         allWeapons={allWeapons}
         allArmor={allArmor}
         hardcoreRadiationRules={hardcoreRadiationRules}
@@ -4213,7 +4341,7 @@ export default function CombatScreen() {
         visible={showAreaAttack}
         combatants={initiativeEntries.flatMap(entry => {
           const c = characters.find(character => character.id === entry.characterId);
-          return c && c.currentHp > 0 ? [c] : [];
+          return c && c.currentHp > 0 && !c.combatDevice ? [c] : [];
         }).concat(
           areaAttackPreset && defender && defender.currentHp > 0
             && !initiativeEntries.some(entry => entry.characterId === defender.id)
@@ -4223,6 +4351,9 @@ export default function CombatScreen() {
         initialAttack={areaAttackPreset ?? undefined}
         initialDefenderId={areaAttackPreset ? defender?.id : undefined}
         sourceWeaponName={areaAttackPreset ? weapon?.name : undefined}
+        profiles={ALL_BUILT_IN_AREA_DAMAGE_PROFILES}
+        rangeOverrides={app.areaProfileRangeOverrides}
+        onSaveRange={app.setAreaProfileRangeOverride}
         onClose={() => { setShowAreaAttack(false); setAreaAttackPreset(null); }}
         onApply={applyAreaAttack}
         receipt={areaAttackReceipt}
@@ -4251,7 +4382,7 @@ export default function CombatScreen() {
           hasActed: false,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !c.vehicle && !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !c.vehicle && !c.combatDevice && !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
       <Modal
         visible={showGlowingAuraModal}
@@ -4519,10 +4650,68 @@ export default function CombatScreen() {
         onSelect={(id) => handleSetAmmo(id)}
         onClose={() => setShowAmmoPicker(false)}
       />
+      <OptionPickerModal
+        visible={showLayDevicePicker}
+        title="SELECT MINE OR TRAP"
+        subtitle={`GM rolls Traps (${attackerSheet?.effectiveSkills.traps ?? 0}%). Placement costs ${AP_COSTS.LAYING_MINE} AP on success or failure.`}
+        options={allWeapons.filter(candidate => candidate.category === 'minesTraps').map(candidate => ({
+          key: candidate.id,
+          label: candidate.name,
+          sublabel: candidate.damageDieCount > 0 ? `${candidate.damageDieCount}d${candidate.damageDie}+${candidate.damageBonus} · ${candidate.damageType}` : candidate.areaAttackProfileId ? 'Uses its trap profile' : 'GM-adjudicated effects',
+        }))}
+        onSelect={id => {
+          const selected = allWeapons.find(candidate => candidate.id === id);
+          setShowLayDevicePicker(false);
+          if (selected) setPendingLayDevice(selected);
+        }}
+        onClose={() => setShowLayDevicePicker(false)}
+      />
+      <MineTrapPlacementModal
+        visible={!!pendingLayDevice}
+        deviceName={pendingLayDevice?.name ?? ''}
+        effectiveTraps={attackerSheet?.effectiveSkills.traps ?? 0}
+        apCost={AP_COSTS.LAYING_MINE}
+        onOutcome={resolveLayDeviceAttempt}
+        onClose={() => setPendingLayDevice(null)}
+      />
     </View>
   );
 }
-function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initialAttack, initialDefenderId, sourceWeaponName }: {
+function MineTrapPlacementModal({ visible, deviceName, effectiveTraps, apCost, onOutcome, onClose }: {
+  visible: boolean;
+  deviceName: string;
+  effectiveTraps: number;
+  apCost: number;
+  onOutcome: (succeeded: boolean) => void;
+  onClose: () => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'center', backgroundColor: '#000c', padding: 16 }}>
+        <View style={{ padding: 16, gap: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16) }}>
+          <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>CONFIRM TRAPS CHECK</Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{deviceName}</Text>
+          <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
+            Roll Traps yourself (effective skill {effectiveTraps}%). Confirm the outcome below. The app spends {apCost} AP either way and only places the device after a successful check.
+          </Text>
+          <TouchableOpacity testID="place-device-success" onPress={() => onOutcome(true)} style={{ padding: 12, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.primary }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>CHECK SUCCEEDED — PLACE DEVICE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="place-device-failure" onPress={() => onOutcome(false)} style={{ padding: 12, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.destructive }}>CHECK FAILED — SPEND AP, PLACE NOTHING</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="place-device-cancel" onPress={onClose} style={{ padding: 10, alignItems: 'center' }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL — SPEND NOTHING</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initialAttack, initialDefenderId, sourceWeaponName, profiles, rangeOverrides, onSaveRange }: {
   visible: boolean;
   combatants: Character[];
   onClose: () => void;
@@ -4531,6 +4720,9 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   initialAttack?: AreaAttack;
   initialDefenderId?: string;
   sourceWeaponName?: string;
+  profiles: readonly AreaDamageProfile[];
+  rangeOverrides: AreaProfileRangeOverrides;
+  onSaveRange: (profileId: string, effectId: string, range: number) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -4541,12 +4733,42 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   const [applying, setApplying] = useState(false);
   const applyingRef = useRef(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const [profileComponent, setProfileComponent] = useState<'main' | 'fragmentation' | 'concussion'>('main');
+  const [profileComponent, setProfileComponent] = useState('main');
   const [profileDamageRolled, setProfileDamageRolled] = useState<number | null>(null);
   const [catalogProfileId, setCatalogProfileId] = useState<string | null>(null);
+  const [profileDamageByEffect, setProfileDamageByEffect] = useState<Record<string, number>>({});
+  const [profileRangeInputs, setProfileRangeInputs] = useState<Record<string, string>>({});
+  const [targetZones, setTargetZones] = useState<Record<string, string>>({});
   const [gasExposure, setGasExposure] = useState<'gasInhaled' | 'gasContact' | null>(null);
-  const activeProfile = initialAttack ?? (catalogProfileId ? MINE_TRAP_PROFILES[catalogProfileId] : undefined);
-  const profileMode = !!activeProfile;
+  const selectedAreaProfile = catalogProfileId ? profiles.find(profile => profile.id === catalogProfileId) : undefined;
+  const initialAreaProfile = initialAttack?.profileId
+    ? profiles.find(profile => profile.id === initialAttack.profileId)
+      ?? (initialAttack.profileId.startsWith('trap:custom-') && !initialAttack.requiresGasChoice
+        ? {
+            id: initialAttack.profileId,
+            name: sourceWeaponName ?? 'Custom mine or trap',
+            rangeUnit: 'hex' as const,
+            effects: [{
+              id: 'main',
+              kind: initialAttack.kind,
+              damageDieCount: initialAttack.damageDieCount ?? 0,
+              damageDie: initialAttack.damageDie ?? 0,
+              damageBonus: initialAttack.damageBonus ?? 0,
+              damageType: initialAttack.damageType ?? 'explosion',
+              rangeUnit: 'hex' as const,
+              ...(initialAttack.radius === undefined ? {} : { radius: initialAttack.radius }),
+              ...(initialAttack.notes ? { notes: initialAttack.notes } : {}),
+            }],
+            ...(initialAttack.notes ? { notes: initialAttack.notes } : {}),
+          } satisfies AreaDamageProfile
+        : undefined)
+    : undefined;
+  const areaProfile = initialAreaProfile ?? selectedAreaProfile;
+  const legacyProfile = initialAttack && !areaProfile
+    ? initialAttack
+    : (!areaProfile && catalogProfileId ? MINE_TRAP_PROFILES[catalogProfileId] : undefined);
+  const activeProfile = legacyProfile;
+  const profileMode = !!areaProfile || !!activeProfile;
   const ongoing = kind === 'flamethrower' || kind === 'acid';
 
   // A profile is intentionally copied into local modal state.  This makes
@@ -4561,11 +4783,27 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
       setProfileComponent('main');
       setProfileDamageRolled(null);
       setTargets(initialDefenderId ? [initialDefenderId] : []);
-      setCatalogProfileId(null);
+      setCatalogProfileId(initialAttack.profileId ?? null);
+      setProfileDamageByEffect({ main: initialAttack.rawDamage });
+      const initialProfile = initialAttack.profileId
+        ? profiles.find(profile => profile.id === initialAttack.profileId)
+        : undefined;
+      const firstZone = initialProfile
+        ? buildAreaDamageZones(initialProfile, rangeOverrides, {}).at(0)?.id
+        : undefined;
+      setTargetZones(initialDefenderId && firstZone ? { [initialDefenderId]: firstZone } : {});
+      setProfileRangeInputs(initialProfile
+        ? Object.fromEntries(initialProfile.effects.map(effect => {
+            const effectId = effect.id ?? 'main';
+            return [effectId, String(rangeOverrides[initialProfile.id]?.[effectId] ?? '')];
+          }))
+        : {});
     } else {
       setTargets([]);
       setProfileDamageRolled(null);
       setCatalogProfileId(null);
+      setProfileDamageByEffect({});
+      setTargetZones({});
     }
     setSummary(null);
     setApplying(false);
@@ -4589,11 +4827,21 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     setCatalogProfileId(null);
     onClose();
   };
-  const profileParts = activeProfile ? [
+  const legacyProfileParts = activeProfile ? [
     { key: 'main' as const, label: 'MAIN BLAST', component: activeProfile },
     ...(activeProfile.fragmentation ? [{ key: 'fragmentation' as const, label: 'FRAGMENTATION', component: activeProfile.fragmentation }] : []),
     ...(activeProfile.concussion ? [{ key: 'concussion' as const, label: 'CONCUSSION', component: activeProfile.concussion }] : []),
   ] : [];
+  const profileParts = areaProfile
+    ? areaProfile.effects.map((component, index) => ({
+        key: component.id ?? (index === 0 ? 'main' : `effect-${index + 1}`),
+        label: (component.id ?? (index === 0 ? 'main' : `effect-${index + 1}`))
+          .replace(/([A-Z])/g, ' $1')
+          .replace(/[-_]/g, ' ')
+          .toUpperCase(),
+        component,
+      }))
+    : legacyProfileParts;
   const selectedPart = profileParts.find(part => part.key === profileComponent) ?? profileParts[0];
   const selectedComponent = selectedPart?.component;
   const selectedDiceCount = selectedComponent?.damageDieCount ?? 0;
@@ -4603,7 +4851,34 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     ...(activeProfile?.notes ?? []),
     ...(selectedComponent?.notes ?? []),
   ];
-  const attackToApply: AreaAttack = activeProfile && selectedComponent
+  const currentProfileDamage = {
+    ...profileDamageByEffect,
+    [profileComponent]: rawDamage,
+  };
+  const areaZones = areaProfile
+    ? buildAreaDamageZones(areaProfile, rangeOverrides, currentProfileDamage)
+    : [];
+  const profileTargetIds = Object.entries(targetZones)
+    .filter(([, zoneId]) => areaZones.some(zone => zone.id === zoneId))
+    .map(([characterId]) => characterId);
+  const applyTargetIds = areaProfile ? profileTargetIds : targets;
+  const areaMissingRanges = areaProfile ? missingAreaProfileRanges(areaProfile, rangeOverrides) : [];
+  const attackToApply: AreaAttack = areaProfile && selectedComponent
+    ? {
+        kind: selectedComponent.kind,
+        rawDamage,
+        damageDieCount: selectedDiceCount,
+        damageDie: selectedDice,
+        damageBonus: selectedBonus,
+        damageType: selectedComponent.damageType,
+        profileId: areaProfile.id,
+        zones: areaZones,
+        targetZones,
+        ...(initialAttack?.sourceDeviceId ? { sourceDeviceId: initialAttack.sourceDeviceId } : {}),
+        ...(areaProfile.nonBiologicalOnly ? { nonBiologicalOnly: true } : {}),
+        notes: selectedNotes,
+      }
+    : activeProfile && selectedComponent
     ? {
         ...activeProfile,
         kind: activeProfile.requiresGasChoice ? (gasExposure ?? selectedComponent.kind) : selectedComponent.kind,
@@ -4624,6 +4899,26 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     const total = rolls.reduce((sum, roll) => sum + roll, 0) + selectedBonus;
     setRawDamage(total);
     setProfileDamageRolled(total);
+    if (areaProfile) setProfileDamageByEffect(previous => ({ ...previous, [profileComponent]: total }));
+  };
+  const saveProfileRanges = () => {
+    if (!areaProfile) return;
+    const savedRanges = { ...(rangeOverrides[areaProfile.id] ?? {}) };
+    for (const component of areaMissingRanges) {
+      const componentId = component.id ?? 'main';
+      const range = Number.parseInt(profileRangeInputs[componentId] ?? '', 10);
+      if (Number.isInteger(range) && range >= 0 && range <= 100000) {
+        savedRanges[componentId] = range;
+        onSaveRange(areaProfile.id, componentId, range);
+      }
+    }
+    const firstZone = buildAreaDamageZones(areaProfile, {
+      ...rangeOverrides,
+      [areaProfile.id]: savedRanges,
+    }, currentProfileDamage)[0];
+    if (initialDefenderId && firstZone && !targetZones[initialDefenderId]) {
+      setTargetZones(previous => ({ ...previous, [initialDefenderId]: firstZone.id }));
+    }
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
@@ -4631,8 +4926,10 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
         <View style={{ maxHeight: '92%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: Math.max(insets.bottom, 12), borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View>
-              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>{summary ? 'AREA EFFECT RESULTS' : profileMode ? 'TRIGGER MINE / TRAP' : 'AOE ATTACK'}</Text>
-              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : profileMode ? `${sourceWeaponName ?? (catalogProfileId ? catalogProfileLabel(catalogProfileId) : 'Device')} — choose a printed component and resolve its affected targets.` : 'Select an effect and every active combatant in its area.'}</Text>
+              <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>
+                {summary ? 'AREA EFFECT RESULTS' : areaProfile?.id.startsWith('ammo:') ? 'AREA AMMUNITION' : profileMode ? 'TRIGGER MINE / TRAP' : 'AOE ATTACK'}
+              </Text>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : profileMode ? `${sourceWeaponName ?? areaProfile?.name ?? 'Device'} — roll each effect and assign combatants to its range zones.` : 'Select an effect and every active combatant in its area.'}</Text>
             </View>
             <TouchableOpacity testID="aoe-close" onPress={close}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
@@ -4652,20 +4949,33 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
             <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }}>
               {!initialAttack && (
                 <>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>MINE / TRAP PROFILE (OPTIONAL)</Text>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Choose a catalog profile to use its printed components, dice, reach, and GM notes instead of a generic AoE approximation.</Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>AREA PROFILE (OPTIONAL)</Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Choose explosive ammunition or an area-damage mine. Non-area traps are not listed here.</Text>
                   <View style={{ gap: 7 }}>
-                    {Object.entries(MINE_TRAP_PROFILES).map(([profileId, profile]) => {
-                      const selected = catalogProfileId === profileId;
+                    {profiles.map(profile => {
+                      const selected = catalogProfileId === profile.id;
                       return (
                         <TouchableOpacity
-                          key={profileId}
-                          testID={`aoe-mine-profile-${profileId}`}
-                          onPress={() => { setCatalogProfileId(profileId); setProfileComponent('main'); setRawDamage(profile.rawDamage); setProfileDamageRolled(null); }}
+                          key={profile.id}
+                          testID={`aoe-profile-choice-${profile.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`}
+                          onPress={() => {
+                            const firstEffectId = profile.effects[0]?.id ?? 'main';
+                            setCatalogProfileId(profile.id);
+                            setProfileComponent(firstEffectId);
+                            setRawDamage(0);
+                            setProfileDamageByEffect({});
+                            setProfileDamageRolled(null);
+                            setTargets([]);
+                            setTargetZones({});
+                            setProfileRangeInputs(Object.fromEntries(profile.effects.map(effect => {
+                              const effectId = effect.id ?? 'main';
+                              return [effectId, String(rangeOverrides[profile.id]?.[effectId] ?? '')];
+                            })));
+                          }}
                           style={{ padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}
                         >
-                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground }}>{catalogProfileLabel(profileId)}</Text>
-                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{profile.kind} · {profile.notes?.[0] ?? 'Catalog area profile'}</Text>
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground }}>{profile.name}</Text>
+                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{profile.effects.length} effect{profile.effects.length === 1 ? '' : 's'} · {profile.rangeUnit === 'm' ? 'meters' : 'hexes'}{profile.nonBiologicalOnly ? ' · non-biological only' : ''}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -4679,16 +4989,64 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                     {profileParts.map(part => {
                       const selected = profileComponent === part.key;
                       const component = part.component;
+                      const componentId = 'id' in component ? component.id : undefined;
+                      const componentRangeUnit = 'rangeUnit' in component ? component.rangeUnit : undefined;
                       const dice = (component.damageDieCount ?? 0) > 0 ? `${component.damageDieCount}d${component.damageDie}` : 'no printed dice';
-                      const reach = component.radius !== undefined ? `radius ${component.radius}` : component.diameter !== undefined ? `diameter ${component.diameter}` : 'device target';
+                      const profileRange = areaProfile
+                        ? (component.radius ?? rangeOverrides[areaProfile.id]?.[componentId ?? 'main'])
+                        : component.radius;
+                      const reach = profileRange !== undefined
+                        ? `range ${profileRange} ${componentRangeUnit ?? areaProfile?.rangeUnit ?? 'hex'}`
+                        : component.diameter !== undefined ? `diameter ${component.diameter}` : 'range not set';
+                      const damage = areaProfile
+                        ? profileDamageByEffect[part.key] ?? 0
+                        : ('rawDamage' in component ? component.rawDamage : 0);
                       return (
-                        <TouchableOpacity key={part.key} testID={`aoe-profile-${part.key}`} onPress={() => { setProfileComponent(part.key); setRawDamage('rawDamage' in component ? component.rawDamage : 0); setProfileDamageRolled(null); }} style={{ minWidth: '47%', flexGrow: 1, padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}>
+                        <TouchableOpacity key={part.key} testID={`aoe-profile-${part.key}`} onPress={() => {
+                          setProfileComponent(part.key);
+                          setRawDamage(damage);
+                          setProfileDamageRolled(null);
+                        }} style={{ minWidth: '47%', flexGrow: 1, padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}>
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground }}>{part.label}</Text>
-                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{dice} · {reach}</Text>
+                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{dice} · {reach}{areaProfile ? ` · rolled ${damage}` : ''}</Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
+                  {areaProfile && (
+                    <View style={{ gap: 7 }}>
+                      {areaMissingRanges.map(component => {
+                        const effectId = component.id ?? 'main';
+                        return (
+                          <View key={effectId} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={{ flex: 1, fontSize: 10, color: colors.mutedForeground }}>
+                              {effectId.replace(/[-_]/g, ' ')} max range ({component.rangeUnit ?? areaProfile.rangeUnit})
+                            </Text>
+                            <TextInput
+                              testID={`aoe-range-${effectId}`}
+                              value={profileRangeInputs[effectId] ?? ''}
+                              onChangeText={value => setProfileRangeInputs(previous => ({ ...previous, [effectId]: value.replace(/[^0-9]/g, '') }))}
+                              keyboardType="numeric"
+                              placeholder="GM range"
+                              placeholderTextColor={colors.mutedForeground}
+                              style={{ width: 90, paddingVertical: 6, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center' }}
+                            />
+                          </View>
+                        );
+                      })}
+                      {areaMissingRanges.length > 0 && (
+                        <>
+                          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                            These distances are not in the manual. Save your GM-defined ranges to this campaign profile before resolving targets.
+                          </Text>
+                          <TouchableOpacity testID="aoe-save-ranges" onPress={saveProfileRanges} style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary }}>
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>SAVE CAMPAIGN RANGES</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                      {areaProfile.notes?.map((note, index) => <Text key={`profile-note-${index}`} style={{ fontSize: 10, color: colors.mutedForeground }}>• {note}</Text>)}
+                    </View>
+                  )}
                   {selectedNotes.map((note, index) => <Text key={index} style={{ fontSize: 10, color: colors.mutedForeground }}>• {note}</Text>)}
                 </View>
               ) : (
@@ -4708,7 +5066,13 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                     <TextInput
                       testID="aoe-raw-damage"
                       value={String(rawDamage)}
-                      onChangeText={value => { const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10); setRawDamage(Number.isFinite(parsed) ? parsed : 0); setProfileDamageRolled(null); }}
+                      onChangeText={value => {
+                        const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10);
+                        const next = Number.isFinite(parsed) ? parsed : 0;
+                        setRawDamage(next);
+                        if (areaProfile) setProfileDamageByEffect(previous => ({ ...previous, [profileComponent]: next }));
+                        setProfileDamageRolled(null);
+                      }}
                       keyboardType="numeric"
                       style={{ minWidth: 58, paddingVertical: 5, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center', fontFamily: 'Inter_700Bold' }}
                     />
@@ -4737,18 +5101,59 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                 </Text>
               )}
               {kind === 'flamethrower' && <Text style={{ fontSize: 10, color: colors.primary }}>On a miss, the GM chooses the landing hex from the miss margin; select only combatants in the line from attacker to that hex.</Text>}
-              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>TARGETS</Text>
-              {combatants.map(c => {
-                const selected = targets.includes(c.id);
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{areaProfile ? 'ASSIGN BLAST ZONES' : 'TARGETS'}</Text>
+              {areaProfile && <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Each target gets every effect whose range reaches the assigned zone. The triggerer starts in the closest zone.</Text>}
+              {combatants
+                .filter(c => !areaProfile?.nonBiologicalOnly || c.race === 'robot' || !!c.vehicle)
+                .map(c => {
+                const assignedZone = areaProfile ? areaZones.find(zone => zone.id === targetZones[c.id]) : undefined;
+                const selected = areaProfile ? !!assignedZone : targets.includes(c.id);
+                if (areaProfile) {
+                  const zoneTestId = (zoneId: string) => zoneId.replace(/[^a-zA-Z0-9_-]/g, '-');
+                  return (
+                    <View key={c.id} testID={`aoe-target-${c.id}`} style={{ padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '18' : colors.secondary, gap: 7 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground }}>HP {c.currentHp}/{c.maxHp}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                        <TouchableOpacity
+                          testID={`aoe-zone-${c.id}-outside`}
+                          onPress={() => setTargetZones(previous => {
+                            const next = { ...previous };
+                            delete next[c.id];
+                            return next;
+                          })}
+                          style={{ paddingHorizontal: 7, paddingVertical: 5, borderRadius: 5, borderWidth: 1, borderColor: !assignedZone ? colors.mutedForeground : colors.border }}
+                        >
+                          <Text style={{ fontSize: 9, color: !assignedZone ? colors.foreground : colors.mutedForeground }}>OUTSIDE</Text>
+                        </TouchableOpacity>
+                        {areaZones.map(zone => (
+                          <TouchableOpacity
+                            key={zone.id}
+                            testID={`aoe-zone-${c.id}-${zoneTestId(zone.id)}`}
+                            onPress={() => setTargetZones(previous => ({ ...previous, [c.id]: zone.id }))}
+                            style={{ paddingHorizontal: 7, paddingVertical: 5, borderRadius: 5, borderWidth: 1, borderColor: assignedZone?.id === zone.id ? colors.primary : colors.border, backgroundColor: assignedZone?.id === zone.id ? colors.primary + '22' : 'transparent' }}
+                          >
+                            <Text style={{ fontSize: 9, color: assignedZone?.id === zone.id ? colors.primary : colors.mutedForeground }}>{zone.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                }
                 return (
-                  <TouchableOpacity key={c.id} testID={`aoe-target-${c.id}`} onPress={() => setTargets(prev => selected ? prev.filter(id => id !== c.id) : [...prev, c.id])} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '18' : colors.secondary }}>
+                  <TouchableOpacity key={c.id} testID={`aoe-target-${c.id}`} onPress={() => setTargets(previous => selected ? previous.filter(id => id !== c.id) : [...previous, c.id])} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '18' : colors.secondary }}>
                     <Feather name={selected ? 'check-square' : 'square'} size={17} color={selected ? colors.primary : colors.mutedForeground} />
                     <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{c.name}</Text>
                     <Text style={{ fontSize: 10, color: colors.mutedForeground }}>HP {c.currentHp}/{c.maxHp}</Text>
                   </TouchableOpacity>
                 );
               })}
-              <TouchableOpacity testID="aoe-apply" disabled={targets.length === 0 || applying} onPress={() => {
+              {areaProfile?.nonBiologicalOnly && !combatants.some(c => c.race === 'robot' || c.vehicle) && (
+                <Text style={{ fontSize: 10, color: colors.mutedForeground }}>This profile can only affect robot or vehicle combatants.</Text>
+              )}
+              <TouchableOpacity testID="aoe-apply" disabled={applyTargetIds.length === 0 || applying || (areaProfile ? areaMissingRanges.length > 0 || areaZones.length === 0 : false)} onPress={() => {
                 if (applyingRef.current) return;
                 if (attackToApply.requiresGasChoice) {
                   notify('GM Gas Choice Required', 'Select the canister exposure and enter its GM-determined damage first.');
@@ -4758,10 +5163,10 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                 setApplying(true);
                 const requestId = onApply({
                   ...attackToApply,
-                }, targets);
+                }, applyTargetIds);
                 setPendingRequestId(requestId);
-              }} style={{ paddingVertical: 13, alignItems: 'center', borderRadius: colors.radius, backgroundColor: targets.length && !applying ? colors.destructive : colors.secondary, opacity: targets.length && !applying ? 1 : 0.5 }}>
-                <Text style={{ fontFamily: 'Inter_700Bold', color: targets.length && !applying ? '#fff' : colors.mutedForeground }}>{applying ? 'APPLYING…' : `APPLY TO ${targets.length} TARGET${targets.length === 1 ? '' : 'S'}`}</Text>
+              }} style={{ paddingVertical: 13, alignItems: 'center', borderRadius: colors.radius, backgroundColor: applyTargetIds.length && !applying ? colors.destructive : colors.secondary, opacity: applyTargetIds.length && !applying ? 1 : 0.5 }}>
+                <Text style={{ fontFamily: 'Inter_700Bold', color: applyTargetIds.length && !applying ? '#fff' : colors.mutedForeground }}>{applying ? 'APPLYING…' : `APPLY TO ${applyTargetIds.length} TARGET${applyTargetIds.length === 1 ? '' : 'S'}`}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={close} style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }}>
                 <Text style={{ fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL — APPLY NOTHING</Text>
