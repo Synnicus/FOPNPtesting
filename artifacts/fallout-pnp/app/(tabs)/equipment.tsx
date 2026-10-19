@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import { inferWeaponTags, parseRuleTagList, computeCustomWeaponModEffects } from '@/data/customRules';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
@@ -110,7 +111,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   editWeapon?: Weapon | null;
 }) {
   const colors = useColors();
-  const { allAmmo } = useApp();
+  const { allAmmo, customWeaponMods } = useApp();
   const [name, setName] = useState('');
   const [category, setCategory] = useState<WeaponCategory>('smallGuns');
   const [damageType, setDamageType] = useState<DamageType>('normal');
@@ -130,6 +131,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [hands, setHands] = useState<1 | 2>(1);
   const [compatibleAmmo, setCompatibleAmmo] = useState<string[]>([]);
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
+  const [tagText, setTagText] = useState('');
   const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
   const [showPresets, setShowPresets] = useState(false);
   const [areaAttackProfileId, setAreaAttackProfileId] = useState<string | undefined>();
@@ -157,6 +159,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     setHands(getWeaponHands(w));
     setCompatibleAmmo([...(w.compatibleAmmo ?? [])]);
     setSelectedMods([...w.mods]);
+    setTagText((w.tags ?? []).join(', '));
   };
 
   React.useEffect(() => {
@@ -173,6 +176,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       setCanBurst(false); setApBurst(AP_COSTS.ATTACK_BURST);
       setHands(1); setCompatibleAmmo([]);
       setSelectedMods([]);
+      setTagText('');
       setAreaAttackProfileId(undefined);
     }
   }, [visible, editWeapon]);
@@ -187,6 +191,38 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const availableMods = WEAPON_MOD_DEFS.filter(
     m => modAppliesToCategory(m.appliesTo, category) || selectedMods.includes(m.id)
   );
+  const categoryTag: Record<WeaponCategory, string> = {
+    smallGuns: 'small-guns',
+    bigGuns: 'big-guns',
+    energyWeapons: 'energy-weapons',
+    meleeWeapons: 'melee-weapons',
+    unarmed: 'unarmed',
+    throwing: 'throwing',
+    minesTraps: 'explosive',
+    natural: 'unarmed',
+  };
+  const inferredDraftTags = [
+    ...new Set([
+      ...parseRuleTagList(tagText),
+      categoryTag[category],
+      ...(editWeapon ? inferWeaponTags({ ...editWeapon, category, name, burstLimit, tags: parseRuleTagList(tagText) }) : []),
+    ]),
+  ];
+  const availableCustomMods = customWeaponMods.filter(mod =>
+    selectedMods.includes(mod.id)
+    || !(mod.appliesToTags?.length)
+    || mod.appliesToTags.some(tag => inferredDraftTags.includes(tag))
+  );
+  const previewWeapon = {
+    ...(editWeapon ?? {}),
+    id: editWeapon?.id ?? 'custom-weapon-preview',
+    name,
+    category,
+    skill: editWeapon?.skill ?? category,
+    burstLimit,
+    tags: parseRuleTagList(tagText),
+  } as Weapon;
+  const customModEffects = computeCustomWeaponModEffects(selectedMods, customWeaponMods, previewWeapon);
 
   const toggleMod = (id: string) => {
     setSelectedMods(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
@@ -215,7 +251,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       apSingle, apTargeted: canTarget ? apTargeted : null, apBurst: canBurst ? apBurst : null,
       hands,
       compatibleAmmo: ammoCompatibleCategory && compatibleAmmo.length > 0 ? compatibleAmmo : undefined,
-      mods: selectedMods, isCustom: true,
+      mods: selectedMods, isCustom: true, tags: parseRuleTagList(tagText),
     });
     onClose();
   };
@@ -278,6 +314,13 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: isValid ? colors.border : colors.destructive + '88', borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}
                   placeholder="Weapon name*" placeholderTextColor={colors.mutedForeground}
                   value={name} onChangeText={setName}
+                />
+                <TextInput
+                  style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 12 }}
+                  placeholder="Weapon tags (comma-separated; e.g. assault-rifle, vault-tech)"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={tagText}
+                  onChangeText={setTagText}
                 />
                 {/* Category */}
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CATEGORY</Text>
@@ -404,6 +447,13 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   if (modEffects.toHit !== 0) summaryParts.push(`${modEffects.toHit > 0 ? '+' : ''}${modEffects.toHit}% to-hit`);
                   if (modEffects.damage !== 0) summaryParts.push(`${modEffects.damage > 0 ? '+' : ''}${modEffects.damage} damage`);
                   if (modEffects.range !== 0) summaryParts.push(`+${modEffects.range}m range`);
+                  if (customModEffects.toHit !== 0) summaryParts.push(`${customModEffects.toHit > 0 ? '+' : ''}${customModEffects.toHit}% custom to-hit`);
+                  if (customModEffects.range !== 0) summaryParts.push(`${customModEffects.range > 0 ? '+' : ''}${customModEffects.range} sq custom range`);
+                  if (customModEffects.damageComponents.length) summaryParts.push(`${customModEffects.damageComponents.length} typed damage/radiation component(s)`);
+                  if (customModEffects.apDiscount) summaryParts.push(`−${customModEffects.apDiscount} AP per attack`);
+                  if (customModEffects.ignoreDT) summaryParts.push(`ignores ${customModEffects.ignoreDT} DT`);
+                  if (customModEffects.reloadApOverride !== undefined) summaryParts.push(`reload ${customModEffects.reloadApOverride} AP`);
+                  if (customModEffects.magazineMult !== 1) summaryParts.push(`×${customModEffects.magazineMult} custom magazine`);
                   if (modEffects.magazineMult !== 1) summaryParts.push(`×${modEffects.magazineMult} magazine`);
                   if (modEffects.negatesAimedPenalty) summaryParts.push('negates aimed penalty');
                   if (modEffects.ignoresLightPenalty) summaryParts.push('ignores light penalty');
@@ -423,7 +473,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                     </View>
                   ) : null;
                 })()}
-                {availableMods.length === 0 && (
+                {availableMods.length === 0 && availableCustomMods.length === 0 && (
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                     No weapon enhancements apply to this category.
                   </Text>
@@ -442,6 +492,25 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                           <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: '#4a8c3f', marginTop: 1 }}>{behavior}</Text>
                         ) : null}
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 1 }}>{mod.description}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+                {availableCustomMods.map(mod => {
+                  const active = selectedMods.includes(mod.id);
+                  const summary = mod.effects.map(effect =>
+                    `${effect.kind}${effect.damageType ? ` ${effect.damageType}` : ''} ${effect.value >= 0 ? '+' : ''}${effect.value}`,
+                  ).join(' · ');
+                  return (
+                    <TouchableOpacity key={mod.id} style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + '22' : colors.secondary, gap: 10 }} onPress={() => toggleMod(mod.id)}>
+                      <View style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: active ? colors.primary : colors.mutedForeground, alignItems: 'center', justifyContent: 'center', backgroundColor: active ? colors.primary : 'transparent', marginTop: 1 }}>
+                        {active && <Feather name="check" size={12} color={colors.primaryForeground} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: active ? colors.primary : colors.foreground }}>{mod.name} · CUSTOM</Text>
+                        {mod.programmatic && !!summary && <Text style={{ fontSize: 10, color: '#4a8c3f', marginTop: 1 }}>{summary}</Text>}
+                        <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 1 }}>{mod.description || 'No description provided.'}</Text>
+                        {!mod.programmatic && <Text style={{ fontSize: 9, color: colors.mutedForeground, marginTop: 2 }}>Contextual description only; no automatic combat effects.</Text>}
                       </View>
                     </TouchableOpacity>
                   );
@@ -469,6 +538,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   const colors = useColors();
   const [name, setName] = useState('');
   const [slot, setSlot] = useState<'body' | 'helmet'>('body');
+  const [tagText, setTagText] = useState('');
   const [tab, setTab] = useState<'dt' | 'dr' | 'effects'>('dt');
   // DT fields
   const [dtNormal, setDtNormal] = useState(0);
@@ -496,6 +566,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
   const applyArmorFields = (a: Armor, nameOverride?: string) => {
     setName(nameOverride ?? a.name);
     setSlot(a.slot);
+    setTagText((a.tags ?? []).join(', '));
     setDtNormal(a.dtNormal); setDtLaser(a.dtLaser); setDtFire(a.dtFire); setDtPlasma(a.dtPlasma); setDtExplosion(a.dtExplosion);
     setDrNormal(a.drNormal); setDrLaser(a.drLaser); setDrFire(a.drFire); setDrPlasma(a.drPlasma); setDrExplosion(a.drExplosion);
     setAcBonus(a.acBonus);
@@ -515,6 +586,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
       applyArmorFields(editArmor);
     } else {
       setName(''); setSlot('body');
+      setTagText('');
       setDtNormal(0); setDtLaser(0); setDtFire(0); setDtPlasma(0); setDtExplosion(0);
       setDrNormal(0); setDrLaser(0); setDrFire(0); setDrPlasma(0); setDrExplosion(0);
       setAcBonus(0);
@@ -540,7 +612,7 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
       id: isEditing ? editArmor!.id : genId(), name: name.trim(), slot,
       dtNormal, dtLaser, dtFire, dtPlasma, dtExplosion,
       drNormal, drLaser, drFire, drPlasma, drExplosion,
-      acBonus, weight: 0, isCustom: true,
+      acBonus, weight: 0, isCustom: true, tags: parseRuleTagList(tagText),
       effects: {
         special: nonZeroSpecial,
         skills: nonZeroSkills,
@@ -626,6 +698,13 @@ function ArmorFormModal({ visible, onClose, onSave, editArmor }: {
                   style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}
                   placeholder="Armor name*" placeholderTextColor={colors.mutedForeground}
                   value={name} onChangeText={setName}
+                />
+                <TextInput
+                  style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 12 }}
+                  placeholder="Armor tags (e.g. power-armor, radiation-suit)"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={tagText}
+                  onChangeText={setTagText}
                 />
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {(['body', 'helmet'] as const).map(s => (
@@ -872,8 +951,10 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
 // ─── Weapon Row ───────────────────────────────────────────────────────────────
 function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDelete?: () => void; onEdit?: () => void; onCopy?: () => void }) {
   const colors = useColors();
+  const { customWeaponMods } = useApp();
   const modEffects = computeModEffects(weapon.mods);
   const modDefs = weapon.mods.map(id => WEAPON_MOD_DEFS.find(m => m.id === id)).filter((m): m is WeaponModDef => !!m);
+  const customModDefs = weapon.mods.map(id => customWeaponMods.find(mod => mod.id === id)).filter((mod): mod is NonNullable<typeof mod> => !!mod);
   const hands = getWeaponHands(weapon);
   const ammoNames = (weapon.compatibleAmmo ?? [])
     .map(id => AMMO_TYPES.find(a => a.id === id)?.name)
@@ -920,6 +1001,20 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDel
               );
             })}
           </View>
+        )}
+        {customModDefs.length > 0 && (
+          <View style={{ marginTop: 4, gap: 3 }}>
+            {customModDefs.map(mod => (
+              <View key={mod.id} style={{ paddingHorizontal: 7, paddingVertical: 4, backgroundColor: colors.primary + '16', borderRadius: 4, borderWidth: 1, borderColor: colors.primary + '55' }}>
+                <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{mod.name} · CUSTOM</Text>
+                {!!mod.description && <Text style={{ fontSize: 10, color: colors.mutedForeground, marginTop: 2 }}>{mod.description}</Text>}
+                {!mod.programmatic && <Text style={{ fontSize: 9, color: colors.mutedForeground }}>Contextual only · no automatic combat math</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+        {!!weapon.tags?.length && (
+          <Text style={{ fontSize: 9, color: colors.mutedForeground, marginTop: 3 }}>Tags: {weapon.tags.join(', ')}</Text>
         )}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>

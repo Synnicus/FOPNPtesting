@@ -15,6 +15,9 @@ const localizationSource = readFileSync(new URL('./localization.ts', import.meta
 const uiSupplemental = JSON.parse(
   readFileSync(new URL('ui-supplemental.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
+const customRulesTranslations = JSON.parse(
+  readFileSync(new URL('custom-rules.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
 const factionReputationTranslations = JSON.parse(
   readFileSync(new URL('faction-reputation.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
@@ -122,7 +125,10 @@ test('nested interface actions and prompts are translated in every locale', () =
     const translations = JSON.parse(
       readFileSync(new URL(`${locale}.json`, localeDirectory), 'utf8'),
     ) as Record<string, string>;
-    const supplemental = uiSupplemental[locale] ?? {};
+    const supplemental = {
+      ...(uiSupplemental[locale] ?? {}),
+      ...(customRulesTranslations[locale] ?? {}),
+    };
     assert.ok(Object.keys(supplemental).length > 350, `${locale} includes supplemental interface translations`);
 
     for (const source of requiredUiSources) {

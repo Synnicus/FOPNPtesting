@@ -7,6 +7,9 @@ import type {
   InitiativeEntry,
   VehicleProfile,
   Weapon,
+  CampaignRuleTag,
+  CustomPerkDefinition,
+  CustomWeaponMod,
 } from '../context/types.ts';
 import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 import { isFactionReputationList } from './factionReputation.ts';
@@ -14,6 +17,7 @@ import type { CampaignVisualTheme } from './campaignOptions.ts';
 import type { GhoulRadiationHealingOption } from './radiation.ts';
 import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
+import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
 
 export const PORTABLE_EXPORT_FORMAT = 'fallout-pnp-portable';
 export const PORTABLE_EXPORT_VERSION = 1;
@@ -31,6 +35,9 @@ export interface CampaignStateSnapshot {
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
+  customWeaponMods?: CustomWeaponMod[];
+  customPerks?: CustomPerkDefinition[];
+  campaignRuleTags?: CampaignRuleTag[];
   customVehicles?: VehicleProfile[];
   lootTables?: CampaignTable[];
   encounterTables?: CampaignTable[];
@@ -519,6 +526,7 @@ function isWeaponRecord(value: unknown): value is Weapon {
     && typeof value.isDoubleShot === 'boolean'
     && typeof value.isCustom === 'boolean'
     && isStringArray(value.mods)
+    && (value.tags === undefined || isStringArray(value.tags))
     && (value.compatibleAmmo === undefined || isStringArray(value.compatibleAmmo));
 }
 
@@ -534,7 +542,8 @@ function isArmorRecord(value: unknown): value is Armor {
     && typeof value.name === 'string'
     && (value.slot === 'body' || value.slot === 'helmet')
     && numericFields.every(field => isFiniteNumber(value[field]))
-    && typeof value.isCustom === 'boolean';
+    && typeof value.isCustom === 'boolean'
+    && (value.tags === undefined || isStringArray(value.tags));
 }
 
 function isBestiaryTemplateRecord(value: unknown): value is BestiaryTemplate {
@@ -575,6 +584,9 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || (value.encounterTables !== undefined && !Array.isArray(value.encounterTables))
     || (value.campaignMaps !== undefined && !Array.isArray(value.campaignMaps))
     || !Array.isArray(value.customBestiaryTemplates)
+    || (value.customWeaponMods !== undefined && !Array.isArray(value.customWeaponMods))
+    || (value.customPerks !== undefined && !Array.isArray(value.customPerks))
+    || (value.campaignRuleTags !== undefined && !Array.isArray(value.campaignRuleTags))
     || !Array.isArray(value.initiativeEntries)) return false;
   if (!value.characters.every(isCharacterRecord)
     || !value.customWeapons.every(isWeaponRecord)
@@ -584,6 +596,14 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !((value.encounterTables ?? []) as unknown[]).every(validCampaignTable)
     || !((value.campaignMaps ?? []) as unknown[]).every(validCampaignMap)
     || !value.customBestiaryTemplates.every(isBestiaryTemplateRecord)
+    || !((value.customWeaponMods ?? []) as unknown[]).every(validateCustomWeaponMod)
+    || !((value.customPerks ?? []) as unknown[]).every(validateCustomPerk)
+    || !((value.campaignRuleTags ?? []) as unknown[]).every(tag => {
+      if (!isRecord(tag)) return false;
+      return typeof tag.id === 'string' && typeof tag.label === 'string'
+        && ['weapon', 'armor', 'both'].includes(tag.appliesTo as string)
+        && (tag.description === undefined || typeof tag.description === 'string');
+    })
     || !value.initiativeEntries.every(isInitiativeRecord)) return false;
   return hasUniqueIds(value.characters)
     && hasUniqueIds(value.customWeapons)
@@ -593,6 +613,9 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && hasUniqueIds((value.encounterTables ?? []) as CampaignTable[])
     && hasUniqueIds((value.campaignMaps ?? []) as CampaignMap[])
     && hasUniqueIds(value.customBestiaryTemplates)
+    && hasUniqueIds((value.customWeaponMods ?? []) as CustomWeaponMod[])
+    && hasUniqueIds((value.customPerks ?? []) as CustomPerkDefinition[])
+    && hasUniqueIds((value.campaignRuleTags ?? []) as CampaignRuleTag[])
     && hasUniqueIds(value.initiativeEntries)
     && isFiniteNumber(value.currentRound)
     && typeof value.combatActive === 'boolean'

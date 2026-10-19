@@ -19,6 +19,7 @@ import { useApp } from '@/context/AppContext';
 import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import CampaignToolsPanel from '@/components/CampaignToolsPanel';
+import CustomRulesPanel from '@/components/CustomRulesPanel';
 import QuickRulesReference from '@/components/ManualQuickRulesReference';
 import type { Armor, Character, VehicleProfile, Weapon } from '@/context/types';
 import {
@@ -875,6 +876,7 @@ export default function CampaignScreen() {
           characters={characters}
           onChange={saveCampaignTools}
         />
+        <CustomRulesPanel />
 
         {/* Campaign asset summary and individual JSON exports */}
         <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 }}>

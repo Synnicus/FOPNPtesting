@@ -2,12 +2,13 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
 import { clampConditionBoxes, CONDITION_BOXES_MAX, markConditionSemanticsV2, migrateConditionSemantics, restorePremadeWeaponCondition } from '@/data/condition';
 import { computeModEffects } from '@/data/mods';
+import { computeCustomWeaponModEffects } from '@/data/customRules';
 import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
@@ -72,6 +73,7 @@ import {
   type CampaignVisualTheme,
 } from '@/data/campaignOptions';
 import { normalizeCampaignMap, normalizeCampaignTable } from '@/data/campaignTools';
+import { validateCustomPerk, validateCustomWeaponMod } from '@/data/customRules';
 
 function cleanupUnreferencedPortraitImports(activePortraitUris: ReadonlySet<string>): void {
   if (Platform.OS === 'web') return;
@@ -279,13 +281,19 @@ function cancelActionsForCharacterIds(
 }
 
 /** Effective magazine size after mod magazineMult (extended/drum mags etc.). */
-function effectiveMagazineSize(weapon: Weapon): number {
+function effectiveMagazineSize(weapon: Weapon, customMods: readonly CustomWeaponMod[] = []): number {
   if (weapon.magazineSize <= 0) return weapon.magazineSize;
   const eff = computeModEffects(weapon.mods ?? []);
-  return Math.round(weapon.magazineSize * (eff.magazineMult ?? 1));
+  const custom = computeCustomWeaponModEffects(weapon.mods ?? [], [...customMods], weapon);
+  return Math.round(weapon.magazineSize * (eff.magazineMult ?? 1) * custom.magazineMult);
 }
 
-function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly Weapon[], allAmmo: readonly AmmoType[] = AMMO_TYPES): Character {
+function normalizeCharacterAmmoStates(
+  character: Character,
+  allWeapons: readonly Weapon[],
+  allAmmo: readonly AmmoType[] = AMMO_TYPES,
+  customMods: readonly CustomWeaponMod[] = [],
+): Character {
   const existingByWeapon = new Map((character.weaponAmmoStates ?? []).map(state => [state.weaponId, state]));
   const weaponIds = new Set([
     ...existingByWeapon.keys(),
@@ -305,7 +313,7 @@ function normalizeCharacterAmmoStates(character: Character, allWeapons: readonly
     }
     weaponAmmoStates.push({
       weaponId,
-      currentAmmo: existing?.currentAmmo ?? effectiveMagazineSize(weapon),
+      currentAmmo: existing?.currentAmmo ?? effectiveMagazineSize(weapon, customMods),
       conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
       ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, allAmmo),
     });
@@ -333,6 +341,9 @@ interface AppState extends CampaignOptions {
   customAmmo: AmmoType[];
   customVehicles: VehicleProfile[];
   customBestiaryTemplates: BestiaryTemplate[];
+  customWeaponMods: CustomWeaponMod[];
+  customPerks: CustomPerkDefinition[];
+  campaignRuleTags: CampaignRuleTag[];
   lootTables: CampaignTable[];
   encounterTables: CampaignTable[];
   campaignMaps: CampaignMap[];
@@ -362,6 +373,9 @@ const CAMPAIGN_COLLECTIONS = [
   'customAmmo',
   'customVehicles',
   'customBestiaryTemplates',
+  'customWeaponMods',
+  'customPerks',
+  'campaignRuleTags',
   'initiativeEntries',
   'pendingCombatSkillActions',
 ] as const;
@@ -441,6 +455,14 @@ function hasValidCampaignImport(value: unknown): value is AppState {
     const collection = value[field];
     if (collection !== undefined && !hasRecordCollection(collection)) return false;
   }
+  if (value.customWeaponMods !== undefined
+    && (!Array.isArray(value.customWeaponMods) || !value.customWeaponMods.every(validateCustomWeaponMod))) return false;
+  if (value.customPerks !== undefined
+    && (!Array.isArray(value.customPerks) || !value.customPerks.every(validateCustomPerk))) return false;
+  if (value.campaignRuleTags !== undefined
+    && (!Array.isArray(value.campaignRuleTags) || !value.campaignRuleTags.every(tag =>
+      isRecord(tag) && typeof tag.id === 'string' && typeof tag.label === 'string'
+      && ['weapon', 'armor', 'both'].includes(tag.appliesTo as string)))) return false;
   if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
   return true;
 }
@@ -563,6 +585,11 @@ function normalizePersistedState(parsed: AppState): AppState {
       ? normalized.hardcoreRadiationRules === true
       : legacyRadiationRules === true,
     customWeapons,
+    customWeaponMods: (normalized.customWeaponMods ?? []).filter(validateCustomWeaponMod),
+    customPerks: (normalized.customPerks ?? []).filter(validateCustomPerk),
+    campaignRuleTags: (normalized.campaignRuleTags ?? []).filter(tag =>
+      typeof tag?.id === 'string' && typeof tag.label === 'string'
+      && ['weapon', 'armor', 'both'].includes(tag.appliesTo)),
     customVehicles: (parsed.customVehicles ?? []).map(vehicle => ({
       ...vehicle,
       isCustom: true,
@@ -580,7 +607,7 @@ function normalizePersistedState(parsed: AppState): AppState {
     encounterTables: (parsed.encounterTables ?? []).map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
     campaignMaps: (parsed.campaignMaps ?? []).map(normalizeCampaignMap).filter((map): map is CampaignMap => map !== null),
     characters: (normalized.characters ?? []).map(character =>
-      normalizeCharacterAmmoStates(character, allWeapons, allAmmo)),
+      normalizeCharacterAmmoStates(character, allWeapons, allAmmo, normalized.customWeaponMods ?? [])),
   };
 }
 
@@ -678,6 +705,11 @@ interface AppContextValue extends AppState {
     encounterTables: CampaignTable[];
     campaignMaps: CampaignMap[];
   }) => void;
+  saveCustomRules: (rules: {
+    customWeaponMods: CustomWeaponMod[];
+    customPerks: CustomPerkDefinition[];
+    campaignRuleTags: CampaignRuleTag[];
+  }) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -689,6 +721,9 @@ const defaultState: AppState = markConditionSemanticsV2({
   customAmmo: [],
   customVehicles: [],
   customBestiaryTemplates: [],
+  customWeaponMods: [],
+  customPerks: [],
+  campaignRuleTags: [],
   lootTables: [],
   encounterTables: [],
   campaignMaps: [],
@@ -743,7 +778,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...markConditionSemanticsV2(s),
       characters: [
         ...s.characters,
-        normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo]),
+        normalizeCharacterAmmoStates(char, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo], s.customWeaponMods),
       ],
     }));
   }, []);
@@ -1365,7 +1400,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === weaponId);
       if (!weapon || weapon.magazineSize === 0) { success = true; return s; }
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
-      const current = existing ? existing.currentAmmo : effectiveMagazineSize(weapon);
+      const current = existing ? existing.currentAmmo : effectiveMagazineSize(weapon, s.customWeaponMods);
       if (current < shots) { success = false; return s; }
       success = true;
       const newStates: WeaponAmmoState[] = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
@@ -1383,7 +1418,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!weapon) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-       newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]) });
+       newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon, s.customWeaponMods), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]) });
       return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
     });
   }, []);
@@ -1398,7 +1433,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
       newStates.push({
         weaponId,
-        currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
+        currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon, s.customWeaponMods) : 0),
         conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0),
         ammoTypeId: resolveEquippedAmmoTypeId(weapon, ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]),
       });
@@ -1447,7 +1482,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         leftHandWeaponId,
         rightHandWeaponId,
         inventoryWeaponIds,
-      }, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo]);
+        }, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo], s.customWeaponMods);
       return {
         ...s,
         characters: s.characters.map(c => c.id === characterId
@@ -1559,7 +1594,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
       newStates.push({
         weaponId,
-        currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon) : 0),
+        currentAmmo: existing?.currentAmmo ?? (weapon ? effectiveMagazineSize(weapon, s.customWeaponMods) : 0),
         conditionBoxes: clampConditionBoxes(filledBoxes),
         ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]),
       });
@@ -2006,7 +2041,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
       const allAmmo = [...AMMO_TYPES, ...customAmmo];
       const characters = s.characters.map(character =>
-        normalizeCharacterAmmoStates(character, allWeapons, allAmmo));
+        normalizeCharacterAmmoStates(character, allWeapons, allAmmo, s.customWeaponMods));
       return { ...s, customAmmo, customWeapons, characters };
     });
   }, []);
@@ -2069,6 +2104,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       lootTables: tools.lootTables.map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
       encounterTables: tools.encounterTables.map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
       campaignMaps: tools.campaignMaps.map(normalizeCampaignMap).filter((map): map is CampaignMap => map !== null),
+    }));
+  }, []);
+  const saveCustomRules = useCallback((rules: {
+    customWeaponMods: CustomWeaponMod[];
+    customPerks: CustomPerkDefinition[];
+    campaignRuleTags: CampaignRuleTag[];
+  }) => {
+    setState(s => ({
+      ...s,
+      customWeaponMods: rules.customWeaponMods.filter(validateCustomWeaponMod),
+      customPerks: rules.customPerks.filter(validateCustomPerk),
+      campaignRuleTags: rules.campaignRuleTags.filter(tag => !!tag.id && !!tag.label),
     }));
   }, []);
   const importCampaign = useCallback((json: string): boolean => {
@@ -2238,7 +2285,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCustomAmmo, updateCustomAmmo, deleteCustomAmmo,
       addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
-      exportCampaign, importCampaign, saveCampaignTools,
+      exportCampaign, importCampaign, saveCampaignTools, saveCustomRules,
     }}>
       {children}
     </AppContext.Provider>

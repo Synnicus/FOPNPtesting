@@ -32,6 +32,7 @@ import {
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { translateText } from '@/data/localization';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
+import { computeCustomPerkEffects, customPerkAsPerk } from '@/data/customRules';
 import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
@@ -349,9 +350,15 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const insets = useSafeAreaInsets();
   const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
   const {
-    allWeapons, allArmor, hardcoreRadiationRules,
+    allWeapons, allArmor, customPerks, hardcoreRadiationRules,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
   } = useApp();
+  const resolvePerkById = useCallback((perkId: string) => {
+    const builtIn = getPerkById(perkId);
+    if (builtIn) return builtIn;
+    const custom = customPerks.find(perk => perk.id === perkId);
+    return custom ? customPerkAsPerk(custom) : undefined;
+  }, [customPerks]);
   const [char, setChar] = useState<Character>(character ?? makeDefaultCharacter());
   const [activeTab, setActiveTab] = useState(0);
   const [specialPoolTotal, setSpecialPoolTotal] = useState(40);
@@ -408,8 +415,16 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     const withTraits = applyImmediateTraitSpecial(char.special, char.traits);
     const perkStats = computePerkStatBonuses(char);
     for (const key of SPECIAL_KEYS) withTraits[key] += perkStats[key] ?? 0;
+    const wornArmor = allArmor.filter(armor =>
+      armor.id === char.equippedBodyArmorId || armor.id === char.equippedHelmetId);
+    const customStats = computeCustomPerkEffects(char, customPerks, {
+      weapon: allWeapons.find(weapon => weapon.id === char.equippedWeaponId),
+      armor: wornArmor,
+      mode: 'single',
+    });
+    for (const key of SPECIAL_KEYS) withTraits[key] += customStats.specialBonuses[key] ?? 0;
     return withTraits;
-  }, [char.special, char.traits, char.perks]);
+  }, [char, allArmor, allWeapons, customPerks]);
   const tagRules = useMemo(() => calculateTagSkillRules(char.traits, undefined, char.perks), [char.traits, char.perks]);
   const armorSheet = useMemo(() => resolveArmorAwareSheet({
     special: char.special, skills: char.skills,
@@ -432,7 +447,21 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     char, allArmor, race, tagRules.freeTagSkills, hardcoreRadiationRules,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
   ]);
-  const effectiveSkills = armorSheet.effectiveSkills;
+  const effectiveSkills = useMemo(() => {
+    const result = { ...armorSheet.effectiveSkills };
+    const wornArmor = allArmor.filter(armor =>
+      armor.id === char.equippedBodyArmorId || armor.id === char.equippedHelmetId);
+    const customSkills = computeCustomPerkEffects(char, customPerks, {
+      weapon: allWeapons.find(weapon => weapon.id === char.equippedWeaponId),
+      armor: wornArmor,
+      mode: 'single',
+    }).skillBonuses;
+    for (const [skill, bonus] of Object.entries(customSkills)) {
+      const key = skill as keyof typeof result;
+      result[key] += bonus ?? 0;
+    }
+    return result;
+  }, [armorSheet.effectiveSkills, char, allArmor, allWeapons, customPerks]);
   const radiationEffect = useMemo(
     () => radiationSicknessEffect(char.accumulatedRadiation ?? 0, armorSheet.radiationSicknessImmune),
     [char.accumulatedRadiation, armorSheet.radiationSicknessImmune],
@@ -692,7 +721,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const togglePerk = useCallback((perkId: string) => {
     setChar(prev => {
       const existing = prev.perks.find(p => p.perkId === perkId);
-      const perk = getPerkById(perkId);
+      const perk = resolvePerkById(perkId);
       if (!perk) return prev;
       if (!existing || existing.rank < perk.maxRanks) {
         // Adding a new perk or increasing rank — verify eligibility + points.
@@ -729,7 +758,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       }
       return prev;
     });
-  }, [perkPointsRemaining, recomputeDerived, allArmor]);
+  }, [perkPointsRemaining, recomputeDerived, allArmor, resolvePerkById]);
 
   const confirmPerkRefund = useCallback(() => {
     if (!perkRefundId) return;
@@ -955,11 +984,11 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // browser (they are traits in the manual) but their saved data / effects are
   // preserved — we just don't display or allow adding them here.
   const perkList = useMemo(() =>
-    PERKS.filter(p => {
+    [...PERKS, ...customPerks.map(customPerkAsPerk)].filter(p => {
       if (LEGACY_TRAIT_PERK_IDS.has(p.id)) return false;
       if (perkSearch && !p.name.toLowerCase().includes(perkSearch.toLowerCase()) && !p.description.toLowerCase().includes(perkSearch.toLowerCase())) return false;
       return true;
-    }), [perkSearch]);
+    }), [perkSearch, customPerks]);
 
   const isValid = char.name.trim().length > 0;
 
@@ -1478,7 +1507,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>ACTIVE PERKS</Text>
                   {char.perks.map(cp => {
-                    const perk = getPerkById(cp.perkId);
+                    const perk = resolvePerkById(cp.perkId);
                     if (!perk) return null;
                     return (
                       <View key={cp.perkId} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary + '44', gap: 10 }}>
@@ -1746,7 +1775,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 // ── Defensive perk bonuses (Dodger AC / Toughness DR etc.) ─────
                 let perkAC = 0; let perkDR = 0;
                 for (const cp of char.perks ?? []) {
-                  const p = getPerkById(cp.perkId);
+                  const p = resolvePerkById(cp.perkId);
                   const fx = p?.combatEffect;
                   if (!fx) continue;
                   if (/HP\s*<\s*50%/i.test(fx.combatNote ?? '')) continue; // situational
@@ -2188,7 +2217,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           title="REFUND PERK?"
           message={(() => {
             const owned = char.perks.find(p => p.perkId === perkRefundId);
-            const perk = perkRefundId ? getPerkById(perkRefundId) : undefined;
+            const perk = perkRefundId ? resolvePerkById(perkRefundId) : undefined;
             const rank = owned?.rank ?? 0;
             const isSingular = rank === 1;
             const rankLabel = translateText(isSingular ? 'rank' : 'ranks');

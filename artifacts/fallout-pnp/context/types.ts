@@ -24,6 +24,89 @@ export type SkillType =
   | 'firstAid' | 'doctor' | 'sneak' | 'lockpick' | 'steal' | 'traps'
   | 'science' | 'repair' | 'speech' | 'barter' | 'gambling' | 'outdoorsman' | 'pilot';
 
+export type RuleAttackMode = 'single' | 'targeted' | 'burst';
+export type RuleTagAppliesTo = 'weapon' | 'armor' | 'both';
+export type CustomPerkCategory = 'combat' | 'defense' | 'utility' | 'social' | 'survival' | 'racial';
+export type CustomRuleEffectKind =
+  | 'toHit'
+  | 'damage'
+  | 'radiationExposure'
+  | 'range'
+  | 'attackApDiscount'
+  | 'reloadAp'
+  | 'magazineMultiplier'
+  | 'skillBonus'
+  | 'specialBonus'
+  | 'armorClass'
+  | 'damageResistance'
+  | 'radiationResistance'
+  | 'poisonResistance'
+  | 'maxAP'
+  | 'maxHP'
+  | 'ignoreDT';
+
+export interface CampaignRuleTag {
+  id: string;
+  label: string;
+  appliesTo: RuleTagAppliesTo;
+}
+
+/** Empty conditions mean an unconditional perk. Each populated condition
+ *  group is required; a group passes when any one of its listed values matches. */
+export interface CustomRuleCondition {
+  weaponTags?: string[];
+  armorTags?: string[];
+  attackModes?: RuleAttackMode[];
+  statuses?: string[];
+  attackerRaces?: RaceType[];
+  attackerTraits?: string[];
+}
+
+export interface CustomRuleEffect {
+  id: string;
+  kind: CustomRuleEffectKind;
+  value: number;
+  /** Damage type for typed damage or resistance. */
+  damageType?: DamageType;
+  /** When true, scale numeric value and dice count by the perk rank. */
+  perRank?: boolean;
+  diceCount?: number;
+  dieSides?: number;
+  skill?: SkillType;
+  special?: keyof SPECIALStats;
+  description?: string;
+}
+
+export interface CustomWeaponMod {
+  id: string;
+  name: string;
+  description: string;
+  /** False keeps this as a contextual/roleplay note with no automatic math. */
+  programmatic: boolean;
+  appliesToTags?: string[];
+  effects: CustomRuleEffect[];
+}
+
+export interface CustomPerkDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: CustomPerkCategory;
+  minLevel: number;
+  maxRanks: number;
+  requiresRace?: RaceType[];
+  excludedRaces?: RaceType[];
+  requirements?: {
+    stats?: Partial<SPECIALStats>;
+    skills?: Partial<CharacterSkills>;
+  };
+  /** Optional rule: absent/empty means the perk's effects are always active. */
+  conditions?: CustomRuleCondition;
+  /** Description-only perks remain visible but do not alter calculations. */
+  programmatic: boolean;
+  effects: CustomRuleEffect[];
+}
+
 // ─── SPECIAL Stats ─────────────────────────────────────────────────────────────
 export interface SPECIALStats {
   strength: number;
@@ -126,6 +209,8 @@ export interface Weapon {
   knockdownChance: number;
   mods: string[];
   isCustom: boolean;
+  /** Curated and campaign-defined classification tags; independent of skill category. */
+  tags?: string[];
   /** Hands required to wield (1 or 2). Undefined = infer (see data/weapons.ts helper). */
   hands?: 1 | 2;
   /** Compatible ammo type ids (data/ammo.ts). Undefined/empty = weapon doesn't use ammo types. */
@@ -163,6 +248,8 @@ export interface Armor {
   acBonus: number;
   weight: number;
   isCustom: boolean;
+  /** Classification tags used by conditional custom perks. */
+  tags?: string[];
   /** Worn modifiers; absent on legacy/custom armor means no effect. */
   effects?: ArmorEffects;
   /** The suit includes its own helmet; a separately selected helmet is ignored. */

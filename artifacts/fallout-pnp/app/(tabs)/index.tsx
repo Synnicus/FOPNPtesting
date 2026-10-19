@@ -26,6 +26,7 @@ import { PERKS, getPerkById } from '@/data/perks';
 import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAreaAttack, compactWeaponCombatLabel, MINE_TRAP_PROFILES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
+import { computeCustomPerkEffects, computeCustomWeaponModEffects } from '@/data/customRules';
 import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
@@ -832,7 +833,7 @@ export default function CombatScreen() {
   const combatBladePlayer = useAudioPlayer(require('../../assets/combat-blade-slice.wav'));
   const combatBluntPlayer = useAudioPlayer(require('../../assets/combat-blunt-hit.wav'));
   const combatLaserPlayer = useAudioPlayer(require('../../assets/combat-energy-laser.wav'));
-  const { characters, allWeapons, allArmor, allAmmo, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, allAmmo, customWeaponMods, customPerks, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
@@ -1107,7 +1108,8 @@ export default function CombatScreen() {
     .map(({ weapon: heldWeapon, role }) => {
       const state = attacker?.weaponAmmoStates.find(candidate => candidate.weaponId === heldWeapon.id);
       const effects = computeModEffects(heldWeapon);
-      const magazineSize = Math.round(heldWeapon.magazineSize * (effects.magazineMult ?? 1));
+      const customEffects = computeCustomWeaponModEffects(heldWeapon.mods, customWeaponMods, heldWeapon);
+      const magazineSize = Math.round(heldWeapon.magazineSize * (effects.magazineMult ?? 1) * customEffects.magazineMult);
       return {
         weapon: heldWeapon,
         role,
@@ -1118,7 +1120,8 @@ export default function CombatScreen() {
     });
   const allHeldMagazinesFull = reloadableHeldWeapons.every(w => {
     const fx = computeModEffects(w);
-    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
+    const customFx = computeCustomWeaponModEffects(w.mods, customWeaponMods, w);
+    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1) * customFx.magazineMult);
     const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
     return cur >= mag;
   });
@@ -1159,7 +1162,12 @@ export default function CombatScreen() {
   // behaviour, sling, poison/festering/barbed, reload override). Needed early
   // for targeting/light derivations below.
   const modEffects = computeModEffects(weapon ? (weapon.mods ?? []) : []);
-  const modBonuses = { toHit: modEffects.toHit, damage: modEffects.damage, range: modEffects.range };
+  const customModEffects = computeCustomWeaponModEffects(weapon?.mods ?? [], customWeaponMods, weapon);
+  const modBonuses = {
+    toHit: modEffects.toHit + customModEffects.toHit,
+    damage: modEffects.damage + customModEffects.damage,
+    range: modEffects.range + customModEffects.range,
+  };
 
   // Injury effects (manual): attacker & defender.
   const attackerInjury = attackActor ? computeInjuryEffects(attackActor) : null;
@@ -1223,13 +1231,38 @@ export default function CombatScreen() {
       : 0;
 
   // Perk bonuses
+  const attackRuleArmor = allArmor.filter(armor =>
+    armor.id === attackActor?.equippedBodyArmorId || armor.id === attackActor?.equippedHelmetId);
+  const actionRuleMode = isBurst ? 'burst' : isAimed ? 'targeted' : 'single';
+  const customAttackPerkEffects = computeCustomPerkEffects(attackActor, customPerks, {
+    weapon, armor: attackRuleArmor, mode: actionRuleMode,
+  });
   const perkBonuses = computePerkBonuses(attackActor, weapon, isRanged, defender);
+  perkBonuses.toHit += customAttackPerkEffects.toHit
+    + (weapon ? customAttackPerkEffects.skillBonuses[weapon.skill] ?? 0 : 0);
+  perkBonuses.damage += customAttackPerkEffects.damage;
+  perkBonuses.apDiscount += customAttackPerkEffects.apDiscount;
+  perkBonuses.ignoreDT += customAttackPerkEffects.ignoreDT + customModEffects.ignoreDT;
+
+  const defenderRuleWeapon = defender?.equippedWeaponId
+    ? allWeapons.find(candidate => candidate.id === defender.equippedWeaponId) ?? null
+    : null;
+  const defenderRuleArmor = allArmor.filter(armor =>
+    armor.id === defender?.equippedBodyArmorId || armor.id === defender?.equippedHelmetId);
+  const customDefenderPerkEffects = computeCustomPerkEffects(defender, customPerks, {
+    weapon: defenderRuleWeapon, armor: defenderRuleArmor, mode: null,
+  });
 
   // Effective magazine size after mods (extended/drum magazines).
-  const effectiveMagazine = weapon ? Math.round(weapon.magazineSize * (modEffects.magazineMult ?? 1)) : 0;
+  const effectiveMagazine = weapon
+    ? Math.round(weapon.magazineSize * (modEffects.magazineMult ?? 1) * customModEffects.magazineMult)
+    : 0;
 
   // Reload AP cost — Speed Loader mod (reloadApOverride) can reduce it.
-  const reloadApCost = modEffects.reloadApOverride ?? AP_COSTS.RELOAD;
+  const reloadApCost = Math.min(
+    modEffects.reloadApOverride ?? AP_COSTS.RELOAD,
+    customModEffects.reloadApOverride ?? AP_COSTS.RELOAD,
+  );
 
   // Active-effect (chem) modifiers on attacker & defender (data/effects.ts).
   const defenderEffectMods = defender ? computeEffectModifiers(defender) : null;
@@ -1245,10 +1278,16 @@ export default function CombatScreen() {
       )
     : null;
   // Defender-side perk bonuses (Dodger AC, Toughness DR, …) + chem AC mods.
-  const defenderPerkDef = computeDefensivePerkBonuses(defender, weapon?.damageType, getPerkById);
+  const builtinDefenderPerkDef = computeDefensivePerkBonuses(defender, weapon?.damageType, getPerkById);
+  const defenderPerkDef = {
+    ...builtinDefenderPerkDef,
+    ac: builtinDefenderPerkDef.ac + customDefenderPerkEffects.armorClass,
+    dr: builtinDefenderPerkDef.dr
+      + (weapon ? customDefenderPerkEffects.damageResistance[weapon.damageType] ?? 0 : 0),
+  };
 
   // Effective weapon range: base rangeNormal + mod range bonuses
-  const effectiveRange = weapon ? weapon.rangeNormal + modBonuses.range : 0;
+  const effectiveRange = weapon ? weapon.rangeNormal + modBonuses.range + customAttackPerkEffects.range : 0;
 
   // ─── Loaded ammo type (data/ammo.ts) ───────────────────────────────────────
   const ammoTypeId = (attacker && weapon)
@@ -1436,7 +1475,11 @@ export default function CombatScreen() {
           ? (wTargeted as number)
           : wSingle;
   const traitAPDelta = (traitEffects.attackAPPenalty ?? 0) - (fastShotApplies ? (traitEffects.attackAPDiscount ?? 0) : 0);
-  const effectiveAPCost = Math.max(1, baseAPCost + traitAPDelta - perkBonuses.apDiscount - (isBurst ? perkBonuses.burstApDiscount : 0));
+  const effectiveAPCost = Math.max(
+    1,
+    baseAPCost + traitAPDelta - perkBonuses.apDiscount - customModEffects.apDiscount
+      - (isBurst ? perkBonuses.burstApDiscount : 0),
+  );
   const attackerHasAP = (attackActor?.currentAP ?? 0) >= effectiveAPCost;
 
   // Weapon-usability warnings from injuries (manual):
@@ -1942,11 +1985,17 @@ export default function CombatScreen() {
       const rawBaseDmg = resolvedDamage.baseDamage;
       const afterDT = resolvedDamage.afterDamageThreshold;
       const weaponPhysicalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
-      const componentResolution = loadedAmmo?.components?.length
+      const bonusDamageComponents = [
+        ...(loadedAmmo?.components ?? []),
+        ...customModEffects.damageComponents,
+        ...customAttackPerkEffects.damageComponents,
+      ];
+      const componentResolution = bonusDamageComponents.length
         ? resolveAmmoDamageComponents({
-            components: loadedAmmo.components,
+            components: bonusDamageComponents,
             rollDie,
-            radiationResistance: defenderSheet?.radiationResistance ?? 0,
+            radiationResistance: (defenderSheet?.radiationResistance ?? 0)
+              + customDefenderPerkEffects.radiationResistance,
             criticalMultiplier: critMult,
             postProtectionMultiplier: traitEffects.damageMultiplier ?? 1,
             resolveProtection: damageType => {
@@ -1955,10 +2004,12 @@ export default function CombatScreen() {
               const resolved = resolveDamageProtection({
                 baseDT: typedProtection.dt,
                 baseDR: tightNutsAdjustedDR(typedProtection.dr, damageType, defender, defenderNatural),
-                ammoIgnoresDT: loadedAmmo.ignoresDT,
-                ammoDRModifier: loadedAmmo.drMod,
+                ammoIgnoresDT: loadedAmmo?.ignoresDT,
+                ammoDRModifier: loadedAmmo?.drMod,
                 ignoredDT: perkBonuses.ignoreDT,
-                defenderDRModifier: typedDefenderPerks.dr + (defenderEffectMods?.drMod ?? 0)
+                defenderDRModifier: typedDefenderPerks.dr
+                  + (customDefenderPerkEffects.damageResistance[damageType] ?? 0)
+                  + (defenderEffectMods?.drMod ?? 0)
                   + empShieldingResistance(defender, loadedAmmo),
                 damageResistanceCap,
                 bypassesArmor: bypassArmor,
@@ -1977,7 +2028,8 @@ export default function CombatScreen() {
           : `${component.component.label} (${component.component.type}): ${rolled} = ${component.rawDamage}${multipliers}; DT ${component.protection?.damageThreshold ?? 0} / DR ${component.protection?.damageResistance ?? 0}% → ${component.finalHp ?? 0} HP`;
       }) ?? [];
       const physicalDmg = weaponPhysicalDmg + (componentResolution?.totalHpDamage ?? 0);
-      const poisonResistance = defenderSheet?.poisonResistance ?? 0;
+      const poisonResistance = (defenderSheet?.poisonResistance ?? 0)
+        + customDefenderPerkEffects.poisonResistance;
       const poisonResults = attackPoisons.map(poison =>
         resolvePoisonResistance(poison, poisonResistance, Math.floor(Math.random() * 100) + 1));
       const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
@@ -2052,10 +2104,14 @@ export default function CombatScreen() {
   const handleReloadWeapon = useCallback((w: Weapon) => {
     if (!attacker) return;
     const fx = computeModEffects(w);
-    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
+    const customFx = computeCustomWeaponModEffects(w.mods, customWeaponMods, w);
+    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1) * customFx.magazineMult);
     const state = attacker.weaponAmmoStates.find(a => a.weaponId === w.id);
     const cur = state?.currentAmmo ?? mag;
-    const cost = fx.reloadApOverride ?? AP_COSTS.RELOAD;
+    const cost = Math.min(
+      fx.reloadApOverride ?? AP_COSTS.RELOAD,
+      customFx.reloadApOverride ?? AP_COSTS.RELOAD,
+    );
     setShowReloadPicker(false);
     if (cur >= mag) {
       if (Platform.OS === 'web') alert(`${w.name} is already fully loaded (${cur}/${mag}).`);
@@ -2069,7 +2125,7 @@ export default function CombatScreen() {
     }
     reloadWeapon(attacker.id, w.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, attackActor, spendAP, reloadWeapon]);
+  }, [attacker, attackActor, customWeaponMods, spendAP, reloadWeapon]);
 
   // Take a chem (manual: using an item costs 3 AP). Applies the chem's immediate
   // stage as an ActiveEffect and resolves any HP heal/damage.
@@ -3109,7 +3165,10 @@ export default function CombatScreen() {
                 }}>
                   <Feather name="refresh-cw" size={13} color={colors.mutedForeground} />
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>
-                    {reloadableHeldWeapons.length > 1 ? 'RELOAD HELD WEAPON' : `RELOAD ${computeModEffects(reloadableHeldWeapons[0]).reloadApOverride ?? AP_COSTS.RELOAD} AP`}
+                    {reloadableHeldWeapons.length > 1 ? 'RELOAD HELD WEAPON' : `RELOAD ${Math.min(
+                      computeModEffects(reloadableHeldWeapons[0]).reloadApOverride ?? AP_COSTS.RELOAD,
+                      computeCustomWeaponModEffects(reloadableHeldWeapons[0].mods, customWeaponMods, reloadableHeldWeapons[0]).reloadApOverride ?? AP_COSTS.RELOAD,
+                    )} AP`}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -4430,12 +4489,13 @@ export default function CombatScreen() {
         subtitle="AP is charged for the selected gun only"
         options={reloadableHeldWeapons.map(w => {
           const fx = computeModEffects(w);
-          const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1));
+          const customFx = computeCustomWeaponModEffects(w.mods, customWeaponMods, w);
+          const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1) * customFx.magazineMult);
           const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
           return {
             key: w.id,
             label: `${w.name}  [${cur}/${mag}]`,
-            sublabel: `${fx.reloadApOverride ?? AP_COSTS.RELOAD} AP`,
+            sublabel: `${Math.min(fx.reloadApOverride ?? AP_COSTS.RELOAD, customFx.reloadApOverride ?? AP_COSTS.RELOAD)} AP`,
             disabled: cur >= mag,
           };
         })}

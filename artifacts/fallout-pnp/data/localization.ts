@@ -13,6 +13,7 @@ import languageSettings from './locales/language-settings.json';
 import uiSupplemental from './locales/ui-supplemental.json';
 import factionReputationTranslations from './locales/faction-reputation.json';
 import vehicleUi from './locales/vehicle-ui.json';
+import customRulesUi from './locales/custom-rules.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -477,6 +478,7 @@ const languageSettingsTranslations = languageSettings as Record<string, Record<s
 const uiSupplementalBase = uiSupplemental as Partial<Record<AppLocale, Record<string, string>>>;
 const factionReputationUiTranslations = factionReputationTranslations as Partial<Record<AppLocale, Record<string, string>>>;
 const vehicleUiTranslations = vehicleUi as Partial<Record<AppLocale, Record<string, string>>>;
+const customRulesUiTranslations = customRulesUi as Partial<Record<AppLocale, Record<string, string>>>;
 const uiSupplementalTranslations = Object.fromEntries(
   APP_LANGUAGES
     .filter(({ locale }) => locale !== 'en')
@@ -484,6 +486,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(uiSupplementalBase[locale] ?? {}),
       ...(factionReputationUiTranslations[locale] ?? {}),
       ...(vehicleUiTranslations[locale] ?? {}),
+      ...(customRulesUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();
