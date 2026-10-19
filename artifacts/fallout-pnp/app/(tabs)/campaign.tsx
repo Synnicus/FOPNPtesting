@@ -366,10 +366,10 @@ export default function CampaignScreen() {
         state = parsed.state;
       }
 
-      const ok = importCampaign(JSON.stringify(state));
+      const ok = await importCampaign(JSON.stringify(state));
       if (!ok) {
         importSession?.cleanup();
-        showStatus('error', 'The campaign data could not be loaded.');
+        showStatus('error', 'Campaign could not be loaded. Your current campaign was kept.');
         return;
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -692,9 +692,10 @@ export default function CampaignScreen() {
   };
 
   const handleReset = () => {
-    const doReset = () => {
-      importCampaign(JSON.stringify({ characters: [], customWeapons: [], customArmor: [] }));
-      showStatus('success', 'Campaign cleared.');
+    const doReset = async () => {
+      const saved = await importCampaign(JSON.stringify({ characters: [], customWeapons: [], customArmor: [] }));
+      if (saved) showStatus('success', 'Campaign cleared.');
+      else showStatus('error', 'Campaign could not be cleared. Your current campaign was kept.');
     };
     if (Platform.OS === 'web') {
       if (confirm('Clear all campaign data? This cannot be undone.')) doReset();

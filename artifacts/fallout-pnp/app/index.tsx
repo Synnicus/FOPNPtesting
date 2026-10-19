@@ -13,7 +13,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
+import { LocalizedAlert, LocalizedText as Text, LocalizedTextInput as TextInput, LocalizedTouchableOpacity as TouchableOpacity } from '@/components/LocalizedText';
 import CampaignLibraryModal from '@/components/CampaignLibraryModal';
 import CampaignOptionsModal from '@/components/CampaignOptionsModal';
 import AboutThisAppModal from '@/components/AboutThisAppModal';
@@ -285,13 +285,13 @@ export default function MainMenuScreen() {
     setShowNewCampaign(true);
   };
 
-  const confirmNewCampaign = () => {
+  const confirmNewCampaign = async () => {
     const name = newCampaignName.trim().slice(0, 80);
     if (!name) {
       setNewCampaignNameError(true);
       return;
     }
-    const ok = importCampaign(JSON.stringify({
+    const ok = await importCampaign(JSON.stringify({
       campaignName: name,
       characters: [],
       customWeapons: [],
@@ -300,6 +300,10 @@ export default function MainMenuScreen() {
     if (ok) {
       setShowNewCampaign(false);
       router.push('/(tabs)');
+    } else {
+      const message = 'A new campaign could not be saved. Your current campaign was kept.';
+      if (Platform.OS === 'web') window.alert(message);
+      else LocalizedAlert.alert('Could not start a new campaign', message);
     }
   };
 

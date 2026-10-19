@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
@@ -762,7 +762,7 @@ interface AppContextValue extends AppState {
   setVehicleCatalogPortrait: (id: string, selection: CatalogPortraitSelection) => void;
 
   exportCampaign: () => string;
-  importCampaign: (json: string) => boolean;
+  importCampaign: (json: string) => Promise<boolean>;
   saveCampaignTools: (tools: {
     lootTables: CampaignTable[];
     encounterTables: CampaignTable[];
@@ -811,6 +811,7 @@ const genId = () => Date.now().toString() + Math.random().toString(36).substr(2,
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(defaultState);
   const [loaded, setLoaded] = useState(false);
+  const skipNextPersistRef = useRef<string | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(raw => {
@@ -826,6 +827,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loaded) return;
+    const serialized = JSON.stringify(state);
+    if (skipNextPersistRef.current === serialized) {
+      skipNextPersistRef.current = null;
+      return;
+    }
+    skipNextPersistRef.current = null;
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
   }, [state, loaded]);
 
@@ -2252,11 +2259,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       campaignRuleTags: rules.campaignRuleTags.filter(tag => !!tag.id && !!tag.label),
     }));
   }, []);
-  const importCampaign = useCallback((json: string): boolean => {
+  const importCampaign = useCallback(async (json: string): Promise<boolean> => {
     try {
       const parsed: unknown = JSON.parse(json);
       if (!hasValidCampaignImport(parsed)) return false;
-      setState({ ...defaultState, ...reconcileInitiativeCharacters(normalizePersistedState(parsed)) });
+      const importedState = {
+        ...defaultState,
+        ...reconcileInitiativeCharacters(normalizePersistedState(parsed)),
+      };
+      const serialized = JSON.stringify(importedState);
+      await AsyncStorage.setItem(STORAGE_KEY, serialized);
+      skipNextPersistRef.current = serialized;
+      setState(importedState);
       return true;
     } catch (_) { return false; }
   }, []);

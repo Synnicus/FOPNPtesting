@@ -50,6 +50,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
   const storage = new Map([[STORAGE_KEY, raw]]);
   const reads: string[] = [];
   const writes: string[] = [];
+  let rejectNextWrite = false;
   const storageUrl = 'test:campaign-storage';
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
@@ -109,6 +110,10 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     },
     async setItem(key, value) {
       writes.push(key);
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        throw new Error('simulated storage write failure');
+      }
       storage.set(key, value);
     },
   };
@@ -182,7 +187,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         assert.deepEqual(empty.customBestiaryTemplates, []);
         const writesBeforeImport = writes.length;
         await act(async () => {
-          assert.equal(empty.importCampaign(raw), true, 'legacy campaign import accepted');
+          assert.equal(await empty.importCampaign(raw), true, 'legacy campaign import accepted');
         });
         assert.ok(campaign);
         const assertRepaired = (
@@ -265,7 +270,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         assert.equal(empty.loaded, true);
         const writesBeforeImport = writes.length;
         await act(async () => {
-          assert.equal(empty.importCampaign(fixedRaw), true, 'fixed-AC campaign import accepted');
+          assert.equal(await empty.importCampaign(fixedRaw), true, 'fixed-AC campaign import accepted');
         });
         assert.ok(campaign);
         const assertFixedArmor = (
@@ -323,7 +328,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         const empty = await mount();
         assert.equal(empty.loaded, true);
         await act(async () => {
-          assert.equal(empty.importCampaign(raw), true, 'populated campaign import accepted');
+          assert.equal(await empty.importCampaign(raw), true, 'populated campaign import accepted');
         });
         const current = () => {
           assert.ok(campaign);
@@ -355,12 +360,58 @@ test('AppProvider campaign storage lifecycle', async (t) => {
           ['non-record collection entry', JSON.stringify({ ...fixture, customArmor: [null] })],
         ] as const) {
           await act(async () => {
-            assert.equal(current().importCampaign(invalidJson), false, `${label} rejected`);
+            assert.equal(await current().importCampaign(invalidJson), false, `${label} rejected`);
           });
           assert.equal(current().exportCampaign(), liveBefore, `${label} leaves live campaign unchanged`);
           assert.equal(storage.get(STORAGE_KEY), storedBefore, `${label} leaves saved campaign unchanged`);
           assert.equal(writes.length, writesBefore, `${label} does not trigger a replacement save`);
         }
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
+
+    await t.test('importCampaign keeps the current and saved campaign when its write fails', async () => {
+      storage.clear();
+      campaign = undefined;
+
+      try {
+        const empty = await mount();
+        assert.equal(empty.loaded, true);
+        const existingCampaign = JSON.stringify({ ...fixture, characters: [legacyNpc] });
+        await act(async () => {
+          assert.equal(await empty.importCampaign(existingCampaign), true, 'existing campaign accepted');
+        });
+        const current = () => {
+          assert.ok(campaign);
+          return campaign;
+        };
+
+        const liveBefore = current().exportCampaign();
+        const storedBefore = storage.get(STORAGE_KEY);
+        assert.ok(storedBefore, 'existing campaign persisted before replacement');
+        const writesBefore = writes.length;
+        const replacementCampaign = JSON.stringify({ ...fixture, characters: [printedNpc] });
+        rejectNextWrite = true;
+
+        await act(async () => {
+          assert.equal(
+            await current().importCampaign(replacementCampaign),
+            false,
+            'failed storage write rejects the import',
+          );
+        });
+
+        assert.equal(current().exportCampaign(), liveBefore, 'failed import leaves live campaign unchanged');
+        assert.equal(storage.get(STORAGE_KEY), storedBefore, 'failed import leaves saved campaign unchanged');
+        assert.equal(writes.length, writesBefore + 1, 'the import attempts one write and does not schedule another');
+
+        await act(async () => renderer!.unmount());
+        renderer = undefined;
+        campaign = undefined;
+        const reloaded = await mount();
+        assert.equal(reloaded.exportCampaign(), liveBefore, 'the prior saved campaign still reloads');
       } finally {
         if (renderer) await act(async () => renderer!.unmount());
         renderer = undefined;
