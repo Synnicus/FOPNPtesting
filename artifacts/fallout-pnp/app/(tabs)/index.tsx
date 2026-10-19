@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import CharacterAvatar from '@/components/CharacterAvatar';
+import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import HPBar from '@/components/HPBar';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import {
@@ -2853,11 +2854,12 @@ export default function CombatScreen() {
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>COMBATANTS</Text>
           <View style={{ flexDirection: stackCombatantCards ? 'column' : 'row', alignItems: 'stretch', gap: 8 }}>
             {/* Attacker */}
-            <TouchableOpacity testID="combat-attacker-card" accessibilityRole="button" accessibilityHint="Opens the attacker character picker." style={{ flex: stackCombatantCards ? undefined : 1, width: stackCombatantCards ? '100%' : undefined, minWidth: 0, flexDirection: 'column', alignItems: 'stretch', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: attacker ? colors.primary : colors.border, padding: 9, gap: 7, minHeight: 100 }} onPress={() => setShowAttackerPicker(true)}>
+            <TouchableOpacity testID="combat-attacker-card" accessibilityRole="button" accessibilityHint="Opens the attacker character picker." style={{ position: 'relative', overflow: 'hidden', flex: stackCombatantCards ? undefined : 1, width: stackCombatantCards ? '100%' : undefined, minWidth: 0, flexDirection: 'column', alignItems: 'stretch', backgroundColor: attacker?.portrait ? 'transparent' : colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: attacker ? colors.primary : colors.border, padding: 9, gap: 7, minHeight: 100 }} onPress={() => setShowAttackerPicker(true)}>
+              {attacker && <PortraitCardBackground uri={attacker.portrait} fit={attacker.portraitFit ?? 'cover'} offset={attacker.portraitOffset} scrimColor={colors.card} />}
               {attacker ? (
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                    <CharacterAvatar portrait={attacker.portrait} name={attacker.name} size={36} />
+                    {!attacker.portrait && <CharacterAvatar portrait={null} name={attacker.name} size={36} />}
                     <Text style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{attacker.name}</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
@@ -2942,11 +2944,12 @@ export default function CombatScreen() {
             <Feather name={stackCombatantCards ? 'arrow-down' : 'arrow-right'} size={20} color={colors.mutedForeground} style={{ alignSelf: "center" }} />
 
             {/* Defender */}
-            <TouchableOpacity testID="combat-defender-card" accessibilityRole="button" accessibilityHint="Opens the defender character picker." style={{ flex: stackCombatantCards ? undefined : 1, width: stackCombatantCards ? '100%' : undefined, minWidth: 0, flexDirection: 'column', alignItems: 'stretch', backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: defender ? colors.destructive : colors.border, padding: 9, gap: 7, minHeight: 100 }} onPress={() => setShowDefenderPicker(true)}>
+            <TouchableOpacity testID="combat-defender-card" accessibilityRole="button" accessibilityHint="Opens the defender character picker." style={{ position: 'relative', overflow: 'hidden', flex: stackCombatantCards ? undefined : 1, width: stackCombatantCards ? '100%' : undefined, minWidth: 0, flexDirection: 'column', alignItems: 'stretch', backgroundColor: defender?.portrait ? 'transparent' : colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: defender ? colors.destructive : colors.border, padding: 9, gap: 7, minHeight: 100 }} onPress={() => setShowDefenderPicker(true)}>
+              {defender && <PortraitCardBackground uri={defender.portrait} fit={defender.portraitFit ?? 'cover'} offset={defender.portraitOffset} scrimColor={colors.card} />}
               {defender ? (
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                    <CharacterAvatar portrait={defender.portrait} name={defender.name} size={36} />
+                    {!defender.portrait && <CharacterAvatar portrait={null} name={defender.name} size={36} />}
                     <Text style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{defender.name}</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
