@@ -1,0 +1,68 @@
+{
+  "fr": {
+    "Save / Overwrite": "Enregistrer / Écraser",
+    "Overwrite saved campaign?": "Écraser la campagne enregistrée ?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "Remplacer cette entrée de la bibliothèque par la campagne actuelle ? Son ancien contenu sera remplacé. Son nom et sa description seront conservés.",
+    "Consumes one consumable; reusable tools are kept.": "Consomme un consommable ; les outils réutilisables sont conservés."
+  },
+  "it": {
+    "Save / Overwrite": "Salva / Sovrascrivi",
+    "Overwrite saved campaign?": "Sovrascrivere la campagna salvata?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "Sostituire questa voce della libreria con la campagna attuale? I contenuti precedenti verranno sostituiti. Il nome e la descrizione verranno mantenuti.",
+    "Consumes one consumable; reusable tools are kept.": "Consuma un oggetto consumabile; gli strumenti riutilizzabili vengono mantenuti."
+  },
+  "de": {
+    "Save / Overwrite": "Speichern / Überschreiben",
+    "Overwrite saved campaign?": "Gespeicherte Kampagne überschreiben?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "Diesen Bibliothekseintrag durch die aktuelle Kampagne ersetzen? Der bisherige Inhalt wird ersetzt. Name und Beschreibung bleiben erhalten.",
+    "Consumes one consumable; reusable tools are kept.": "Verbraucht ein Verbrauchsgut; wiederverwendbare Werkzeuge bleiben erhalten."
+  },
+  "es-ES": {
+    "Save / Overwrite": "Guardar / Sobrescribir",
+    "Overwrite saved campaign?": "¿Sobrescribir la campaña guardada?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "¿Reemplazar esta entrada de la biblioteca por la campaña actual? Se sustituirá su contenido anterior. Se conservarán su nombre y descripción.",
+    "Consumes one consumable; reusable tools are kept.": "Consume un consumible; las herramientas reutilizables se conservan."
+  },
+  "es-MX": {
+    "Save / Overwrite": "Guardar / Sobrescribir",
+    "Overwrite saved campaign?": "¿Sobrescribir la campaña guardada?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "¿Reemplazar esta entrada de la biblioteca con la campaña actual? Se reemplazará su contenido anterior. Se conservarán su nombre y descripción.",
+    "Consumes one consumable; reusable tools are kept.": "Consume un consumible; las herramientas reutilizables se conservan."
+  },
+  "ja": {
+    "Save / Overwrite": "保存 / 上書き",
+    "Overwrite saved campaign?": "保存済みキャンペーンを上書きしますか？",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "このライブラリ項目を現在のキャンペーンで置き換えますか？以前の内容は上書きされます。名前と説明は保持されます。",
+    "Consumes one consumable; reusable tools are kept.": "消耗品を1つ消費します。再利用可能な道具は残ります。"
+  },
+  "pl": {
+    "Save / Overwrite": "Zapisz / Nadpisz",
+    "Overwrite saved campaign?": "Nadpisać zapisaną kampanię?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "Zastąpić ten wpis biblioteki bieżącą kampanią? Poprzednia zawartość zostanie zastąpiona. Nazwa i opis zostaną zachowane.",
+    "Consumes one consumable; reusable tools are kept.": "Zużywa jeden materiał eksploatacyjny; narzędzia wielokrotnego użytku pozostają."
+  },
+  "pt-BR": {
+    "Save / Overwrite": "Salvar / Sobrescrever",
+    "Overwrite saved campaign?": "Sobrescrever a campanha salva?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "Substituir esta entrada da biblioteca pela campanha atual? O conteúdo anterior será substituído. O nome e a descrição serão mantidos.",
+    "Consumes one consumable; reusable tools are kept.": "Consome um consumível; ferramentas reutilizáveis são mantidas."
+  },
+  "ru": {
+    "Save / Overwrite": "Сохранить / Перезаписать",
+    "Overwrite saved campaign?": "Перезаписать сохранённую кампанию?",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "Заменить эту запись библиотеки текущей кампанией? Предыдущее содержимое будет заменено. Название и описание сохранятся.",
+    "Consumes one consumable; reusable tools are kept.": "Расходуется один расходуемый предмет; многоразовые инструменты сохраняются."
+  },
+  "zh-Hans": {
+    "Save / Overwrite": "保存 / 覆盖",
+    "Overwrite saved campaign?": "覆盖已保存的战役？",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "用当前战役替换此库条目？之前的内容将被替换，名称和描述将保留。",
+    "Consumes one consumable; reusable tools are kept.": "消耗一件消耗品；可重复使用的工具将保留。"
+  },
+  "zh-Hant": {
+    "Save / Overwrite": "儲存 / 覆寫",
+    "Overwrite saved campaign?": "覆寫已儲存的戰役？",
+    "Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.": "以目前戰役取代此收藏庫項目？先前的內容將被取代，名稱和描述將保留。",
+    "Consumes one consumable; reusable tools are kept.": "消耗一件消耗品；可重複使用的工具將保留。"
+  }
+}

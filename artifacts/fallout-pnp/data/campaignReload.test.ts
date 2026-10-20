@@ -231,7 +231,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         return {
           format: 'module', shortCircuit: true,
           source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
-            compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React },
+            compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React },
           }).outputText,
         };
       }
@@ -359,6 +359,76 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.deepEqual(saved.characters[2].vehicle.weaponSlots, vehicleSlots);
     assert.deepEqual(saved.characters[2].vehicle.mountedWeapons, ['Rheinmetall 120mm Gun', 'M2HB ×2']);
     assert.deepEqual(saved.characters[2].vehicleCrew, { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id });
+
+    await t.test('automatic inventory use keeps reusable bags and commits item, AP, and chem effects together', async () => {
+      storage.clear();
+      campaign = undefined;
+      try {
+        await mount();
+        await act(async () => {
+          assert.equal(await currentCampaign().importCampaign(JSON.stringify({
+            ...fixture,
+            automaticInventoryTrackingEnabled: true,
+            characters: [{
+              ...legacyNpc,
+              id: 'inventory-use-test',
+              type: 'pc',
+              currentAP: 10,
+              currentHp: 1,
+              inventoryItems: [
+                { category: 'tool', itemId: 'doctors_bag', quantity: 1 },
+                { category: 'tool', itemId: 'medical_kit', quantity: 1 },
+                { category: 'consumable', itemId: 'jet', quantity: 1 },
+              ],
+            }],
+            initiativeEntries: [],
+          })), true);
+        });
+        const character = () => currentCampaign().characters.find(c => c.id === 'inventory-use-test')!;
+        const quantity = (itemId: string) => character().inventoryItems?.find(item => item.itemId === itemId)?.quantity ?? 0;
+        assert.equal(quantity('doctors_bag'), 1, 'import retains the carried bag');
+        let used = false;
+        await act(async () => { used = currentCampaign().useInventoryItem(character().id, 'tool', 'doctors_bag', 1); });
+        assert.equal(used, true, 'successful use is reported to the combat UI');
+        await act(async () => { currentCampaign().useInventoryItem(character().id, 'tool', 'doctors_bag', 1); });
+        assert.equal(quantity('doctors_bag'), 1);
+        assert.equal(character().currentAP, 8);
+        await act(async () => { used = currentCampaign().useInventoryItem(character().id, 'tool', 'medical_kit', 1); });
+        assert.equal(used, true);
+        assert.equal(quantity('medical_kit'), 0);
+        assert.equal(character().currentAP, 7);
+        await act(async () => { used = currentCampaign().useInventoryItem(character().id, 'tool', 'medical_kit', 1); });
+        assert.equal(used, false);
+        assert.equal(character().currentAP, 7, 'missing items cannot charge AP');
+        await act(async () => {
+          currentCampaign().useInventoryItem(character().id, 'consumable', 'jet', 1, {
+            id: 'inventory-chem-effect', kind: 'chem', chemId: 'jet', name: 'Test chem',
+            hpMod: 2, isActive: true,
+          });
+        });
+        assert.equal(quantity('jet'), 0);
+        assert.equal(character().currentHp, 3);
+        assert.equal(character().currentAP, 6);
+        assert.equal(character().effects?.filter(effect => effect.id === 'inventory-chem-effect').length, 1);
+        await act(async () => {
+          assert.equal(currentCampaign().useInventoryItem(character().id, 'tool', 'doctors_bag', 1), true);
+          assert.equal(currentCampaign().useInventoryItem(character().id, 'tool', 'doctors_bag', 1), true);
+        });
+        assert.equal(character().currentAP, 4, 'batched uses see the latest queued AP');
+        assert.equal(quantity('doctors_bag'), 1);
+        await act(async () => { currentCampaign().setAutomaticInventoryTrackingEnabled(false); });
+        await act(async () => { currentCampaign().useInventoryItem(character().id, 'consumable', 'jet', 1); });
+        assert.equal(character().currentAP, 3);
+        assert.equal(quantity('jet'), 0, 'tracking off leaves inventory unchanged');
+        await act(async () => {
+          assert.equal(currentCampaign().useInventoryItem(character().id, 'tool', 'doctors_bag', 4), false);
+        });
+        assert.equal(character().currentAP, 3, 'insufficient AP rejects use without changing inventory');
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
 
     await t.test('campaign import and reload preserve custom EMP ammunition and mine settings', async () => {
       storage.clear();

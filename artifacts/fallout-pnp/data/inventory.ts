@@ -53,6 +53,17 @@ export function consumeInventoryItem(
   return setInventoryItemQuantity(items, category, itemId, available - quantity);
 }
 
+/** Using reusable equipment requires carrying it, but does not expend it. */
+export function useCarriedInventoryItem(
+  items: readonly CharacterInventoryItem[] | undefined,
+  category: CharacterInventoryCategory,
+  itemId: string,
+): CharacterInventoryItem[] | null {
+  if (getInventoryItemQuantity(items, category, itemId) < 1) return null;
+  if (category === 'tool' && itemId === 'doctors_bag') return [...(items ?? [])];
+  return consumeInventoryItem(items, category, itemId);
+}
+
 function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }

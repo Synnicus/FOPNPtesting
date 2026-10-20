@@ -18,7 +18,7 @@ import { addArmorWear, normalizeArmorCondition, wornArmor } from '@/data/armorCo
 import { applyEquipmentDamage } from '@/data/equipmentDamage';
 import {
   getInventoryItemQuantity,
-  consumeInventoryItem,
+  useCarriedInventoryItem,
   normalizeCharacterInventory,
   provisionNpcAmmo,
   setInventoryItemQuantity,
@@ -960,7 +960,17 @@ const defaultState: AppState = markConditionSemanticsV2({
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AppState>(defaultState);
+  const [state, commitState] = useState<AppState>(defaultState);
+  const latestState = useRef(state);
+  // Imperative combat actions return a success flag to their caller. React may
+  // defer functional state updaters, so evaluate them against the latest queued
+  // snapshot here, then let React render the result. This also keeps successive
+  // actions in one event ordered without spending the same inventory twice.
+  const setState = useCallback((update: React.SetStateAction<AppState>) => {
+    const next = typeof update === 'function' ? update(latestState.current) : update;
+    latestState.current = next;
+    commitState(next);
+  }, []);
   const [loaded, setLoaded] = useState(false);
   const skipNextPersistRef = useRef<string | null>(null);
 
@@ -1967,7 +1977,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!character || !Number.isFinite(apCost) || apCost < 0 || character.currentAP < apCost) return s;
 
       const inventoryItems = s.automaticInventoryTrackingEnabled
-        ? consumeInventoryItem(character.inventoryItems, category, itemId)
+        ? useCarriedInventoryItem(character.inventoryItems, category, itemId)
         : character.inventoryItems ?? [];
       if (s.automaticInventoryTrackingEnabled && inventoryItems === null) return s;
       success = true;

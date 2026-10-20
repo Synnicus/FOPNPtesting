@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -14,6 +14,7 @@ import {
   LocalizedText as Text,
   LocalizedTextInput as TextInput,
   LocalizedTouchableOpacity as TouchableOpacity,
+  localizedConfirm,
 } from '@/components/LocalizedText';
 import { useApp } from '@/context/AppContext';
 import type { Character, VehicleProfile } from '@/context/types';
@@ -257,6 +258,7 @@ export default function CampaignLibraryModal({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
   const { loaded, exportCampaign, importCampaign } = useApp();
   const [records, setRecords] = useState<SavedCampaignRecord[]>([]);
   const [status, setStatus] = useState('');
@@ -267,6 +269,7 @@ export default function CampaignLibraryModal({
   const [descriptionDrafts, setDescriptionDrafts] = useState<Record<string, string>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const overwriteInFlight = useRef(false);
 
   const refreshRecords = useCallback(async () => {
     try {
@@ -410,6 +413,37 @@ export default function CampaignLibraryModal({
     }
   };
 
+  const overwriteCampaign = (record: SavedCampaignRecord) => {
+    if (!loaded || busy || overwriteInFlight.current) return;
+    const overwrite = async () => {
+      if (overwriteInFlight.current) return;
+      overwriteInFlight.current = true;
+      setBusy(true);
+      try {
+        // Rebuild the portable bundle so the current portraits and map artwork
+        // are archived, rather than retaining device-local image references.
+        const campaignJson = await makePortableCampaignJson(exportCampaign());
+        await saveRecord({ ...record, campaignJson, updatedAt: Date.now() });
+        setStatus('Campaign saved.');
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Could not save campaign.');
+      } finally {
+        overwriteInFlight.current = false;
+        setBusy(false);
+      }
+    };
+    const title = 'Overwrite saved campaign?';
+    const message = 'Replace this library entry with the current campaign? Its previous contents will be replaced. Its name and description will be kept.';
+    if (Platform.OS === 'web') {
+      if (localizedConfirm(title, message)) void overwrite();
+    } else {
+      LocalizedAlert.alert(title, message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Save', style: 'destructive', onPress: () => void overwrite() },
+      ]);
+    }
+  };
+
   const loadCampaign = (record: SavedCampaignRecord) => {
     const confirmLoad = async () => {
       if (busy) return;
@@ -515,7 +549,7 @@ export default function CampaignLibraryModal({
       onRequestClose={onClose}
       testID="campaign-library-modal"
     >
-      <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: colors.background }}>
+      <View style={{ flex: 1, paddingTop: modalTopInset, backgroundColor: colors.background }}>
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
@@ -715,6 +749,7 @@ export default function CampaignLibraryModal({
 
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                     <ActionButton icon="folder" label="Load" onPress={() => loadCampaign(record)} disabled={!loaded || busy} testID={`load-campaign-${record.id}`} />
+                    <ActionButton icon="save" label="Save / Overwrite" onPress={() => overwriteCampaign(record)} disabled={!loaded || busy} testID={`overwrite-campaign-${record.id}`} />
                     <ActionButton icon="download" label="Export" onPress={() => void exportSavedCampaign(record)} disabled={busy} testID={`export-campaign-${record.id}`} />
                     <ActionButton icon="trash-2" label="Delete" onPress={() => confirmDelete(record)} disabled={busy} destructive testID={`delete-campaign-${record.id}`} />
                   </View>

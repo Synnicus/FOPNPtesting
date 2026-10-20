@@ -1073,16 +1073,16 @@ export default function CampaignOptionsModal({
                     Change Radio Station
                   </Text>
                 </TouchableOpacity>
+                <PreferenceSliderRow
+                  label="Radio volume"
+                  description="Set the radio volume."
+                  value={musicVolume}
+                  onValueChange={setMusicVolume}
+                  testID="radio-volume"
+                />
               </>
             )}
-            <PreferenceSliderRow
-              label="Radio volume"
-              description="Set the radio volume."
-              value={musicVolume}
-              onValueChange={setMusicVolume}
-              testID="radio-volume"
-            />
-            {hasPlaybackError && (
+            {musicEnabled && hasPlaybackError && (
               <Text accessibilityRole="alert" style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: palette.destructive }}>
                 Unable to load this station. Check the connection and audio files.
               </Text>

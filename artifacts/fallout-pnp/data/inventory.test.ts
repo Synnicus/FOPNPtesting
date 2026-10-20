@@ -5,6 +5,7 @@ import type { AmmoType } from './ammo.ts';
 import {
   calculateInventoryWeight,
   consumeInventoryItem,
+  useCarriedInventoryItem,
   getInventoryItemQuantity,
   normalizeCharacterInventory,
   provisionNpcAmmo,
@@ -12,6 +13,20 @@ import {
 import { BUILT_IN_TOOLS } from './tools.ts';
 
 const ammo = { id: 'test-round', name: 'Test Round' } as AmmoType;
+
+test("Doctor's Bags remain carried after repeated use, but medical kits are consumed", () => {
+  const items = [
+    { category: 'tool', itemId: 'doctors_bag', quantity: 1 },
+    { category: 'tool', itemId: 'medical_kit', quantity: 2 },
+  ] as const;
+  const first = useCarriedInventoryItem(items, 'tool', 'doctors_bag');
+  const second = useCarriedInventoryItem(first ?? undefined, 'tool', 'doctors_bag');
+  assert.equal(getInventoryItemQuantity(second ?? undefined, 'tool', 'doctors_bag'), 1);
+  assert.equal(useCarriedInventoryItem([], 'tool', 'doctors_bag'), null);
+  const usedKit = useCarriedInventoryItem(second ?? undefined, 'tool', 'medical_kit');
+  assert.equal(getInventoryItemQuantity(usedKit ?? undefined, 'tool', 'medical_kit'), 1);
+  assert.equal(getInventoryItemQuantity(items, 'tool', 'medical_kit'), 2);
+});
 const rifle = {
   id: 'test-rifle',
   name: 'Test Rifle',

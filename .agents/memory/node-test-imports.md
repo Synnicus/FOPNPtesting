@@ -20,3 +20,9 @@ Relative imports from a tested TypeScript data module should include the `.ts` e
 **Why:** Node's ESM resolver does not apply the extensionless resolution behavior used by the app bundler.
 
 **How to apply:** Keep imports between directly tested data modules relative and explicit, including the `.ts` extension.
+
+Runtime-transpiled React test harnesses must target modern JavaScript.
+
+**Why:** TypeScript's default ES5 target turned spreads of Map iterators into empty arrays in the test harness, falsely erasing carried inventory even though the app's normal bundler handled it correctly.
+
+**How to apply:** set an explicit ES2022-or-newer target in test `transpileModule` hooks; do not change production inventory logic to compensate for a harness-only transpilation defect.

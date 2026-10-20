@@ -4868,7 +4868,7 @@ export default function CombatScreen() {
       <OptionPickerModal
         visible={showInventoryItemPicker}
         title="GRAB / USE ITEM"
-        subtitle="One carried item is consumed on selection."
+        subtitle="Consumes one consumable; reusable tools are kept."
         options={inventoryUseOptions}
         onSelect={handleUseCarriedItem}
         onClose={() => setShowInventoryItemPicker(false)}
