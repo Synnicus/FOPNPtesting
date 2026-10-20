@@ -22,7 +22,11 @@ import type { CampaignVisualTheme } from './campaignOptions.ts';
 import type { GhoulRadiationHealingOption } from './radiation.ts';
 import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
-import { isValidAreaProfileRangeOverrides, type AreaProfileRangeOverrides } from './areaEffects.ts';
+import {
+  isValidAreaProfileRangeOverrides,
+  normalizeAreaProfileRangeOverrides,
+  type AreaProfileRangeOverrides,
+} from './areaEffects.ts';
 import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
 import { validateCustomRace } from './races.ts';
 import { isCustomConsumableRecord } from './consumables.ts';
@@ -170,10 +174,11 @@ function sanitizeEquipmentTags(value: unknown): unknown {
   return validTags.length === value.tags.length ? value : { ...value, tags: validTags };
 }
 
-function sanitizeCampaignEquipmentTags(value: unknown): unknown {
+function sanitizeCampaignState(value: unknown): unknown {
   if (!isRecord(value)) return value;
   return {
     ...value,
+    areaProfileRangeOverrides: normalizeAreaProfileRangeOverrides(value.areaProfileRangeOverrides),
     ...(Array.isArray(value.customWeapons)
       ? { customWeapons: value.customWeapons.map(sanitizeEquipmentTags) }
       : {}),
@@ -310,6 +315,7 @@ export function createCampaignBundle(
       })(),
       characters: state.characters.map(character =>
         characterForBundle(character)),
+      areaProfileRangeOverrides: normalizeAreaProfileRangeOverrides(state.areaProfileRangeOverrides),
       customVehicles: (state.customVehicles ?? []).map(vehicleForBundle),
       customBestiaryTemplates: state.customBestiaryTemplates.map(({ portrait: _portrait, ...template }) => template),
       builtInBestiaryOverrides: (state.builtInBestiaryOverrides ?? [])
@@ -943,7 +949,7 @@ export function parseCampaignFile(json: string): CampaignParseResult {
   }
 
   if (parsed.format !== PORTABLE_EXPORT_FORMAT) {
-    const legacyState = sanitizeCampaignEquipmentTags(parsed);
+    const legacyState = sanitizeCampaignState(parsed);
     return isCampaignState(legacyState)
       ? { ok: true, source: 'legacy', state: legacyState }
       : { ok: false, error: 'The selected file is not a campaign export.' };
@@ -954,7 +960,7 @@ export function parseCampaignFile(json: string): CampaignParseResult {
   if (parsed.kind !== 'campaign') {
     return { ok: false, error: 'Choose a campaign export rather than an individual asset file.' };
   }
-  const campaignState = sanitizeCampaignEquipmentTags(parsed.state);
+  const campaignState = sanitizeCampaignState(parsed.state);
   if (!isCompletePortableCampaignState(campaignState) || !Array.isArray(parsed.assets)) {
     return { ok: false, error: 'The campaign export is incomplete or damaged.' };
   }

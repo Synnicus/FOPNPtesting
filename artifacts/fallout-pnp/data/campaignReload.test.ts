@@ -24,6 +24,7 @@ import {
   spawnVehicleCharacter,
 } from './vehicles.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
+import { areaProfileRange, EXPLOSIVE_AMMO_AREA_PROFILES } from './areaEffects.ts';
 
 const STORAGE_KEY = '@fallout_pnp_v4';
 
@@ -117,15 +118,26 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     customArmor: [],
     customAmmo: [],
     initiativeEntries: [],
+    areaProfileRangeOverrides: {
+      'ammo:rocket_explosive': { main: 38 },
+      'ammo:51mm_explosive_mortar': { main: 999 },
+    },
   };
   const raw = JSON.stringify(fixture);
+  const persistedRaw = JSON.stringify({
+    ...fixture,
+    areaProfileRangeOverrides: {
+      ...fixture.areaProfileRangeOverrides,
+      'ammo:rocket_explosive': { main: 38, invalid: -1 },
+    },
+  });
   assert.equal(raw.includes('usesDerivedArmorClass'), false, 'fixture must predate the AC policy');
   assert.equal(legacyNpc.bestiaryTemplateId, legacyTemplate.id);
   assert.equal(legacyNpc.manualDerivedStats?.armorClass, 36);
 
   // Only the native boundaries are substituted. React effects, JSON parsing,
   // AppProvider normalization, context consumers and save-back all run normally.
-  const storage = new Map([[STORAGE_KEY, raw]]);
+  const storage = new Map([[STORAGE_KEY, persistedRaw]]);
   const reads: string[] = [];
   const writes: string[] = [];
   let rejectNextWrite = false;
@@ -226,6 +238,16 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     for (const reload of ['legacy load', 'repaired save reload']) {
       const restored = await mount();
       assert.equal(restored.customBestiaryTemplates.length, 1, reload);
+      assert.deepEqual(restored.areaProfileRangeOverrides, {
+        'ammo:rocket_explosive': { main: 38 },
+        'ammo:51mm_explosive_mortar': { main: 999 },
+      }, `${reload}: saved blast ranges are restored and malformed entries removed`);
+      const mortarProfile = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:51mm_explosive_mortar')!;
+      assert.equal(
+        areaProfileRange(mortarProfile, mortarProfile.effects[0], restored.areaProfileRangeOverrides),
+        20,
+        `${reload}: a custom range does not replace the printed mortar radius`,
+      );
       assert.deepEqual(restored.campaignRuleTags, campaignRuleTags, `${reload}: custom tag definitions retained`);
       assert.deepEqual(restored.customWeaponMods[0]?.appliesToTags, customWeaponMod.appliesToTags, `${reload}: mod tag references retained`);
       assert.deepEqual(restored.customPerks[0]?.conditions, customPerk.conditions, `${reload}: perk weapon and armor conditions retained`);
@@ -266,6 +288,10 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.deepEqual(reads, [STORAGE_KEY, STORAGE_KEY]);
     assert.deepEqual(writes, [STORAGE_KEY, STORAGE_KEY]);
     const saved = JSON.parse(storage.get(STORAGE_KEY)!);
+    assert.deepEqual(saved.areaProfileRangeOverrides, {
+      'ammo:rocket_explosive': { main: 38 },
+      'ammo:51mm_explosive_mortar': { main: 999 },
+    });
     assert.equal(saved.customBestiaryTemplates[0].usesDerivedArmorClass, true);
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
     assert.deepEqual(saved.characters[0].perks[0].appliedCustomPerkGrants, legacyNpc.perks[0].appliedCustomPerkGrants);

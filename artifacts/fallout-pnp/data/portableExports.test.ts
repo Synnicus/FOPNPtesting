@@ -25,6 +25,7 @@ import { customRuleConditionMatches } from './customRules.ts';
 import { BUILT_IN_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
 import { getInjuryCauseText } from './injuries.ts';
+import { areaProfileRange, EXPLOSIVE_AMMO_AREA_PROFILES, normalizeAreaProfileRangeOverrides } from './areaEffects.ts';
 import {
   createCampaignBundle,
   createCharacterBundle,
@@ -263,6 +264,65 @@ test('portable campaign round-trips loot and encounter ranges, weights, and map 
   assert.deepEqual(parsed.bundle.state.lootTables, [lootTable]);
   assert.deepEqual(parsed.bundle.state.encounterTables, [encounterTable]);
   assert.deepEqual(parsed.bundle.state.campaignMaps, [campaignMap]);
+});
+
+test('portable campaign round-trips campaign-specific blast distances', () => {
+  const rangeOverrides = {
+    'ammo:rocket_explosive': { main: 45 },
+    'ammo:40mm_frag': { concussion: 30, fragmentation: 15 },
+  };
+  const bundle = createCampaignBundle({ ...state, areaProfileRangeOverrides: rangeOverrides }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') {
+    assert.fail('Expected the exported campaign to import as a portable bundle.');
+  }
+  assert.deepEqual(parsed.bundle.state.areaProfileRangeOverrides, rangeOverrides);
+
+  const rocket = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:rocket_explosive')!;
+  const fragmentation = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:40mm_frag')!;
+  assert.equal(areaProfileRange(rocket, rocket.effects[0], parsed.bundle.state.areaProfileRangeOverrides!), 45);
+  assert.deepEqual(
+    fragmentation.effects.map(effect => areaProfileRange(fragmentation, effect, parsed.bundle.state.areaProfileRangeOverrides!)),
+    [undefined, 30, 15],
+  );
+});
+
+test('campaign imports normalize invalid or missing blast ranges without changing printed ranges', () => {
+  const bundle = createCampaignBundle({
+    ...state,
+    areaProfileRangeOverrides: { 'ammo:rocket_explosive': { main: 45 } },
+  }, []);
+  const malformed = JSON.parse(JSON.stringify(bundle)) as typeof bundle;
+  (malformed as unknown as { state: Record<string, unknown> }).state.areaProfileRangeOverrides = {
+    'ammo:rocket_explosive': { main: 45, concussion: -2, fragmentation: 'far' },
+    'ammo:51mm_explosive_mortar': { main: 999 },
+    invalid: ['not', 'a', 'profile'],
+  };
+
+  const parsed = parseCampaignFile(JSON.stringify(malformed));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') {
+    assert.fail('Expected malformed optional blast ranges to be normalized during import.');
+  }
+  assert.deepEqual(parsed.bundle.state.areaProfileRangeOverrides, {
+    'ammo:rocket_explosive': { main: 45 },
+    'ammo:51mm_explosive_mortar': { main: 999 },
+  });
+
+  const mortar = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:51mm_explosive_mortar')!;
+  assert.equal(areaProfileRange(mortar, mortar.effects[0], parsed.bundle.state.areaProfileRangeOverrides!), 20);
+
+  const missing = { ...bundle, state: { ...bundle.state } };
+  delete missing.state.areaProfileRangeOverrides;
+  const importedMissing = parseCampaignFile(JSON.stringify(missing));
+  assert.equal(importedMissing.ok, true);
+  if (importedMissing.ok && importedMissing.source === 'portable') {
+    assert.deepEqual(importedMissing.bundle.state.areaProfileRangeOverrides, {});
+  }
+  assert.deepEqual(normalizeAreaProfileRangeOverrides(undefined), {});
+  assert.deepEqual(normalizeAreaProfileRangeOverrides({ rocket_explosive: { main: Infinity, concussion: 12.5 } }), {});
 });
 
 test('campaign portrait assets restore only to their matching character id', async () => {

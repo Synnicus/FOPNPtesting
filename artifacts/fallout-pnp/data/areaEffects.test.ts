@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { advanceAreaEffect, countdownStatus, formatAreaResolution, resolveAreaTarget } from './areaEffects.ts';
+import {
+  advanceAreaEffect,
+  areaProfileRange,
+  countdownStatus,
+  EXPLOSIVE_AMMO_AREA_PROFILES,
+  formatAreaResolution,
+  normalizeAreaProfileRangeOverrides,
+  resolveAreaTarget,
+} from './areaEffects.ts';
 
 const target = {
   id: 't1', name: 'Target', endurance: 5,
@@ -112,4 +120,17 @@ test('unconscious and ongoing counters expire automatically without going negati
   assert.deepEqual(countdownStatus(2, true), { roundsLeft: 1, isActive: true });
   assert.deepEqual(countdownStatus(1, true), { roundsLeft: 0, isActive: false });
   assert.deepEqual(countdownStatus(0, true), { roundsLeft: 0, isActive: false });
+});
+
+test('blast range overrides normalize malformed values and never replace printed distances', () => {
+  assert.deepEqual(normalizeAreaProfileRangeOverrides(undefined), {});
+  assert.deepEqual(normalizeAreaProfileRangeOverrides({
+    'ammo:rocket_explosive': { main: 45, invalid: -1, fractional: 2.5, tooLarge: 100001, text: 'far' },
+    broken: null,
+  }), { 'ammo:rocket_explosive': { main: 45 } });
+
+  const manualProfile = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:51mm_explosive_mortar')!;
+  assert.equal(areaProfileRange(manualProfile, manualProfile.effects[0], {
+    'ammo:51mm_explosive_mortar': { main: 999 },
+  }), 20);
 });
