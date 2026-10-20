@@ -14,6 +14,7 @@ import uiSupplemental from './locales/ui-supplemental.json';
 import factionReputationTranslations from './locales/faction-reputation.json';
 import factionReputationHelpTranslations from './locales/faction-reputation-help.json';
 import vehicleUi from './locales/vehicle-ui.json';
+import vehicleRepairUi from './locales/vehicle-repair.json';
 import customRulesUi from './locales/custom-rules.json';
 import customEditorsUi from './locales/custom-editors.json';
 import equipmentTagUi from './locales/equipment-tags.json';
@@ -507,6 +508,7 @@ const uiSupplementalBase = uiSupplemental as Partial<Record<AppLocale, Record<st
 const factionReputationUiTranslations = factionReputationTranslations as Partial<Record<AppLocale, Record<string, string>>>;
 const factionReputationHelpUiTranslations = factionReputationHelpTranslations as Partial<Record<AppLocale, Record<string, string>>>;
 const vehicleUiTranslations = vehicleUi as Partial<Record<AppLocale, Record<string, string>>>;
+const vehicleRepairUiTranslations = vehicleRepairUi as Partial<Record<AppLocale, Record<string, string>>>;
 const customRulesUiTranslations = customRulesUi as Partial<Record<AppLocale, Record<string, string>>>;
 const customEditorsUiTranslations = customEditorsUi as Partial<Record<AppLocale, Record<string, string>>>;
 const equipmentTagUiTranslations = equipmentTagUi as Partial<Record<AppLocale, Record<string, string>>>;
@@ -534,6 +536,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(factionReputationUiTranslations[locale] ?? {}),
       ...(factionReputationHelpUiTranslations[locale] ?? {}),
       ...(vehicleUiTranslations[locale] ?? {}),
+      ...(vehicleRepairUiTranslations[locale] ?? {}),
       ...(customRulesUiTranslations[locale] ?? {}),
       ...(customEditorsUiTranslations[locale] ?? {}),
       ...(equipmentTagUiTranslations[locale] ?? {}),

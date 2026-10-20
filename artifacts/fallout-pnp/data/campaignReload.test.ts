@@ -10,6 +10,12 @@ import type { BestiaryTemplate, Character, InitiativeEntry } from '../context/ty
 import { MANUAL_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
+import {
+  applyVehicleSystemDamage,
+  BUILT_IN_VEHICLES,
+  resolveVehicleRepairAttempt,
+  spawnVehicleCharacter,
+} from './vehicles.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
 
 const STORAGE_KEY = '@fallout_pnp_v4';
@@ -32,8 +38,22 @@ test('AppProvider campaign storage lifecycle', async (t) => {
   delete legacyNpc.usesDerivedArmorClass;
   const printedNpc = spawnBestiaryTemplate(brahmin, BUILT_IN_WEAPONS, 'Printed Brahmin', 'printed-npc');
   delete printedNpc.usesDerivedArmorClass;
+  const vehicleSpawn = spawnVehicleCharacter(BUILT_IN_VEHICLES[0], 'persistent-vehicle');
+  const damagedVehicle = applyVehicleSystemDamage(vehicleSpawn.vehicle!, 'engine', 20);
+  const repairAttempt = resolveVehicleRepairAttempt(damagedVehicle, {
+    id: 'persistent-repair',
+    systemId: 'engine',
+    mechanicCharacterId: legacyNpc.id,
+    mechanicName: legacyNpc.name,
+    repairSkill: 75,
+    checkRoll: 42,
+    repairDice: [4, 5, 6],
+    createdAt: '2026-10-19T12:00:00.000Z',
+  });
+  assert.ok(repairAttempt);
+  const persistentVehicle = { ...vehicleSpawn, vehicle: repairAttempt.vehicle };
   const fixture = {
-    characters: [legacyNpc, printedNpc],
+    characters: [legacyNpc, printedNpc, persistentVehicle],
     customBestiaryTemplates: [legacyTemplate],
     customWeapons: [],
     customArmor: [],
@@ -168,6 +188,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       assert.notEqual(printed.usesDerivedArmorClass, true);
       assert.equal(printed.manualDerivedStats?.armorClass, brahmin.armorClass);
       assert.equal(sheet(printed).armorClass, brahmin.armorClass, `${reload}: printed AC unchanged`);
+      const savedVehicle = restored.characters.find(character => character.id === persistentVehicle.id)!;
+      assert.equal(savedVehicle.vehicle?.systems.find(system => system.id === 'engine')?.currentHp, 45, `${reload}: repaired engine HP restored`);
+      assert.deepEqual(savedVehicle.vehicle?.repairHistory, repairAttempt.record ? [repairAttempt.record] : [], `${reload}: repair history restored`);
       await act(async () => renderer!.unmount());
       renderer = undefined;
     }
@@ -176,6 +199,8 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     const saved = JSON.parse(storage.get(STORAGE_KEY)!);
     assert.equal(saved.customBestiaryTemplates[0].usesDerivedArmorClass, true);
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
+    assert.equal(saved.characters[2].vehicle.systems.find((system: { id: string }) => system.id === 'engine').currentHp, 45);
+    assert.equal(saved.characters[2].vehicle.repairHistory[0].restoredHp, 15);
 
     await t.test('importCampaign repairs legacy custom armor and saves the imported repair', async () => {
       storage.clear();
@@ -198,7 +223,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
           const template = state.customBestiaryTemplates[0];
           assert.equal(template.id, legacyTemplate.id, stage);
           assert.equal(template.usesDerivedArmorClass, true, `${stage}: custom template repaired`);
-          assert.equal(state.characters.length, 2, stage);
+           assert.equal(state.characters.length, 3, stage);
           const npc = state.characters.find(character => character.id === legacyNpc.id)!;
           assert.ok(npc, `${stage}: linked NPC present`);
           assert.equal(npc.bestiaryTemplateId, template.id, stage);
@@ -218,6 +243,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
           assert.notEqual(printed.usesDerivedArmorClass, true, stage);
           assert.equal(printed.manualDerivedStats?.armorClass, brahmin.armorClass, stage);
           assert.equal(sheet(printed).armorClass, brahmin.armorClass, `${stage}: printed AC unchanged`);
+           const savedVehicle = state.characters.find(character => character.id === persistentVehicle.id)!;
+           assert.equal(savedVehicle.vehicle?.systems.find(system => system.id === 'engine')?.currentHp, 45, `${stage}: repaired engine HP`);
+           assert.deepEqual(savedVehicle.vehicle?.repairHistory, [repairAttempt.record], `${stage}: repair log`);
         };
         assertRepaired(campaign, 'imported state');
         assert.deepEqual(writes.slice(writesBeforeImport), [STORAGE_KEY], 'import triggers save-back');
@@ -334,7 +362,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
           assert.ok(campaign);
           return campaign;
         };
-        assert.equal(current().characters.length, 2);
+        assert.equal(current().characters.length, 3);
         assert.equal(current().customBestiaryTemplates.length, 1);
 
         const liveBefore = current().exportCampaign();

@@ -17,7 +17,7 @@ import {
   TARGETED_CRIT_BONUS, TARGETED_CRIT_EFFECTS, CRITICAL_HIT_TABLE, CritTableEntry,
   CRITICAL_FAILURE_TABLE, CritFailTableEntry,
   baseCritChance as calcBaseCritChance, hasPerk, BodyPart, HELMET_HEAD_CRIT_REDUCTION,
-  applyHelmetHeadCritReduction, criticalFailureSelfDamage,
+  applyHelmetHeadCritReduction, criticalFailureSelfDamage, vehicleCriticalEffects,
 } from '@/data/criticals';
 import { computeInjuryEffects, createCombatInjury } from '@/data/injuries';
 import {
@@ -729,9 +729,9 @@ function KnockdownCard({ damage, defenderStr, defenderEnd, onProne }: {
 }
 
 // ─── Critical Hit Modal (non-aimed) ──────────────────────────────────────────
-function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, onSelect, betterCriticals }: {
+function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, onSelect, betterCriticals, vehicleTarget }: {
   visible: boolean; onClose: () => void; rolledEntry: CritTableEntry | null;
-  onRoll: () => void; onSelect: (entry: CritTableEntry) => void; betterCriticals: boolean;
+  onRoll: () => void; onSelect: (entry: CritTableEntry) => void; betterCriticals: boolean; vehicleTarget: boolean;
 }) {
   const colors = useColors();
   return (
@@ -749,6 +749,11 @@ function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, onSelect, bet
             <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 4 }}>CRITICAL HITS</Text>
             {betterCriticals && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: '#4a8c3f', marginBottom: 4 }}>Better Criticals: non-fatal crits deal ×1.5 damage.</Text>
+            )}
+            {vehicleTarget && (
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.primary, marginBottom: 4 }}>
+                Vehicle criticals target the selected system. Character-only injuries are skipped; Instant Death destroys that system.
+              </Text>
             )}
             <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginBottom: 2 }}>
               {rolledEntry ? 'Result applied — resolves once per critical.' : 'Rolled the dice at the table? Tap a row to apply that result manually.'}
@@ -2491,6 +2496,13 @@ export default function CombatScreen() {
   // Apply the aimed-shot targeted crit effect to the defender.
   const applyAimedCritEffect = useCallback(() => {
     if (!defender || !aimedCritPart) return;
+    if (defender.vehicle) {
+      const systemName = selectedVehicleSystem?.name ?? 'selected system';
+      setAimedCritNotes([`Vehicle critical targets ${systemName}; character-only targeted effects are not applied.`]);
+      setAimedCritApplied(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     const fx = TARGETED_CRIT_EFFECTS[aimedCritPart];
     const notes: string[] = [];
     if (fx.cripples === 'arm') { const loc = pickLimbSide('arm'); addInjury(defender.id, makeInjury(loc, 'Crippled arm')); notes.push(`Crippled ${loc}`); }
@@ -2506,7 +2518,7 @@ export default function CombatScreen() {
     setAimedCritNotes(notes);
     setAimedCritApplied(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [defender, aimedCritPart, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
+  }, [defender, aimedCritPart, selectedVehicleSystem?.name, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut]);
 
   const handleApplyDamage = useCallback(() => {
     if (!defender || attackApplied.current || (totalDamage === 0 && totalRadiationExposure === 0 && !hasAppliedPoison)) return;
@@ -2535,6 +2547,34 @@ export default function CombatScreen() {
     setCritTableEntry(entry);
     setShotDamages(null); setDamageApplied(false);
     const notes: string[] = [`${manual ? 'Manual pick' : 'Rolled'} ${entry.roll}: ${entry.title}`];
+    if (defender.vehicle) {
+      const targetSystem = selectedVehicleSystem
+        ?? defender.vehicle.systems.find(system => system.kind === 'structure')
+        ?? defender.vehicle.systems[0];
+      if (targetSystem) {
+        notes.push(`Critical target: ${targetSystem.name}.`);
+        const effects = vehicleCriticalEffects(entry);
+        if (effects.destroySelectedSystem && targetSystem.currentHp > 0) {
+          applyCombatDamage(
+            `vehicle-critical-${genId()}`,
+            defender.id,
+            targetSystem.currentHp,
+            1,
+            undefined,
+            targetSystem.id,
+            attacker?.id,
+          );
+          notes.push(`${targetSystem.name} destroyed by the critical hit; replacement is required.`);
+        } else if (effects.destroySelectedSystem) {
+          notes.push(`${targetSystem.name} is already destroyed and must be replaced.`);
+        } else if (effects.ignoreCharacterOnlyEffects) {
+          notes.push('Character-only injury or condition effects are not applied to vehicles.');
+        }
+      }
+      setCritEffectNotes(notes);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     if (entry.cripples === 'arm') { const loc = pickLimbSide('arm'); addInjury(defender.id, makeInjury(loc, 'Crippled arm')); notes.push(`Crippled ${loc}`); }
     if (entry.cripples === 'leg') { const loc = pickLimbSide('leg'); addInjury(defender.id, makeInjury(loc, 'Crippled leg')); notes.push(`Crippled ${loc}`); }
     if (entry.blinds) { addInjury(defender.id, makeInjury('eyes', 'Blindness')); notes.push('Blinded (PE → 1)'); }
@@ -2549,7 +2589,7 @@ export default function CombatScreen() {
     if (entry.instantDeath) { applyDamage(defender.id, defender.currentHp); notes.push('INSTANT DEATH — HP set to 0'); }
     setCritEffectNotes(notes);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [defender, critTableEntry, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut, applyDamage]);
+  }, [defender, selectedVehicleSystem, attacker?.id, critTableEntry, pickLimbSide, addInjury, makeInjury, setPosition, setKnockedOut, applyDamage, applyCombatDamage]);
 
   // Roll on the non-aimed critical-hit table (1d10) and apply the result.
   const rollCritTable = useCallback(() => {
@@ -4568,6 +4608,7 @@ export default function CombatScreen() {
         onRoll={rollCritTable}
         onSelect={(entry) => applyCritEntry(entry, true)}
         betterCriticals={hasBetterCriticals}
+        vehicleTarget={!!defender?.vehicle}
       />
       <CriticalFailureModal
         visible={showCritFailModal}

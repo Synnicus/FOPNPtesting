@@ -19,6 +19,7 @@ import {
 import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/EquipmentConditionPanel';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
+import { VehicleRepairModal } from '@/components/VehicleRepairModal';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import KarmaTracker from '@/components/KarmaTracker';
 import FactionReputationTracker from '@/components/FactionReputationTracker';
@@ -2766,7 +2767,7 @@ export default function CharactersScreen() {
   const insets = useSafeAreaInsets();
   const {
     characters, addCharacter, updateCharacter, deleteCharacter, cloneCharacter, moveCharacter, healCharacter,
-    allWeapons, allArmor, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+    allWeapons, allArmor, customPerks, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     restorePremadeWeaponCondition,
   } = useApp();
   const [editingChar, setEditingChar] = useState<Character | null>(null);
@@ -2785,6 +2786,56 @@ export default function CharactersScreen() {
   const [premadeRepairCharacter, setPremadeRepairCharacter] = useState<Character | null>(null);
   const [premadeRepairPickerVisible, setPremadeRepairPickerVisible] = useState(false);
   const [premadeRepairWeaponId, setPremadeRepairWeaponId] = useState<string | null>(null);
+  const [vehicleRepairCharacter, setVehicleRepairCharacter] = useState<Character | null>(null);
+  const repairMechanics = useMemo(() => characters
+    .filter(character => !character.inStorage && !character.vehicle && !character.combatDevice)
+    .map(character => {
+      const race = getRaceById(character.race) ?? RACES[0];
+      const tagRules = calculateTagSkillRules(character.traits, undefined, character.perks);
+      const sheet = resolveArmorAwareSheet({
+        special: character.special,
+        skills: character.skills,
+        taggedSkills: [...character.taggedSkills, ...tagRules.freeTagSkills],
+        traits: character.traits,
+        perks: character.perks,
+        conditions: character.conditions,
+        effects: character.effects,
+        raceBounds: { min: race.specialMin, max: race.specialMax },
+        racialNaturalArmorClass: race.naturalACBonus,
+        naturalArmorClass: character.naturalProtection?.armorClass,
+        manualDerivedStats: character.manualDerivedStats,
+        usesDerivedArmorClass: character.usesDerivedArmorClass,
+        nightPersonPeriod: character.nightPersonPeriod,
+        tempAC: character.tempAC,
+        radiationResistance: character.radiationResistance,
+        gasResistance: character.gasResistance,
+        poisonResistance: character.poisonResistance,
+        electricityResistance: character.electricityResistance,
+        accumulatedRadiation: character.accumulatedRadiation,
+        hardcoreRadiationRules,
+        raceId: character.race,
+        mutantGhoulRadiationRules,
+        ghoulRadiationHealingOption,
+        equippedBodyArmorId: character.equippedBodyArmorId,
+        equippedHelmetId: character.equippedHelmetId,
+        armorConditionStates: character.armorConditionStates,
+        allArmor,
+      });
+      const wornArmor = allArmor.filter(armor =>
+        armor.id === character.equippedBodyArmorId || armor.id === character.equippedHelmetId);
+      const contextualSkillBonus = computeCustomPerkEffects(character, customPerks, {
+        weapon: allWeapons.find(weapon => weapon.id === character.equippedWeaponId),
+        armor: wornArmor,
+      }).skillBonuses.repair ?? 0;
+      return {
+        id: character.id,
+        name: character.name,
+        repairSkill: Math.max(0, Math.min(100, Math.floor(sheet.effectiveSkills.repair + contextualSkillBonus))),
+      };
+    }), [
+      characters, allWeapons, allArmor, customPerks,
+      hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+    ]);
   const premadeRepairCandidateWeaponIds = premadeRepairCharacter
     ? getLegacyPremadeRepairCandidateWeaponIds(premadeRepairCharacter, PREMADE_WEAPON_IDS)
     : [];
@@ -3010,6 +3061,16 @@ export default function CharactersScreen() {
               <Text>Weapon:</Text> {mountedWeapon}
             </Text>
           ))}
+          <TouchableOpacity
+            testID={`vehicle-repair-open-${item.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Repair ${item.name}`}
+            onPress={event => { event.stopPropagation(); setVehicleRepairCharacter(item); }}
+            style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7, paddingVertical: 8, borderRadius: 6, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '18' }}
+          >
+            <Feather name="tool" size={13} color={colors.primary} />
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 0.7 }}>REPAIR VEHICLE</Text>
+          </TouchableOpacity>
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 14, paddingTop: 3 }}>
             <TouchableOpacity onPress={event => { event.stopPropagation(); askForCharacterAction('storage', item); }} accessibilityRole="button" accessibilityLabel={`${item.inStorage ? 'Restore' : 'Store'} ${item.name}`}>
               <Feather name={item.inStorage ? 'corner-up-left' : 'archive'} size={16} color={colors.primary} />
@@ -3174,6 +3235,21 @@ export default function CharactersScreen() {
           });
           setEditingVehicleCharacter(null);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
+      <VehicleRepairModal
+        visible={vehicleRepairCharacter !== null}
+        vehicle={vehicleRepairCharacter
+          ? characters.find(character => character.id === vehicleRepairCharacter.id)?.vehicle ?? vehicleRepairCharacter.vehicle ?? null
+          : null}
+        mechanics={repairMechanics}
+        onClose={() => setVehicleRepairCharacter(null)}
+        onApply={updatedVehicle => {
+          const current = vehicleRepairCharacter
+            ? characters.find(character => character.id === vehicleRepairCharacter.id) ?? vehicleRepairCharacter
+            : null;
+          if (!current?.vehicle) return;
+          updateCharacter({ ...current, vehicle: updatedVehicle });
         }}
       />
       <PremadePickerModal

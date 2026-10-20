@@ -448,6 +448,21 @@ export interface VehicleSystem {
   maxHp: number;
 }
 
+export interface VehicleRepairRecord {
+  id: string;
+  systemId: string;
+  systemName: string;
+  mechanicCharacterId: string;
+  mechanicName: string;
+  repairSkill: number;
+  checkRoll: number;
+  succeeded: boolean;
+  repairDice: number[];
+  rolledRepairHp: number;
+  restoredHp: number;
+  createdAt: string;
+}
+
 export interface VehicleWeaponSlot {
   id: string;
   /** Mount label, retained even when no weapon is currently assigned. */
@@ -503,6 +518,8 @@ export interface VehicleProfile {
   notes: string[];
   terrainPilotModifier: number;
   inMotion: boolean;
+  /** Repair attempts stay with the individual vehicle through campaign exports. */
+  repairHistory?: VehicleRepairRecord[];
 }
 
 export type VehicleTemplate = VehicleProfile;

@@ -6,6 +6,7 @@ import type {
   KarmaLogEntry,
   InitiativeEntry,
   VehicleProfile,
+  VehicleRepairRecord,
   Weapon,
   CampaignRuleTag,
   CustomPerkDefinition,
@@ -455,6 +456,19 @@ function hasValidFactionReputationData(value: Record<string, unknown>): boolean 
 function isVehicleProfileRecord(value: unknown): value is VehicleProfile {
   if (!isRecord(value) || !isRecord(value.damageResistance) || !Array.isArray(value.systems)) return false;
   const numericOrNull = (field: unknown) => field === null || isFiniteNumber(field);
+  const isVehicleRepairRecord = (record: unknown): record is VehicleRepairRecord =>
+    isRecord(record)
+    && typeof record.id === 'string' && record.id.length > 0 && record.id.length <= 128
+    && typeof record.systemId === 'string' && typeof record.systemName === 'string'
+    && typeof record.mechanicCharacterId === 'string' && typeof record.mechanicName === 'string'
+    && isFiniteNumber(record.repairSkill) && record.repairSkill >= 0 && record.repairSkill <= 100
+    && Number.isInteger(record.checkRoll) && isFiniteNumber(record.checkRoll) && record.checkRoll >= 1 && record.checkRoll <= 100
+    && typeof record.succeeded === 'boolean'
+    && Array.isArray(record.repairDice) && record.repairDice.every(die => Number.isInteger(die) && isFiniteNumber(die) && die >= 1 && die <= 10)
+    && (record.succeeded ? record.repairDice.length === 3 : record.repairDice.length === 0)
+    && isFiniteNumber(record.rolledRepairHp) && record.rolledRepairHp >= 0
+    && isFiniteNumber(record.restoredHp) && record.restoredHp >= 0
+    && typeof record.createdAt === 'string';
   return typeof value.id === 'string'
     && value.id.length > 0 && value.id.length <= 128
     && typeof value.name === 'string'
@@ -483,6 +497,7 @@ function isVehicleProfileRecord(value: unknown): value is VehicleProfile {
     && isStringArray(value.notes)
     && isFiniteNumber(value.terrainPilotModifier)
     && typeof value.inMotion === 'boolean'
+    && (value.repairHistory === undefined || Array.isArray(value.repairHistory) && value.repairHistory.every(isVehicleRepairRecord))
     && (value.portrait === undefined || typeof value.portrait === 'string');
 }
 

@@ -1,5 +1,5 @@
 import type {
-  Character, DamageType, NaturalProtection, VehicleCategory, VehicleProfile, VehicleSystem, VehicleWeaponSlot,
+  Character, DamageType, NaturalProtection, VehicleCategory, VehicleProfile, VehicleRepairRecord, VehicleSystem, VehicleWeaponSlot,
 } from '../context/types';
 
 const DR = (normal: number, laser: number, fire: number, plasma: number, explosion: number) => ({
@@ -445,6 +445,75 @@ export function vehicleWithDefaults(vehicle: VehicleProfile): VehicleProfile {
       : vehicleWeaponSlotsFromNames(vehicle.mountedWeapons),
     enhancements: [...vehicle.enhancements],
     notes: [...vehicle.notes],
+    repairHistory: (vehicle.repairHistory ?? []).map(record => ({ ...record, repairDice: [...record.repairDice] })),
+  };
+}
+
+export const VEHICLE_REPAIR_HOURS = 8;
+
+export interface VehicleRepairAttemptInput {
+  id: string;
+  systemId: string;
+  mechanicCharacterId: string;
+  mechanicName: string;
+  repairSkill: number;
+  checkRoll: number;
+  repairDice: number[];
+  createdAt: string;
+}
+
+/**
+ * Resolves the manual's 8-hour Repair check. A successful check restores 3d10
+ * HP to one damaged (but not destroyed) section; failed attempts are still
+ * recorded. Destroyed sections require replacement and cannot be repaired.
+ */
+export function resolveVehicleRepairAttempt(
+  vehicle: VehicleProfile,
+  attempt: VehicleRepairAttemptInput,
+): { vehicle: VehicleProfile; record: VehicleRepairRecord } | null {
+  const resolvedSystem = resolveVehiclePerformance(vehicle).systems.find(system => system.id === attempt.systemId);
+  if (!resolvedSystem || resolvedSystem.currentHp <= 0 || resolvedSystem.currentHp >= resolvedSystem.maxHp) return null;
+
+  const repairSkill = Math.max(0, Math.min(100, Math.floor(attempt.repairSkill)));
+  const checkRoll = Math.floor(attempt.checkRoll);
+  if (!Number.isFinite(repairSkill) || !Number.isInteger(checkRoll) || checkRoll < 1 || checkRoll > 100) return null;
+  const succeeded = checkRoll <= repairSkill;
+  const repairDice = succeeded ? [...attempt.repairDice] : [];
+  if (succeeded && (repairDice.length !== 3 || repairDice.some(die => !Number.isInteger(die) || die < 1 || die > 10))) return null;
+  const rolledRepairHp = succeeded ? repairDice.reduce((sum, die) => sum + die, 0) : 0;
+  const restoredHp = succeeded
+    ? Math.min(rolledRepairHp, resolvedSystem.maxHp - resolvedSystem.currentHp)
+    : 0;
+  const record: VehicleRepairRecord = {
+    id: attempt.id,
+    systemId: resolvedSystem.id,
+    systemName: resolvedSystem.name,
+    mechanicCharacterId: attempt.mechanicCharacterId,
+    mechanicName: attempt.mechanicName,
+    repairSkill,
+    checkRoll,
+    succeeded,
+    repairDice,
+    rolledRepairHp,
+    restoredHp,
+    createdAt: attempt.createdAt,
+  };
+  const systems = restoredHp > 0
+    ? vehicle.systems.map(system => system.id === resolvedSystem.id
+      ? {
+          ...system,
+          currentHp: Math.min(system.maxHp, Math.max(system.currentHp, resolvedSystem.currentHp + restoredHp)),
+        }
+      : system)
+    : vehicle.systems;
+  const repaired = {
+    ...vehicle,
+    systems,
+    repairHistory: [...(vehicle.repairHistory ?? []), record],
+  };
+  return {
+    vehicle: vehicleIsForcedToHalt(repaired) ? { ...repaired, inMotion: false } : repaired,
+    record,
   };
 }
 
@@ -458,6 +527,7 @@ export function spawnVehicleCharacter(vehicle: VehicleProfile, id: string): Char
   const performance = resolveVehiclePerformance(snapshot);
   snapshot.id = `vehicle-${id}`;
   snapshot.systems = snapshot.systems.map(system => ({ ...system, currentHp: system.maxHp }));
+  snapshot.repairHistory = [];
   const structure = snapshot.systems.find(system => system.kind === 'structure') ?? snapshot.systems[0];
   const emptyProtection: NaturalProtection = {
     armorClass: 0,

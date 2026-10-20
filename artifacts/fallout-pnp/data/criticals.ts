@@ -67,6 +67,18 @@ export interface CritTableEntry {
   instantDeath?: boolean;
 }
 
+export function vehicleCriticalEffects(entry: CritTableEntry): {
+  destroySelectedSystem: boolean;
+  ignoreCharacterOnlyEffects: boolean;
+} {
+  return {
+    destroySelectedSystem: !!entry.instantDeath,
+    ignoreCharacterOnlyEffects: !!(
+      entry.cripples || entry.blinds || entry.knockdown || entry.unconsciousTurns
+    ),
+  };
+}
+
 export const CRITICAL_HIT_TABLE: CritTableEntry[] = [
   { roll: 1, title: 'Crippled Arm', description: 'The blow cripples one of the target\u2019s arms.', cripples: 'arm' },
   { roll: 2, title: 'Crippled Leg', description: 'The blow cripples one of the target\u2019s legs.', cripples: 'leg' },

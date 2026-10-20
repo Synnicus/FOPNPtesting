@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
 import type { Armor, Character, VehicleProfile, Weapon } from '../context/types.ts';
-import { BUILT_IN_VEHICLES } from './vehicles.ts';
+import {
+  applyVehicleSystemDamage,
+  BUILT_IN_VEHICLES,
+  resolveVehicleRepairAttempt,
+  spawnVehicleCharacter,
+} from './vehicles.ts';
 import { BUILT_IN_BESTIARY } from './bestiary.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
@@ -772,6 +777,35 @@ test('custom vehicle profiles and their portraits survive portable campaign roun
   assert.equal(restored.restored, 1);
   assert.equal(restored.state.customVehicles?.[0].portrait, `restored://${source.id}`);
   assert.equal(restored.state.customVehicles?.[0].armorClass, 0);
+});
+
+test('damaged vehicle systems and repair results survive campaign JSON export and import', () => {
+  const spawned = spawnVehicleCharacter(BUILT_IN_VEHICLES[0], 'vehicle-repair-roundtrip');
+  const damaged = applyVehicleSystemDamage(spawned.vehicle!, 'engine', 20);
+  const repair = resolveVehicleRepairAttempt(damaged, {
+    id: 'repair-roundtrip',
+    systemId: 'engine',
+    mechanicCharacterId: character.id,
+    mechanicName: character.name,
+    repairSkill: 75,
+    checkRoll: 42,
+    repairDice: [4, 5, 6],
+    createdAt: '2026-10-19T12:00:00.000Z',
+  });
+  assert.ok(repair);
+
+  const bundle = createCampaignBundle({
+    ...state,
+    characters: [{ ...spawned, vehicle: repair.vehicle }],
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') return;
+
+  const imported = parsed.bundle.state.characters.find(value => value.id === spawned.id)!;
+  assert.equal(imported.vehicle?.systems.find(system => system.id === 'engine')?.currentHp, 45);
+  assert.equal(imported.vehicle?.repairHistory?.length, 1);
+  assert.deepEqual(imported.vehicle?.repairHistory?.[0], repair.record);
 });
 
 test('custom vehicle profiles export as importable individual files with portraits', async () => {
