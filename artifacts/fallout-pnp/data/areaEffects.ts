@@ -49,6 +49,13 @@ export interface AreaDamageProfile {
   effects: readonly AreaAttackComponent[];
   notes?: readonly string[];
   nonBiologicalOnly?: boolean;
+  emp?: boolean;
+}
+
+/** Combat profiles must have every zone distance authored before resolution. */
+export function hasConfiguredAreaRanges(profile: AreaDamageProfile): boolean {
+  return profile.effects.length > 0 && profile.effects.every(effect =>
+    typeof effect.radius === 'number' && Number.isInteger(effect.radius) && effect.radius >= 0);
 }
 
 export interface AreaZoneEffect extends AreaAttackComponent {
@@ -115,6 +122,10 @@ export interface AreaAttack {
   zones?: AreaDamageZone[];
   sourceDeviceId?: string;
   nonBiologicalOnly?: boolean;
+  /** EMP payload: affects electronic vehicle systems only. */
+  emp?: boolean;
+  /** Per-vehicle subsystem selected for the blast's secondary system damage. */
+  vehicleSystemTargets?: Record<string, string>;
 }
 
 /**
@@ -272,11 +283,12 @@ const explosiveAmmoProfileDefinitions: Record<string, {
   mainNotes?: string[];
   extraEffects?: AreaAttackComponent[];
   nonBiologicalOnly?: boolean;
+  emp?: boolean;
   notes?: string[];
 }> = {
   rocket_explosive: { rangeUnit: 'm', mainKind: 'explosion', mainDamageType: 'explosion', notes: ['Blast radius is not specified in the manual. Set a campaign range before assigning targets.'] },
   rocket_ap: { rangeUnit: 'm', mainKind: 'explosion', mainDamageType: 'explosion', notes: ['Blast radius is not specified in the manual. Set a campaign range before assigning targets.'] },
-  rocket_emp: { rangeUnit: 'm', mainKind: 'explosion', mainDamageType: 'explosion', nonBiologicalOnly: true, notes: ['Non-biological targets only. Blast radius is not specified in the manual.'] },
+  rocket_emp: { rangeUnit: 'm', mainKind: 'explosion', mainDamageType: 'explosion', nonBiologicalOnly: true, emp: true, notes: ['Non-biological targets only. Blast radius is not specified in the manual.'] },
   tow_ii_rocket: {
     rangeUnit: 'm',
     mainKind: 'explosion',
@@ -302,7 +314,7 @@ const explosiveAmmoProfileDefinitions: Record<string, {
     ],
     notes: ['Manual does not specify the blast or concussion ranges. Set each range for this campaign.'],
   },
-  '40mm_pulse': { rangeUnit: 'm', mainKind: 'explosion', mainDamageType: 'explosion', nonBiologicalOnly: true, notes: ['Non-biological targets only. Blast radius is not specified in the manual.'] },
+  '40mm_pulse': { rangeUnit: 'm', mainKind: 'explosion', mainDamageType: 'explosion', nonBiologicalOnly: true, emp: true, notes: ['Non-biological targets only. Blast radius is not specified in the manual.'] },
   '51mm_explosive_mortar': {
     rangeUnit: 'm',
     mainKind: 'explosion',
@@ -343,6 +355,7 @@ const explosiveAmmoProfileDefinitions: Record<string, {
     mainDamageType: 'explosion',
     mainRadius: 20,
     nonBiologicalOnly: true,
+    emp: true,
     notes: ['20d20 to non-biological targets within 20m.'],
   },
 };
@@ -398,8 +411,9 @@ export const EXPLOSIVE_AMMO_AREA_PROFILES: readonly AreaDamageProfile[] =
         ...(ammo?.notes ? [ammo.notes] : []),
       ],
       ...(definition.nonBiologicalOnly ? { nonBiologicalOnly: true } : {}),
+      ...(definition.emp ? { emp: true } : {}),
     };
-  });
+  }).filter(hasConfiguredAreaRanges);
 
 function customAreaProfile(
   id: string,
@@ -433,27 +447,28 @@ function customAreaProfile(
 
 export function createCustomAmmoAreaDamageProfiles(ammoCatalog: readonly AmmoType[]): AreaDamageProfile[] {
   return ammoCatalog.flatMap(ammo => {
-    if (!ammo.isCustom || !ammo.areaEffects?.length) return [];
+    if (!ammo.isCustom || ammo.hasBlastRadius === false || !ammo.areaEffects?.length) return [];
     const profile = customAreaProfile(
       `custom-ammo:${ammo.id}`,
       ammo.name,
       ammo.areaRangeUnit ?? 'hex',
       ammo.areaEffects,
-      ['Campaign-defined area ammunition profile. Blank ranges require a GM range for this campaign.'],
+      ['Custom ammunition blast profile.'],
     );
-    return profile ? [profile] : [];
+    return profile && hasConfiguredAreaRanges(profile) ? [profile] : [];
   });
 }
 
 export function createCustomWeaponAreaDamageProfile(weapon: Weapon): AreaDamageProfile | undefined {
-  if (!weapon.isCustom || weapon.category !== 'minesTraps' || !weapon.customAreaEffects?.length) return undefined;
-  return customAreaProfile(
+  if (!weapon.isCustom || weapon.hasBlastRadius === false || weapon.category !== 'minesTraps' || !weapon.customAreaEffects?.length) return undefined;
+  const profile = customAreaProfile(
     `custom-weapon:${weapon.id}`,
     weapon.name,
     weapon.areaRangeUnit ?? 'hex',
     weapon.customAreaEffects,
-    ['Campaign-defined mine or trap profile. Blank ranges require a GM range for this campaign.'],
+    ['Custom mine or trap blast profile.'],
   );
+  return profile && hasConfiguredAreaRanges(profile) ? profile : undefined;
 }
 
 export function createCustomWeaponAreaDamageProfiles(weapons: readonly Weapon[]): AreaDamageProfile[] {
@@ -637,7 +652,7 @@ export function createMineTrapAreaDamageProfiles(): AreaDamageProfile[] {
         }] : [];
       }),
     ];
-    return [{
+    const profile: AreaDamageProfile = {
       id: `trap:${id}`,
       name: ({
         t13_antipersonnel_mine: 'T13 Antipersonnel Mine',
@@ -648,7 +663,8 @@ export function createMineTrapAreaDamageProfiles(): AreaDamageProfile[] {
       rangeUnit: 'hex',
       effects: components,
       ...(attack.notes ? { notes: attack.notes } : {}),
-    }];
+    };
+    return hasConfiguredAreaRanges(profile) ? [profile] : [];
   });
 }
 
@@ -710,6 +726,8 @@ export function areaDamageProfileToAttack(profile: AreaDamageProfile): AreaAttac
     damageType: primary.damageType === 'radiation' ? 'explosion' : primary.damageType,
     profileId: profile.id,
     notes: profile.notes ? [...profile.notes] : undefined,
+    ...(profile.nonBiologicalOnly ? { nonBiologicalOnly: true } : {}),
+    ...(profile.emp ? { emp: true } : {}),
   };
 }
 
@@ -725,7 +743,7 @@ export const ALL_BUILT_IN_AREA_DAMAGE_PROFILES: readonly AreaDamageProfile[] = [
   ...THROWN_EXPLOSIVE_AREA_PROFILES,
   ...MINE_TRAP_AOE_PROFILES,
   ...VEHICLE_CANNON_AREA_PROFILES,
-];
+].filter(hasConfiguredAreaRanges);
 
 export function areaProfileRange(profile: AreaDamageProfile, effect: AreaAttackComponent, overrides: AreaProfileRangeOverrides): number | undefined {
   return effect.radius ?? overrides[profile.id]?.[effect.id ?? 'main'];
@@ -810,6 +828,7 @@ export interface AreaResolution {
   targetName: string;
   damage: number;
   resisted: boolean;
+  vehicleSystemId?: string;
   resistanceRoll?: number;
   enduranceRoll?: number;
   unconsciousRounds: number;

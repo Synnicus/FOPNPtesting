@@ -53,7 +53,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
               ? `Keep the explanation to ${MAX_KARMA_REASON_LENGTH} characters or fewer.`
               : '';
   const groupColor = group === 'Good' || group === 'Very Good'
-    ? '#4a8c3f'
+    ? colors.success
     : group === 'Evil' || group === 'Very Evil'
       ? colors.destructive
       : colors.primary;
@@ -258,7 +258,7 @@ export default function KarmaTracker({ character, onChange }: KarmaTrackerProps)
         ) : (
           [...karmaLog].sort((a, b) => a.createdAt - b.createdAt).map(entry => {
             const changeColor = entry.change > 0
-              ? '#4a8c3f'
+              ? colors.success
               : entry.change < 0
                 ? colors.destructive
                 : colors.mutedForeground;

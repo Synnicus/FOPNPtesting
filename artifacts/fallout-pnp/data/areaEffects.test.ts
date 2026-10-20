@@ -4,6 +4,7 @@ import {
   advanceAreaEffect,
   areaProfileRange,
   countdownStatus,
+  areaDamageProfileToAttack,
   EXPLOSIVE_AMMO_AREA_PROFILES,
   formatAreaResolution,
   normalizeAreaProfileRangeOverrides,
@@ -133,4 +134,16 @@ test('blast range overrides normalize malformed values and never replace printed
   assert.equal(areaProfileRange(manualProfile, manualProfile.effects[0], {
     'ammo:51mm_explosive_mortar': { main: 999 },
   }), 20);
+});
+
+test('EMP explosive profiles are marked non-biological and preserve EMP behavior when opened', () => {
+  for (const id of ['ammo:rocket_emp', 'ammo:40mm_pulse', 'ammo:60mm_pulse_mortar']) {
+    const profile = EXPLOSIVE_AMMO_AREA_PROFILES.find(candidate => candidate.id === id);
+    assert.ok(profile, `missing EMP area profile ${id}`);
+    assert.equal(profile.emp, true);
+    assert.equal(profile.nonBiologicalOnly, true);
+    const attack = areaDamageProfileToAttack(profile);
+    assert.equal(attack.emp, true);
+    assert.equal(attack.nonBiologicalOnly, true);
+  }
 });

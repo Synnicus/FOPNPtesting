@@ -47,6 +47,10 @@ export interface AmmoType {
   /** Optional multi-zone payload for explosive/custom area ammunition. */
   areaEffects?: CustomAreaEffect[];
   areaRangeUnit?: AreaRangeUnit;
+  /** Explicitly enables the configured blast zones for custom ammunition. */
+  hasBlastRadius?: boolean;
+  /** EMP payload damages electronic vehicle systems, not structure, tires, or treads. */
+  emp?: boolean;
   isCustom?: boolean;
 }
 
@@ -119,7 +123,7 @@ export const AMMO_TYPES: AmmoType[] = [
   // ─── Shotgun shells (12 gauge) ────────────────────────────────────
   { id: '12ga_buckshot', name: '12 Gauge Shotgun Shells (Buckshot)', value: 150, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 10, dmgBonus: 0, volume: 20 },
   { id: '12ga_slugs', name: '12 Gauge Shotgun Shells (Slugs)', value: 150, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 8, dmgBonus: 0, volume: 20 },
-  { id: '12ga_emp', name: '12 Gauge Shotgun Shells (EMP)', value: 500, acMod: 0, drMod: 0, dmgDieCount: 2, dmgDie: 20, dmgBonus: 0, volume: 20, notes: 'Non-biological targets only.' },
+  { id: '12ga_emp', name: '12 Gauge Shotgun Shells (EMP)', value: 500, acMod: 0, drMod: 0, dmgDieCount: 2, dmgDie: 20, dmgBonus: 0, volume: 20, notes: 'Non-biological targets only.', emp: true },
   { id: '12ga_rubber', name: '12 Gauge Shotgun Shells (Rubber)', value: 100, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 4, dmgBonus: 0, volume: 20 },
 
   // ─── HN Needler ───────────────────────────────────────────────────
@@ -131,18 +135,18 @@ export const AMMO_TYPES: AmmoType[] = [
   // ─── Rockets ──────────────────────────────────────────────────────
   { id: 'rocket_explosive', name: 'Rocket (Explosive)', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 6, dmgDie: 8, dmgBonus: 0, volume: 10 },
   { id: 'rocket_ap', name: 'Rocket (AP)', value: 2500, acMod: -10, drMod: 0, ignoresDT: true, dmgDieCount: 6, dmgDie: 6, dmgBonus: 0, volume: 10 },
-  { id: 'rocket_emp', name: 'Rocket (EMP)', value: 3000, acMod: 0, drMod: 0, dmgDieCount: 3, dmgDie: 20, dmgBonus: 0, volume: 10, notes: 'Non-biological targets only.' },
+  { id: 'rocket_emp', name: 'Rocket (EMP)', value: 3000, acMod: 0, drMod: 0, dmgDieCount: 3, dmgDie: 20, dmgBonus: 0, volume: 10, notes: 'Non-biological targets only.', emp: true },
   { id: 'tow_ii_rocket', name: 'TOW-II Rocket', value: 5000, acMod: -20, drMod: -20, ignoresDT: true, dmgDieCount: 0, dmgDie: 0, dmgBonus: 0, volume: 5, notes: 'Damage is listed on the TOW-II Missile Defense System, not the rocket.' },
 
   // ─── Ordinance: grenades for launchers & mortars ──────────────────
   { id: '40mm_frag', name: '40mm Fragmentation Grenade', value: 1000, acMod: 0, drMod: 0, dmgDieCount: 1, dmgDie: 12, dmgBonus: 22, volume: 5, notes: '1d6 Conc., 1d6 Frag.' },
   { id: '40mm_plasma', name: '40mm Plasma Grenade', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 5, dmgDie: 10, dmgBonus: 40, volume: 5, notes: '1d6 Conc.' },
-  { id: '40mm_pulse', name: '40mm Pulse Grenade', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 5, dmgDie: 10, dmgBonus: 100, volume: 5, notes: 'Non-biological targets only.' },
+  { id: '40mm_pulse', name: '40mm Pulse Grenade', value: 2000, acMod: 0, drMod: 0, dmgDieCount: 5, dmgDie: 10, dmgBonus: 100, volume: 5, notes: 'Non-biological targets only.', emp: true },
   { id: '51mm_explosive_mortar', name: '51mm Explosive Mortar Shell', value: 4000, acMod: 0, drMod: 0, dmgDieCount: 10, dmgDie: 10, dmgBonus: 0, volume: 5, notes: '10d10 within 20m; 1d6 concussion within 50m.' },
   { id: '51mm_gas_mortar', name: '51mm Gas Mortar Shell', value: 6000, acMod: 0, drMod: 0, dmgDieCount: 7, dmgDie: 10, dmgBonus: 0, volume: 5, notes: '7d10 + unconsciousness to all within 100m.' },
   { id: '60mm_explosive_mortar', name: '60mm Explosive Mortar Shell', value: 3000, acMod: 0, drMod: 0, dmgDieCount: 10, dmgDie: 10, dmgBonus: 0, volume: 5, notes: '10d10 within 20m; 1d6 concussion within 50m.' },
   { id: '60mm_plasma_mortar', name: '60mm Plasma Mortar Shell', value: 5000, acMod: 0, drMod: 0, dmgDieCount: 10, dmgDie: 20, dmgBonus: 0, volume: 5, notes: '10d20 to everything within 20m.' },
-  { id: '60mm_pulse_mortar', name: '60mm Pulse Mortar Shell', value: 7000, acMod: 0, drMod: 0, dmgDieCount: 20, dmgDie: 20, dmgBonus: 0, volume: 5, notes: '20d20 to non-biological things within 20m.' },
+  { id: '60mm_pulse_mortar', name: '60mm Pulse Mortar Shell', value: 7000, acMod: 0, drMod: 0, dmgDieCount: 20, dmgDie: 20, dmgBonus: 0, volume: 5, notes: '20d20 to non-biological things within 20m.', emp: true },
 
   // ─── Flamer fuel packs ────────────────────────────────────────────
   { id: 'flamer_fire_pack', name: 'Flamer Fire Pack (10 shots)', value: 2000, acMod: 0, drMod: -10, dmgDieCount: 3, dmgDie: 8, dmgBonus: 0, volume: 10, notes: 'Plus fire.' },
@@ -207,6 +211,9 @@ export function validateCustomAmmo(ammo: AmmoType, catalog: readonly AmmoType[] 
   if (ammo?.notes !== undefined && typeof ammo.notes !== 'string') errors.push('Notes must be text.');
   if (ammo?.areaEffects !== undefined) {
     errors.push(...validateCustomAreaEffects(ammo.areaEffects, ammo.areaRangeUnit ?? 'hex'));
+  }
+  if (ammo?.hasBlastRadius !== undefined && typeof ammo.hasBlastRadius !== 'boolean') {
+    errors.push('Blast Radius must be enabled or disabled.');
   }
   if (ammo?.areaRangeUnit !== undefined && ammo.areaRangeUnit !== 'hex' && ammo.areaRangeUnit !== 'm') {
     errors.push('Area range unit must be hexes or meters.');

@@ -11,8 +11,8 @@ interface Props {
 }
 
 function getBarColor(pct: number, colors: ReturnType<typeof useColors>) {
-  if (pct > 0.6) return '#4a8c3f';
-  if (pct > 0.3) return '#c8841a';
+  if (pct > 0.6) return colors.success;
+  if (pct > 0.3) return colors.warning;
   return colors.destructive;
 }
 

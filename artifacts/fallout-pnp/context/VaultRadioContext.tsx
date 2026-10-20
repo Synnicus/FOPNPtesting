@@ -9,6 +9,10 @@ import {
 } from '@workspace/api-client-react';
 import { useApp } from '@/context/AppContext';
 import {
+  DEFAULT_RADIO_STATION,
+  type RadioStation,
+} from '@/data/radioStations';
+import {
   applyVaultRadioTrackMetadata,
   createVaultRadioTrack,
   getAdjacentVaultRadioIndex,
@@ -24,6 +28,7 @@ const METADATA_STORAGE_KEY = 'fallout_pnp_vault_radio_metadata_v1';
 type VaultRadioStatus = {
   hasPlaybackError: boolean;
   currentTrack: VaultRadioTrack | null;
+  availableTracks: VaultRadioTrack[];
   customTracks: VaultRadioTrack[];
   isTrackListLoading: boolean;
   isMetadataLoading: boolean;
@@ -38,6 +43,7 @@ type VaultRadioStatus = {
 const VaultRadioStatusContext = createContext<VaultRadioStatus>({
   hasPlaybackError: false,
   currentTrack: null,
+  availableTracks: [],
   customTracks: [],
   isTrackListLoading: true,
   isMetadataLoading: true,
@@ -78,7 +84,7 @@ async function getPlayableTrackUri(fileName: string): Promise<string> {
 }
 
 export function VaultRadioProvider({ children }: { children: React.ReactNode }) {
-  const { musicEnabled, musicVolume } = useApp();
+  const { musicEnabled, musicVolume, radioStations, activeRadioStationId } = useApp();
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const [trackMetadata, setTrackMetadata] = useState<Record<string, VaultRadioTrackMetadata>>({});
   const [isMetadataLoading, setIsMetadataLoading] = useState(true);
@@ -88,7 +94,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
   const metadataWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const { data: trackList, isLoading: trackListLoading } = useListVaultRadioTracks({
     query: {
-      enabled: musicEnabled,
+      enabled: true,
       queryKey: getListVaultRadioTracksQueryKey(),
     },
   });
@@ -113,7 +119,7 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
     return () => { active = false; };
   }, []);
 
-  const { radioTracks, customTracks } = useMemo(() => {
+  const { radioTracks, availableTracks, customTracks } = useMemo(() => {
     const uploadedFiles = trackList?.tracks ?? [];
     const uploadedSet = new Set(uploadedFiles);
     const knownTracks = VAULT_RADIO_TRACKS.filter(track => uploadedSet.has(track.file));
@@ -123,15 +129,33 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
       .sort((a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }));
     const additionalTracks = additionalFiles
       .map(file => applyVaultRadioTrackMetadata(createVaultRadioTrack(file), trackMetadata[file]));
+    const availableTracks = [...knownTracks, ...additionalTracks];
+    const station: RadioStation = radioStations.find(item => item.id === activeRadioStationId)
+      ?? radioStations.find(item => item.id === DEFAULT_RADIO_STATION.id)
+      ?? DEFAULT_RADIO_STATION;
+    const availableByFile = new Map(availableTracks.map(track => [track.file, track]));
+    const radioTracks = station.songs.flatMap(song => {
+      if (!song.file) return [];
+      const available = availableByFile.get(song.file);
+      if (!available) return [];
+      return [{
+        ...available,
+        id: song.id,
+        title: song.title.trim() || available.title,
+        artist: song.artist,
+      }];
+    });
     return {
-      radioTracks: [...knownTracks, ...additionalTracks],
+      radioTracks,
+      availableTracks,
       customTracks: additionalFiles.map(file => {
         const track = createVaultRadioTrack(file);
         const metadata = trackMetadata[file];
         return metadata ? { ...track, ...metadata } : track;
       }),
     };
-  }, [trackList, trackMetadata]);
+  }, [activeRadioStationId, radioStations, trackList, trackMetadata]);
+  const playlistKey = `${activeRadioStationId}:${radioTracks.map(track => track.file).join('|')}`;
   const generation = useRef(0);
   const radioTracksRef = useRef(radioTracks);
   radioTracksRef.current = radioTracks;
@@ -276,14 +300,17 @@ export function VaultRadioProvider({ children }: { children: React.ReactNode }) 
       if (generation.current === playbackGeneration) generation.current += 1;
       player.pause();
     };
-  }, [musicEnabled, player, playTrack, radioTracks.length, trackListLoading]);
+  }, [activeRadioStationId, musicEnabled, player, playTrack, playlistKey, radioTracks.length, trackListLoading]);
 
   return (
     <VaultRadioStatusContext.Provider value={{
       hasPlaybackError,
       currentTrack: currentTrack
-        ? radioTracks.find(track => track.file === currentTrack.file) ?? currentTrack
+        ? radioTracks.find(track => track.id === currentTrack.id)
+          ?? radioTracks.find(track => track.file === currentTrack.file)
+          ?? currentTrack
         : null,
+      availableTracks,
       customTracks,
       isTrackListLoading: trackListLoading,
       isMetadataLoading,

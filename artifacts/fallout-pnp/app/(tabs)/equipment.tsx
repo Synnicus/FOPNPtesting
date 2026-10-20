@@ -18,7 +18,7 @@ import {
   computeCustomWeaponModEffects,
 } from '@/data/customRules';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
-import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponAttackModes, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { ALCOHOL_CONSUMABLES, CHEMS } from '@/data/chems';
@@ -124,14 +124,17 @@ function CustomAreaEffectsEditor({
     borderRadius: 5,
     backgroundColor: selected ? colors.primary + '22' : colors.secondary,
   });
-  const validationMessage = validateCustomAreaEffects(effects, rangeUnit)[0];
+  const validationMessage = validateCustomAreaEffects(effects, rangeUnit)[0]
+    ?? (effects.some(effect => effect.radius === undefined)
+      ? 'Set a maximum range for every effect before using this profile in combat.'
+      : undefined);
 
   return (
     <View style={{ gap: 10, padding: 11, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.background }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>AREA BLAST ZONES</Text>
-          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Use printed ranges or leave blank to set a GM range per campaign.</Text>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Set the distance and damage for each effect here. Every maximum range is required before combat.</Text>
         </View>
         {effects.length < 8 && (
           <TouchableOpacity onPress={addEffect} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 5, borderWidth: 1, borderColor: colors.primary }}>
@@ -201,7 +204,7 @@ function CustomAreaEffectsEditor({
             </View>
             <View style={{ gap: 3, alignItems: 'center' }}>
               <Text style={{ fontSize: 8, color: colors.mutedForeground }}>MAX RANGE</Text>
-              {numberInput(effect.radius, 'GM range', value => update(effect.id, { radius: value }))}
+              {numberInput(effect.radius, 'Required', value => update(effect.id, { radius: value }))}
             </View>
           </View>
         </View>
@@ -259,9 +262,10 @@ function modBehaviorSummary(mod: WeaponModDef): string {
 }
 
 // ─── Weapon Form Modal ────────────────────────────────────────────────────────
-function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
+function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory }: {
   visible: boolean; onClose: () => void; onSave: (w: Weapon) => void;
   editWeapon?: Weapon | null;
+  initialCategory?: WeaponCategory;
 }) {
   const colors = useColors();
   const {
@@ -279,6 +283,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [minStr, setMinStr] = useState(3);
   const [rangeNormal, setRangeNormal] = useState(15);
   const [apSingle, setApSingle] = useState<number>(AP_COSTS.ATTACK_SINGLE);
+  const [canSingle, setCanSingle] = useState(true);
   const [apTargeted, setApTargeted] = useState<number>(AP_COSTS.ATTACK_AIMED);
   const [canTarget, setCanTarget] = useState(true);
   const [apBurst, setApBurst] = useState<number>(AP_COSTS.ATTACK_BURST);
@@ -293,6 +298,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [areaAttackProfileId, setAreaAttackProfileId] = useState<string | undefined>();
   const [customAreaEffects, setCustomAreaEffects] = useState<CustomAreaEffect[]>([]);
   const [areaRangeUnit, setAreaRangeUnit] = useState<AreaRangeUnit>('hex');
+  const [blastRadiusEnabled, setBlastRadiusEnabled] = useState(false);
 
   const isEditing = !!editWeapon;
 
@@ -302,6 +308,8 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     setAreaAttackProfileId(w.areaAttackProfileId);
     setCustomAreaEffects((w.customAreaEffects ?? []).map(effect => ({ ...effect })));
     setAreaRangeUnit(w.areaRangeUnit ?? 'hex');
+    setBlastRadiusEnabled(w.hasBlastRadius
+      ?? (!!w.customAreaEffects?.length || w.areaAttackProfileId === 't13_antipersonnel_mine' || w.areaAttackProfileId === 't45_se_antivehicle_mine'));
     setDamageType(w.damageType);
     setDieCount(w.damageDieCount);
     setDieSides(w.damageDie);
@@ -311,10 +319,12 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     setMagazineSize(w.magazineSize);
     setMinStr(w.minStr);
     setRangeNormal(w.rangeNormal);
+    const attackModes = getWeaponAttackModes(w);
+    setCanSingle(attackModes.single);
     setApSingle(w.apSingle ?? AP_COSTS.ATTACK_SINGLE);
-    setCanTarget(w.apTargeted !== null);
+    setCanTarget(attackModes.targeted);
     setApTargeted(w.apTargeted ?? AP_COSTS.ATTACK_AIMED);
-    setCanBurst(w.apBurst != null);
+    setCanBurst(attackModes.burst);
     setApBurst(w.apBurst ?? AP_COSTS.ATTACK_BURST);
     setHands(getWeaponHands(w));
     setCompatibleAmmo([...(w.compatibleAmmo ?? [])]);
@@ -330,10 +340,10 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     if (editWeapon) {
       applyWeaponFields(editWeapon);
     } else {
-      setName(''); setCategory('smallGuns'); setDamageType('normal');
+      setName(''); setCategory(initialCategory ?? 'smallGuns'); setDamageType('normal');
       setDieCount(1); setDieSides(6); setDamageBonus(0); setBurstLimit(1);
       setIsDoubleShot(false); setMagazineSize(0); setMinStr(3); setRangeNormal(15);
-      setApSingle(AP_COSTS.ATTACK_SINGLE); setCanTarget(true); setApTargeted(AP_COSTS.ATTACK_AIMED);
+      setApSingle(AP_COSTS.ATTACK_SINGLE); setCanSingle(true); setCanTarget(true); setApTargeted(AP_COSTS.ATTACK_AIMED);
       setCanBurst(false); setApBurst(AP_COSTS.ATTACK_BURST);
       setHands(1); setCompatibleAmmo([]);
       setSelectedMods([]);
@@ -341,13 +351,26 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       setAreaAttackProfileId(undefined);
       setCustomAreaEffects([]);
       setAreaRangeUnit('hex');
+      setBlastRadiusEnabled(false);
     }
-  }, [visible, editWeapon]);
+  }, [visible, editWeapon, initialCategory]);
 
   const areaEffectErrors = validateCustomAreaEffects(customAreaEffects, areaRangeUnit);
+  const hasPresetBlastProfile = areaAttackProfileId === 't13_antipersonnel_mine'
+    || areaAttackProfileId === 't45_se_antivehicle_mine';
+  const blastProfileConfigured = !blastRadiusEnabled
+    || (hasPresetBlastProfile
+      || (!areaAttackProfileId && customAreaEffects.length > 0
+        && customAreaEffects.every(effect => effect.radius !== undefined)));
+  const updateBurstLimit = (value: number) => {
+    setBurstLimit(value);
+    if (value < 3) setCanBurst(false);
+  };
   const isValid = name.trim().length > 0
+    && (canSingle || canTarget || (canBurst && burstLimit >= 3) || isDoubleShot)
     && ((dieCount > 0 && dieSides > 0) || !!areaAttackProfileId || customAreaEffects.length > 0)
-    && areaEffectErrors.length === 0;
+    && areaEffectErrors.length === 0
+    && (category !== 'minesTraps' || blastProfileConfigured);
 
   const modEffects = computeModEffects(selectedMods);
   const ammoCompatibleCategory = weaponCategorySupportsAmmo(category);
@@ -449,11 +472,15 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       areaAttackProfileId: category === 'minesTraps' ? areaAttackProfileId : undefined,
       customAreaEffects: category === 'minesTraps' && customAreaEffects.length ? customAreaEffects : undefined,
       areaRangeUnit: category === 'minesTraps' ? areaRangeUnit : undefined,
+      hasBlastRadius: category === 'minesTraps' ? blastRadiusEnabled : undefined,
       damageType, damageDieCount: dieCount, damageDie: dieSides,
       damageBonus, skill: (category === 'minesTraps' ? 'traps' : category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
-      burstLimit, isDoubleShot, magazineSize,
+      burstLimit, isDoubleShot: isDoubleShot && canSingle, magazineSize,
       weight: 0, minStr, rangeNormal, knockdownChance: 0,
-      apSingle, apTargeted: canTarget ? apTargeted : null, apBurst: canBurst ? apBurst : null,
+      apSingle: canSingle ? apSingle : null,
+      apTargeted: canTarget ? apTargeted : null,
+      apBurst: canBurst && burstLimit >= 3 ? apBurst : null,
+      attackModes: { single: canSingle, targeted: canTarget, burst: canBurst && burstLimit >= 3 },
       hands,
       compatibleAmmo: ammoCompatibleCategory && compatibleAmmo.length > 0 ? compatibleAmmo : undefined,
       mods: selectedMods, isCustom: true, tags: parseRuleTagList(tagText),
@@ -542,16 +569,34 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                 {/* Damage type */}
                 {category === 'minesTraps' && (
                   <View style={{ gap: 6 }}>
-                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Choose a built-in profile or define your own multiple damage zones below.</Text>
-                    {[undefined, ...Object.keys(MINE_TRAP_PROFILES)].map(id => (
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Optional preset trap behavior. Choose Custom profile to define a new blast.</Text>
+                    {[undefined, 't13_antipersonnel_mine', 't45_se_antivehicle_mine'].map(id => (
                       <TouchableOpacity key={id ?? 'custom'} onPress={() => {
                         setAreaAttackProfileId(id);
                         if (id) setCustomAreaEffects([]);
+                        setBlastRadiusEnabled(id === undefined
+                          || id === 't13_antipersonnel_mine'
+                          || id === 't45_se_antivehicle_mine');
                       }} style={{ padding: 8, borderWidth: 1, borderColor: areaAttackProfileId === id ? colors.primary : colors.border }}>
                         <Text style={{ color: colors.foreground }}>{id ? (BUILT_IN_WEAPONS.find(w => w.areaAttackProfileId === id)?.name ?? id) : 'Custom profile'}</Text>
                       </TouchableOpacity>
                     ))}
-                    {!areaAttackProfileId && (
+                    <TouchableOpacity
+                      testID="custom-weapon-blast-radius-toggle"
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: blastRadiusEnabled }}
+                      onPress={() => {
+                        const enabled = !blastRadiusEnabled;
+                        setBlastRadiusEnabled(enabled);
+                        if (!enabled && hasPresetBlastProfile) setAreaAttackProfileId(undefined);
+                      }}
+                      style={{ padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: blastRadiusEnabled ? colors.primary : colors.border, backgroundColor: blastRadiusEnabled ? colors.primary + '22' : colors.secondary }}
+                    >
+                      <Text style={{ fontFamily: 'Inter_700Bold', color: blastRadiusEnabled ? colors.primary : colors.foreground }}>
+                        BLAST RADIUS: {blastRadiusEnabled ? 'ON' : 'OFF'} {blastRadiusEnabled ? '⌃' : '⌄'}
+                      </Text>
+                    </TouchableOpacity>
+                    {blastRadiusEnabled && !areaAttackProfileId && (
                       <CustomAreaEffectsEditor
                         effects={customAreaEffects}
                         onChange={effects => {
@@ -561,6 +606,11 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                         rangeUnit={areaRangeUnit}
                         onRangeUnitChange={setAreaRangeUnit}
                       />
+                    )}
+                    {blastRadiusEnabled && !blastProfileConfigured && (
+                      <Text style={{ fontSize: 10, color: colors.destructive }}>
+                        Select a preset blast or choose Custom profile and define a maximum range for every effect.
+                      </Text>
                     )}
                   </View>
                 )}
@@ -589,7 +639,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
             {tab === 'advanced' && (
               <>
                 <NumStepper label="Magazine size (0 = unlimited / no ammo)" val={magazineSize} min={0} max={999} set={setMagazineSize} />
-                <NumStepper label="Burst limit (1 = single shot)" val={burstLimit} min={1} max={20} set={setBurstLimit} />
+                <NumStepper label="Burst limit (maximum shots; minimum 3)" val={burstLimit} min={1} max={20} set={updateBurstLimit} />
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Double-shot weapon</Text>
                   <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: isDoubleShot ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setIsDoubleShot(v => !v)}>
@@ -642,19 +692,47 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   </>
                 )}
 
-                {/* AP costs (manual per-weapon) */}
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 6 }}>ACTION POINT COSTS</Text>
-                <NumStepper label="AP — Single attack (S)" val={apSingle} min={1} max={20} set={setApSingle} />
+                {/* Available attack modes and their manual AP costs */}
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 6 }}>AVAILABLE ATTACKS & AP COSTS</Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Can be targeted (aimed)</Text>
-                  <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canTarget ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setCanTarget(v => !v)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Single attack (S)</Text>
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Turn off for weapons that can only fire in another mode.</Text>
+                  </View>
+                  <TouchableOpacity
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: canSingle }}
+                    style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canSingle ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }}
+                    onPress={() => {
+                      const next = !canSingle;
+                      setCanSingle(next);
+                      if (!next) setIsDoubleShot(false);
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: canSingle ? colors.primaryForeground : colors.mutedForeground }}>{canSingle ? 'YES' : 'NO'}</Text>
+                  </TouchableOpacity>
+                </View>
+                {canSingle && <NumStepper label="AP — Single attack (S)" val={apSingle} min={1} max={20} set={setApSingle} />}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Targeted attack (T)</Text>
+                  <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: canTarget }} style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canTarget ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setCanTarget(v => !v)}>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: canTarget ? colors.primaryForeground : colors.mutedForeground }}>{canTarget ? 'YES' : 'NO'}</Text>
                   </TouchableOpacity>
                 </View>
                 {canTarget && <NumStepper label="AP — Targeted attack (T)" val={apTargeted} min={1} max={20} set={setApTargeted} />}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Has burst mode (B)</Text>
-                  <TouchableOpacity style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canBurst ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => setCanBurst(v => !v)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>Burst attack (B)</Text>
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Manual bursts require at least 3 shots.</Text>
+                  </View>
+                  <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: canBurst }} style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, backgroundColor: canBurst ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => {
+                    if (!canBurst) {
+                      if (burstLimit < 3) setBurstLimit(3);
+                      setCanBurst(true);
+                    } else {
+                      setCanBurst(false);
+                    }
+                  }}>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: canBurst ? colors.primaryForeground : colors.mutedForeground }}>{canBurst ? 'YES' : 'NO'}</Text>
                   </TouchableOpacity>
                 </View>
@@ -699,10 +777,10 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                   if (modEffects.festering) summaryParts.push('festering');
                   if (modEffects.barbed) summaryParts.push('barbed');
                   return summaryParts.length ? (
-                    <View style={{ backgroundColor: '#4a8c3f22', borderRadius: colors.radius, padding: 10, gap: 2, borderWidth: 1, borderColor: '#4a8c3f66' }}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f', letterSpacing: 1 }}>ACTIVE MOD EFFECTS</Text>
+                    <View style={{ backgroundColor: colors.success + '22', borderRadius: colors.radius, padding: 10, gap: 2, borderWidth: 1, borderColor: colors.success + '66' }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.success, letterSpacing: 1 }}>ACTIVE MOD EFFECTS</Text>
                       {summaryParts.map((p, i) => (
-                        <Text key={i} style={{ fontSize: 12, color: '#4a8c3f' }}>{p}</Text>
+                        <Text key={i} style={{ fontSize: 12, color: colors.success }}>{p}</Text>
                       ))}
                     </View>
                   ) : null;
@@ -723,7 +801,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: active ? colors.primary : colors.foreground }}>{mod.name}</Text>
                         {behavior ? (
-                          <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: '#4a8c3f', marginTop: 1 }}>{behavior}</Text>
+                          <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.success, marginTop: 1 }}>{behavior}</Text>
                         ) : null}
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: 1 }}>{mod.description}</Text>
                       </View>
@@ -742,7 +820,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: active ? colors.primary : colors.foreground }}>{mod.name} · CUSTOM</Text>
-                        {mod.programmatic && !!summary && <Text style={{ fontSize: 10, color: '#4a8c3f', marginTop: 1 }}>{summary}</Text>}
+                        {mod.programmatic && !!summary && <Text style={{ fontSize: 10, color: colors.success, marginTop: 1 }}>{summary}</Text>}
                         <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 1 }}>{mod.description || 'No description provided.'}</Text>
                         {!mod.programmatic && <Text style={{ fontSize: 9, color: colors.mutedForeground, marginTop: 2 }}>Contextual description only; no automatic combat effects.</Text>}
                       </View>
@@ -1175,6 +1253,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
   const [components, setComponents] = useState<AmmoDamageComponent[]>([]);
   const [areaEffects, setAreaEffects] = useState<CustomAreaEffect[]>([]);
   const [areaRangeUnit, setAreaRangeUnit] = useState<AreaRangeUnit>('hex');
+  const [blastRadiusEnabled, setBlastRadiusEnabled] = useState(false);
 
   const newComponent = (index: number): AmmoDamageComponent => ({
     id: genId(),
@@ -1198,6 +1277,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
       setPoisonEffect(editAmmo.poison?.effectText ?? '');
       setAreaEffects((editAmmo.areaEffects ?? []).map(effect => ({ ...effect })));
       setAreaRangeUnit(editAmmo.areaRangeUnit ?? 'hex');
+      setBlastRadiusEnabled(editAmmo.hasBlastRadius ?? !!editAmmo.areaEffects?.length);
       setComponents((editAmmo.components ?? [{
         id: genId(), label: 'Damage', type: 'normal',
         dmgDieCount: editAmmo.dmgDieCount, dmgDie: editAmmo.dmgDie, dmgBonus: editAmmo.dmgBonus,
@@ -1206,6 +1286,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
       setName(''); setAcMod(0); setDrMod(0); setIgnoresDT(false); setNotes('');
       setPoisonEnabled(false); setPoisonType('A'); setPoisonEffect('');
       setAreaEffects([]); setAreaRangeUnit('hex');
+      setBlastRadiusEnabled(false);
       setComponents([newComponent(0)]);
     }
   }, [visible, editAmmo]);
@@ -1230,13 +1311,19 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
     components,
     areaEffects: areaEffects.length ? areaEffects : undefined,
     areaRangeUnit: areaEffects.length ? areaRangeUnit : undefined,
+    hasBlastRadius: blastRadiusEnabled,
     isCustom: true,
   };
   const validationCatalog = catalog.filter(ammo => ammo.id !== editAmmo?.id && ammo.id !== '__new_custom_ammo__');
   const errors = validateCustomAmmo(candidate, validationCatalog);
+  const blastRadiusConfigured = !blastRadiusEnabled
+    || (areaEffects.length > 0
+      && areaEffects.every(effect => effect.radius !== undefined)
+      && validateCustomAreaEffects(areaEffects, areaRangeUnit).length === 0);
   const isValid = errors.length === 0
     && validateCustomAreaEffects(areaEffects, areaRangeUnit).length === 0
-    && (!poisonEnabled || poisonEffect.trim().length > 0);
+    && (!poisonEnabled || poisonEffect.trim().length > 0)
+    && blastRadiusConfigured;
 
   const save = () => {
     if (!isValid) return;
@@ -1314,12 +1401,30 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
               </View>
             ))}
 
-            <CustomAreaEffectsEditor
-              effects={areaEffects}
-              onChange={setAreaEffects}
-              rangeUnit={areaRangeUnit}
-              onRangeUnitChange={setAreaRangeUnit}
-            />
+            <TouchableOpacity
+              testID="custom-ammo-blast-radius-toggle"
+              accessibilityRole="switch"
+              accessibilityState={{ checked: blastRadiusEnabled }}
+              onPress={() => setBlastRadiusEnabled(value => !value)}
+              style={{ padding: 11, borderWidth: 1, borderColor: blastRadiusEnabled ? colors.primary : colors.border, backgroundColor: blastRadiusEnabled ? colors.primary + '22' : colors.secondary, borderRadius: colors.radius }}
+            >
+              <Text style={{ fontFamily: 'Inter_700Bold', color: blastRadiusEnabled ? colors.primary : colors.foreground }}>
+                BLAST RADIUS: {blastRadiusEnabled ? 'ON' : 'OFF'} {blastRadiusEnabled ? '⌃' : '⌄'}
+              </Text>
+            </TouchableOpacity>
+            {blastRadiusEnabled && (
+              <CustomAreaEffectsEditor
+                effects={areaEffects}
+                onChange={setAreaEffects}
+                rangeUnit={areaRangeUnit}
+                onRangeUnitChange={setAreaRangeUnit}
+              />
+            )}
+            {blastRadiusEnabled && !blastRadiusConfigured && (
+              <Text style={{ fontSize: 10, color: colors.destructive }}>
+                Add at least one area effect and set a maximum range for each one.
+              </Text>
+            )}
 
             <TextInput style={{ minHeight: 72, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 11, color: colors.foreground, textAlignVertical: 'top' }} multiline placeholder="Special notes (optional)" placeholderTextColor={colors.mutedForeground} value={notes} onChangeText={setNotes} />
             <TouchableOpacity onPress={() => setPoisonEnabled(value => !value)} style={{ padding: 11, borderWidth: 1, borderColor: poisonEnabled ? colors.primary : colors.border, borderRadius: colors.radius }}>
@@ -1391,8 +1496,8 @@ function WeaponRow({ weapon, onDelete, onEdit, onCopy }: { weapon: Weapon; onDel
             {modDefs.map(mod => {
               const behavior = modBehaviorSummary(mod);
               return (
-                <View key={mod.id} style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: '#4a8c3f22', borderRadius: 3, borderWidth: 1, borderColor: '#4a8c3f66' }}>
-                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>
+                <View key={mod.id} style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: colors.success + '22', borderRadius: 3, borderWidth: 1, borderColor: colors.success + '66' }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.success }}>
                     {mod.name}{behavior ? ` · ${behavior}` : ''}
                   </Text>
                 </View>
@@ -1472,7 +1577,7 @@ function ArmorRow({ armor, onDelete, onEdit, onCopy }: { armor: Armor; onDelete?
             <View key={l} style={{ paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.secondary, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
               <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>{l}</Text>
               {dt > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.foreground }}>DT {dt}</Text>}
-              {dr > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>DR {dr}%</Text>}
+              {dr > 0 && <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.success }}>DR {dr}%</Text>}
             </View>
           ) : null;
         })}
@@ -1814,8 +1919,9 @@ export default function EquipmentScreen() {
     addCustomConsumable, updateCustomConsumable, deleteCustomConsumable,
     addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
   } = useApp();
-  const [tab, setTab] = useState<'weapons' | 'armor' | 'ammo' | 'consumables' | 'vehicles'>('weapons');
+  const [tab, setTab] = useState<'weapons' | 'traps' | 'armor' | 'ammo' | 'consumables' | 'vehicles'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
+  const [initialWeaponCategory, setInitialWeaponCategory] = useState<WeaponCategory | undefined>();
   const [showArmorForm, setShowArmorForm] = useState(false);
   const [showAmmoForm, setShowAmmoForm] = useState(false);
   const [showConsumableForm, setShowConsumableForm] = useState(false);
@@ -1895,7 +2001,8 @@ export default function EquipmentScreen() {
     router.setParams({ manualTab: '', manualCategory: '', manualSearch: '' });
   }, [manualCategory, manualSearch, manualTab]);
 
-  const openNewWeapon = () => { setEditingWeapon(null); setShowWeaponForm(true); };
+  const openNewWeapon = () => { setEditingWeapon(null); setInitialWeaponCategory(undefined); setShowWeaponForm(true); };
+  const openNewTrap = () => { setEditingWeapon(null); setInitialWeaponCategory('minesTraps'); setShowWeaponForm(true); };
   const openNewArmor = () => { setEditingArmor(null); setShowArmorForm(true); };
   const openNewAmmo = () => { setEditingAmmo(null); setShowAmmoForm(true); };
   const openNewConsumable = () => { setEditingConsumable(null); setShowConsumableForm(true); };
@@ -1911,7 +2018,7 @@ export default function EquipmentScreen() {
     });
     setShowVehicleForm(true);
   };
-  const openEditWeapon = (w: Weapon) => { setEditingWeapon(w); setShowWeaponForm(true); };
+  const openEditWeapon = (w: Weapon) => { setEditingWeapon(w); setInitialWeaponCategory(undefined); setShowWeaponForm(true); };
   const openEditArmor = (a: Armor) => { setEditingArmor(a); setShowArmorForm(true); };
   const openEditAmmo = (ammo: AmmoType) => { setEditingAmmo(ammo); setShowAmmoForm(true); };
   const openEditConsumable = (consumable: CustomConsumable) => { setEditingConsumable(consumable); setShowConsumableForm(true); };
@@ -1923,7 +2030,7 @@ export default function EquipmentScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
   // Duplicate: open the creator pre-filled from an existing weapon/armor as a NEW custom.
-  const openCopyWeapon = (w: Weapon) => { setEditingWeapon({ ...w, id: genId(), name: `${w.name} (Copy)`, isCustom: true }); setShowWeaponForm(true); };
+  const openCopyWeapon = (w: Weapon) => { setEditingWeapon({ ...w, id: genId(), name: `${w.name} (Copy)`, isCustom: true }); setInitialWeaponCategory(undefined); setShowWeaponForm(true); };
   const openCopyArmor = (a: Armor) => { setEditingArmor({ ...a, id: genId(), name: `${a.name} (Copy)`, isCustom: true }); setShowArmorForm(true); };
   const openCopyAmmo = (ammo: AmmoType) => {
     setEditingAmmo({
@@ -1976,9 +2083,13 @@ export default function EquipmentScreen() {
   const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
 
   const filteredWeapons = allWeapons.filter(w =>
+    w.category !== 'minesTraps' &&
     (!search || w.name.toLowerCase().includes(search.toLowerCase())) &&
     (categoryFilter === 'all' || (categoryFilter === 'custom' ? !!w.isCustom : w.category === categoryFilter))
   );
+  const filteredTraps = allWeapons.filter(w =>
+    w.category === 'minesTraps'
+    && (!search || w.name.toLowerCase().includes(search.toLowerCase())));
   const filteredArmor = allArmor.filter(a =>
     (!search || a.name.toLowerCase().includes(search.toLowerCase()))
     && (armorFilter === 'all' || !!a.isCustom)
@@ -1993,6 +2104,7 @@ export default function EquipmentScreen() {
       .toLowerCase().includes(search.toLowerCase()));
   const equipmentTabs = [
     { key: 'weapons', label: `WEAPONS (${filteredWeapons.length})` },
+    { key: 'traps', label: `TRAPS (${filteredTraps.length})` },
     { key: 'armor', label: `ARMOR (${filteredArmor.length})` },
     { key: 'ammo', label: `AMMO (${filteredAmmo.length})` },
     { key: 'consumables', label: `CONSUMABLES (${filteredConsumables.length})` },
@@ -2009,6 +2121,7 @@ export default function EquipmentScreen() {
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
             onPress={() => {
               if (tab === 'weapons') openNewWeapon();
+              else if (tab === 'traps') openNewTrap();
               else if (tab === 'armor') openNewArmor();
               else if (tab === 'ammo') openNewAmmo();
               else if (tab === 'consumables') openNewConsumable();
@@ -2017,7 +2130,7 @@ export default function EquipmentScreen() {
           >
             <Feather name="plus" size={14} color={colors.primaryForeground} />
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
-              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'armor' ? 'CUSTOM ARMOR' : tab === 'ammo' ? 'CUSTOM AMMO' : tab === 'consumables' ? 'CUSTOM CONSUMABLE' : 'CUSTOM VEHICLE'}
+              {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'traps' ? 'CUSTOM TRAP' : tab === 'armor' ? 'CUSTOM ARMOR' : tab === 'ammo' ? 'CUSTOM AMMO' : tab === 'consumables' ? 'CUSTOM CONSUMABLE' : 'CUSTOM VEHICLE'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -2058,7 +2171,7 @@ export default function EquipmentScreen() {
             colors={colors}
             contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 2 }}
           >
-            {(['all', ...WEAPON_CATEGORY_ORDER, 'custom'] as const).map(cat => {
+            {(['all', ...WEAPON_CATEGORY_ORDER.filter(category => category !== 'minesTraps'), 'custom'] as const).map(cat => {
               const active = categoryFilter === cat;
               const label = cat === 'all' ? 'All' : cat === 'custom' ? 'Custom' : WEAPON_CATEGORY_LABELS[cat];
               return (
@@ -2133,6 +2246,25 @@ export default function EquipmentScreen() {
               onDelete={item.isCustom
                 ? () => confirmDelete(item.name, () => deleteCustomWeapon(item.id))
                 : undefined}
+            />
+          )}
+        />
+      ) : tab === 'traps' ? (
+        <MouseDraggableFlatList
+          data={filteredTraps}
+          keyExtractor={weapon => weapon.id}
+          contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
+          ListHeaderComponent={(
+            <Text style={{ marginHorizontal: 16, marginBottom: 10, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              Browse built-in mines and traps or create a custom trap. Configure custom blast zones and damage in its profile.
+            </Text>
+          )}
+          renderItem={({ item }) => (
+            <WeaponRow
+              weapon={item}
+              onCopy={() => openCopyWeapon(item)}
+              onEdit={item.isCustom ? () => openEditWeapon(item) : undefined}
+              onDelete={item.isCustom ? () => confirmDelete(item.name, () => deleteCustomWeapon(item.id)) : undefined}
             />
           )}
         />
@@ -2217,7 +2349,8 @@ export default function EquipmentScreen() {
       <WeaponFormModal
         visible={showWeaponForm}
         editWeapon={editingWeapon}
-        onClose={() => { setShowWeaponForm(false); setEditingWeapon(null); }}
+        initialCategory={initialWeaponCategory}
+        onClose={() => { setShowWeaponForm(false); setEditingWeapon(null); setInitialWeaponCategory(undefined); }}
         onSave={w => {
           if (customWeapons.some(x => x.id === w.id)) updateCustomWeapon(w);
           else addCustomWeapon(w);

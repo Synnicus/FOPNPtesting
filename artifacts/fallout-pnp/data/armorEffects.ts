@@ -102,6 +102,35 @@ export function aggregateArmorEffects(
   return result;
 }
 
+export interface GasExposureResistanceInput {
+  gasResistance?: number;
+  gasResistanceInhaled?: number;
+  gasResistanceContact?: number;
+  wearingGasMask?: boolean;
+  bodyArmor?: Armor | null;
+  helmet?: Armor | null;
+  helmetGasActive?: boolean;
+}
+
+/** Resolves inhaled and contact gas separately; a worn mask protects only against inhaled gas. */
+export function resolveGasExposureResistances(input: GasExposureResistanceInput): {
+  inhaled: number;
+  contact: number;
+} {
+  const helmetGas = input.helmetGasActive === false ? null : input.helmet;
+  return {
+    inhaled: Math.min(100,
+      numeric(input.gasResistanceInhaled ?? input.gasResistance)
+      + numeric(input.bodyArmor?.gasResistanceInhaled)
+      + numeric(helmetGas?.gasResistanceInhaled)
+      + (input.wearingGasMask ? 100 : 0)),
+    contact: Math.min(100,
+      numeric(input.gasResistanceContact ?? input.gasResistance)
+      + numeric(input.bodyArmor?.gasResistanceContact)
+      + numeric(helmetGas?.gasResistanceContact)),
+  };
+}
+
 export interface ArmorResolverInput {
   special: SPECIALStats;
   skills: CharacterSkills;
@@ -128,6 +157,7 @@ export interface ArmorResolverInput {
   tempAC?: number;
   radiationResistance?: number;
   gasResistance?: number;
+  wearingGasMask?: boolean;
   poisonResistance?: number;
   electricityResistance?: number;
   accumulatedRadiation?: number;
@@ -316,7 +346,11 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
     criticalChance: Math.max(0, manual?.criticalChance ?? Math.floor(effectiveSpecial.luck / 2)),
     meleeDamage: Math.max(1, effectiveSpecial.strength - 5),
     carryWeight: calculateCarryWeight(effectiveSpecial.strength, input.traits),
-    gasResistance: clamp(numeric(input.gasResistance) + armorEffects.gasResistance, 0, 100),
+    gasResistance: clamp(
+      numeric(input.gasResistance) + armorEffects.gasResistance + (input.wearingGasMask ? 100 : 0),
+      0,
+      100,
+    ),
     poisonResistance: clamp(basePoisonResistance + poisonEffectMod + armorEffects.poisonResistance, 0, 100),
     radiationResistance: radiationResistanceLocked ? 100 : clamp(
       (ghoulHealingDivisor !== null ? 0 : baseRadiationResistance + fastMetabolismRacialRadiationModifier)

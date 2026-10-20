@@ -99,8 +99,10 @@ test('direct and area combat handlers request at most one impact for HP damage o
   assert.doesNotMatch(combatScreen, /systemSoundsEnabled|musicEnabled|musicVolume/);
 });
 
-test('audio options keep Combat Sounds, system sounds, and Vault Radio independent', () => {
+test('audio options keep Combat Sounds and system sounds independent and open radio station selection', () => {
   assert.match(campaignOptionsModal, /label="System sounds"[\s\S]*?value=\{systemSoundsEnabled\}[\s\S]*?onValueChange=\{setSystemSoundsEnabled\}/);
   assert.match(campaignOptionsModal, /label="Combat Sounds"[\s\S]*?value=\{combatSoundsEnabled\}[\s\S]*?onValueChange=\{setCombatSoundsEnabled\}/);
-  assert.match(campaignOptionsModal, /label="Enable Vault Radio"[\s\S]*?value=\{musicEnabled\}[\s\S]*?onValueChange=\{setMusicEnabled\}/);
+  assert.match(campaignOptionsModal, /accessibilityLabel="Enable Radio"[\s\S]*?onPress=\{\(\) => setShowRadioStations\(true\)\}/);
+  assert.match(campaignOptionsModal, /<RadioStationsModal[\s\S]*?visible=\{showRadioStations\}/);
+  assert.doesNotMatch(campaignOptionsModal, /label="Enable Vault Radio"|vault-radio-toggle/);
 });

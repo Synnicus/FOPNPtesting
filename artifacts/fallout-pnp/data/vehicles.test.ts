@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyVehicleBlastDamage,
   applyVehicleSystemDamage,
   BUILT_IN_VEHICLES,
+  isVehicleSystemElectronic,
   vehicleCanAttemptPilotCheck,
   vehicleCanStartMoving,
   vehicleMovementBlockReason,
@@ -39,6 +41,38 @@ test('vehicle hit systems are independent and structure HP backs the combatant H
   assert.equal(damaged.systems.find(system => system.id === 'tire-1')?.currentHp, 33);
   assert.equal(damaged.systems.find(system => system.id === 'tire-2')?.currentHp, 40);
   assert.equal(damaged.systems.find(system => system.kind === 'structure')?.currentHp, 300);
+});
+
+test('vehicle blasts damage Structure plus the chosen system, while EMP only damages electronics', () => {
+  const humvee = BUILT_IN_VEHICLES.find(vehicle => vehicle.id === 'humvee');
+  assert.ok(humvee);
+  const structure = humvee.systems.find(system => system.kind === 'structure');
+  const engine = humvee.systems.find(system => system.kind === 'engine');
+  const tire = humvee.systems.find(system => system.kind === 'tire');
+  const tread = humvee.systems.find(system => system.kind === 'tread');
+  assert.ok(structure);
+  assert.ok(engine);
+  assert.ok(tire);
+
+  assert.equal(isVehicleSystemElectronic(structure), false);
+  assert.equal(isVehicleSystemElectronic(tire), false);
+  if (tread) assert.equal(isVehicleSystemElectronic(tread), false);
+  assert.equal(isVehicleSystemElectronic(engine), true);
+
+  const blast = applyVehicleBlastDamage(humvee, 9, engine.id);
+  assert.equal(blast.systems.find(system => system.kind === 'structure')?.currentHp, structure.currentHp - 9);
+  assert.equal(blast.systems.find(system => system.kind === 'engine')?.currentHp, engine.currentHp - 9);
+
+  const structureOnly = applyVehicleBlastDamage(humvee, 9, structure.id);
+  assert.equal(structureOnly.systems.find(system => system.kind === 'structure')?.currentHp, structure.currentHp - 9);
+
+  const empOnStructure = applyVehicleBlastDamage(humvee, 9, structure.id, true);
+  const empOnTire = applyVehicleBlastDamage(humvee, 9, tire.id, true);
+  assert.deepEqual(empOnStructure, humvee);
+  assert.deepEqual(empOnTire, humvee);
+  const empOnEngine = applyVehicleBlastDamage(humvee, 9, engine.id, true);
+  assert.equal(empOnEngine.systems.find(system => system.kind === 'structure')?.currentHp, structure.currentHp);
+  assert.equal(empOnEngine.systems.find(system => system.kind === 'engine')?.currentHp, engine.currentHp - 9);
 });
 
 test('spawned vehicles inherit their user-supplied catalog photo', () => {

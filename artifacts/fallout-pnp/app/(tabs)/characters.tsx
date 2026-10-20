@@ -28,6 +28,7 @@ import FactionReputationTracker from '@/components/FactionReputationTracker';
 import CustomRulesPanel from '@/components/CustomRulesPanel';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
+import GasMaskIcon from '@/components/GasMaskIcon';
 import HPBar from '@/components/HPBar';
 import {
   calcMaxHP, calcNpcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
@@ -73,7 +74,7 @@ import {
   vehicleSystemEffectDescription,
   vehicleUpgradePlayNotes,
 } from '@/data/vehicles';
-import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
+import { aggregateArmorEffects, resolveArmorAwareSheet, resolveGasExposureResistances } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import {
   adjustRadiation,
@@ -136,7 +137,7 @@ function makeDefaultCharacter(): Character {
 function PointCounter({ label, remaining, total, warn }: { label: string; remaining: number; total: number; warn?: boolean }) {
   const colors = useColors();
   const isOver = remaining < 0;
-  const color = isOver ? colors.destructive : warn && remaining === 0 ? '#f59e0b' : '#4a8c3f';
+  const color = isOver ? colors.destructive : warn && remaining === 0 ? colors.warning : colors.success;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: isOver ? colors.destructive + '22' : color + '22', borderRadius: 8, borderWidth: 1, borderColor: isOver ? colors.destructive : color + '66' }}>
       <View style={{ flex: 1 }}>
@@ -472,6 +473,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     nightPersonPeriod: char.nightPersonPeriod,
     tempAC: char.tempAC,
     radiationResistance: char.radiationResistance, gasResistance: char.gasResistance,
+    wearingGasMask: char.wearingGasMask,
     poisonResistance: char.poisonResistance, electricityResistance: char.electricityResistance,
     accumulatedRadiation: char.accumulatedRadiation, hardcoreRadiationRules,
     raceId: char.race, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -481,6 +483,17 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     char, allArmor, race, tagRules.freeTagSkills, hardcoreRadiationRules,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
   ]);
+  const gasExposureResistances = resolveGasExposureResistances({
+    gasResistance: char.gasResistance,
+    gasResistanceInhaled: char.gasResistanceInhaled,
+    gasResistanceContact: char.gasResistanceContact,
+    wearingGasMask: char.wearingGasMask,
+    bodyArmor: armorSheet.bodyArmor,
+    helmet: armorSheet.helmet,
+    helmetGasActive: armorSheet.helmet?.id !== 'environmental_helmet'
+      || armorSheet.bodyArmor?.id === 'brotherhood_env_armor'
+      || armorSheet.bodyArmor?.id === 'brotherhood_env_armor_mk2',
+  });
   const effectiveSkills = useMemo(() => {
     const result = { ...armorSheet.effectiveSkills };
     const wornArmor = allArmor.filter(armor =>
@@ -1339,9 +1352,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 {/* Race traits */}
                 <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 10, gap: 4, marginTop: 8 }}>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>SPECIAL range: {SPECIAL_KEYS.map(k => `${SPECIAL_SHORT[k]} ${race.specialMin[k]}–${race.specialMax[k]}`).join(' · ')}</Text>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>✓ {race.benefits.join(' · ')}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.success }}>✓ {race.benefits.join(' · ')}</Text>
                   {race.penalties.length > 0 && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>✗ {race.penalties.join(' · ')}</Text>}
-                  {(race.naturalDR !== 0 || race.naturalGasDR !== 0 || race.naturalElecDR !== 0) && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>🛡 Natural: {race.naturalDR}% Rad · {race.naturalGasDR}% Gas · {race.naturalElecDR > 0 ? `+${race.naturalElecDR}%` : `${race.naturalElecDR}%`} Elec</Text>}
+                  {(race.naturalDR !== 0 || race.naturalGasDR !== 0 || race.naturalElecDR !== 0) && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.success }}>🛡 Natural: {race.naturalDR}% Rad · {race.naturalGasDR}% Gas · {race.naturalElecDR > 0 ? `+${race.naturalElecDR}%` : `${race.naturalElecDR}%`} Elec</Text>}
                 </View>
               </View>
 
@@ -1398,7 +1411,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: !armorSheet.radiationSicknessImmune && (char.accumulatedRadiation ?? 0) >= 200 ? colors.destructive : colors.mutedForeground }}>{radiationSicknessLabel(char.accumulatedRadiation ?? 0, armorSheet.radiationSicknessImmune)}</Text>
                 </View>
                 <View style={{ height: 7, borderRadius: 4, overflow: 'hidden', backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }}>
-                  <View style={{ height: '100%', width: `${Math.min(100, (char.accumulatedRadiation ?? 0) / 10)}%`, backgroundColor: (char.accumulatedRadiation ?? 0) >= 600 ? colors.destructive : '#b6d43b' }} />
+                  <View style={{ height: '100%', width: `${Math.min(100, (char.accumulatedRadiation ?? 0) / 10)}%`, backgroundColor: (char.accumulatedRadiation ?? 0) >= 600 ? colors.destructive : colors.primary }} />
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TextInput testID="character-radiation-amount" style={{ flex: 1, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 12, color: colors.foreground, fontFamily: 'Inter_600SemiBold' }} keyboardType="number-pad" placeholder="Amount" placeholderTextColor={colors.mutedForeground} value={radiationInput} onChangeText={text => setRadiationInput(text.replace(/[^0-9]/g, ''))} />
@@ -1417,22 +1430,23 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     resolved: armorSheet.radiationResistance,
                     key: 'radiationResistance' as const,
                     natural: ghoulNaturalRadiationZero ? 0 : race.naturalDR,
+                    displayValue: undefined,
                     locked: radiationResistanceLocked,
                     ruleLabel: isRadiationResistanceLocked(char.race, { mutantGhoulRadiationRules, ghoulRadiationHealingOption })
                       ? ' (locked at 100% by optional rule)'
                       : ghoulNaturalRadiationZero ? ' (natural 0% by optional rule)' : '',
                   },
-                  { label: 'Gas', val: char.gasResistance, resolved: armorSheet.gasResistance, key: 'gasResistance' as const, natural: race.naturalGasDR },
-                  { label: 'Poison', val: char.poisonResistance ?? 0, resolved: armorSheet.poisonResistance, key: 'poisonResistance' as const, natural: 0 },
-                  { label: 'Electricity', val: char.electricityResistance, resolved: armorSheet.electricityResistance, key: 'electricityResistance' as const, natural: race.naturalElecDR },
-                ].map(({ label, val, resolved, key, natural, locked, ruleLabel }) => (
+                  { label: 'Gas', val: char.gasResistance, resolved: armorSheet.gasResistance, key: 'gasResistance' as const, natural: race.naturalGasDR, displayValue: char.wearingGasMask ? `${gasExposureResistances.inhaled}/${gasExposureResistances.contact}%` : undefined },
+                  { label: 'Poison', val: char.poisonResistance ?? 0, resolved: armorSheet.poisonResistance, key: 'poisonResistance' as const, natural: 0, displayValue: undefined },
+                  { label: 'Electricity', val: char.electricityResistance, resolved: armorSheet.electricityResistance, key: 'electricityResistance' as const, natural: race.naturalElecDR, displayValue: undefined },
+                ].map(({ label, val, resolved, key, natural, locked, ruleLabel, displayValue }) => (
                   <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 12, fontFamily: 'Inter_500Medium', color: colors.foreground }}>{label}{ruleLabel ?? (natural !== 0 ? ` (base ${natural}% from race)` : '')}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <TouchableOpacity disabled={locked} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', opacity: locked ? 0.35 : 1 }} onPress={() => setChar(c => ({ ...c, [key]: Math.max(natural, val - 5) }))}><Feather name="minus" size={12} color={colors.foreground} /></TouchableOpacity>
-                       <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: resolved >= 50 ? '#4a8c3f' : colors.foreground, minWidth: 45, textAlign: 'center' }}>{resolved}%</Text>
+                        <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: resolved >= 50 ? colors.success : colors.foreground, minWidth: 45, textAlign: 'center' }}>{displayValue ?? `${resolved}%`}</Text>
                        <TouchableOpacity disabled={locked} testID={`${key}-increase`} accessibilityLabel={`Increase ${label} resistance`} accessibilityState={{ disabled: !!locked }} style={{ width: 28, height: 28, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', opacity: locked ? 0.35 : 1 }} onPress={() => setChar(c => ({ ...c, [key]: Math.min(100, val + 5) }))}><Feather name="plus" size={12} color={colors.foreground} /></TouchableOpacity>
                     </View>
                   </View>
@@ -1656,7 +1670,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                           >
                             <Feather name="minus" size={12} color={colors.foreground} />
                           </HoldButton>
-                          <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: isTagged ? colors.primary : displayTotal >= 75 ? '#4a8c3f' : colors.foreground, minWidth: 48, textAlign: 'center' }}>{displayTotal}%</Text>
+                          <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: isTagged ? colors.primary : displayTotal >= 75 ? colors.success : colors.foreground, minWidth: 48, textAlign: 'center' }}>{displayTotal}%</Text>
                           <HoldButton
                             active={visible}
                             disabled={char.unspentSkillPoints <= 0}
@@ -1718,7 +1732,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       <View key={cp.perkId} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary + '44', gap: 10 }}>
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary }}>{perk.name} <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Rank {cp.rank}/{perk.maxRanks}</Text></Text>
-                          {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>⚔ {perk.combatEffect.combatNote}</Text>}
+                          {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.success }}>⚔ {perk.combatEffect.combatNote}</Text>}
                         </View>
                         {cp.perkId === 'tag' && (
                           <TouchableOpacity onPress={() => setTagPerkPickerId(cp.perkId)} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 5, borderWidth: 1, borderColor: colors.primary + '66' }}>
@@ -1794,12 +1808,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                         </View>
                       </View>
                       <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{perk.description}</Text>
-                      {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>⚔ {perk.combatEffect.combatNote}</Text>}
+                      {perk.combatEffect?.combatNote && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.success }}>⚔ {perk.combatEffect.combatNote}</Text>}
                       {!allowed && reasonText.length > 0 && (
                         <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.destructive }}>🔒 {reasonText}</Text>
                       )}
                       {allowed && noPoints && !existing && (
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: '#f59e0b' }}>No perk points remaining</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.warning }}>No perk points remaining</Text>
                       )}
                     </TouchableOpacity>
                   );
@@ -1816,7 +1830,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             <>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>TRAITS</Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (char.traits?.length ?? 0) >= MAX_TRAITS ? '#f59e0b' : colors.mutedForeground }}>{char.traits?.length ?? 0}/{MAX_TRAITS} chosen</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (char.traits?.length ?? 0) >= MAX_TRAITS ? colors.warning : colors.mutedForeground }}>{char.traits?.length ?? 0}/{MAX_TRAITS} chosen</Text>
               </View>
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Optional. Choose up to {MAX_TRAITS} traits — each has a benefit and a penalty. Normally picked at creation, but editable here (GM tool).</Text>
               {TRAITS.map(trait => {
@@ -1881,7 +1895,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                             <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: w ? colors.foreground : colors.mutedForeground, marginTop: 4 }} numberOfLines={2}>{w?.name ?? 'None'}</Text>
                             {w && getWeaponHands(w) === 2 && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary, marginTop: 2 }}>2-HANDED</Text>}
                             {w && (
-                              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2, color: armorSheet.effectiveSpecial.strength >= w.minStr ? '#4a8c3f' : colors.destructive }}>
+                              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2, color: armorSheet.effectiveSpecial.strength >= w.minStr ? colors.success : colors.destructive }}>
                                 STR REQ {armorSheet.effectiveSpecial.strength}/{w.minStr}
                               </Text>
                             )}
@@ -1937,6 +1951,31 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 <ArmorConditionMeter char={char} setChar={setChar} armor={armor} inactive={label === 'HELMET' && !!armor && armorSheet.helmet?.id !== armor.id} />
                 </React.Fragment>
               ))}
+              <TouchableOpacity
+                testID="character-gas-mask-toggle"
+                accessibilityRole="switch"
+                accessibilityLabel={translateText('Gas mask')}
+                accessibilityHint={translateText('Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.')}
+                accessibilityState={{ checked: !!char.wearingGasMask }}
+                onPress={() => setChar(c => ({ ...c, wearingGasMask: !c.wearingGasMask }))}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+                  backgroundColor: char.wearingGasMask ? colors.primary + '18' : colors.secondary,
+                  borderRadius: colors.radius, borderWidth: 1,
+                  borderColor: char.wearingGasMask ? colors.primary : colors.border,
+                }}
+              >
+                <GasMaskIcon size={26} color={char.wearingGasMask ? colors.primary : colors.mutedForeground} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>
+                    Gas mask
+                  </Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_500Medium', color: colors.mutedForeground }}>
+                    100/0 Gas Resistance
+                  </Text>
+                </View>
+                <Feather name={char.wearingGasMask ? 'check-circle' : 'circle'} size={18} color={char.wearingGasMask ? colors.primary : colors.mutedForeground} />
+              </TouchableOpacity>
 
               {/* Cumulative protection summary: AC + per-type DT/DR from armor,
                   helmet, natural/racial protection, shield mods on held weapons,
@@ -2119,7 +2158,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                         <Text style={{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>Divine Favor</Text>
                         <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10 }}>Once per 24 hours, reroll one failed roll. Toggle to mark used or reset it manually.</Text>
                       </View>
-                      <Text style={{ color: char.perkTrackers?.divine_favor?.used ? colors.destructive : '#4a8c3f', fontFamily: 'Inter_700Bold', fontSize: 10 }}>
+                      <Text style={{ color: char.perkTrackers?.divine_favor?.used ? colors.destructive : colors.success, fontFamily: 'Inter_700Bold', fontSize: 10 }}>
                         {char.perkTrackers?.divine_favor?.used ? 'USED' : 'READY'}
                       </Text>
                     </TouchableOpacity>
@@ -2756,6 +2795,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
     usesDerivedArmorClass: character.usesDerivedArmorClass,
     nightPersonPeriod: character.nightPersonPeriod, tempAC: character.tempAC,
     radiationResistance: character.radiationResistance, gasResistance: character.gasResistance,
+    wearingGasMask: character.wearingGasMask,
     poisonResistance: character.poisonResistance, electricityResistance: character.electricityResistance,
     accumulatedRadiation: character.accumulatedRadiation, hardcoreRadiationRules,
     raceId: character.race, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -2867,7 +2907,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
       <View style={{ flexDirection: 'row', gap: 4 }}>
         {SPECIAL_ROW.map(([key, label]) => {
           const delta = effSpecial[key] - character.special[key];
-          const color = delta > 0 ? '#4a8c3f' : delta < 0 ? colors.destructive : colors.foreground;
+          const color = delta > 0 ? colors.success : delta < 0 ? colors.destructive : colors.foreground;
           return (
             <View key={key} style={{ flex: 1, alignItems: 'center', paddingVertical: 4, borderRadius: 4, backgroundColor: colors.secondary, borderWidth: 1, borderColor: delta !== 0 ? color + '88' : colors.border }}>
               <Text style={{ fontSize: 8, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{label}</Text>
@@ -2887,7 +2927,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
       )}
       {/* Active chem effects — shown like injuries, in green */}
       {activeEffects.length > 0 && (
-        <View style={{ backgroundColor: '#4a8c3f14', borderRadius: 8, borderWidth: 1, borderColor: '#4a8c3f44', padding: 8, gap: 2 }}>
+        <View style={{ backgroundColor: colors.success + '14', borderRadius: 8, borderWidth: 1, borderColor: colors.success + '44', padding: 8, gap: 2 }}>
           {activeEffects.map(e => {
             const bits: string[] = [];
             for (const [k, v] of Object.entries(e.statMods ?? {})) if (v) bits.push(`${k.slice(0, 3).toUpperCase()} ${(v as number) > 0 ? '+' : ''}${v}`);
@@ -2896,7 +2936,7 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
             if (e.apMod) bits.push(`AP ${e.apMod > 0 ? '+' : ''}${e.apMod}`);
             if (e.sequenceMod) bits.push(`SEQ ${e.sequenceMod > 0 ? '+' : ''}${e.sequenceMod}`);
             return (
-              <Text key={e.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>
+              <Text key={e.id} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.success }}>
                 ⚗ {e.poisonType ? poisonEffectName(e.poisonType, e.poisonCount) : e.name}{bits.length ? ` — ${bits.join(', ')}` : ''}
               </Text>
             );
@@ -2977,6 +3017,7 @@ export default function CharactersScreen() {
         tempAC: character.tempAC,
         radiationResistance: character.radiationResistance,
         gasResistance: character.gasResistance,
+        wearingGasMask: character.wearingGasMask,
         poisonResistance: character.poisonResistance,
         electricityResistance: character.electricityResistance,
         accumulatedRadiation: character.accumulatedRadiation,

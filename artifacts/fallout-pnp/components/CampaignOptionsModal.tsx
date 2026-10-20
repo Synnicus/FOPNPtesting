@@ -19,6 +19,7 @@ import { useLocalization } from '@/context/LocalizationContext';
 import { useColors } from '@/hooks/useColors';
 import { useVaultRadioStatus } from '@/context/VaultRadioContext';
 import { THEME_SWATCHES } from '@/constants/colors';
+import RadioStationsModal from '@/components/RadioStationsModal';
 import {
   formatHardcoreRadiationPenalties,
   HARDCORE_RADIATION_RULES,
@@ -565,7 +566,6 @@ export default function CampaignOptionsModal({
     combatSoundsEnabled,
     setCombatSoundsEnabled,
     musicEnabled,
-    setMusicEnabled,
     musicVolume,
     setMusicVolume,
     restoreBuiltInBestiaryDefaults,
@@ -574,16 +574,11 @@ export default function CampaignOptionsModal({
   const {
     hasPlaybackError,
     currentTrack,
-    customTracks,
-    isTrackListLoading,
-    isMetadataLoading,
-    metadataLoadFailed,
-    metadataSaveFailed,
-    updateTrackMetadata,
     canSkip,
     skipPrevious,
     skipNext,
   } = useVaultRadioStatus();
+  const [showRadioStations, setShowRadioStations] = useState(false);
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
   const previewTriggerRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
@@ -891,13 +886,35 @@ export default function CampaignOptionsModal({
               onValueChange={setCombatSoundsEnabled}
               testID="combat-sounds-toggle"
             />
-            <PreferenceSwitchRow
-              label="Enable Vault Radio"
-              description="Public Domain 1920s"
-              value={musicEnabled}
-              onValueChange={setMusicEnabled}
-              testID="vault-radio-toggle"
-            />
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Enable Radio"
+              accessibilityHint="Opens the list of radio stations."
+              testID="radio-stations-open"
+              onPress={() => setShowRadioStations(true)}
+              style={{
+                minHeight: 64,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                padding: 14,
+                borderWidth: 1,
+                borderColor: musicEnabled ? palette.primary : palette.border,
+                borderRadius: palette.radius,
+                backgroundColor: musicEnabled ? palette.primary + '12' : palette.secondary,
+              }}
+            >
+              <Feather name="radio" size={19} color={musicEnabled ? palette.primary : palette.mutedForeground} />
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
+                  Enable Radio
+                </Text>
+                <Text style={{ fontSize: 11, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                  Select a station to start playback.
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={17} color={palette.mutedForeground} />
+            </TouchableOpacity>
             {musicEnabled && (
               <VaultRadioNowPlaying
                 track={currentTrack}
@@ -907,26 +924,16 @@ export default function CampaignOptionsModal({
                 onNext={skipNext}
               />
             )}
-            {musicEnabled && (
-              <VaultRadioTrackLabels
-                tracks={customTracks}
-                isLoading={isTrackListLoading}
-                metadataLoading={isMetadataLoading}
-                loadFailed={metadataLoadFailed}
-                saveFailed={metadataSaveFailed}
-                onChange={updateTrackMetadata}
-              />
-            )}
             <PreferenceSliderRow
-              label="Vault Radio volume"
-              description="Set the volume for Vault Radio music."
+              label="Radio volume"
+              description="Set the radio volume."
               value={musicVolume}
               onValueChange={setMusicVolume}
-              testID="vault-radio-volume"
+              testID="radio-volume"
             />
             {hasPlaybackError && (
               <Text accessibilityRole="alert" style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_600SemiBold', color: palette.destructive }}>
-                Vault Radio is unavailable. Check the connection and track files.
+                Unable to load this station. Check the connection and audio files.
               </Text>
             )}
 
@@ -947,6 +954,11 @@ export default function CampaignOptionsModal({
           </KeyboardAwareScrollViewCompat>
         </View>
       </Modal>
+
+      <RadioStationsModal
+        visible={showRadioStations}
+        onClose={() => setShowRadioStations(false)}
+      />
 
       <Modal
         visible={showHardcoreWarning}

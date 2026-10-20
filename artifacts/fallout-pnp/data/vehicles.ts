@@ -607,6 +607,40 @@ export function vehicleProtectionForDamageType(
   return { dt: 0, dr: Math.max(0, Math.min(100, performance.damageResistance[damageType])) };
 }
 
+export function isVehicleSystemElectronic(system: VehicleSystem): boolean {
+  return system.kind === 'engine'
+    || system.kind === 'controls'
+    || system.kind === 'drive'
+    || system.kind === 'other';
+}
+
+/**
+ * Explosive area damage reaches Structure and the selected system. EMP is the
+ * exception: it can damage electronic systems only and never Structure, tires,
+ * or treads.
+ */
+export function applyVehicleBlastDamage(
+  vehicle: VehicleProfile,
+  damage: number,
+  selectedSystemId?: string,
+  emp = false,
+): VehicleProfile {
+  const selectedSystem = vehicle.systems.find(system => system.id === selectedSystemId);
+  if (emp) {
+    return selectedSystem && isVehicleSystemElectronic(selectedSystem)
+      ? applyVehicleSystemDamage(vehicle, selectedSystem.id, damage)
+      : vehicle;
+  }
+
+  const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
+  if (!structure) return vehicle;
+  let updated = applyVehicleSystemDamage(vehicle, structure.id, damage);
+  if (selectedSystem && selectedSystem.id !== structure.id) {
+    updated = applyVehicleSystemDamage(updated, selectedSystem.id, damage);
+  }
+  return updated;
+}
+
 export function vehicleSystemStatus(system: VehicleSystem): 'destroyed' | 'disabled' | 'operational' {
   if (system.currentHp <= 0) return 'destroyed';
   if ((system.maxHp - system.currentHp) / Math.max(1, system.maxHp) > 0.66) return 'disabled';

@@ -47,7 +47,7 @@ test('normal and streamlined combat add resolved radiation without applying resi
     combatSource.indexOf('setStreamlinedDmgResult({ perHit'),
     combatSource.indexOf('Haptics.notificationAsync', combatSource.indexOf('setStreamlinedDmgResult({ perHit')),
   );
-  assert.match(streamlinedApply, /if \(totalBurstDmg > 0\) applyCombatDamage\(\s*attackReceipt\.current, defender\.id, totalBurstDmg, damagingHits, undefined,\s*selectedVehicleSystem\?\.id,\s*attacker\?\.id,\s*\)/);
+  assert.match(streamlinedApply, /if \(totalBurstDmg > 0\) applyCombatDamage\(\s*attackReceipt\.current, defender\.id, totalBurstDmg, damagingHits, undefined,\s*selectedVehicleSystem\?\.id,\s*attacker\?\.id,\s*!!loadedAmmo\?\.emp,\s*explosiveVehicleAttack,\s*\)/);
   assert.match(streamlinedApply, /if \(radiationExposure > 0 && !defender\.vehicle\) adjustRadiation\(defender\.id, radiationExposure\)/);
   assert.doesNotMatch(streamlinedApply, /resolveRadiationAddition|radiationResistance|currentHp/);
 });

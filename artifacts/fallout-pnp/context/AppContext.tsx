@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
 import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRaceTag, CampaignRuleTag, CustomPerkDefinition, CustomRaceDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
-import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, getWeaponAttackModes, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
 import { clampConditionBoxes, CONDITION_BOXES_MAX, markConditionSemanticsV2, migrateConditionSemantics, restorePremadeWeaponCondition } from '@/data/condition';
@@ -11,7 +11,7 @@ import { computeModEffects } from '@/data/mods';
 import { computeCustomWeaponModEffects } from '@/data/customRules';
 import { resolveHpChange } from '@/data/conditions';
 import { getCharacterRaceDefinition, validateCustomRace } from '@/data/races';
-import { resolveArmorAwareSheet } from '@/data/armorEffects';
+import { resolveArmorAwareSheet, resolveGasExposureResistances } from '@/data/armorEffects';
 import { computeInjurySkillPenalty } from '@/data/injuries';
 import { applyTightNutsRepairHealing } from '@/data/traitRules';
 import { addArmorWear, normalizeArmorCondition, wornArmor } from '@/data/armorCondition';
@@ -77,7 +77,12 @@ import {
 } from '@/data/radiation';
 import { normalizeKarmaFields } from '@/data/karma';
 import { normalizeFactionReputations } from '@/data/factionReputation';
-import { applyVehicleSystemDamage, resolveVehiclePerformance } from '@/data/vehicles';
+import {
+  applyVehicleBlastDamage,
+  applyVehicleSystemDamage,
+  isVehicleSystemElectronic,
+  resolveVehiclePerformance,
+} from '@/data/vehicles';
 import { BUILT_IN_VEHICLES } from '@/data/vehicles';
 import {
   DEFAULT_CAMPAIGN_OPTIONS,
@@ -86,6 +91,13 @@ import {
   type CampaignVisualTheme,
 } from '@/data/campaignOptions';
 import { normalizeCampaignMap, normalizeCampaignTable } from '@/data/campaignTools';
+import {
+  DEFAULT_RADIO_STATION_ID,
+  DEFAULT_RADIO_STATIONS,
+  isRadioStationRecord,
+  normalizeRadioStations,
+  type RadioStation,
+} from '@/data/radioStations';
 import { validateCustomPerk, validateCustomWeaponMod } from '@/data/customRules';
 import { isCustomConsumableRecord, sanitizeCustomConsumables, validateCustomConsumable } from '@/data/consumables';
 import {
@@ -200,6 +212,7 @@ function resolveCharacterArmorSheet(
     tempAC: includeTempAC ? c.tempAC : 0,
     radiationResistance: c.radiationResistance,
     gasResistance: c.gasResistance,
+    wearingGasMask: c.wearingGasMask,
     poisonResistance: c.poisonResistance,
     electricityResistance: c.electricityResistance,
     accumulatedRadiation: c.accumulatedRadiation,
@@ -356,6 +369,8 @@ const STORAGE_KEY = '@fallout_pnp_v4';
 
 interface AppState extends CampaignOptions {
   campaignName: string;
+  radioStations: RadioStation[];
+  activeRadioStationId: string;
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
@@ -451,6 +466,7 @@ function hasValidCharacterRecord(value: unknown): value is Character {
   if (typeof character.race !== 'string' || character.race === '') return false;
   if (!['standing', 'crouching', 'prone'].includes(character.position as string)) return false;
   if (typeof character.isKnockedOut !== 'boolean') return false;
+  if (character.wearingGasMask !== undefined && typeof character.wearingGasMask !== 'boolean') return false;
   if ([
     'level', 'xp', 'maxHp', 'currentHp', 'armorClass', 'tempAC', 'maxAP', 'currentAP',
     'sequence', 'unspentSkillPoints', 'radiationResistance', 'gasResistance',
@@ -531,6 +547,15 @@ function hasValidCampaignImport(value: unknown): value is AppState {
       || !value.builtInBestiaryOverrides.every(isBestiaryTemplateRecord))) return false;
   if (value.removedBuiltInBestiaryTemplateIds !== undefined
     && !isStringArray(value.removedBuiltInBestiaryTemplateIds)) return false;
+  if (value.radioStations !== undefined
+    && (!Array.isArray(value.radioStations)
+      || !value.radioStations.every(isRadioStationRecord)
+      || new Set(value.radioStations.map(station => station.id)).size !== value.radioStations.length)) return false;
+  if (value.activeRadioStationId !== undefined
+    && value.activeRadioStationId !== null
+    && (typeof value.activeRadioStationId !== 'string'
+      || (Array.isArray(value.radioStations)
+        && !value.radioStations.some(station => isRadioStationRecord(station) && station.id === value.activeRadioStationId)))) return false;
   if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
   if (!isValidAreaProfileRangeOverrides(value.areaProfileRangeOverrides)) return false;
   return true;
@@ -666,6 +691,7 @@ function normalizePersistedState(parsed: AppState): AppState {
   const allAmmo = [...AMMO_TYPES, ...(normalized.customAmmo ?? [])];
   const customWeapons = (normalized.customWeapons ?? []).map(weapon => ({
     ...weapon,
+    attackModes: getWeaponAttackModes(weapon),
     compatibleAmmo: filterCompatibleAmmoIds(weapon.compatibleAmmo, allAmmo),
     customAreaEffects: sanitizeCustomAreaEffects(weapon.customAreaEffects),
     areaRangeUnit: weapon.areaRangeUnit === 'm' ? 'm' as const : 'hex' as const,
@@ -680,6 +706,11 @@ function normalizePersistedState(parsed: AppState): AppState {
       ? normalized.campaignName.trim().slice(0, 80)
       : 'My Campaign',
     ...normalizeCampaignOptions(normalized),
+    radioStations: normalizeRadioStations(normalized.radioStations),
+    activeRadioStationId: typeof normalized.activeRadioStationId === 'string'
+      && normalizeRadioStations(normalized.radioStations).some(station => station.id === normalized.activeRadioStationId)
+      ? normalized.activeRadioStationId
+      : DEFAULT_RADIO_STATION_ID,
     customConsumables: sanitizeCustomConsumables(normalized.customConsumables),
     areaProfileRangeOverrides: normalizeAreaProfileRangeOverrides(normalized.areaProfileRangeOverrides),
     hardcoreRadiationRules: normalized.hardcoreRadiationRules !== undefined
@@ -739,7 +770,7 @@ interface AppContextValue extends AppState {
   moveCharacter: (characterId: string, targetCharacterId: string) => void;
 
   applyDamage: (characterId: string, damage: number) => void;
-  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string, vehicleSystemId?: string, attackerCharacterId?: string) => void;
+  applyCombatDamage: (requestId: string, characterId: string, damage: number, damagingHits: number, location?: string, vehicleSystemId?: string, attackerCharacterId?: string, empAttack?: boolean, explosiveAttack?: boolean) => void;
   healCharacter: (characterId: string, amount: number) => void;
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
@@ -752,6 +783,8 @@ interface AppContextValue extends AppState {
   setCombatSoundsEnabled: (enabled: boolean) => void;
   setMusicEnabled: (enabled: boolean) => void;
   setMusicVolume: (volume: number) => void;
+  saveRadioStations: (stations: RadioStation[]) => void;
+  selectRadioStation: (stationId: string) => void;
   spendAP: (characterId: string, amount: number) => boolean;
   restoreAP: (characterId: string, amount?: number) => void;
   /** Start a GM-timed combat skill. See TimedSkillActionRequest for AP/round timing. */
@@ -841,6 +874,11 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 const defaultState: AppState = markConditionSemanticsV2({
   campaignName: 'My Campaign',
+  radioStations: DEFAULT_RADIO_STATIONS.map(station => ({
+    ...station,
+    songs: station.songs.map(song => ({ ...song })),
+  })),
+  activeRadioStationId: DEFAULT_RADIO_STATION_ID,
   characters: [],
   customWeapons: [],
   customArmor: [],
@@ -1054,6 +1092,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     location?: string,
     vehicleSystemId?: string,
     attackerCharacterId?: string,
+    empAttack = false,
+    explosiveAttack = false,
   ) => {
     setState(s => {
       if (s.damageReceiptIds?.includes(requestId)) return s;
@@ -1084,7 +1124,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? vehicleSystemId!
         : (target.vehicle.systems.find(system => system.kind === 'structure')?.id ?? target.vehicle.systems[0]?.id);
       if (!systemId) return s;
-      const updatedVehicle = applyVehicleSystemDamage(target.vehicle, systemId, damage);
+      const targetSystem = target.vehicle.systems.find(system => system.id === systemId);
+      if (empAttack && (!targetSystem || !isVehicleSystemElectronic(targetSystem))) {
+        return {
+          ...s,
+          damageReceiptIds: [...(s.damageReceiptIds ?? []), requestId].slice(-64),
+        };
+      }
+      const updatedVehicle = explosiveAttack
+        ? applyVehicleBlastDamage(target.vehicle, damage, systemId, empAttack)
+        : applyVehicleSystemDamage(target.vehicle, systemId, damage);
       const structure = updatedVehicle.systems.find(system => system.kind === 'structure') ?? updatedVehicle.systems[0];
       const characters = s.characters.map(character => character.id === characterId
         ? {
@@ -1404,12 +1453,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const helmetGasActive = helmet?.id !== 'environmental_helmet'
           || body?.id === 'brotherhood_env_armor'
           || body?.id === 'brotherhood_env_armor_mk2';
-        const gasInhaled = Math.min(100,
-          (c.gasResistanceInhaled ?? c.gasResistance ?? 0)
-          + (body?.gasResistanceInhaled ?? 0) + (helmetGasActive ? (helmet?.gasResistanceInhaled ?? 0) : 0));
-        const gasContact = Math.min(100,
-          (c.gasResistanceContact ?? c.gasResistance ?? 0)
-          + (body?.gasResistanceContact ?? 0) + (helmetGasActive ? (helmet?.gasResistanceContact ?? 0) : 0));
+        const gasResistance = resolveGasExposureResistances({
+          gasResistance: c.gasResistance,
+          gasResistanceInhaled: c.gasResistanceInhaled,
+          gasResistanceContact: c.gasResistanceContact,
+          wearingGasMask: c.wearingGasMask,
+          bodyArmor: body,
+          helmet,
+          helmetGasActive,
+        });
+        const gasInhaled = gasResistance.inhaled;
+        const gasContact = gasResistance.contact;
         const fixed = rolls[id];
         let dieIndex = 0;
         const dieRolls = [...fixed.componentRolls, fixed.endurance, fixed.unconscious];
@@ -1453,6 +1507,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const result = zone
           ? resolveAreaZoneTarget(zone, areaTarget, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)])
           : resolveAreaTarget(attack, areaTarget, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)]);
+        const vehicleSystemId = attack.vehicleSystemTargets?.[c.id];
+        const vehicleSystem = c.vehicle?.systems.find(system => system.id === vehicleSystemId);
+        const empBlocked = !!attack.emp && !!c.vehicle
+          && (!vehicleSystem || !isVehicleSystemElectronic(vehicleSystem));
+        if (empBlocked) {
+          result.damage = 0;
+          result.resisted = true;
+          result.notes.push('EMP has no effect on Structure, tires, or treads; select an electronic system.');
+        }
         const physicalExposure = zone
           ? zone.effects.some(effect => effect.kind !== 'gasInhaled' && effect.kind !== 'gasContact')
           : attack.kind !== 'gasInhaled' && attack.kind !== 'gasContact';
@@ -1461,6 +1524,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         return [{
           ...result,
+          ...(vehicleSystemId ? { vehicleSystemId } : {}),
           ...(attack.directHitTargetId === c.id ? { directHit: true } : {}),
           ...(zone ? { zoneId: zone.id, zoneLabel: zone.label } : {}),
         }];
@@ -1482,6 +1546,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }]
           : c.areaEffects;
         const physicalExposure = attack.kind !== 'gasInhaled' && attack.kind !== 'gasContact';
+        if (c.vehicle) {
+          const structure = c.vehicle.systems.find(system => system.kind === 'structure') ?? c.vehicle.systems[0];
+          const isExplosiveDamage = !!attack.emp
+            || attack.kind === 'explosion'
+            || attack.kind === 'fragmentation'
+            || attack.kind === 'concussion';
+          const updatedVehicle = result.damage <= 0
+            ? c.vehicle
+            : isExplosiveDamage
+              ? applyVehicleBlastDamage(c.vehicle, result.damage, result.vehicleSystemId, !!attack.emp)
+              : structure
+                ? applyVehicleSystemDamage(c.vehicle, structure.id, result.damage)
+                : c.vehicle;
+          const updatedStructure = updatedVehicle.systems.find(system => system.kind === 'structure')
+            ?? updatedVehicle.systems[0];
+          return {
+            ...c,
+            vehicle: updatedVehicle,
+            currentHp: updatedStructure?.currentHp ?? c.currentHp,
+            maxHp: updatedStructure?.maxHp ?? c.maxHp,
+            areaEffects,
+          };
+        }
         const updated = {
           ...addArmorWear(c, armor, physicalExposure && result.damage > 0 ? 1 : 0),
           ...applyCharacterRadiationGain(
@@ -2599,6 +2686,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, musicVolume: normalizedVolume }));
   }, []);
 
+  const saveRadioStations = useCallback((stations: RadioStation[]) => {
+    setState(s => {
+      const radioStations = normalizeRadioStations(stations);
+      const activeRadioStationId = radioStations.some(station => station.id === s.activeRadioStationId)
+        ? s.activeRadioStationId
+        : DEFAULT_RADIO_STATION_ID;
+      return { ...s, radioStations, activeRadioStationId };
+    });
+  }, []);
+
+  const selectRadioStation = useCallback((stationId: string) => {
+    setState(s => s.radioStations.some(station => station.id === stationId)
+      ? { ...s, activeRadioStationId: stationId, musicEnabled: true }
+      : s);
+  }, []);
+
   const setAreaProfileRangeOverride = useCallback((profileId: string, effectId: string, range: number) => {
     if (!profileId || !effectId || !Number.isInteger(range) || range < 0 || range > 100000) return;
     setState(s => ({
@@ -2628,6 +2731,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setMutantGhoulRadiationRules, setGhoulRadiationHealingOption, setAreaProfileRangeOverride,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
           setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled, setMusicVolume,
+          saveRadioStations, selectRadioStation,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,
       restorePremadeWeaponCondition: restorePremadeWeaponConditionForCharacter,

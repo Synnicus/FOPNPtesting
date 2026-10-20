@@ -12,8 +12,8 @@ The user confirmed playback started after moving the folder to public storage.
 
 **How to apply:** Keep future soundtrack additions in the public `vault-radio/` folder, separate from system and combat effects, and do not package the large recordings in the native app.
 
-Custom titles and artists for added tracks are device-local persistent settings keyed by the uploaded filename. They do not belong to campaign data, do not override built-in catalog metadata, and must not affect playlist order.
+The user later requested station-specific names, descriptions, ordered song slots, and per-song title/artist metadata to be campaign data included in portable campaign JSON. Imported station slots retain filenames as references only; the audio itself is never embedded and missing files must be replaceable in the editor. The built-in Vault Radio descriptor is "Public Domain 1920's".
 
-**Why:** The user asked for labels to remain after app restarts; sharing labels across devices or campaigns was outside that request.
+**Why:** The user wants campaign exports to restore the station setup across devices while avoiding audio-file duplication and leaving missing recordings to be relinked by the receiving user.
 
-**How to apply:** Keep added-track label edits in local app storage and apply them only after uploaded files have been ordered. Treat cross-device sharing as a separate feature.
+**How to apply:** Keep each station's ordered file references and editable labels in campaign state, validate them during import, and never serialize audio bytes or URLs. Preserve unavailable song slots so users can relink them without losing metadata.

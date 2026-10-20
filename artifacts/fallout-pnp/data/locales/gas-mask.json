@@ -1,0 +1,57 @@
+{
+  "fr": {
+    "Gas mask": "Masque à gaz",
+    "100/0 Gas Resistance": "Résistance au gaz 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Fournit 100 % de résistance au gaz inhalé et 0 % au gaz par contact, sans remplacer le casque."
+  },
+  "it": {
+    "Gas mask": "Maschera antigas",
+    "100/0 Gas Resistance": "Resistenza ai gas 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Fornisce il 100% di resistenza al gas inalato e lo 0% al gas per contatto, senza sostituire l'elmo."
+  },
+  "de": {
+    "Gas mask": "Gasmaske",
+    "100/0 Gas Resistance": "Gasresistenz 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Bietet 100 % Widerstand gegen eingeatmetes Gas und 0 % gegen Kontaktgas, ohne den Helm zu ersetzen."
+  },
+  "es-ES": {
+    "Gas mask": "Máscara antigás",
+    "100/0 Gas Resistance": "Resistencia al gas 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Otorga un 100 % de resistencia al gas inhalado y un 0 % al gas por contacto, sin sustituir el casco."
+  },
+  "es-MX": {
+    "Gas mask": "Máscara de gas",
+    "100/0 Gas Resistance": "Resistencia al gas 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Otorga 100 % de resistencia al gas inhalado y 0 % al gas por contacto, sin reemplazar el casco."
+  },
+  "ja": {
+    "Gas mask": "ガスマスク",
+    "100/0 Gas Resistance": "ガス耐性 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "ヘルメットを交換せずに、吸入ガス耐性100%、接触ガス耐性0%を得ます。"
+  },
+  "pl": {
+    "Gas mask": "Maska przeciwgazowa",
+    "100/0 Gas Resistance": "Odporność na gaz 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Zapewnia 100% odporności na wdychany gaz i 0% na gaz kontaktowy, bez zastępowania hełmu."
+  },
+  "pt-BR": {
+    "Gas mask": "Máscara de gás",
+    "100/0 Gas Resistance": "Resistência a gás 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Concede 100% de resistência a gás inalado e 0% a gás por contato, sem substituir o capacete."
+  },
+  "ru": {
+    "Gas mask": "Противогаз",
+    "100/0 Gas Resistance": "Сопротивление газу 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "Даёт 100% сопротивления вдыхаемому газу и 0% контактному газу, не заменяя шлем."
+  },
+  "zh-Hant": {
+    "Gas mask": "防毒面具",
+    "100/0 Gas Resistance": "毒氣抗性 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "提供 100% 吸入性毒氣抗性及 0% 接觸性毒氣抗性，不會取代頭盔。"
+  },
+  "zh-Hans": {
+    "Gas mask": "防毒面具",
+    "100/0 Gas Resistance": "毒气抗性 100/0",
+    "Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.": "提供 100% 吸入性毒气抗性和 0% 接触性毒气抗性，不会替换头盔。"
+  }
+}

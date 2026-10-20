@@ -880,16 +880,16 @@ export default function CampaignScreen() {
             padding: 14,
             borderRadius: colors.radius,
             borderWidth: 1,
-            backgroundColor: status.type === 'success' ? '#4a8c3f22' : colors.destructive + '22',
-            borderColor: status.type === 'success' ? '#4a8c3f' : colors.destructive,
+            backgroundColor: status.type === 'success' ? colors.success + '22' : colors.destructive + '22',
+            borderColor: status.type === 'success' ? colors.success : colors.destructive,
             marginBottom: 16,
           }}>
             <Feather
               name={status.type === 'success' ? 'check-circle' : 'alert-circle'}
               size={18}
-              color={status.type === 'success' ? '#4a8c3f' : colors.destructive}
+              color={status.type === 'success' ? colors.success : colors.destructive}
             />
-            <Text style={{ color: status.type === 'success' ? '#4a8c3f' : colors.destructive, fontFamily: 'Inter_500Medium', fontSize: 14, flex: 1 }}>
+            <Text style={{ color: status.type === 'success' ? colors.success : colors.destructive, fontFamily: 'Inter_500Medium', fontSize: 14, flex: 1 }}>
               {status.message}
             </Text>
           </View>

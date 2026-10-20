@@ -630,14 +630,14 @@ export default function CampaignToolsPanel({
                     position: 'absolute',
                     left: `${location.x * 100}%`,
                     top: `${location.y * 100}%`,
-                    backgroundColor: '#f59e0b',
+                    backgroundColor: colors.warning,
                     borderRadius: 8,
                     paddingHorizontal: 4,
                     paddingVertical: 2,
                     transform: [{ translateX: -5 }, { translateY: -5 }],
                   }}
                 >
-                  <Text style={{ color: '#111', fontSize: 8, fontFamily: 'Inter_700Bold' }}>
+                  <Text style={{ color: colors.warningForeground, fontSize: 8, fontFamily: 'Inter_700Bold' }}>
                     {location.name.slice(0, 16)}
                   </Text>
                 </View>

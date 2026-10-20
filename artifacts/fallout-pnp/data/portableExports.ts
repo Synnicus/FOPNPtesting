@@ -20,6 +20,8 @@ import { isKarmaLogEntry, MAX_KARMA, MIN_KARMA } from './karma.ts';
 import { isFactionReputationList } from './factionReputation.ts';
 import type { CampaignVisualTheme } from './campaignOptions.ts';
 import type { GhoulRadiationHealingOption } from './radiation.ts';
+import { isRadioStationRecord } from './radioStations.ts';
+import type { RadioStation } from './radioStations.ts';
 import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
 import {
@@ -50,6 +52,8 @@ const SUPPORTED_PORTRAIT_MIME_TYPES = new Set([
 
 export interface CampaignStateSnapshot {
   campaignName?: string;
+  radioStations?: RadioStation[];
+  activeRadioStationId?: string | null;
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
@@ -433,6 +437,15 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
     && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
     && (value.musicVolume === undefined
       || (typeof value.musicVolume === 'number' && Number.isFinite(value.musicVolume) && value.musicVolume >= 0 && value.musicVolume <= 1))
+    && (value.radioStations === undefined
+      || (Array.isArray(value.radioStations)
+        && value.radioStations.every(isRadioStationRecord)
+        && hasUniqueIds(value.radioStations as RadioStation[])))
+    && (value.activeRadioStationId === undefined
+      || value.activeRadioStationId === null
+      || (typeof value.activeRadioStationId === 'string'
+        && (!Array.isArray(value.radioStations)
+          || value.radioStations.some(station => isRadioStationRecord(station) && station.id === value.activeRadioStationId))))
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
       || value.ghoulRadiationHealingOption === 1
@@ -554,6 +567,7 @@ function isCharacterRecord(value: unknown): value is Character {
     && value.id.length <= 128
     && typeof value.name === 'string'
     && (value.type === 'pc' || value.type === 'npc')
+    && (value.wearingGasMask === undefined || typeof value.wearingGasMask === 'boolean')
     && typeof value.race === 'string'
     && (value.customRaceId === undefined
       || typeof value.customRaceId === 'string' && value.customRaceId.length <= 128)
@@ -626,6 +640,13 @@ function isWeaponRecord(value: unknown): value is Weapon {
     && numericFields.every(field => isFiniteNumber(value[field]))
     && typeof value.isDoubleShot === 'boolean'
     && typeof value.isCustom === 'boolean'
+    && (value.apSingle === undefined || value.apSingle === null || isFiniteNumber(value.apSingle))
+    && (value.apTargeted === undefined || value.apTargeted === null || isFiniteNumber(value.apTargeted))
+    && (value.apBurst === undefined || value.apBurst === null || isFiniteNumber(value.apBurst))
+    && (value.attackModes === undefined || isRecord(value.attackModes)
+      && typeof value.attackModes.single === 'boolean'
+      && typeof value.attackModes.targeted === 'boolean'
+      && typeof value.attackModes.burst === 'boolean')
     && isStringArray(value.mods)
     && (value.tags === undefined || isStringArray(value.tags))
     && (value.compatibleAmmo === undefined || isStringArray(value.compatibleAmmo));
@@ -707,6 +728,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || (value.lootTables !== undefined && !Array.isArray(value.lootTables))
     || (value.encounterTables !== undefined && !Array.isArray(value.encounterTables))
     || (value.campaignMaps !== undefined && !Array.isArray(value.campaignMaps))
+    || (value.radioStations !== undefined && !Array.isArray(value.radioStations))
     || !isValidAreaProfileRangeOverrides(value.areaProfileRangeOverrides)
     || !isCatalogPortraitMap(value.bestiaryPortraits)
     || !isCatalogPortraitMap(value.vehicleCatalogPortraits)
@@ -729,6 +751,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !((value.lootTables ?? []) as unknown[]).every(validCampaignTable)
     || !((value.encounterTables ?? []) as unknown[]).every(validCampaignTable)
     || !((value.campaignMaps ?? []) as unknown[]).every(validCampaignMap)
+    || !((value.radioStations ?? []) as unknown[]).every(isRadioStationRecord)
     || !value.customBestiaryTemplates.every(isBestiaryTemplateRecord)
     || !((value.builtInBestiaryOverrides ?? []) as unknown[]).every(isBestiaryTemplateRecord)
     || !((value.customWeaponMods ?? []) as unknown[]).every(validateCustomWeaponMod)
@@ -752,6 +775,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && hasUniqueIds((value.lootTables ?? []) as CampaignTable[])
     && hasUniqueIds((value.encounterTables ?? []) as CampaignTable[])
     && hasUniqueIds((value.campaignMaps ?? []) as CampaignMap[])
+    && hasUniqueIds((value.radioStations ?? []) as RadioStation[])
     && hasUniqueIds(value.customBestiaryTemplates)
     && hasUniqueIds((value.builtInBestiaryOverrides ?? []) as BestiaryTemplate[])
     && new Set(value.removedBuiltInBestiaryTemplateIds ?? []).size === (value.removedBuiltInBestiaryTemplateIds ?? []).length
@@ -770,6 +794,14 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && (value.musicEnabled === undefined || typeof value.musicEnabled === 'boolean')
     && (value.musicVolume === undefined
       || (typeof value.musicVolume === 'number' && Number.isFinite(value.musicVolume) && value.musicVolume >= 0 && value.musicVolume <= 1))
+    && (value.radioStations === undefined
+      || (Array.isArray(value.radioStations)
+        && value.radioStations.every(isRadioStationRecord)))
+    && (value.activeRadioStationId === undefined
+      || value.activeRadioStationId === null
+      || (typeof value.activeRadioStationId === 'string'
+        && (!Array.isArray(value.radioStations)
+          || value.radioStations.some(station => isRadioStationRecord(station) && station.id === value.activeRadioStationId))))
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
       || value.ghoulRadiationHealingOption === 1

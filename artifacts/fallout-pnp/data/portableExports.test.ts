@@ -554,22 +554,39 @@ test('portable campaign imports reject malformed injury attribution', () => {
 });
 
 test('portable campaign exports round-trip theme, audio, and mutant radiation preferences', () => {
+  const radioStations = [{
+    id: 'custom-station',
+    name: 'Roadside Radio',
+    description: 'Songs from the highway.',
+    songs: [
+      { id: 'slot-a', file: 'road-song.mp3', title: 'Road Song', artist: 'The Travelers' },
+      { id: 'slot-b', file: 'not-uploaded-yet.mp3', title: 'Future Song', artist: null },
+      { id: 'slot-c', file: null, title: 'Unassigned', artist: null },
+    ],
+  }];
   const bundle = createCampaignBundle({
     ...state,
     visualTheme: 'eastern',
     systemSoundsEnabled: false,
     combatSoundsEnabled: false,
     musicEnabled: true,
+    radioStations,
+    activeRadioStationId: 'custom-station',
     mutantGhoulRadiationRules: true,
     ghoulRadiationHealingOption: 3,
   }, []);
-  const parsed = parseCampaignFile(JSON.stringify(bundle));
+  const json = JSON.stringify(bundle);
+  const parsed = parseCampaignFile(json);
   assert.equal(parsed.ok, true);
+  assert.match(json, /road-song\.mp3/);
+  assert.doesNotMatch(json, /data:audio|base64,/i);
   if (parsed.ok && parsed.source === 'portable') {
     assert.equal(parsed.bundle.state.visualTheme, 'eastern');
     assert.equal(parsed.bundle.state.systemSoundsEnabled, false);
     assert.equal(parsed.bundle.state.combatSoundsEnabled, false);
     assert.equal(parsed.bundle.state.musicEnabled, true);
+    assert.deepEqual(parsed.bundle.state.radioStations, radioStations);
+    assert.equal(parsed.bundle.state.activeRadioStationId, 'custom-station');
     assert.equal(parsed.bundle.state.mutantGhoulRadiationRules, true);
     assert.equal(parsed.bundle.state.ghoulRadiationHealingOption, 3);
   }

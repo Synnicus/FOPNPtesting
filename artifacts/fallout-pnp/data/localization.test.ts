@@ -46,6 +46,13 @@ const consumablesTranslations = JSON.parse(
 const campaignToolChestTranslationData = JSON.parse(
   readFileSync(new URL('campaign-tool-chest.json', localeDirectory), 'utf8'),
 ) as { keys: string[] } & Record<string, string[]>;
+const radioStationsTranslations = JSON.parse(
+  readFileSync(new URL('radio-stations.json', localeDirectory), 'utf8'),
+) as Record<string, Record<string, string>>;
+const radioStationsRenderedSource = [
+  readFileSync(new URL('../components/RadioStationsModal.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('../components/CampaignOptionsModal.tsx', import.meta.url), 'utf8'),
+].join('\n');
 const campaignToolChestRenderedSource = [
   readFileSync(new URL('../components/CampaignToolsPanel.tsx', import.meta.url), 'utf8'),
   readFileSync(new URL("../app/(tabs)/campaign.tsx", import.meta.url), 'utf8'),
@@ -507,5 +514,24 @@ test('About and guided-tour copy is translated and wired for every supported loc
         assert.equal(runtimeValue, translated.replace('{0}', '2').replace('{1}', '5'));
       }
     });
+  }
+});
+
+test('radio station controls, prompts, and audio metadata labels are translated for every supported locale', () => {
+  const sources = Object.keys(radioStationsTranslations.fr ?? {});
+  const unchangedByDesign = new Set(['Description']);
+  assert.ok(sources.length > 0, 'radio station strings are registered');
+  assert.equal(new Set(sources).size, sources.length);
+  for (const locale of localeIds) {
+    const translations = radioStationsTranslations[locale];
+    assert.ok(translations, `${locale} has radio station translations`);
+    for (const source of sources) {
+      assert.ok(radioStationsRenderedSource.includes(source), `radio station UI includes “${source}”`);
+      assert.ok(translations[source]?.trim(), `${locale} translates “${source}”`);
+      if (!unchangedByDesign.has(source)) {
+        assert.notEqual(translations[source], source, `${locale} does not show English for “${source}”`);
+        assert.notEqual(runtimeTranslateText(source, locale), source, `${locale} resolves “${source}” at runtime`);
+      }
+    }
   }
 });

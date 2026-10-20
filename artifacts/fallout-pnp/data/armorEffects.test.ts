@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BUILT_IN_ARMOR } from './armor.ts';
-import { aggregateArmorEffects, resolveArmorAwareSheet } from './armorEffects.ts';
+import { aggregateArmorEffects, resolveArmorAwareSheet, resolveGasExposureResistances } from './armorEffects.ts';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from './initiativeSync.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 
@@ -27,6 +27,25 @@ test('armor effects stack body and helmet and retain explicit source attribution
   assert.deepEqual(aggregate.sources.map(source => [source.armorId, source.slot]), [
     ['power_armor', 'body'], ['power_helmet', 'helmet'],
   ]);
+});
+
+test('gas mask protects against inhaled gas only and leaves headwear independent', () => {
+  const helmet = armor('combat_helmet');
+  const resistance = resolveGasExposureResistances({
+    wearingGasMask: true,
+    helmet,
+  });
+  const sheet = resolveArmorAwareSheet({
+    special,
+    skills,
+    equippedHelmetId: helmet.id,
+    wearingGasMask: true,
+    allArmor: [helmet],
+  });
+
+  assert.deepEqual(resistance, { inhaled: 100, contact: 0 });
+  assert.equal(sheet.helmet?.id, helmet.id);
+  assert.equal(sheet.gasResistance, 100);
 });
 
 test('effective radiation resistance includes base, trait, resistance perks, active effects, and worn armor', () => {

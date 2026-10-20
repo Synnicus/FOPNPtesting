@@ -30,6 +30,11 @@ export const DAMAGE_TYPE_NAMES: Record<DamageType, string> = {
 };
 
 export type WeaponCategory = 'smallGuns' | 'bigGuns' | 'energyWeapons' | 'meleeWeapons' | 'unarmed' | 'throwing' | 'minesTraps' | 'natural';
+export interface WeaponAttackModes {
+  single: boolean;
+  targeted: boolean;
+  burst: boolean;
+}
 export type ArmorSlot = 'body' | 'helmet';
 export type ConsumableCategory = 'chem' | 'medical' | 'food' | 'drink' | 'other';
 export type CharacterType = 'pc' | 'npc';
@@ -292,16 +297,20 @@ export interface Weapon {
   /** Compatible ammo type ids (data/ammo.ts). Undefined/empty = weapon doesn't use ammo types. */
   compatibleAmmo?: string[];
   /** AP cost for a single attack (manual "AP S"). Fallback: AP_COSTS.ATTACK_SINGLE. */
-  apSingle?: number;
+  apSingle?: number | null;
   /** AP cost for a targeted/aimed attack (manual "T"). null = cannot be targeted. */
   apTargeted?: number | null;
   /** AP cost for a burst attack (manual "B"). null = no burst mode. */
   apBurst?: number | null;
+  /** Explicit availability of the manual's three attack modes; absent uses legacy AP-field rules. */
+  attackModes?: WeaponAttackModes;
   /** Optional shared area-effect profile id. Absent on legacy/custom weapons. */
   areaAttackProfileId?: string;
   /** Optional multi-zone profile used by campaign-created explosive traps. */
   customAreaEffects?: CustomAreaEffect[];
   areaRangeUnit?: AreaRangeUnit;
+  /** Explicitly enables this custom mine/trap's configured blast zones. */
+  hasBlastRadius?: boolean;
 }
 
 // ─── Armor ────────────────────────────────────────────────────────────────────
@@ -761,6 +770,8 @@ export interface Character {
   equippedBodyArmorId?: string;
 
   equippedHelmetId?: string;
+  /** A separate worn gas mask; it grants inhaled-gas protection without occupying the helmet slot. */
+  wearingGasMask?: boolean;
 
   armorConditionStates?: ArmorConditionState[];
   weaponAmmoStates: WeaponAmmoState[];
