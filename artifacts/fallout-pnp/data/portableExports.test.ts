@@ -9,6 +9,7 @@ import {
   resolveVehicleCrewAssignments,
   spawnVehicleCharacter,
 } from './vehicles.ts';
+import { customRuleConditionMatches } from './customRules.ts';
 import { BUILT_IN_BESTIARY } from './bestiary.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
@@ -447,6 +448,80 @@ test('portable campaign exports round-trip theme, audio, and mutant radiation pr
     assert.equal(parsed.bundle.state.musicEnabled, true);
     assert.equal(parsed.bundle.state.mutantGhoulRadiationRules, true);
     assert.equal(parsed.bundle.state.ghoulRadiationHealingOption, 3);
+  }
+});
+
+test('portable campaigns preserve custom equipment tags and keep imported items eligible for tag conditions', () => {
+  const taggedWeapon: Weapon = {
+    ...customWeapon,
+    tags: ['vault-tech', 'custom-ranged'],
+  };
+  const taggedArmor: Armor = {
+    ...customArmor,
+    name: 'T-51 Power Armor',
+    tags: ['vault-tech', 'reinforced-weave'],
+  };
+  const bundle = createCampaignBundle({
+    ...state,
+    customWeapons: [taggedWeapon],
+    customArmor: [taggedArmor],
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') return;
+
+  const importedWeapon = parsed.bundle.state.customWeapons[0];
+  const importedArmor = parsed.bundle.state.customArmor[0];
+  assert.deepEqual(importedWeapon.tags, taggedWeapon.tags);
+  assert.deepEqual(importedArmor.tags, taggedArmor.tags);
+
+  assert.equal(customRuleConditionMatches(character, importedWeapon, [importedArmor], 'single', {
+    weaponTags: ['custom-ranged'],
+    armorTags: ['reinforced-weave'],
+  }), true, 'campaign-defined equipment tags still satisfy perk conditions');
+  assert.equal(customRuleConditionMatches(character, importedWeapon, [importedArmor], 'single', {
+    weaponTags: ['small guns'],
+    armorTags: ['power armor'],
+  }), true, 'inferred weapon and armor tags still satisfy perk conditions');
+});
+
+test('malformed equipment tags are discarded without rejecting the rest of an imported campaign', () => {
+  const bundle = createCampaignBundle({
+    ...state,
+    customWeapons: [customWeapon],
+    customArmor: [customArmor],
+  }, []);
+  const malformedPortable = {
+    ...bundle,
+    state: {
+      ...bundle.state,
+      customWeapons: [{ ...customWeapon, tags: { invalid: true } }],
+      customArmor: [{ ...customArmor, tags: ['kept-tag', 17, null] }],
+    },
+  };
+  const portable = parseCampaignFile(JSON.stringify(malformedPortable));
+
+  assert.equal(portable.ok, true);
+  if (portable.ok && portable.source === 'portable') {
+    assert.equal(portable.bundle.state.characters.length, state.characters.length);
+    assert.equal(portable.bundle.state.customWeapons[0].id, customWeapon.id);
+    assert.equal('tags' in portable.bundle.state.customWeapons[0], false);
+    assert.deepEqual(portable.bundle.state.customArmor[0].tags, ['kept-tag']);
+  }
+
+  const malformedLegacy = {
+    ...state,
+    customWeapons: [{ ...customWeapon, tags: 'invalid' }],
+    customArmor: [{ ...customArmor, tags: ['kept-tag', false] }],
+  };
+  const legacy = parseCampaignFile(JSON.stringify(malformedLegacy));
+
+  assert.equal(legacy.ok, true);
+  if (legacy.ok && legacy.source === 'legacy') {
+    assert.equal(legacy.state.characters.length, state.characters.length);
+    assert.equal('tags' in legacy.state.customWeapons[0], false);
+    assert.deepEqual(legacy.state.customArmor[0].tags, ['kept-tag']);
   }
 });
 

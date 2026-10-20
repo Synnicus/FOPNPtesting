@@ -159,6 +159,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function sanitizeEquipmentTags(value: unknown): unknown {
+  if (!isRecord(value) || !('tags' in value)) return value;
+  if (!Array.isArray(value.tags)) {
+    const { tags: _malformedTags, ...equipment } = value;
+    return equipment;
+  }
+
+  const validTags = value.tags.filter((tag): tag is string => typeof tag === 'string');
+  return validTags.length === value.tags.length ? value : { ...value, tags: validTags };
+}
+
+function sanitizeCampaignEquipmentTags(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return {
+    ...value,
+    ...(Array.isArray(value.customWeapons)
+      ? { customWeapons: value.customWeapons.map(sanitizeEquipmentTags) }
+      : {}),
+    ...(Array.isArray(value.customArmor)
+      ? { customArmor: value.customArmor.map(sanitizeEquipmentTags) }
+      : {}),
+  };
+}
+
 function isImageMimeType(value: unknown): value is string {
   return typeof value === 'string' && SUPPORTED_PORTRAIT_MIME_TYPES.has(value.toLowerCase());
 }
@@ -919,8 +943,9 @@ export function parseCampaignFile(json: string): CampaignParseResult {
   }
 
   if (parsed.format !== PORTABLE_EXPORT_FORMAT) {
-    return isCampaignState(parsed)
-      ? { ok: true, source: 'legacy', state: parsed }
+    const legacyState = sanitizeCampaignEquipmentTags(parsed);
+    return isCampaignState(legacyState)
+      ? { ok: true, source: 'legacy', state: legacyState }
       : { ok: false, error: 'The selected file is not a campaign export.' };
   }
   if (parsed.version !== PORTABLE_EXPORT_VERSION) {
@@ -929,12 +954,13 @@ export function parseCampaignFile(json: string): CampaignParseResult {
   if (parsed.kind !== 'campaign') {
     return { ok: false, error: 'Choose a campaign export rather than an individual asset file.' };
   }
-  if (!isCompletePortableCampaignState(parsed.state) || !Array.isArray(parsed.assets)) {
+  const campaignState = sanitizeCampaignEquipmentTags(parsed.state);
+  if (!isCompletePortableCampaignState(campaignState) || !Array.isArray(parsed.assets)) {
     return { ok: false, error: 'The campaign export is incomplete or damaged.' };
   }
 
-  const characterIds = new Set(parsed.state.characters.map(character => character.id));
-  const vehicleIds = new Set(((parsed.state.customVehicles ?? []) as VehicleProfile[]).map(vehicle => vehicle.id));
+  const characterIds = new Set(campaignState.characters.map(character => character.id));
+  const vehicleIds = new Set(((campaignState.customVehicles ?? []) as VehicleProfile[]).map(vehicle => vehicle.id));
   const embeddedAssetIds = new Set<string>();
   const validAssets: PortablePortraitAsset[] = [];
   let ignoredAssets = 0;
@@ -968,9 +994,9 @@ export function parseCampaignFile(json: string): CampaignParseResult {
       version: PORTABLE_EXPORT_VERSION,
       kind: 'campaign',
       state: {
-        ...parsed.state,
-        characters: parsed.state.characters.map(character => characterForBundle(character)),
-        customVehicles: (parsed.state.customVehicles ?? []).map(vehicleForBundle),
+        ...campaignState,
+        characters: campaignState.characters.map(character => characterForBundle(character)),
+        customVehicles: (campaignState.customVehicles ?? []).map(vehicleForBundle),
       },
       assets: validAssets,
     },
