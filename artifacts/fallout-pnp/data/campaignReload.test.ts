@@ -7,7 +7,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import ts from 'typescript';
 import type { BestiaryTemplate, Character, CustomPerkDefinition, InitiativeEntry } from '../context/types.ts';
-import { MANUAL_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
+import { BUILT_IN_BESTIARY, MANUAL_BESTIARY, resolveBestiaryTemplates, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
 import {
@@ -247,6 +247,99 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.deepEqual(saved.characters[2].vehicle.weaponSlots, vehicleSlots);
     assert.deepEqual(saved.characters[2].vehicle.mountedWeapons, ['Rheinmetall 120mm Gun', 'M2HB ×2']);
     assert.deepEqual(saved.characters[2].vehicleCrew, { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id });
+
+    await t.test('spawned built-in NPCs remain snapshots after catalog edits and removals', async () => {
+      storage.clear();
+      campaign = undefined;
+      const sourceTemplate = MANUAL_BESTIARY.find(template => template.id === 'deathclaw')!;
+      const removedTemplate = MANUAL_BESTIARY.find(template => template.id === 'giant_rat')!;
+      const editedTemplate: BestiaryTemplate = {
+        ...sourceTemplate,
+        name: 'Edited Deathclaw',
+        race: 'robot',
+        maxHp: sourceTemplate.maxHp + 100,
+        portrait: 'data:image/png;base64,AQID',
+      };
+      const editedNpc = {
+        ...spawnBestiaryTemplate(sourceTemplate, BUILT_IN_WEAPONS, 'Wounded Deathclaw', 'edited-source-npc'),
+        race: 'human' as const,
+        portrait: 'file:///current-npc-portrait.png',
+        special: { ...sourceTemplate.special, strength: 3 },
+        maxHp: 47,
+        currentHp: 13,
+        currentAP: 2,
+        tempAC: 6,
+        position: 'prone' as const,
+        conditions: ['poisoned'],
+        skills: { ...sourceTemplate.skills, repair: 42 },
+      };
+      const removedNpc = {
+        ...spawnBestiaryTemplate(removedTemplate, BUILT_IN_WEAPONS, 'Surviving Giant Rat', 'removed-source-npc'),
+        currentHp: 4,
+        currentAP: 1,
+      };
+      const assertSnapshot = (
+        state: Pick<ReturnType<typeof useApp>, 'characters' | 'builtInBestiaryOverrides' | 'removedBuiltInBestiaryTemplateIds'>,
+        stage: string,
+      ) => {
+        const edited = state.characters.find(character => character.id === editedNpc.id);
+        assert.ok(edited, `${stage}: NPC remains in Characters`);
+        assert.equal(edited.race, editedNpc.race, `${stage}: edited NPC race preserved`);
+        assert.equal(edited.portrait, editedNpc.portrait, `${stage}: current portrait preserved`);
+        assert.deepEqual(edited.special, editedNpc.special, `${stage}: SPECIAL preserved`);
+        assert.equal(edited.maxHp, editedNpc.maxHp, `${stage}: max HP preserved`);
+        assert.equal(edited.currentHp, editedNpc.currentHp, `${stage}: current HP preserved`);
+        assert.equal(edited.currentAP, editedNpc.currentAP, `${stage}: current AP preserved`);
+        assert.equal(edited.tempAC, editedNpc.tempAC, `${stage}: temporary AC preserved`);
+        assert.equal(edited.position, editedNpc.position, `${stage}: combat position preserved`);
+        assert.deepEqual(edited.conditions, editedNpc.conditions, `${stage}: combat conditions preserved`);
+        assert.deepEqual(edited.skills, editedNpc.skills, `${stage}: skills preserved`);
+
+        const removed = state.characters.find(character => character.id === removedNpc.id);
+        assert.ok(removed, `${stage}: NPC remains after its source entry is removed`);
+        assert.equal(removed.currentHp, removedNpc.currentHp, `${stage}: removed-source NPC HP preserved`);
+        assert.equal(removed.currentAP, removedNpc.currentAP, `${stage}: removed-source NPC AP preserved`);
+        assert.equal(state.builtInBestiaryOverrides[0]?.name, editedTemplate.name, `${stage}: edited catalog entry retained`);
+        assert.deepEqual(state.removedBuiltInBestiaryTemplateIds, [removedTemplate.id], `${stage}: removed catalog entry retained`);
+
+        const catalog = resolveBestiaryTemplates(
+          MANUAL_BESTIARY,
+          state.builtInBestiaryOverrides,
+          state.removedBuiltInBestiaryTemplateIds,
+          [],
+        );
+        assert.equal(catalog.some(template => template.id === removedTemplate.id), false, `${stage}: removed entry hidden`);
+        const currentTemplate = catalog.find(template => template.id === sourceTemplate.id)!;
+        const futureSpawn = spawnBestiaryTemplate(currentTemplate, BUILT_IN_WEAPONS, 'Future Spawn', `${stage}-future-spawn`);
+        assert.equal(futureSpawn.name, 'Future Spawn');
+        assert.equal(futureSpawn.race, editedTemplate.race, `${stage}: future spawn uses the edited template`);
+        assert.equal(futureSpawn.maxHp, editedTemplate.maxHp, `${stage}: future spawn uses edited stats`);
+      };
+
+      try {
+        const empty = await mount();
+        let imported = false;
+        await act(async () => {
+          imported = await empty.importCampaign(JSON.stringify({
+            characters: [editedNpc, removedNpc],
+            builtInBestiaryOverrides: [editedTemplate],
+            removedBuiltInBestiaryTemplateIds: [removedTemplate.id],
+          }));
+        });
+        assert.equal(imported, true, 'campaign with edited and removed built-in entries imports');
+        assert.ok(campaign);
+        assertSnapshot(campaign, 'imported state');
+        assertSnapshot(JSON.parse(storage.get(STORAGE_KEY)!), 'saved campaign');
+
+        await act(async () => renderer!.unmount());
+        renderer = undefined;
+        campaign = undefined;
+        assertSnapshot(await mount(), 'reloaded campaign');
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
 
     await t.test('importCampaign repairs legacy custom armor and saves the imported repair', async () => {
       storage.clear();

@@ -10,7 +10,8 @@ import {
   spawnVehicleCharacter,
 } from './vehicles.ts';
 import { customRuleConditionMatches } from './customRules.ts';
-import { BUILT_IN_BESTIARY } from './bestiary.ts';
+import { BUILT_IN_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
+import { BUILT_IN_WEAPONS } from './weapons.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
   createCampaignBundle,
@@ -1095,21 +1096,61 @@ test('catalog photos stay embedded in portable campaigns and reject external ima
   assert.equal(invalid.ok, false);
 });
 
-test('portable campaigns preserve edited and removed built-in Bestiary entries', () => {
-  const edited = { ...BUILT_IN_BESTIARY[0], name: 'Edited premade NPC' };
-  const removedId = BUILT_IN_BESTIARY[1].id;
+test('portable campaigns preserve spawned NPC snapshots alongside edited and removed Bestiary entries', async () => {
+  const editedSource = BUILT_IN_BESTIARY.find(template => template.id === 'deathclaw')!;
+  const removedSource = BUILT_IN_BESTIARY.find(template => template.id === 'giant_rat')!;
+  const edited = {
+    ...editedSource,
+    name: 'Edited premade NPC',
+    race: 'robot' as const,
+    maxHp: editedSource.maxHp + 100,
+    portrait: 'data:image/png;base64,BAUG',
+  };
+  const spawned = {
+    ...spawnBestiaryTemplate(editedSource, BUILT_IN_WEAPONS, 'Existing NPC', 'existing-bestiary-npc'),
+    race: 'human' as const,
+    portrait: 'data:image/jpeg;base64,AQID',
+    maxHp: 47,
+    currentHp: 13,
+    currentAP: 2,
+    tempAC: 6,
+    position: 'prone' as const,
+    conditions: ['poisoned'],
+  };
+  const removedSpawn = {
+    ...spawnBestiaryTemplate(removedSource, BUILT_IN_WEAPONS, 'Surviving NPC', 'removed-bestiary-npc'),
+    currentHp: 4,
+    currentAP: 1,
+  };
+  const asset = portraitAsset(spawned.id, 'image/jpeg', 'AQID');
+  assert.ok(asset);
   const bundle = createCampaignBundle({
     ...state,
+    characters: [spawned, removedSpawn],
     builtInBestiaryOverrides: [edited],
-    removedBuiltInBestiaryTemplateIds: [removedId],
-  }, []);
+    removedBuiltInBestiaryTemplateIds: [removedSource.id],
+  }, [asset]);
 
   const parsed = parseCampaignFile(JSON.stringify(bundle));
   assert.equal(parsed.ok, true);
-  if (parsed.ok && parsed.source === 'portable') {
-    assert.equal(parsed.bundle.state.builtInBestiaryOverrides?.[0]?.name, 'Edited premade NPC');
-    assert.deepEqual(parsed.bundle.state.removedBuiltInBestiaryTemplateIds, [removedId]);
-  } else {
+  if (!parsed.ok || parsed.source !== 'portable') {
     assert.fail('Expected the exported campaign to be recognized as a portable bundle.');
   }
+  assert.equal(parsed.bundle.state.builtInBestiaryOverrides?.[0]?.name, 'Edited premade NPC');
+  assert.deepEqual(parsed.bundle.state.removedBuiltInBestiaryTemplateIds, [removedSource.id]);
+  const [importedEdited, importedRemoved] = parsed.bundle.state.characters;
+  assert.equal(importedEdited.race, spawned.race);
+  assert.equal(importedEdited.maxHp, spawned.maxHp);
+  assert.equal(importedEdited.currentHp, spawned.currentHp);
+  assert.equal(importedEdited.currentAP, spawned.currentAP);
+  assert.equal(importedEdited.tempAC, spawned.tempAC);
+  assert.equal(importedEdited.position, spawned.position);
+  assert.deepEqual(importedEdited.conditions, spawned.conditions);
+  assert.equal(importedRemoved.id, removedSpawn.id, 'NPC remains after its Bestiary source is removed');
+  assert.equal(importedRemoved.currentHp, removedSpawn.currentHp);
+  assert.equal(importedRemoved.currentAP, removedSpawn.currentAP);
+
+  const restored = await restoreCampaignPortraits(parsed.bundle, async image =>
+    `restored://${portraitOwnerId(image)}/${image.mimeType}`);
+  assert.equal(restored.state.characters[0].portrait, 'restored://existing-bestiary-npc/image/jpeg');
 });

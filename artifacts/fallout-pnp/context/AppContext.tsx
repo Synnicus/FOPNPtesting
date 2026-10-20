@@ -20,7 +20,6 @@ import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiati
 import {
   BUILT_IN_BESTIARY,
   normalizeCustomTemplateArmorClass,
-  getBuiltInBestiaryRace,
   shouldMigrateSpawnedNpcArmorClass,
 } from '@/data/bestiary';
 import { isBestiaryTemplateRecord } from '@/data/portableExports';
@@ -604,20 +603,8 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
     if (normalized.race === 'robot' && normalized.poisonResistance !== 100) {
       normalized = { ...normalized, poisonResistance: 100 };
     }
-    if (normalized.type === 'npc' && normalized.bestiaryTemplateId) {
-      const template = BUILT_IN_BESTIARY.find(candidate => candidate.id === normalized.bestiaryTemplateId);
-      const builtInRace = getBuiltInBestiaryRace(normalized.bestiaryTemplateId)
-        ?? (template?.category === 'robot' ? 'robot' : undefined);
-      if (builtInRace && normalized.race !== builtInRace) {
-        normalized = {
-          ...normalized,
-          race: builtInRace,
-          ...(builtInRace === 'robot' ? { poisonResistance: 100 } : {}),
-        };
-      } else if (template?.category === 'robot' && normalized.poisonResistance !== 100) {
-        normalized = { ...normalized, poisonResistance: 100 };
-      }
-    }
+    // bestiaryTemplateId is provenance only: spawned NPCs are snapshots, not
+    // live references. Never re-apply the built-in source template on reload.
     return normalized;
   };
   const normalizeTemplate = (template: BestiaryTemplate): BestiaryTemplate => {
@@ -637,10 +624,11 @@ function normalizeArmorEffectsData(parsed: AppState): AppState {
   const normalizedBuiltInOverrides = (parsed.builtInBestiaryOverrides ?? [])
     .filter(template => isBestiaryTemplateRecord(template) && builtInTemplateIds.has(template.id))
     .map(normalizeTemplate);
-  const removedBuiltInBestiaryTemplateIds = [...new Set(
-    (parsed.removedBuiltInBestiaryTemplateIds ?? [])
-      .filter(id => typeof id === 'string' && builtInTemplateIds.has(id)),
-  )];
+  const removedBuiltInBestiaryTemplateIds = Array.from(new Set(
+    (parsed.removedBuiltInBestiaryTemplateIds ?? []).filter((id): id is string =>
+      typeof id === 'string' && builtInTemplateIds.has(id),
+    ),
+  ));
   const bestiaryPortraits = normalizeCatalogPortraitMap({
     ...Object.fromEntries([...normalizedTemplates, ...normalizedBuiltInOverrides]
       .filter(template => isCatalogImageDataUri(template.portrait))
