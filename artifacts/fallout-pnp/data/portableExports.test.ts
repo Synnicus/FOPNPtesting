@@ -1156,6 +1156,11 @@ test('custom vehicle profiles export as importable individual files with portrai
     isCustom: true,
     portrait: 'file:///old-device/custom-vehicle.png',
     systems: BUILT_IN_VEHICLES[0].systems.map(system => ({ ...system })),
+    weaponSlots: [
+      { id: 'front-cannon', name: 'Front Cannon', weaponId: 'custom-cannon', quantity: 1 },
+      { id: 'left-turret', name: 'Left Turret', weaponId: 'custom-turret', quantity: 2 },
+      { id: 'right-turret', name: 'Right Turret', weaponId: 'custom-turret', quantity: 1 },
+    ],
   };
   const bundle = createVehicleBundle(
     source,
@@ -1173,11 +1178,22 @@ test('custom vehicle profiles export as importable individual files with portrai
   assert.equal(restored.restored, 1);
   assert.equal(restored.vehicle.portrait, `restored://${source.id}`);
   assert.equal(restored.vehicle.armorClass, 0);
+  assert.deepEqual(restored.vehicle.weaponSlots, source.weaponSlots);
 
   assert.equal(parseIndividualFile(JSON.stringify({
     ...bundle,
     vehicle: { ...bundle.vehicle, isCustom: false },
   })).ok, false);
+
+  const { weaponSlots: _weaponSlots, ...olderVehicle } = bundle.vehicle;
+  const olderFile = parseIndividualFile(JSON.stringify({
+    ...bundle,
+    vehicle: olderVehicle,
+  }));
+  assert.equal(olderFile.ok, true);
+  if (olderFile.ok && olderFile.kind === 'vehicle') {
+    assert.equal(olderFile.bundle.vehicle.weaponSlots, undefined);
+  }
 });
 
 test('portable campaign import rejects duplicate character ids before restoring files', () => {
