@@ -14,6 +14,7 @@ import { useColors } from '@/hooks/useColors';
 import type { CampaignMap, CampaignTable, Character } from '@/context/types';
 import { rollEncounterTable, rollLootTable, type CampaignTableRollResult } from '@/data/campaignTools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { translateText } from '@/data/localization';
 
 type ToolTab = 'loot' | 'encounters' | 'maps';
 
@@ -21,7 +22,7 @@ const id = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function confirmDestructive(title: string, message: string, onConfirm: () => void) {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+    if (window.confirm(`${translateText(title)}\n\n${translateText(message)}`)) onConfirm();
     return;
   }
   Alert.alert(title, message, [
@@ -249,7 +250,7 @@ export default function CampaignToolsPanel({
   const removeEntry = (table: CampaignTable, kind: 'loot' | 'encounters', entryId: string) => {
     const entry = table.entries.find(item => item.id === entryId);
     if (!entry) return;
-    confirmDestructive(`Remove ${entry.name || 'this entry'}?`, 'This entry will be removed from the table.', () => {
+    confirmDestructive(`Remove ${translateText(entry.name || 'this entry')}?`, 'This entry will be removed from the table.', () => {
       updateTable(kind, { ...table, entries: table.entries.filter(item => item.id !== entryId) });
     });
   };
@@ -460,6 +461,7 @@ export default function CampaignToolsPanel({
             </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
+              accessibilityLabel="Delete table"
               onPress={() => deleteTable(table.id, kind)}
               style={buttonStyle}
             >
@@ -532,7 +534,7 @@ export default function CampaignToolsPanel({
             <TouchableOpacity accessibilityRole="button" onPress={() => addTable(kind)} style={buttonStyle}>
               <Feather name="plus" size={15} color={colors.primary} />
               <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>
-                ADD {kind === 'loot' ? 'LOOT' : 'ENCOUNTER'} TABLE
+                {kind === 'loot' ? 'ADD LOOT TABLE' : 'ADD ENCOUNTER TABLE'}
               </Text>
             </TouchableOpacity>
             {tables.map(table => renderTable(table, kind))}
@@ -579,6 +581,7 @@ export default function CampaignToolsPanel({
           {map.imageDataUri ? (
             <TouchableOpacity
               accessibilityRole="button"
+              accessibilityLabel="Remove map image"
               onPress={() => updateMap({ ...map, imageDataUri: undefined })}
               style={buttonStyle}
             >
@@ -740,11 +743,11 @@ export default function CampaignToolsPanel({
           return (
             <View key={marker.characterId} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={{ flex: 1, color: colors.foreground, fontSize: 10 }}>
-                {character?.name ?? 'Unknown character'} — party marker
+                {character?.name ?? translateText('Unknown character')} — party marker
               </Text>
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel={`Remove ${character?.name ?? 'party'} marker`}
+                accessibilityLabel={`Remove ${character?.name ?? translateText('party')} marker`}
                 onPress={() => updateMap({
                   ...map,
                   party: map.party.filter(item => item.characterId !== marker.characterId),
@@ -877,7 +880,7 @@ export default function CampaignToolsPanel({
                             accessibilityRole="button"
                             accessibilityLabel={`Delete ${map.name}`}
                             onPress={() => confirmDestructive(
-                              `Delete ${map.name || 'this map'}?`,
+                              `Delete ${translateText(map.name || 'this map')}?`,
                               'The map image and markers will be removed from the campaign.',
                               () => {
                                 const next = campaignMaps.filter(item => item.id !== map.id);

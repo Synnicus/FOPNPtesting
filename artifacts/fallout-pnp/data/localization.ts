@@ -20,6 +20,7 @@ import customEditorsUi from './locales/custom-editors.json';
 import equipmentTagUi from './locales/equipment-tags.json';
 import catalogImagesUi from './locales/catalog-images.json';
 import consumablesUi from './locales/consumables-ui.json';
+import campaignToolChestUi from './locales/campaign-tool-chest.json';
 import appTourUi from './locales/app-tour.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
@@ -514,7 +515,23 @@ const customEditorsUiTranslations = customEditorsUi as Partial<Record<AppLocale,
 const equipmentTagUiTranslations = equipmentTagUi as Partial<Record<AppLocale, Record<string, string>>>;
 const catalogImagesUiTranslations = catalogImagesUi as Partial<Record<AppLocale, Record<string, string>>>;
 const consumablesUiTranslations = consumablesUi as Partial<Record<AppLocale, Record<string, string>>>;
+const campaignToolChestTranslationData = campaignToolChestUi as {
+  keys: string[];
+} & Partial<Record<AppLocale, string[]>>;
 const appTourTranslationData = appTourUi as { keys: string[] } & Partial<Record<AppLocale, string[]>>;
+const campaignToolChestUiTranslations = Object.fromEntries(
+  APP_LANGUAGES
+    .filter(({ locale }) => locale !== 'en')
+    .map(({ locale }) => {
+      const translatedValues = campaignToolChestTranslationData[locale];
+      if (!translatedValues || translatedValues.length !== campaignToolChestTranslationData.keys.length) {
+        throw new Error(`Incomplete Campaign Tool Chest translations for ${locale}`);
+      }
+      return [locale, Object.fromEntries(
+        campaignToolChestTranslationData.keys.map((key, index) => [key, translatedValues[index]]),
+      )];
+    }),
+) as Partial<Record<AppLocale, Record<string, string>>>;
 const appTourUiTranslations = Object.fromEntries(
   APP_LANGUAGES
     .filter(({ locale }) => locale !== 'en')
@@ -542,6 +559,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(equipmentTagUiTranslations[locale] ?? {}),
       ...(catalogImagesUiTranslations[locale] ?? {}),
       ...(consumablesUiTranslations[locale] ?? {}),
+      ...(campaignToolChestUiTranslations[locale] ?? {}),
       ...(appTourUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;

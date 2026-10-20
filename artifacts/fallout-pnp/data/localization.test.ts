@@ -43,6 +43,13 @@ const catalogImagesTranslations = JSON.parse(
 const consumablesTranslations = JSON.parse(
   readFileSync(new URL('consumables-ui.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
+const campaignToolChestTranslationData = JSON.parse(
+  readFileSync(new URL('campaign-tool-chest.json', localeDirectory), 'utf8'),
+) as { keys: string[] } & Record<string, string[]>;
+const campaignToolChestRenderedSource = [
+  readFileSync(new URL('../components/CampaignToolsPanel.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL("../app/(tabs)/campaign.tsx", import.meta.url), 'utf8'),
+].join('\n');
 const factionReputationTranslations = JSON.parse(
   readFileSync(new URL('faction-reputation.json', localeDirectory), 'utf8'),
 ) as Record<string, Record<string, string>>;
@@ -305,6 +312,40 @@ test('consumable catalog and custom editor text is translated in every locale', 
       assert.ok(translations[source]?.trim(), `${locale} translates “${source}”`);
       assert.notEqual(translations[source], source, `${locale} does not display English for “${source}”`);
     }
+  }
+});
+
+test('Campaign Tool Chest headings, controls, prompts, and placeholders are translated in every locale', () => {
+  assert.equal(new Set(campaignToolChestTranslationData.keys).size, campaignToolChestTranslationData.keys.length);
+  const untranslatedByDesign = new Set(['table', 'tables', 'JSON']);
+  for (const locale of localeIds) {
+    const values = campaignToolChestTranslationData[locale];
+    assert.ok(values, `${locale} has Campaign Tool Chest translations`);
+    assert.equal(values.length, campaignToolChestTranslationData.keys.length, `${locale} has one value per Tool Chest phrase`);
+
+    campaignToolChestTranslationData.keys.forEach((source, index) => {
+      const translated = values[index];
+      assert.ok(translated?.trim(), `${locale} translates “${source}”`);
+      if (!untranslatedByDesign.has(source)) {
+        assert.notEqual(translated, source, `${locale} does not show English for “${source}”`);
+      }
+      assert.deepEqual(
+        [...source.matchAll(/\{\d+\}/g)].map(match => match[0]).sort(),
+        [...translated.matchAll(/\{\d+\}/g)].map(match => match[0]).sort(),
+        `${locale} preserves placeholders in “${source}”`,
+      );
+
+      const hasPlaceholders = /\{\d+\}/.test(source);
+      if (!hasPlaceholders) {
+        assert.ok(campaignToolChestRenderedSource.includes(source), `Tool Chest source contains “${source}”`);
+        assert.equal(runtimeTranslateText(source, locale), translated, `${locale} resolves “${source}” at runtime`);
+        return;
+      }
+
+      const sampleSource = source.replace('{0}', 'Sample').replace('{1}', '3');
+      const expected = translated.replace('{0}', 'Sample').replace('{1}', '3');
+      assert.equal(runtimeTranslateText(sampleSource, locale), expected, `${locale} resolves “${source}” with values`);
+    });
   }
 });
 
