@@ -5,7 +5,9 @@ import {
   EXPLOSIVE_AMMO_AREA_PROFILES,
   MINE_TRAP_AOE_PROFILES,
   normalizeAreaProfileRangeOverrides,
+  formatAreaResolution,
   resolveAreaZoneTarget,
+  VEHICLE_CANNON_AREA_PROFILES,
 } from './areaEffects.ts';
 
 test('mine zones include every component whose range reaches that zone', () => {
@@ -67,4 +69,79 @@ test('one assigned zone resolves all stacked damage effects in one result', () =
   assert.equal(result.damage, 12);
   assert.equal(result.zoneId, zone.id);
   assert.equal(result.zoneLabel, zone.label);
+});
+
+test('vehicle cannon profiles use the manual blast dice and 1d6 concussion through 100m', () => {
+  assert.deepEqual(
+    VEHICLE_CANNON_AREA_PROFILES.map(profile => [
+      profile.id,
+      profile.effects.map(effect => [
+        effect.id, effect.kind, effect.damageDieCount, effect.damageDie,
+        effect.damageBonus, effect.radius, effect.rangeUnit,
+      ]),
+    ]),
+    [
+      ['vehicle-cannon:vehicle_20mm_cannon', [
+        ['blast', 'explosion', 8, 10, 40, 10, undefined],
+        ['concussion', 'concussion', 1, 6, 0, 100, undefined],
+      ]],
+      ['vehicle-cannon:vehicle_25mm_cannon', [
+        ['blast', 'explosion', 8, 10, 40, 10, undefined],
+        ['concussion', 'concussion', 1, 6, 0, 100, undefined],
+      ]],
+      ['vehicle-cannon:vehicle_m68_105mm_cannon', [
+        ['blast', 'explosion', 15, 20, 30, 15, undefined],
+        ['concussion', 'concussion', 1, 6, 0, 100, undefined],
+      ]],
+      ['vehicle-cannon:rheinmetall_120mm_gun', [
+        ['blast', 'explosion', 20, 20, 50, 20, undefined],
+        ['concussion', 'concussion', 1, 6, 0, 100, undefined],
+      ]],
+      ['vehicle-cannon:vehicle_152mm_shillelagh', [
+        ['blast', 'explosion', 20, 20, 50, 25, undefined],
+        ['concussion', 'concussion', 1, 6, 0, 100, undefined],
+      ]],
+    ],
+  );
+  assert.ok(VEHICLE_CANNON_AREA_PROFILES.every(profile => profile.rangeUnit === 'm'));
+});
+
+test('cannon impact target takes blast and concussion once with DT ignored only for concussion', () => {
+  const profile = VEHICLE_CANNON_AREA_PROFILES.find(candidate => candidate.id === 'vehicle-cannon:vehicle_20mm_cannon');
+  assert.ok(profile);
+  const zones = buildAreaDamageZones(profile, {}, { blast: 100, concussion: 6 });
+  assert.deepEqual(zones.map(zone => [zone.minDistance, zone.maxDistance]), [[0, 10], [11, 100]]);
+  const impact = resolveAreaZoneTarget(zones[0], {
+    id: 'target-1',
+    name: 'Impact target',
+    endurance: 5,
+    gasInhaledResistance: 0,
+    gasContactResistance: 0,
+    electricityResistance: 0,
+    dt: 10,
+    dr: 50,
+  });
+  assert.equal(impact.damage, 48); // blast: (100 − 10) × 50%; concussion: 6 × 50%
+  assert.deepEqual(impact.componentBreakdown, [
+    'Blast: 100 raw → 45 HP (explosion protection applies)',
+    'Concussion: 6 raw → 3 HP (DT ignored; explosive DR applies)',
+  ]);
+  const explanation = formatAreaResolution({ ...impact, directHit: true });
+  assert.match(explanation, /direct hit \/ impact point/);
+  assert.match(explanation, /Blast: 100 raw → 45 HP/);
+  assert.match(explanation, /Concussion: 6 raw → 3 HP/);
+
+  const concussionOnly = resolveAreaZoneTarget(zones[1], {
+    id: 'target-2',
+    name: 'Nearby target',
+    endurance: 5,
+    gasInhaledResistance: 0,
+    gasContactResistance: 0,
+    electricityResistance: 0,
+    dt: 10,
+    dr: 50,
+  });
+  assert.equal(concussionOnly.damage, 3);
+  assert.ok(concussionOnly.componentBreakdown);
+  assert.deepEqual(concussionOnly.componentBreakdown.map(line => line.split(':')[0]), ['Concussion']);
 });

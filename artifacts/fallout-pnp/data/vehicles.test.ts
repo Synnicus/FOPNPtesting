@@ -17,6 +17,7 @@ import {
   useVehicleNozBooster,
 } from './vehicles.ts';
 import { BUILT_IN_VEHICLE_WEAPONS } from './vehicleWeapons.ts';
+import { getWeaponAreaAttack } from './weapons.ts';
 
 test('manual vehicle catalog includes 24 profiles with AC defaulted to zero', () => {
   assert.equal(BUILT_IN_VEHICLES.length, 24);
@@ -262,18 +263,31 @@ test('mounted vehicle weapons resolve to combat weapons, including duplicate mou
 test('vehicle cannon weapon profiles follow the manual damage, range, and AP values', () => {
   const byId = new Map(BUILT_IN_VEHICLE_WEAPONS.map(weapon => [weapon.id, weapon]));
   assert.deepEqual(
-    ['vehicle_20mm_cannon', 'vehicle_25mm_cannon'].map(id => {
+    [
+      'vehicle_20mm_cannon',
+      'vehicle_25mm_cannon',
+      'vehicle_m68_105mm_cannon',
+      'rheinmetall_120mm_gun',
+      'vehicle_152mm_shillelagh',
+    ].map(id => {
       const weapon = byId.get(id);
       return [weapon?.damageDieCount, weapon?.damageDie, weapon?.damageBonus, weapon?.rangeNormal, weapon?.apSingle];
     }),
-    [[8, 10, 40, 500, 4], [8, 10, 40, 500, 4]],
+    [
+      [8, 10, 40, 500, 4],
+      [8, 10, 40, 500, 4],
+      [15, 20, 30, 1000, 5],
+      [20, 20, 50, 2000, 5],
+      [20, 20, 50, 3000, 6],
+    ],
   );
-  assert.deepEqual(
-    ['vehicle_m68_105mm_cannon', 'rheinmetall_120mm_gun', 'vehicle_152mm_shillelagh']
-      .map(id => {
-        const weapon = byId.get(id);
-        return [weapon?.damageDieCount, weapon?.damageDie, weapon?.damageBonus, weapon?.rangeNormal, weapon?.apSingle];
-      }),
-    [[15, 20, 30, 1000, 5], [20, 20, 50, 2000, 5], [20, 20, 50, 3000, 6]],
-  );
+});
+
+test('every built-in vehicle cannon resolves to its own blast and concussion profile', () => {
+  for (const weapon of BUILT_IN_VEHICLE_WEAPONS) {
+    assert.ok(weapon.areaAttackProfileId, `${weapon.name} should reference its area profile`);
+    const profile = getWeaponAreaAttack(weapon);
+    assert.equal(profile?.profileId, weapon.areaAttackProfileId);
+    assert.equal(profile?.kind, 'explosion');
+  }
 });

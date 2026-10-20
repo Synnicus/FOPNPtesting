@@ -30,8 +30,18 @@ test('device placement waits for the GM to confirm the Traps check', () => {
 });
 
 test('legacy custom mines/traps keep their normal custom-dice path', () => {
-  assert.match(source, /const isMineTrap = weapon\?\.category === 'minesTraps' \|\| !!weaponAreaAttack/);
-  assert.match(source, /const usesAreaAttackProfile = !!weaponAreaAttack/);
+  assert.match(source, /const isMineTrap = weapon\?\.category === 'minesTraps' \|\| \(!!weaponAreaAttack && !isVehicleCannonAreaAttack\)/);
+  assert.match(source, /const usesAreaAttackProfile = !!weaponAreaAttack && !isVehicleCannonAreaAttack/);
   assert.match(source, /\{canRoll && !usesAreaAttackProfile && \(/);
   assert.doesNotMatch(source, /missing a catalog area profile yet/);
+});
+
+test('vehicle cannon hits resolve blast zones instead of applying a second direct damage roll', () => {
+  assert.match(source, /weaponAreaAttack\?\.profileId\?\.startsWith\('vehicle-cannon:'\)/);
+  assert.match(source, /testID="resolve-vehicle-cannon-area"/);
+  assert.match(source, /directHitTargetId: defender\.id/);
+  assert.match(source, /!isVehicleCannonAreaAttack && shotResults\.some\(s => s\.hit\)/);
+  assert.match(source, /Apply the BLAST once, plus any in-range CONCUSSION/);
+  assert.match(source, /vehicleCannonMissingEffects/);
+  assert.match(source, /Roll or enter positive damage for both BLAST and CONCUSSION/);
 });

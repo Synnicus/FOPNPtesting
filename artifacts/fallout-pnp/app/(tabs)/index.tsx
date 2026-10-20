@@ -1125,10 +1125,13 @@ export default function CombatScreen() {
         notes: ['Custom device profile. Set a range for this campaign and enter GM-resolved damage if the weapon has no printed dice.'],
       } : undefined)
     : undefined;
+  const isVehicleCannonAreaAttack = !!(
+    attacker?.vehicle && weaponAreaAttack?.profileId?.startsWith('vehicle-cannon:')
+  );
   // Profiled devices use the area resolver. Legacy/custom mines and traps
   // without a profile deliberately retain the normal custom weapon dice path.
-  const isMineTrap = weapon?.category === 'minesTraps' || !!weaponAreaAttack;
-  const usesAreaAttackProfile = !!weaponAreaAttack;
+  const isMineTrap = weapon?.category === 'minesTraps' || (!!weaponAreaAttack && !isVehicleCannonAreaAttack);
+  const usesAreaAttackProfile = !!weaponAreaAttack && !isVehicleCannonAreaAttack;
   const heldWeapons: Weapon[] = attacker?.vehicle
     ? (weapon ? [weapon] : [])
     : dualWielding
@@ -2117,7 +2120,7 @@ export default function CombatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [attackActor, effectiveAPCost, spendAP]);
 
-  const openMineTrapAreaAttack = useCallback(() => {
+  const openWeaponAreaAttack = useCallback(() => {
     if (attacker?.combatDevice?.status === 'triggered') {
       notify('DEVICE ALREADY TRIGGERED', 'This placed mine or trap has already been used.');
       return;
@@ -2126,13 +2129,14 @@ export default function CombatScreen() {
       notify('Missing Area Profile', `${weapon?.name ?? 'This mine/trap'} has no catalog area profile yet.`);
       return;
     }
-    const profileId = weapon.areaAttackProfileId
+    const profileId = weaponAreaAttack.profileId ?? (weapon.areaAttackProfileId
       ? `trap:${weapon.areaAttackProfileId}`
-      : `trap:custom-${weapon.id}`;
+      : `trap:custom-${weapon.id}`);
     setAreaAttackPreset(loadedAmmo?.components?.length
       ? {
           ...weaponAreaAttack,
           ...(profileId ? { profileId } : {}),
+          ...(isVehicleCannonAreaAttack && defender ? { directHitTargetId: defender.id } : {}),
           ...(attacker?.combatDevice ? { sourceDeviceId: attacker.id } : {}),
           components: loadedAmmo.components,
           ammoIgnoresDT: loadedAmmo.ignoresDT,
@@ -2141,10 +2145,17 @@ export default function CombatScreen() {
       : {
           ...weaponAreaAttack,
           ...(profileId ? { profileId } : {}),
+          ...(isVehicleCannonAreaAttack && defender ? { directHitTargetId: defender.id } : {}),
           ...(attacker?.combatDevice ? { sourceDeviceId: attacker.id } : {}),
         });
     setShowAreaAttack(true);
-  }, [attacker, weaponAreaAttack, weapon, loadedAmmo]);
+  }, [attacker, weaponAreaAttack, weapon, loadedAmmo, isVehicleCannonAreaAttack, defender]);
+
+  const handleAreaAttackApply = useCallback((attack: AreaAttack, targetIds: string[]) => {
+    const requestId = applyAreaAttack(attack, targetIds);
+    if (attack.directHitTargetId) setDamageApplied(true);
+    return requestId;
+  }, [applyAreaAttack]);
 
   const selectAttackWeapon = useCallback((weaponId: string) => {
     if (weapon?.id === weaponId) return;
@@ -3415,7 +3426,7 @@ export default function CombatScreen() {
                 <TouchableOpacity
                   testID="trigger-placed-device"
                   disabled={!defender || !weaponAreaAttack}
-                  onPress={openMineTrapAreaAttack}
+                  onPress={openWeaponAreaAttack}
                   style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, backgroundColor: defender && weaponAreaAttack ? colors.destructive : colors.border, opacity: defender && weaponAreaAttack ? 1 : 0.55 }}
                 >
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: defender && weaponAreaAttack ? '#fff' : colors.mutedForeground }}>
@@ -3445,7 +3456,7 @@ export default function CombatScreen() {
               <TouchableOpacity
                 testID="trigger-mine-trap"
                 disabled={!defender}
-                onPress={openMineTrapAreaAttack}
+                onPress={openWeaponAreaAttack}
                 style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, backgroundColor: defender ? colors.destructive : colors.border, opacity: defender ? 1 : 0.55 }}
               >
                 <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: weaponAreaAttack && defender ? '#fff' : colors.mutedForeground, letterSpacing: 1 }}>
@@ -4178,6 +4189,37 @@ export default function CombatScreen() {
           </View>
         )}
 
+        {attackResolved && isVehicleCannonAreaAttack && weaponAreaAttack && (
+            <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.primary, gap: 8 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>CANNON IMPACT</Text>
+              {shotResults.some(shot => shot.hit) ? (
+                <>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
+                    Direct hit on {defender?.name ?? 'the target'} marks the impact point. Resolve the blast once for every assigned target, plus concussion within 100 m; do not apply a second direct-damage roll.
+                  </Text>
+                  {damageApplied ? (
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>Blast and concussion applied.</Text>
+                  ) : (
+                    <TouchableOpacity
+                      testID="resolve-vehicle-cannon-area"
+                      disabled={!defender}
+                      onPress={openWeaponAreaAttack}
+                      style={{ paddingVertical: 11, alignItems: 'center', borderRadius: colors.radius, backgroundColor: defender ? colors.primary : colors.border, opacity: defender ? 1 : 0.55 }}
+                    >
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: defender ? colors.primaryForeground : colors.mutedForeground }}>
+                        ASSIGN BLAST & CONCUSSION ZONES
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                  No direct hit was confirmed. The GM must choose an impact/scatter point before applying any area damage.
+                </Text>
+              )}
+            </View>
+          )}
+
         {/* ─── Prominent Critical Hit banner ─── */}
         {primaryIsCrit && (
           <View style={{ backgroundColor: colors.primary, borderRadius: colors.radius, paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center', gap: 2 }}>
@@ -4270,7 +4312,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Damage ─── */}
-        {attackResolved && !usesAreaAttackProfile && shotResults.some(s => s.hit) && weapon && (!isBurst || burstMode === 'complex') && (
+        {attackResolved && !usesAreaAttackProfile && !isVehicleCannonAreaAttack && shotResults.some(s => s.hit) && weapon && (!isBurst || burstMode === 'complex') && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>DAMAGE CALCULATION</Text>
             <View style={{ gap: 2 }}>
@@ -4491,7 +4533,7 @@ export default function CombatScreen() {
         rangeOverrides={app.areaProfileRangeOverrides}
         onSaveRange={app.setAreaProfileRangeOverride}
         onClose={() => { setShowAreaAttack(false); setAreaAttackPreset(null); }}
-        onApply={applyAreaAttack}
+        onApply={handleAreaAttackApply}
         receipt={areaAttackReceipt}
       />
       <CharacterPickerModal visible={showAddCombatantPicker} onClose={() => setShowAddCombatantPicker(false)} onSelect={(id) => {
@@ -4906,6 +4948,9 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     : (!areaProfile && catalogProfileId ? MINE_TRAP_PROFILES[catalogProfileId] : undefined);
   const activeProfile = legacyProfile;
   const profileMode = !!areaProfile || !!activeProfile;
+  const directHitTarget = initialAttack?.directHitTargetId
+    ? combatants.find(combatant => combatant.id === initialAttack.directHitTargetId)
+    : undefined;
   const ongoing = kind === 'flamethrower' || kind === 'acid';
 
   // A profile is intentionally copied into local modal state.  This makes
@@ -4917,14 +4962,15 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     if (initialAttack) {
       setKind(initialAttack.kind);
       setRawDamage(initialAttack.rawDamage);
-      setProfileComponent('main');
       setProfileDamageRolled(null);
       setTargets(initialDefenderId ? [initialDefenderId] : []);
       setCatalogProfileId(initialAttack.profileId ?? null);
-      setProfileDamageByEffect({ main: initialAttack.rawDamage });
       const initialProfile = initialAttack.profileId
         ? profiles.find(profile => profile.id === initialAttack.profileId)
         : undefined;
+      const firstEffectId = initialProfile?.effects[0]?.id ?? 'main';
+      setProfileComponent(firstEffectId);
+      setProfileDamageByEffect({ [firstEffectId]: initialAttack.rawDamage });
       const firstZone = initialProfile
         ? buildAreaDamageZones(initialProfile, rangeOverrides, {}).at(0)?.id
         : undefined;
@@ -4992,6 +5038,8 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     ...profileDamageByEffect,
     [profileComponent]: rawDamage,
   };
+  const vehicleCannonMissingEffects = !!areaProfile?.id.startsWith('vehicle-cannon:')
+    && areaProfile.effects.some(effect => (currentProfileDamage[effect.id ?? 'main'] ?? 0) <= 0);
   const areaZones = areaProfile
     ? buildAreaDamageZones(areaProfile, rangeOverrides, currentProfileDamage)
     : [];
@@ -5011,6 +5059,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
         profileId: areaProfile.id,
         zones: areaZones,
         targetZones,
+        ...(initialAttack?.directHitTargetId ? { directHitTargetId: initialAttack.directHitTargetId } : {}),
         ...(initialAttack?.sourceDeviceId ? { sourceDeviceId: initialAttack.sourceDeviceId } : {}),
         ...(areaProfile.nonBiologicalOnly ? { nonBiologicalOnly: true } : {}),
         notes: selectedNotes,
@@ -5064,7 +5113,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View>
               <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>
-                {summary ? 'AREA EFFECT RESULTS' : areaProfile?.id.startsWith('ammo:') ? 'AREA AMMUNITION' : profileMode ? 'TRIGGER MINE / TRAP' : 'AOE ATTACK'}
+                {summary ? 'AREA EFFECT RESULTS' : areaProfile?.id.startsWith('vehicle-cannon:') ? 'VEHICLE CANNON BLAST' : areaProfile?.id.startsWith('ammo:') ? 'AREA AMMUNITION' : profileMode ? 'TRIGGER MINE / TRAP' : 'AOE ATTACK'}
               </Text>
               <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : profileMode ? `${sourceWeaponName ?? areaProfile?.name ?? 'Device'} — roll each effect and assign combatants to its range zones.` : 'Select an effect and every active combatant in its area.'}</Text>
             </View>
@@ -5122,6 +5171,11 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
               <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{profileMode ? 'PROFILE COMPONENT' : 'EFFECT'}</Text>
               {profileMode ? (
                 <View style={{ gap: 7 }}>
+                  {directHitTarget && (
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
+                      DIRECT HIT — {directHitTarget.name} is the impact point and must stay in the nearest blast zone. Apply the BLAST once, plus any in-range CONCUSSION; do not apply separate direct weapon damage.
+                    </Text>
+                  )}
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                     {profileParts.map(part => {
                       const selected = profileComponent === part.key;
@@ -5232,6 +5286,11 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                 </View>
               )}
               {profileMode && profileDamageRolled !== null && <Text style={{ fontSize: 10, color: colors.primary }}>Rolled profile damage: {profileDamageRolled}. You may replace it with the table roll.</Text>}
+              {vehicleCannonMissingEffects && (
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
+                  Roll or enter positive damage for both BLAST and CONCUSSION before applying this hit.
+                </Text>
+              )}
               {ongoing && (
                 <Text style={{ fontSize: 10, color: colors.primary }}>
                   Mandatory 1d6 each round until removed. Fire requires a full turn rolling on safe ground; acid requires GM-confirmed washing with an appropriate material.
@@ -5256,12 +5315,14 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
                         <TouchableOpacity
                           testID={`aoe-zone-${c.id}-outside`}
+                          disabled={initialAttack?.directHitTargetId === c.id}
                           onPress={() => setTargetZones(previous => {
+                            if (initialAttack?.directHitTargetId === c.id) return previous;
                             const next = { ...previous };
                             delete next[c.id];
                             return next;
                           })}
-                          style={{ paddingHorizontal: 7, paddingVertical: 5, borderRadius: 5, borderWidth: 1, borderColor: !assignedZone ? colors.mutedForeground : colors.border }}
+                          style={{ paddingHorizontal: 7, paddingVertical: 5, borderRadius: 5, borderWidth: 1, borderColor: !assignedZone ? colors.mutedForeground : colors.border, opacity: initialAttack?.directHitTargetId === c.id ? 0.4 : 1 }}
                         >
                           <Text style={{ fontSize: 9, color: !assignedZone ? colors.foreground : colors.mutedForeground }}>OUTSIDE</Text>
                         </TouchableOpacity>
@@ -5290,7 +5351,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
               {areaProfile?.nonBiologicalOnly && !combatants.some(c => c.race === 'robot' || c.vehicle) && (
                 <Text style={{ fontSize: 10, color: colors.mutedForeground }}>This profile can only affect robot or vehicle combatants.</Text>
               )}
-              <TouchableOpacity testID="aoe-apply" disabled={applyTargetIds.length === 0 || applying || (areaProfile ? areaMissingRanges.length > 0 || areaZones.length === 0 : false)} onPress={() => {
+              <TouchableOpacity testID="aoe-apply" disabled={applyTargetIds.length === 0 || applying || vehicleCannonMissingEffects || (areaProfile ? areaMissingRanges.length > 0 || areaZones.length === 0 : false)} onPress={() => {
                 if (applyingRef.current) return;
                 if (attackToApply.requiresGasChoice) {
                   notify('GM Gas Choice Required', 'Select the canister exposure and enter its GM-determined damage first.');

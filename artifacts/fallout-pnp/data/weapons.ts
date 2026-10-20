@@ -1,5 +1,9 @@
 import type { Weapon, DamageType, WeaponCategory } from '../context/types.ts';
-import { MINE_TRAP_PROFILES } from './areaEffects.ts';
+import {
+  ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+  areaDamageProfileToAttack,
+  MINE_TRAP_PROFILES,
+} from './areaEffects.ts';
 import type { AreaAttack } from './areaEffects.ts';
 import { inferWeaponTags } from './customRules.ts';
 
@@ -362,7 +366,11 @@ export function getWeaponById(id: string): Weapon | undefined {
 export function getWeaponAreaAttack(weapon: Weapon): AreaAttack | undefined {
   const profileId = weapon.areaAttackProfileId;
   const profile = profileId ? MINE_TRAP_PROFILES[profileId] : undefined;
-  return profile ? { ...profile } : undefined;
+  if (profile) return { ...profile };
+  const areaProfile = profileId
+    ? ALL_BUILT_IN_AREA_DAMAGE_PROFILES.find(candidate => candidate.id === profileId)
+    : undefined;
+  return areaProfile ? areaDamageProfileToAttack(areaProfile) : undefined;
 }
 
 /**

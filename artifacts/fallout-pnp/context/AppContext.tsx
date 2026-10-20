@@ -1422,7 +1422,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (physicalExposure && result.damage > 0) {
           result.notes.push('Armor condition: one damaging area exposure recorded on body armor (aggregate result). Adjust individual hits in Equipment if the GM rules otherwise.');
         }
-        return [{ ...result, ...(zone ? { zoneId: zone.id, zoneLabel: zone.label } : {}) }];
+        return [{
+          ...result,
+          ...(attack.directHitTargetId === c.id ? { directHit: true } : {}),
+          ...(zone ? { zoneId: zone.id, zoneLabel: zone.label } : {}),
+        }];
       });
       const byId = new Map(results.map(r => [r.targetId, r]));
       const characters = s.characters.map(c => {

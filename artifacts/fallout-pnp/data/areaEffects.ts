@@ -98,6 +98,8 @@ export interface AreaAttack {
   ammoDRModifier?: number;
   /** Per-target zone assignment for a single atomic multi-zone application. */
   profileId?: string;
+  /** The successful direct-hit target is the impact point of a weapon area profile. */
+  directHitTargetId?: string;
   targetZones?: Record<string, string>;
   zones?: AreaDamageZone[];
   sourceDeviceId?: string;
@@ -439,6 +441,65 @@ export function createMineTrapAreaDamageProfiles(): AreaDamageProfile[] {
 
 export const MINE_TRAP_AOE_PROFILES = createMineTrapAreaDamageProfiles();
 
+const vehicleCannonProfile = (
+  id: string,
+  name: string,
+  blastDice: number,
+  blastDie: number,
+  blastBonus: number,
+  blastRadius: number,
+): AreaDamageProfile => ({
+  id: `vehicle-cannon:${id}`,
+  name,
+  rangeUnit: 'm',
+  effects: [
+    {
+      id: 'blast',
+      kind: 'explosion',
+      damageDieCount: blastDice,
+      damageDie: blastDie,
+      damageBonus: blastBonus,
+      damageType: 'explosion',
+      radius: blastRadius,
+    },
+    {
+      id: 'concussion',
+      kind: 'concussion',
+      damageDieCount: 1,
+      damageDie: 6,
+      damageBonus: 0,
+      damageType: 'explosion',
+      radius: 100,
+    },
+  ],
+  notes: [`Blast affects everything within ${blastRadius} m; 1d6 concussion affects everything within 100 m.`],
+});
+
+/** Printed area and concussion effects for the five manual-mounted cannons. */
+export const VEHICLE_CANNON_AREA_PROFILES: readonly AreaDamageProfile[] = [
+  vehicleCannonProfile('vehicle_20mm_cannon', '20mm Cannon', 8, 10, 40, 10),
+  vehicleCannonProfile('vehicle_25mm_cannon', '25mm Cannon', 8, 10, 40, 10),
+  vehicleCannonProfile('vehicle_m68_105mm_cannon', 'M68 105mm Cannon', 15, 20, 30, 15),
+  vehicleCannonProfile('rheinmetall_120mm_gun', 'Rheinmetall 120mm Gun', 20, 20, 50, 20),
+  vehicleCannonProfile('vehicle_152mm_shillelagh', '152mm Shillelagh Missile System', 20, 20, 50, 25),
+];
+
+/** Make an attack payload that opens the shared profile/zone resolver. */
+export function areaDamageProfileToAttack(profile: AreaDamageProfile): AreaAttack {
+  const primary = profile.effects[0];
+  if (!primary) throw new Error(`Area profile ${profile.id} has no effects.`);
+  return {
+    kind: primary.kind,
+    rawDamage: 0,
+    damageDieCount: primary.damageDieCount,
+    damageDie: primary.damageDie,
+    damageBonus: primary.damageBonus,
+    damageType: primary.damageType,
+    profileId: profile.id,
+    notes: profile.notes ? [...profile.notes] : undefined,
+  };
+}
+
 export function catalogAreaProfileLabel(id: string): string {
   return id
     .split('_')
@@ -449,6 +510,7 @@ export function catalogAreaProfileLabel(id: string): string {
 export const ALL_BUILT_IN_AREA_DAMAGE_PROFILES: readonly AreaDamageProfile[] = [
   ...EXPLOSIVE_AMMO_AREA_PROFILES,
   ...MINE_TRAP_AOE_PROFILES,
+  ...VEHICLE_CANNON_AREA_PROFILES,
 ];
 
 export function areaProfileRange(profile: AreaDamageProfile, effect: AreaAttackComponent, overrides: AreaProfileRangeOverrides): number | undefined {
@@ -545,6 +607,7 @@ export interface AreaResolution {
   radiationExposure?: number;
   zoneId?: string;
   zoneLabel?: string;
+  directHit?: boolean;
 }
 
 export type PercentRoller = () => number;
@@ -696,7 +759,18 @@ export function resolveAreaZoneTarget(
     ongoing: results.find(result => result.ongoing)?.ongoing,
     statuses: [...new Set(results.flatMap(result => result.statuses ?? []))],
     notes,
-    componentBreakdown: results.flatMap(result => result.componentBreakdown ?? []),
+    componentBreakdown: [
+      ...zone.effects.map((effect, index) => {
+        const label = effect.id === 'blast'
+          ? 'Blast'
+          : effect.id.replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+        const protection = effect.kind === 'concussion'
+          ? 'DT ignored; explosive DR applies'
+          : `${effect.damageType} protection applies`;
+        return `${label}: ${effect.rawDamage} raw → ${results[index]?.damage ?? 0} HP (${protection})`;
+      }),
+      ...results.flatMap(result => result.componentBreakdown ?? []),
+    ],
     radiationExposure: results.reduce((sum, result) => sum + (result.radiationExposure ?? 0), 0),
     zoneId: zone.id,
     zoneLabel: zone.label,
@@ -705,12 +779,14 @@ export function resolveAreaZoneTarget(
 
 export function formatAreaResolution(result: AreaResolution): string {
   const parts = [`${result.targetName}: ${result.damage} damage`];
+  if (result.directHit) parts.push('direct hit / impact point');
   if (result.zoneLabel) parts.push(result.zoneLabel);
   if (result.resisted) parts.push('resisted');
   if (result.unconsciousRounds > 0) parts.push(`unconscious ${result.unconsciousRounds} rounds`);
   if (result.radiationExposure) parts.push(`${result.radiationExposure} radiation exposure (not yet applied)`);
   if (result.statuses?.length) parts.push(result.statuses.join(', '));
   if (result.ongoing) parts.push(`${result.ongoing.kind} (1d6/round until removed)`);
+  if (result.componentBreakdown?.length) parts.push(result.componentBreakdown.join(', '));
   if (result.notes.length) parts.push(result.notes.join('; '));
   return parts.join(' · ');
 }
