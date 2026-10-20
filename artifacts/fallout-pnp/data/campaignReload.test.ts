@@ -26,7 +26,12 @@ import {
   spawnVehicleCharacter,
 } from './vehicles.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
-import { areaProfileRange, EXPLOSIVE_AMMO_AREA_PROFILES } from './areaEffects.ts';
+import {
+  areaProfileRange,
+  buildAreaDamageZones,
+  createCustomAmmoAreaDamageProfiles,
+  EXPLOSIVE_AMMO_AREA_PROFILES,
+} from './areaEffects.ts';
 
 const STORAGE_KEY = '@fallout_pnp_v4';
 
@@ -138,8 +143,13 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     components: [{ id: 'damage', label: 'Damage', type: 'explosion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
     areaEffects: [{
       id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
-      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+      damageDieCount: 1, damageDie: 6, damageBonus: 0, radius: 5, minDistance: 1,
+    }, {
+      id: 'concussion', label: 'Concussion', kind: 'concussion', damageType: 'normal',
+      damageDieCount: 0, damageDie: 0, damageBonus: 0, radius: 2,
     }],
+    areaRangeUnit: 'm',
+    hasBlastRadius: true,
     emp: true,
     isCustom: true,
   };
@@ -365,8 +375,23 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         });
         assert.equal(imported, true, 'campaign with custom EMP data imports');
         assert.equal(currentCampaign().customAmmo[0]?.emp, true);
+        assert.equal(currentCampaign().customAmmo[0]?.hasBlastRadius, true);
         assert.equal(currentCampaign().customWeapons[0]?.emp, true);
-        assert.equal(JSON.parse(currentCampaign().exportCampaign()).customAmmo[0].emp, true);
+        const exported = JSON.parse(currentCampaign().exportCampaign());
+        assert.deepEqual(exported.customAmmo, [customEmpAmmo]);
+        const expectedZones = buildAreaDamageZones(
+          createCustomAmmoAreaDamageProfiles([customEmpAmmo])[0],
+          {},
+          { blast: 8, concussion: 0 },
+        );
+        assert.deepEqual(
+          buildAreaDamageZones(
+            createCustomAmmoAreaDamageProfiles(exported.customAmmo)[0],
+            {},
+            { blast: 8, concussion: 0 },
+          ),
+          expectedZones,
+        );
 
         await act(async () => renderer!.unmount());
         renderer = undefined;
@@ -374,11 +399,33 @@ test('AppProvider campaign storage lifecycle', async (t) => {
 
         const restored = await mount();
         assert.equal(restored.customAmmo[0]?.emp, true, 'custom ammunition EMP flag survives reload');
+        assert.equal(restored.customAmmo[0]?.hasBlastRadius, true, 'custom ammunition Blast Radius toggle survives reload');
+        assert.deepEqual(restored.customAmmo[0]?.areaEffects, customEmpAmmo.areaEffects);
         assert.equal(restored.customWeapons[0]?.emp, true, 'custom mine EMP flag survives reload');
         assert.deepEqual(restored.customWeapons[0]?.customAreaEffects?.[0].id, 'blast');
       } finally {
         if (renderer) await act(async () => renderer!.unmount());
         renderer = undefined;
+      }
+    });
+
+    await t.test('older campaigns without custom ammunition import with an empty catalog', async () => {
+      storage.clear();
+      campaign = undefined;
+      try {
+        const empty = await mount();
+        const { customAmmo: _omitted, ...olderCampaign } = fixture;
+        let imported = false;
+        await act(async () => {
+          imported = await empty.importCampaign(JSON.stringify(olderCampaign));
+        });
+        assert.equal(imported, true);
+        assert.deepEqual(currentCampaign().customAmmo, []);
+        assert.deepEqual(JSON.parse(currentCampaign().exportCampaign()).customAmmo, []);
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+        campaign = undefined;
       }
     });
 

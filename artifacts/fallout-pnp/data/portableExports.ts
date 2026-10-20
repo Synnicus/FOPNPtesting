@@ -326,6 +326,7 @@ export function createCampaignBundle(
         const { fallout3RadiationDebuffs: _legacy, ...portableState } = state;
         return {
           ...portableState,
+          customAmmo: state.customAmmo ?? [],
           hardcoreRadiationRules: state.hardcoreRadiationRules !== undefined
             ? state.hardcoreRadiationRules
             : state.fallout3RadiationDebuffs === true,

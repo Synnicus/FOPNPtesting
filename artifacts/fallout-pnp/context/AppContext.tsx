@@ -2482,6 +2482,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const exportCampaign = useCallback((): string => {
     const { fallout3RadiationDebuffs: _legacy, ...portableState } = {
       ...state,
+      customAmmo: state.customAmmo ?? [],
       hardcoreRadiationRules: state.hardcoreRadiationRules,
     };
     return JSON.stringify(portableState, null, 2);

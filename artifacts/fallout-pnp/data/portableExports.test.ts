@@ -28,6 +28,8 @@ import type { AmmoType } from './ammo.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
   areaProfileRange,
+  buildAreaDamageZones,
+  createCustomAmmoAreaDamageProfiles,
   createCustomWeaponAreaDamageProfiles,
   EXPLOSIVE_AMMO_AREA_PROFILES,
   normalizeAreaProfileRangeOverrides,
@@ -305,7 +307,7 @@ test('portable campaign round-trips custom trap blast settings and zone ranges',
   assert.equal(createCustomWeaponAreaDamageProfiles(parsed.bundle.state.customWeapons)[0].effects[0].radius, 4);
 });
 
-test('portable campaign keeps EMP flags on custom ammunition and mine profiles', () => {
+test('portable campaigns keep custom ammunition blast settings and recreate matching combat zones', () => {
   const customAmmo: AmmoType = {
     id: 'custom-pulse-round',
     name: 'Custom Pulse Round',
@@ -319,11 +321,21 @@ test('portable campaign keeps EMP flags on custom ammunition and mine profiles',
     components: [{ id: 'damage', label: 'Damage', type: 'explosion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
     areaEffects: [{
       id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
-      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+      damageDieCount: 1, damageDie: 6, damageBonus: 0, radius: 5, minDistance: 1,
+    }, {
+      id: 'concussion', label: 'Concussion', kind: 'concussion', damageType: 'normal',
+      damageDieCount: 0, damageDie: 0, damageBonus: 0, radius: 2,
     }],
+    areaRangeUnit: 'm',
     hasBlastRadius: true,
     emp: true,
     isCustom: true,
+  };
+  const disabledBlastAmmo: AmmoType = {
+    ...customAmmo,
+    id: 'custom-disabled-blast-round',
+    name: 'Custom Disabled Blast Round',
+    hasBlastRadius: false,
   };
   const customMine: Weapon = {
     ...customWeapon,
@@ -339,9 +351,10 @@ test('portable campaign keeps EMP flags on custom ammunition and mine profiles',
   };
   const bundle = createCampaignBundle({
     ...state,
-    customAmmo: [customAmmo],
+    customAmmo: [customAmmo, disabledBlastAmmo],
     customWeapons: [customMine],
   }, []);
+  assert.deepEqual(bundle.state.customAmmo, [customAmmo, disabledBlastAmmo]);
   const parsed = parseCampaignFile(JSON.stringify(bundle));
 
   assert.equal(parsed.ok, true);
@@ -350,13 +363,43 @@ test('portable campaign keeps EMP flags on custom ammunition and mine profiles',
   }
   assert.equal(parsed.bundle.state.customAmmo?.[0].emp, true);
   assert.equal(parsed.bundle.state.customAmmo?.[0].hasBlastRadius, true);
+  assert.equal(parsed.bundle.state.customAmmo?.[1].hasBlastRadius, false);
+  assert.deepEqual(parsed.bundle.state.customAmmo?.[0].areaEffects, customAmmo.areaEffects);
+  assert.equal(parsed.bundle.state.customAmmo?.[0].areaRangeUnit, 'm');
   assert.equal(parsed.bundle.state.customWeapons[0].emp, true);
   assert.equal(parsed.bundle.state.customWeapons[0].hasBlastRadius, true);
   assert.equal(parsed.bundle.state.customWeapons[0].customAreaEffects?.[0].id, 'blast');
+  const originalProfile = createCustomAmmoAreaDamageProfiles([customAmmo])[0];
+  const importedProfile = createCustomAmmoAreaDamageProfiles(parsed.bundle.state.customAmmo ?? [])[0];
+  assert.deepEqual(importedProfile, originalProfile);
+  assert.deepEqual(
+    buildAreaDamageZones(importedProfile, {}, { blast: 8, concussion: 0 }),
+    buildAreaDamageZones(originalProfile, {}, { blast: 8, concussion: 0 }),
+  );
+  assert.deepEqual(createCustomAmmoAreaDamageProfiles([disabledBlastAmmo]), []);
 
   const invalid = JSON.parse(JSON.stringify(bundle)) as typeof bundle;
   (invalid.state.customAmmo![0] as unknown as { emp: unknown }).emp = 'yes';
   assert.equal(parseCampaignFile(JSON.stringify(invalid)).ok, false);
+});
+
+test('older campaign files without custom ammunition still import', () => {
+  const bundle = createCampaignBundle(state, []);
+  const olderPortable = { ...bundle, state: { ...bundle.state } };
+  delete olderPortable.state.customAmmo;
+  const portableResult = parseCampaignFile(JSON.stringify(olderPortable));
+  assert.equal(portableResult.ok, true);
+  if (portableResult.ok && portableResult.source === 'portable') {
+    assert.equal(portableResult.bundle.state.customAmmo, undefined);
+  }
+
+  const olderLegacyState = { ...state } as typeof state & { customAmmo?: AmmoType[] };
+  delete olderLegacyState.customAmmo;
+  const legacyResult = parseCampaignFile(JSON.stringify(olderLegacyState));
+  assert.equal(legacyResult.ok, true);
+  if (legacyResult.ok && legacyResult.source === 'legacy') {
+    assert.equal(legacyResult.state.customAmmo, undefined);
+  }
 });
 
 test('campaign imports normalize invalid or missing blast ranges without changing printed ranges', () => {
