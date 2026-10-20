@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildAreaDamageZones,
+  createCustomAmmoAreaDamageProfiles,
+  createCustomWeaponAreaDamageProfiles,
   EXPLOSIVE_AMMO_AREA_PROFILES,
   MINE_TRAP_AOE_PROFILES,
   normalizeAreaProfileRangeOverrides,
   formatAreaResolution,
   resolveAreaZoneTarget,
+  THROWN_EXPLOSIVE_AREA_PROFILES,
   VEHICLE_CANNON_AREA_PROFILES,
 } from './areaEffects.ts';
 
@@ -19,6 +22,77 @@ test('mine zones include every component whose range reaches that zone', () => {
   assert.deepEqual(zones[0].effects.map(effect => effect.id), ['main', 'fragmentation', 'concussion']);
   assert.deepEqual(zones[1].effects.map(effect => effect.id), ['fragmentation', 'concussion']);
   assert.deepEqual(zones[2].effects.map(effect => effect.id), ['concussion']);
+});
+
+test('manual thrown explosives expose their printed zone boundaries and omitted ranges stay configurable', () => {
+  const fragmentation = THROWN_EXPLOSIVE_AREA_PROFILES.find(profile => profile.id === 'grenade:fragmentation')!;
+  const fragmentationZones = buildAreaDamageZones(fragmentation, {}, {
+    main: 34, fragmentation: 5, concussion: 4,
+  });
+  assert.deepEqual(fragmentationZones.map(zone => [zone.minDistance, zone.maxDistance]), [[0, 0], [1, 1], [2, 2]]);
+  assert.deepEqual(fragmentationZones.map(zone => zone.effects.map(effect => effect.id)), [
+    ['main', 'concussion'], ['fragmentation', 'concussion'], ['concussion'],
+  ]);
+
+  const pulse = THROWN_EXPLOSIVE_AREA_PROFILES.find(profile => profile.id === 'grenade:pulse')!;
+  assert.equal(buildAreaDamageZones(pulse, {}, { main: 20 }).length, 0);
+  assert.equal(buildAreaDamageZones(pulse, { [pulse.id]: { main: 8 } }, { main: 20 }).length, 1);
+});
+
+test('plasma grenade and C-14 adjacent effects reuse the center roll at their printed fraction', () => {
+  const plasma = THROWN_EXPLOSIVE_AREA_PROFILES.find(profile => profile.id === 'grenade:plasma')!;
+  const plasmaZones = buildAreaDamageZones(plasma, {}, { main: 100, plasma_splash: 100, concussion: 4 });
+  assert.equal(plasmaZones.find(zone => zone.minDistance === 1)?.effects.find(effect => effect.id === 'plasma_splash')?.rawDamage, 33);
+
+  const plastique = THROWN_EXPLOSIVE_AREA_PROFILES.find(profile => profile.id === 'grenade:plastique-c14')!;
+  const plastiqueZones = buildAreaDamageZones(plastique, {}, { main: 27, adjacent_blast: 27, concussion: 4 });
+  assert.equal(plastiqueZones.find(zone => zone.minDistance === 1)?.effects.find(effect => effect.id === 'adjacent_blast')?.rawDamage, 14);
+});
+
+test('custom ammo and trap profiles preserve independent effects, units, and per-campaign missing ranges', () => {
+  const ammoProfiles = createCustomAmmoAreaDamageProfiles([{
+    id: 'custom-shell', name: 'Custom Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, areaRangeUnit: 'm',
+    areaEffects: [
+      { id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion', damageDieCount: 2, damageDie: 8, damageBonus: 2, radius: 12 },
+      { id: 'fallout', label: 'Radiation fallout', kind: 'explosion', damageType: 'radiation', damageDieCount: 0, damageDie: 0, damageBonus: 20 },
+    ],
+  }]);
+  assert.equal(ammoProfiles[0].rangeUnit, 'm');
+  assert.deepEqual(ammoProfiles[0].effects.map(effect => effect.id), ['blast', 'fallout']);
+  assert.deepEqual(buildAreaDamageZones(ammoProfiles[0], {}, { blast: 10, fallout: 20 }).map(zone => zone.maxDistance), [12]);
+
+  const trapProfiles = createCustomWeaponAreaDamageProfiles([{
+    id: 'custom-trap', name: 'Custom Mine', category: 'minesTraps', damageType: 'explosion',
+    damageDieCount: 1, damageDie: 6, damageBonus: 0, skill: 'traps', burstLimit: 1,
+    isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 0,
+    knockdownChance: 0, mods: [], isCustom: true, areaRangeUnit: 'hex',
+    customAreaEffects: [{
+      id: 'main', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+    }],
+  }]);
+  assert.equal(trapProfiles[0].id, 'custom-weapon:custom-trap');
+  assert.equal(buildAreaDamageZones(trapProfiles[0], { [trapProfiles[0].id]: { main: 3 } }, { main: 6 })[0].label, '0–3 hex');
+});
+
+test('radiation-only zone effects return exposure without HP damage', () => {
+  const profile = createCustomAmmoAreaDamageProfiles([{
+    id: 'rad-shell', name: 'Radiation Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true,
+    areaEffects: [{
+      id: 'rads', label: 'Radiation', kind: 'explosion', damageType: 'radiation',
+      damageDieCount: 0, damageDie: 0, damageBonus: 20, radius: 5,
+    }],
+  }])[0];
+  const zone = buildAreaDamageZones(profile, {}, { rads: 20 })[0];
+  const result = resolveAreaZoneTarget(zone, {
+    id: 'rad-target', name: 'Rad target', endurance: 5,
+    gasInhaledResistance: 0, gasContactResistance: 0, electricityResistance: 0,
+    dt: 10, dr: 90, radiationResistance: 0,
+  });
+  assert.equal(result.damage, 0);
+  assert.equal(result.radiationExposure, 20);
 });
 
 test('mortar zones stack the 20m blast with concussion through 50m', () => {

@@ -2,6 +2,7 @@ import type { Weapon, DamageType, WeaponCategory } from '../context/types.ts';
 import {
   ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
   areaDamageProfileToAttack,
+  createCustomWeaponAreaDamageProfile,
   MINE_TRAP_PROFILES,
 } from './areaEffects.ts';
 import type { AreaAttack } from './areaEffects.ts';
@@ -364,6 +365,8 @@ export function getWeaponById(id: string): Weapon | undefined {
  * canonical catalog entry while pre-filling a modal's rolled damage.
  */
 export function getWeaponAreaAttack(weapon: Weapon): AreaAttack | undefined {
+  const customProfile = createCustomWeaponAreaDamageProfile(weapon);
+  if (customProfile) return areaDamageProfileToAttack(customProfile);
   const profileId = weapon.areaAttackProfileId;
   const profile = profileId ? MINE_TRAP_PROFILES[profileId] : undefined;
   if (profile) return { ...profile };

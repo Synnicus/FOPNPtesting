@@ -88,6 +88,8 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+  createCustomAmmoAreaDamageProfiles,
+  createCustomWeaponAreaDamageProfiles,
   buildAreaDamageZones,
   formatAreaResolution,
   MINE_TRAP_PROFILES,
@@ -4544,7 +4546,11 @@ export default function CombatScreen() {
         initialAttack={areaAttackPreset ?? undefined}
         initialDefenderId={areaAttackPreset ? defender?.id : undefined}
         sourceWeaponName={areaAttackPreset ? weapon?.name : undefined}
-        profiles={ALL_BUILT_IN_AREA_DAMAGE_PROFILES}
+        profiles={[
+          ...ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+          ...createCustomAmmoAreaDamageProfiles(allAmmo),
+          ...createCustomWeaponAreaDamageProfiles(allWeapons),
+        ]}
         rangeOverrides={app.areaProfileRangeOverrides}
         onSaveRange={app.setAreaProfileRangeOverride}
         onClose={() => { setShowAreaAttack(false); setAreaAttackPreset(null); }}
@@ -5033,7 +5039,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   const profileParts = areaProfile
     ? areaProfile.effects.map((component, index) => ({
         key: component.id ?? (index === 0 ? 'main' : `effect-${index + 1}`),
-        label: (component.id ?? (index === 0 ? 'main' : `effect-${index + 1}`))
+        label: component.label ?? (component.id ?? (index === 0 ? 'main' : `effect-${index + 1}`))
           .replace(/([A-Z])/g, ' $1')
           .replace(/[-_]/g, ' ')
           .toUpperCase(),
@@ -5042,6 +5048,12 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     : legacyProfileParts;
   const selectedPart = profileParts.find(part => part.key === profileComponent) ?? profileParts[0];
   const selectedComponent = selectedPart?.component;
+  const selectedDamageSource = selectedComponent && 'damageSourceEffectId' in selectedComponent
+    ? selectedComponent.damageSourceEffectId
+    : undefined;
+  const selectedDamageMultiplier = selectedComponent && 'damageMultiplier' in selectedComponent
+    ? selectedComponent.damageMultiplier
+    : undefined;
   const selectedDiceCount = selectedComponent?.damageDieCount ?? 0;
   const selectedDice = selectedComponent?.damageDie ?? 0;
   const selectedBonus = selectedComponent?.damageBonus ?? 0;
@@ -5053,6 +5065,15 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     ...profileDamageByEffect,
     [profileComponent]: rawDamage,
   };
+  for (const effect of areaProfile?.effects ?? []) {
+    const effectId = effect.id ?? 'main';
+    if (effect.damageSourceEffectId) {
+      currentProfileDamage[effectId] = Math.max(
+        0,
+        Math.round((currentProfileDamage[effect.damageSourceEffectId] ?? 0) * (effect.damageMultiplier ?? 1)),
+      );
+    }
+  }
   const vehicleCannonMissingEffects = !!areaProfile?.id.startsWith('vehicle-cannon:')
     && areaProfile.effects.some(effect => (currentProfileDamage[effect.id ?? 'main'] ?? 0) <= 0);
   const areaZones = areaProfile
@@ -5070,7 +5091,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
         damageDieCount: selectedDiceCount,
         damageDie: selectedDice,
         damageBonus: selectedBonus,
-        damageType: selectedComponent.damageType,
+        damageType: selectedComponent.damageType === 'radiation' ? 'explosion' : selectedComponent.damageType,
         profileId: areaProfile.id,
         zones: areaZones,
         targetZones,
@@ -5088,14 +5109,14 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
         damageDieCount: selectedDiceCount,
         damageDie: selectedDice,
         damageBonus: selectedBonus,
-        damageType: selectedComponent.damageType,
+        damageType: selectedComponent.damageType === 'radiation' ? 'explosion' : selectedComponent.damageType,
         radius: selectedComponent.radius ?? activeProfile.radius,
         diameter: selectedComponent.diameter ?? activeProfile.diameter,
         notes: selectedNotes,
       }
     : { kind, rawDamage, gmAdjudicatedLanding: kind === 'flamethrower' };
   const rollProfileDamage = () => {
-    if (!selectedComponent || selectedDiceCount <= 0 || selectedDice <= 0) return;
+    if (!selectedComponent || selectedDamageSource || selectedDiceCount <= 0 || selectedDice <= 0) return;
     const rolls = Array.from({ length: selectedDiceCount }, () => Math.floor(Math.random() * selectedDice) + 1);
     const total = rolls.reduce((sum, roll) => sum + roll, 0) + selectedBonus;
     setRawDamage(total);
@@ -5128,7 +5149,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View>
               <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1.5 }}>
-                {summary ? 'AREA EFFECT RESULTS' : areaProfile?.id.startsWith('vehicle-cannon:') ? 'VEHICLE CANNON BLAST' : areaProfile?.id.startsWith('ammo:') ? 'AREA AMMUNITION' : profileMode ? 'TRIGGER MINE / TRAP' : 'AOE ATTACK'}
+                {summary ? 'AREA EFFECT RESULTS' : areaProfile?.id.startsWith('vehicle-cannon:') ? 'VEHICLE CANNON BLAST' : areaProfile?.id.startsWith('ammo:') ? 'AREA AMMUNITION' : profileMode ? 'AREA PROFILE' : 'AOE ATTACK'}
               </Text>
               <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{summary ? 'Applied once. Closing this summary will not apply it again.' : profileMode ? `${sourceWeaponName ?? areaProfile?.name ?? 'Device'} — roll each effect and assign combatants to its range zones.` : 'Select an effect and every active combatant in its area.'}</Text>
             </View>
@@ -5151,7 +5172,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
               {!initialAttack && (
                 <>
                   <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>AREA PROFILE (OPTIONAL)</Text>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Choose explosive ammunition or an area-damage mine. Non-area traps are not listed here.</Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Choose a grenade, explosive ammunition, area mine/trap, vehicle cannon, or custom area profile.</Text>
                   <View style={{ gap: 7 }}>
                     {profiles.map(profile => {
                       const selected = catalogProfileId === profile.id;
@@ -5197,7 +5218,11 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                       const component = part.component;
                       const componentId = 'id' in component ? component.id : undefined;
                       const componentRangeUnit = 'rangeUnit' in component ? component.rangeUnit : undefined;
-                      const dice = (component.damageDieCount ?? 0) > 0 ? `${component.damageDieCount}d${component.damageDie}` : 'no printed dice';
+                      const damageSource = 'damageSourceEffectId' in component ? component.damageSourceEffectId : undefined;
+                      const damageMultiplier = 'damageMultiplier' in component ? component.damageMultiplier : undefined;
+                      const dice = damageSource
+                        ? `×${damageMultiplier ?? 1} of ${damageSource.replace(/[-_]/g, ' ')}`
+                        : (component.damageDieCount ?? 0) > 0 ? `${component.damageDieCount}d${component.damageDie}` : 'no printed dice';
                       const profileRange = areaProfile
                         ? (component.radius ?? rangeOverrides[areaProfile.id]?.[componentId ?? 'main'])
                         : component.radius;
@@ -5205,7 +5230,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                         ? `range ${profileRange} ${componentRangeUnit ?? areaProfile?.rangeUnit ?? 'hex'}`
                         : component.diameter !== undefined ? `diameter ${component.diameter}` : 'range not set';
                       const damage = areaProfile
-                        ? profileDamageByEffect[part.key] ?? 0
+                        ? currentProfileDamage[part.key] ?? 0
                         : ('rawDamage' in component ? component.rawDamage : 0);
                       return (
                         <TouchableOpacity key={part.key} testID={`aoe-profile-${part.key}`} onPress={() => {
@@ -5214,7 +5239,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                           setProfileDamageRolled(null);
                         }} style={{ minWidth: '47%', flexGrow: 1, padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}>
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: selected ? colors.primary : colors.foreground }}>{part.label}</Text>
-                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{dice} · {reach}{areaProfile ? ` · rolled ${damage}` : ''}</Text>
+                        <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{dice} · {reach}{areaProfile ? ` · rolled ${damage}` : ''}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -5269,20 +5294,26 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                 <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{profileMode ? 'Manual damage roll' : 'Rolled / base damage'}</Text>
                 {profileMode ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <TextInput
-                      testID="aoe-raw-damage"
-                      value={String(rawDamage)}
-                      onChangeText={value => {
-                        const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10);
-                        const next = Number.isFinite(parsed) ? parsed : 0;
-                        setRawDamage(next);
-                        if (areaProfile) setProfileDamageByEffect(previous => ({ ...previous, [profileComponent]: next }));
-                        setProfileDamageRolled(null);
-                      }}
-                      keyboardType="numeric"
-                      style={{ minWidth: 58, paddingVertical: 5, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center', fontFamily: 'Inter_700Bold' }}
-                    />
-                    {selectedDiceCount > 0 && selectedDice > 0 && (
+                    {selectedDamageSource ? (
+                      <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold' }}>
+                        {currentProfileDamage[profileComponent] ?? 0} from {selectedDamageSource} × {selectedDamageMultiplier ?? 1}
+                      </Text>
+                    ) : (
+                      <TextInput
+                        testID="aoe-raw-damage"
+                        value={String(rawDamage)}
+                        onChangeText={value => {
+                          const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10);
+                          const next = Number.isFinite(parsed) ? parsed : 0;
+                          setRawDamage(next);
+                          if (areaProfile) setProfileDamageByEffect(previous => ({ ...previous, [profileComponent]: next }));
+                          setProfileDamageRolled(null);
+                        }}
+                        keyboardType="numeric"
+                        style={{ minWidth: 58, paddingVertical: 5, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center', fontFamily: 'Inter_700Bold' }}
+                      />
+                    )}
+                    {!selectedDamageSource && selectedDiceCount > 0 && selectedDice > 0 && (
                       <TouchableOpacity testID="aoe-roll-profile-damage" onPress={rollProfileDamage} style={{ paddingVertical: 7, paddingHorizontal: 8, borderRadius: 5, backgroundColor: colors.primary }}>
                         <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>ROLL {selectedDiceCount}d{selectedDice}{selectedBonus ? `+${selectedBonus}` : ''}</Text>
                       </TouchableOpacity>

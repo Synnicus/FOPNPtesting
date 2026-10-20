@@ -64,6 +64,7 @@ import {
 import { consolidatePoisonedEffects } from '@/data/poisonEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import { AMMO_TYPES, filterCompatibleAmmoIds, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from '@/data/ammo';
+import { sanitizeCustomAreaEffects } from '@/data/customAreaEffects';
 import {
   planPortraitImportCleanup,
   PORTRAIT_IMPORT_DIRECTORY_PREFIX,
@@ -666,6 +667,8 @@ function normalizePersistedState(parsed: AppState): AppState {
   const customWeapons = (normalized.customWeapons ?? []).map(weapon => ({
     ...weapon,
     compatibleAmmo: filterCompatibleAmmoIds(weapon.compatibleAmmo, allAmmo),
+    customAreaEffects: sanitizeCustomAreaEffects(weapon.customAreaEffects),
+    areaRangeUnit: weapon.areaRangeUnit === 'm' ? 'm' as const : 'hex' as const,
   }));
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   const customRaces = (normalized.customRaces ?? []).filter(validateCustomRace);

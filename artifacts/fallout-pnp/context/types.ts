@@ -1,5 +1,27 @@
 // ─── Primitive Types ────────────────────────────────────────────────────────────
 export type DamageType = 'normal' | 'laser' | 'fire' | 'plasma' | 'explosion';
+export type AreaAttackKind =
+  | 'explosion' | 'fragmentation' | 'concussion'
+  | 'flamethrower' | 'gasInhaled' | 'gasContact'
+  | 'electricity' | 'acid';
+export type AreaRangeUnit = 'hex' | 'm';
+export type CustomAreaDamageType = DamageType | 'radiation';
+export interface CustomAreaEffect {
+  id: string;
+  label: string;
+  kind: AreaAttackKind;
+  damageType: CustomAreaDamageType;
+  damageDieCount: number;
+  damageDie: number;
+  damageBonus: number;
+  /** Maximum distance from the impact point; omitted means campaign-defined. */
+  radius?: number;
+  /** Minimum distance is used for effects such as fragmentation in adjacent hexes only. */
+  minDistance?: number;
+  /** An effect can reuse another component's roll, e.g. one-third plasma damage. */
+  damageSourceEffectId?: string;
+  damageMultiplier?: number;
+}
 export const DAMAGE_TYPE_LABELS: Record<DamageType, string> = {
   normal: 'N', laser: 'L', fire: 'F', plasma: 'P', explosion: 'E',
 };
@@ -277,6 +299,9 @@ export interface Weapon {
   apBurst?: number | null;
   /** Optional shared area-effect profile id. Absent on legacy/custom weapons. */
   areaAttackProfileId?: string;
+  /** Optional multi-zone profile used by campaign-created explosive traps. */
+  customAreaEffects?: CustomAreaEffect[];
+  areaRangeUnit?: AreaRangeUnit;
 }
 
 // ─── Armor ────────────────────────────────────────────────────────────────────

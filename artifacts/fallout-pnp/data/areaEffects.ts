@@ -1,11 +1,18 @@
-import type { AreaEffectKind, DamageType, TimedAreaEffect } from '../context/types.ts';
+import type {
+  AreaAttackKind,
+  AreaEffectKind,
+  AreaRangeUnit,
+  CustomAreaDamageType,
+  CustomAreaEffect,
+  DamageType,
+  TimedAreaEffect,
+  Weapon,
+} from '../context/types.ts';
 import { AMMO_TYPES, type AmmoDamageComponent, type AmmoType } from './ammo.ts';
 import { resolveAmmoDamageComponents } from './attackResolution.ts';
+import { sanitizeCustomAreaEffects } from './customAreaEffects.ts';
 
-export type AreaAttackKind =
-  | 'explosion' | 'fragmentation' | 'concussion'
-  | 'flamethrower' | 'gasInhaled' | 'gasContact'
-  | 'electricity' | 'acid';
+export type { AreaAttackKind } from '../context/types.ts';
 
 export type AreaAttackStatus =
   | 'alarm' | 'silentAlarm' | 'gasExposure' | 'poison'
@@ -22,12 +29,16 @@ export interface AreaAttackComponent {
   damageDieCount: number;
   damageDie: number;
   damageBonus: number;
-  damageType: DamageType;
+  damageType: CustomAreaDamageType;
   ammoIgnoresDT?: boolean;
   ammoDRModifier?: number;
   rangeUnit?: 'hex' | 'm';
   radius?: number;
+  minDistance?: number;
   diameter?: number;
+  label?: string;
+  damageSourceEffectId?: string;
+  damageMultiplier?: number;
   notes?: readonly string[];
 }
 
@@ -390,12 +401,214 @@ export const EXPLOSIVE_AMMO_AREA_PROFILES: readonly AreaDamageProfile[] =
     };
   });
 
+function customAreaProfile(
+  id: string,
+  name: string,
+  rangeUnit: AreaRangeUnit,
+  rawEffects: readonly CustomAreaEffect[] | undefined,
+  sourceNotes: readonly string[] = [],
+): AreaDamageProfile | undefined {
+  const effects = sanitizeCustomAreaEffects(rawEffects);
+  if (!effects.length) return undefined;
+  return {
+    id,
+    name,
+    rangeUnit,
+    effects: effects.map(effect => ({
+      id: effect.id,
+      label: effect.label,
+      kind: effect.kind,
+      damageType: effect.damageType,
+      damageDieCount: effect.damageDieCount,
+      damageDie: effect.damageDie,
+      damageBonus: effect.damageBonus,
+      ...(effect.radius === undefined ? {} : { radius: effect.radius }),
+      ...(effect.minDistance === undefined ? {} : { minDistance: effect.minDistance }),
+      ...(effect.damageSourceEffectId === undefined ? {} : { damageSourceEffectId: effect.damageSourceEffectId }),
+      ...(effect.damageMultiplier === undefined ? {} : { damageMultiplier: effect.damageMultiplier }),
+    })),
+    ...(sourceNotes.length ? { notes: [...sourceNotes] } : {}),
+  };
+}
+
+export function createCustomAmmoAreaDamageProfiles(ammoCatalog: readonly AmmoType[]): AreaDamageProfile[] {
+  return ammoCatalog.flatMap(ammo => {
+    if (!ammo.isCustom || !ammo.areaEffects?.length) return [];
+    const profile = customAreaProfile(
+      `custom-ammo:${ammo.id}`,
+      ammo.name,
+      ammo.areaRangeUnit ?? 'hex',
+      ammo.areaEffects,
+      ['Campaign-defined area ammunition profile. Blank ranges require a GM range for this campaign.'],
+    );
+    return profile ? [profile] : [];
+  });
+}
+
+export function createCustomWeaponAreaDamageProfile(weapon: Weapon): AreaDamageProfile | undefined {
+  if (!weapon.isCustom || weapon.category !== 'minesTraps' || !weapon.customAreaEffects?.length) return undefined;
+  return customAreaProfile(
+    `custom-weapon:${weapon.id}`,
+    weapon.name,
+    weapon.areaRangeUnit ?? 'hex',
+    weapon.customAreaEffects,
+    ['Campaign-defined mine or trap profile. Blank ranges require a GM range for this campaign.'],
+  );
+}
+
+export function createCustomWeaponAreaDamageProfiles(weapons: readonly Weapon[]): AreaDamageProfile[] {
+  return weapons.flatMap(weapon => {
+    const profile = createCustomWeaponAreaDamageProfile(weapon);
+    return profile ? [profile] : [];
+  });
+}
+
 const MINE_TRAP_AOE_PROFILE_IDS = new Set([
   't13_antipersonnel_mine',
   't45_se_antivehicle_mine',
   'explosive_trap',
   'claymore_trap',
 ]);
+
+const blastComponent = (
+  id: string,
+  label: string,
+  kind: AreaAttackKind,
+  damageDieCount: number,
+  damageDie: number,
+  damageBonus: number,
+  damageType: CustomAreaDamageType,
+  radius: number | undefined,
+  minDistance?: number,
+  extras: Partial<AreaAttackComponent> = {},
+): AreaAttackComponent => ({
+  id,
+  label,
+  kind,
+  damageDieCount,
+  damageDie,
+  damageBonus,
+  damageType,
+  ...(radius === undefined ? {} : { radius }),
+  ...(minDistance === undefined ? {} : { minDistance }),
+  ...extras,
+});
+
+/**
+ * Thrown explosives with printed area rules. Distances and damage are taken
+ * from the manual; statuses without numeric damage remain GM notes.
+ */
+export const THROWN_EXPLOSIVE_AREA_PROFILES: readonly AreaDamageProfile[] = [
+  {
+    id: 'grenade:fragmentation',
+    name: 'Fragmentation Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('main', 'Impact', 'explosion', 1, 12, 22, 'explosion', 0),
+      blastComponent('fragmentation', 'Fragmentation', 'fragmentation', 1, 6, 0, 'normal', 1, 1),
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 2),
+    ],
+    notes: ['Adjacent hexes take 1d6 fragmentation damage; targets within 2 hexes take 1d6 concussion damage.'],
+  },
+  {
+    id: 'grenade:plasma',
+    name: 'Plasma Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('main', 'Impact', 'explosion', 5, 10, 40, 'plasma', 0),
+      blastComponent('plasma_splash', 'Adjacent plasma', 'explosion', 5, 10, 40, 'plasma', 1, 1, {
+        damageSourceEffectId: 'main',
+        damageMultiplier: 1 / 3,
+        notes: ['Uses one-third of the impact damage roll.'],
+      }),
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 2),
+    ],
+    notes: ['Adjacent hexes take one-third of the plasma damage; targets within 2 hexes take 1d6 concussion damage.'],
+  },
+  {
+    id: 'grenade:acid',
+    name: 'Acid Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('acid', 'Acid spray', 'acid', 0, 0, 0, 'fire', 2),
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 2),
+    ],
+    notes: ['Acid spray covers a 2-hex radius; the manual does not specify a numeric acid burst. Acid exposure uses the app’s persistent 1d6-per-round rule.'],
+  },
+  {
+    id: 'grenade:flash',
+    name: 'Flash Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 2),
+    ],
+    notes: ['Targets within 2 hexes take 1d6 concussion damage. Blindness is 1d10 for those looking at the flash; GM adjudicates who was looking.'],
+  },
+  {
+    id: 'grenade:tangle',
+    name: 'Tangle Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 2),
+    ],
+    notes: ['Targets within 2 hexes take 1d6 concussion damage. Entanglement within 3 hexes and the Strength check to break free are GM-adjudicated.'],
+  },
+  {
+    id: 'grenade:incendiary',
+    name: 'Incendiary Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('fragmentation', 'Fragmentation', 'fragmentation', 1, 6, 0, 'normal', 1, 1),
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 2),
+      blastComponent('burning_phosphorus', 'Burning phosphorus', 'flamethrower', 0, 0, 0, 'fire', 3),
+    ],
+    notes: ['Adjacent hexes take 1d6 fragmentation; targets within 2 hexes take 1d6 concussion. Burning phosphorus covers a 3-hex radius and applies ongoing fire.'],
+  },
+  {
+    id: 'grenade:dynamite',
+    name: 'Dynamite',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('main', 'Blast', 'explosion', 1, 20, 30, 'explosion', 1),
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 4),
+    ],
+    notes: ['The blast affects its hex and all adjacent hexes; targets within 4 hexes take 1d6 concussion damage.'],
+  },
+  {
+    id: 'grenade:plastique-c14',
+    name: 'Plastique (C-14)',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('main', 'Detonation', 'explosion', 2, 20, 30, 'explosion', 0),
+      blastComponent('adjacent_blast', 'Adjacent blast', 'explosion', 2, 20, 30, 'explosion', 1, 1, {
+        damageSourceEffectId: 'main',
+        damageMultiplier: 0.5,
+        notes: ['Uses half of the detonation damage roll.'],
+      }),
+      blastComponent('concussion', 'Concussion', 'concussion', 1, 6, 0, 'explosion', 4),
+    ],
+    notes: ['Targets in the detonation hex take 2d20+30; adjacent hexes take half that same roll. Targets within 4 hexes take 1d6 concussion damage.'],
+  },
+  {
+    id: 'grenade:gas',
+    name: 'Gas Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('gas', 'Gas exposure', 'gasInhaled', 0, 0, 0, 'normal', 6),
+    ],
+    notes: ['Cloud reaches 6 hexes. Damage varies by payload; enter the GM-resolved damage and exposure type before applying.'],
+  },
+  {
+    id: 'grenade:pulse',
+    name: 'Pulse Grenade',
+    rangeUnit: 'hex',
+    effects: [
+      blastComponent('main', 'Pulse blast', 'explosion', 5, 10, 100, 'explosion', undefined),
+    ],
+    nonBiologicalOnly: true,
+    notes: ['Affects non-biological targets only. The manual does not specify a blast distance; enter a campaign-specific GM range.'],
+  },
+];
 
 export function createMineTrapAreaDamageProfiles(): AreaDamageProfile[] {
   return [...MINE_TRAP_AOE_PROFILE_IDS].flatMap(id => {
@@ -494,7 +707,7 @@ export function areaDamageProfileToAttack(profile: AreaDamageProfile): AreaAttac
     damageDieCount: primary.damageDieCount,
     damageDie: primary.damageDie,
     damageBonus: primary.damageBonus,
-    damageType: primary.damageType,
+    damageType: primary.damageType === 'radiation' ? 'explosion' : primary.damageType,
     profileId: profile.id,
     notes: profile.notes ? [...profile.notes] : undefined,
   };
@@ -509,6 +722,7 @@ export function catalogAreaProfileLabel(id: string): string {
 
 export const ALL_BUILT_IN_AREA_DAMAGE_PROFILES: readonly AreaDamageProfile[] = [
   ...EXPLOSIVE_AMMO_AREA_PROFILES,
+  ...THROWN_EXPLOSIVE_AREA_PROFILES,
   ...MINE_TRAP_AOE_PROFILES,
   ...VEHICLE_CANNON_AREA_PROFILES,
 ];
@@ -530,9 +744,16 @@ export function buildAreaDamageZones(
     const id = effect.id ?? 'main';
     const maxDistance = areaProfileRange(profile, effect, overrides);
     if (maxDistance === undefined) return [];
-    return [{ ...effect, id, maxDistance, rawDamage: Math.max(0, rawDamageByEffect[id] ?? 0) }];
+    const sourceDamage = effect.damageSourceEffectId
+      ? rawDamageByEffect[effect.damageSourceEffectId] ?? 0
+      : rawDamageByEffect[id] ?? 0;
+    const rawDamage = Math.max(0, Math.round(sourceDamage * (effect.damageMultiplier ?? 1)));
+    return [{ ...effect, id, maxDistance, rawDamage }];
   });
-  const thresholds = [...new Set(effects.map(effect => effect.maxDistance))].sort((a, b) => a - b);
+  const thresholds = [...new Set(effects.flatMap(effect => [
+    effect.maxDistance,
+    ...(effect.minDistance !== undefined && effect.minDistance > 0 ? [effect.minDistance - 1] : []),
+  ]))].sort((a, b) => a - b);
   return thresholds.map((maxDistance, index) => {
     const minDistance = index === 0 ? 0 : thresholds[index - 1] + 1;
     const label = maxDistance === 0
@@ -549,7 +770,7 @@ export function buildAreaDamageZones(
       maxDistance,
       rangeUnit: profile.rangeUnit,
       effects: effects
-        .filter(effect => effect.maxDistance >= maxDistance)
+        .filter(effect => effect.maxDistance >= maxDistance && (effect.minDistance ?? 0) <= minDistance)
         .map(({ maxDistance: _maxDistance, ...effect }) => effect),
     };
   });
@@ -726,11 +947,21 @@ export function resolveAreaZoneTarget(
 ): AreaResolution {
   const results = zone.effects.map(effect => resolveAreaTarget({
     kind: effect.kind,
-    rawDamage: effect.rawDamage,
-    damageType: effect.damageType,
+    rawDamage: effect.damageType === 'radiation' ? 0 : effect.rawDamage,
+    damageType: effect.damageType === 'radiation' ? 'explosion' : effect.damageType,
     notes: effect.notes,
     ammoIgnoresDT: effect.ammoIgnoresDT,
     ammoDRModifier: effect.ammoDRModifier,
+    ...(effect.damageType === 'radiation' ? {
+      components: [{
+        id: effect.id,
+        label: effect.label ?? effect.id,
+        type: 'radiation' as const,
+        dmgDieCount: 0,
+        dmgDie: 0,
+        dmgBonus: effect.rawDamage,
+      }],
+    } : {}),
   }, target, rollPercent, rollDie));
   const first = results[0];
   const notes = results.flatMap((result, index) =>
@@ -761,9 +992,12 @@ export function resolveAreaZoneTarget(
     notes,
     componentBreakdown: [
       ...zone.effects.map((effect, index) => {
-        const label = effect.id === 'blast'
+        const label = effect.label ?? (effect.id === 'blast'
           ? 'Blast'
-          : effect.id.replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+          : effect.id.replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()));
+        if (effect.damageType === 'radiation') {
+          return `${label}: ${effect.rawDamage} radiation → ${results[index]?.radiationExposure ?? 0} radiation exposure`;
+        }
         const protection = effect.kind === 'concussion'
           ? 'DT ignored; explosive DR applies'
           : `${effect.damageType} protection applies`;

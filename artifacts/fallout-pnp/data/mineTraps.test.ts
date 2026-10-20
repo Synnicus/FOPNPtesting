@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MINE_TRAP_PROFILES, resolveAreaTarget } from './areaEffects.ts';
 import { BUILT_IN_WEAPONS, getWeaponAreaAttack } from './weapons.ts';
+import type { AreaAttack } from './areaEffects.ts';
 
 const weapon = (id: string) => {
   const found = BUILT_IN_WEAPONS.find(candidate => candidate.id === id);
@@ -125,8 +126,8 @@ test('every weapon profile and matching AoE profile resolves identically, includ
       const ap = component === 'main' ? areaProfile : areaProfile[component];
       if (!wp || !ap) continue;
       assert.deepEqual(
-        resolveAreaTarget({ ...weaponProfile, ...wp, requiresGasChoice: false, rawDamage: 27 }, target, () => 40, () => 6),
-        resolveAreaTarget({ ...areaProfile, ...ap, requiresGasChoice: false, rawDamage: 27 }, target, () => 40, () => 6),
+        resolveAreaTarget({ ...weaponProfile, ...wp, requiresGasChoice: false, rawDamage: 27 } as AreaAttack, target, () => 40, () => 6),
+        resolveAreaTarget({ ...areaProfile, ...ap, requiresGasChoice: false, rawDamage: 27 } as AreaAttack, target, () => 40, () => 6),
       );
     }
   }

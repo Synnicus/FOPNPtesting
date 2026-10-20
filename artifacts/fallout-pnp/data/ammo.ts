@@ -1,5 +1,6 @@
 import type { PoisonSpec } from './mods.ts';
-import type { DamageType, Weapon } from '../context/types.ts';
+import type { AreaRangeUnit, CustomAreaEffect, DamageType, Weapon } from '../context/types.ts';
+import { validateCustomAreaEffects } from './customAreaEffects.ts';
 
 export type AmmoComponentType = DamageType | 'concussion' | 'radiation';
 
@@ -43,6 +44,9 @@ export interface AmmoType {
   poison?: PoisonSpec;
   /** Custom rounds resolve each component independently; built-ins retain legacy fields. */
   components?: AmmoDamageComponent[];
+  /** Optional multi-zone payload for explosive/custom area ammunition. */
+  areaEffects?: CustomAreaEffect[];
+  areaRangeUnit?: AreaRangeUnit;
   isCustom?: boolean;
 }
 
@@ -201,6 +205,12 @@ export function validateCustomAmmo(ammo: AmmoType, catalog: readonly AmmoType[] 
   }
   if (ammo?.ignoresDT !== undefined && typeof ammo.ignoresDT !== 'boolean') errors.push('Ignores DT must be a boolean.');
   if (ammo?.notes !== undefined && typeof ammo.notes !== 'string') errors.push('Notes must be text.');
+  if (ammo?.areaEffects !== undefined) {
+    errors.push(...validateCustomAreaEffects(ammo.areaEffects, ammo.areaRangeUnit ?? 'hex'));
+  }
+  if (ammo?.areaRangeUnit !== undefined && ammo.areaRangeUnit !== 'hex' && ammo.areaRangeUnit !== 'm') {
+    errors.push('Area range unit must be hexes or meters.');
+  }
   if (ammo?.poison !== undefined) {
     const poison = ammo.poison as unknown;
     const validPoison = !!poison

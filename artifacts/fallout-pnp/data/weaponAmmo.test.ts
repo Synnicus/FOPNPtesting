@@ -171,6 +171,23 @@ test('custom ammunition persists all three independently typed components and re
   assert.equal(resolveEquippedAmmoTypeId(weapon, custom.id, catalog), custom.id);
 });
 
+test('custom ammunition validates and round-trips saved multi-zone area effects', () => {
+  const custom: AmmoType = {
+    id: 'custom-area-ammo', name: 'Zone Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, areaRangeUnit: 'm',
+    components: [{ id: 'direct', label: 'Direct', type: 'explosion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
+    areaEffects: [
+      { id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion', damageDieCount: 2, damageDie: 8, damageBonus: 4, radius: 10 },
+      { id: 'rads', label: 'Radiation', kind: 'explosion', damageType: 'radiation', damageDieCount: 0, damageDie: 0, damageBonus: 25 },
+    ],
+  };
+  assert.deepEqual(validateCustomAmmo(custom), []);
+  const restored = sanitizeCustomAmmoCatalog([JSON.parse(JSON.stringify(custom)) as AmmoType]);
+  assert.deepEqual(restored[0].areaEffects, custom.areaEffects);
+  assert.equal(restored[0].areaRangeUnit, 'm');
+  assert.deepEqual(sanitizeCustomAmmoCatalog([{ ...custom, areaEffects: [{ ...custom.areaEffects![0], radius: -1 }] }]), []);
+});
+
 test('custom ammunition validation rejects empty, excessive, duplicate, and invalid components', () => {
   const base: AmmoType = {
     id: 'custom', name: 'Custom', value: 0, volume: 0, acMod: 0, drMod: 0,

@@ -5,12 +5,14 @@ import { URL } from 'node:url';
 
 const source = readFileSync(new URL('../app/(tabs)/index.tsx', import.meta.url), 'utf8');
 
-test('area chooser lists explosive ammunition and only area-damage mine/trap profiles', () => {
+test('area chooser lists built-in and custom explosives without unrelated traps', () => {
   assert.match(source, /MINE_TRAP_PROFILES,[\s\S]*?from '@\/data\/areaEffects'/);
   assert.match(source, /ALL_BUILT_IN_AREA_DAMAGE_PROFILES/);
   assert.match(source, /profiles\.map\(profile =>/);
   assert.match(source, /testID=\{`aoe-profile-choice-/);
-  assert.match(source, /Non-area traps are not listed here/);
+  assert.match(source, /Choose a grenade, explosive ammunition, area mine\/trap, vehicle cannon, or custom area profile/);
+  assert.match(source, /createCustomAmmoAreaDamageProfiles\(allAmmo\)/);
+  assert.match(source, /createCustomWeaponAreaDamageProfiles\(allWeapons\)/);
 });
 
 test('area profiles provide per-target blast zones and a single resolver payload', () => {

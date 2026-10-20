@@ -27,6 +27,6 @@ test('placement confirmation shows effective Traps and delegates the roll to the
 test('custom editor preserves profile references and supports profile-free legacy damage', () => {
   const source = readFileSync(new URL('../app/(tabs)/equipment.tsx', import.meta.url), 'utf8');
   assert.match(source, /setAreaAttackProfileId\(w\.areaAttackProfileId\)/);
-  assert.match(source, /Custom damage — no shared profile/);
+  assert.match(source, /Custom profile/);
   assert.match(source, /category === 'minesTraps' \? 'traps'/);
 });

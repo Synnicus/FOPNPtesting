@@ -25,13 +25,14 @@ import { ALCOHOL_CONSUMABLES, CHEMS } from '@/data/chems';
 import { CONSUMABLE_CATEGORIES, validateCustomConsumable } from '@/data/consumables';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { AP_COSTS } from '@/data/apCosts';
-import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile, CustomConsumable, ConsumableCategory } from '@/context/types';
+import { Weapon, WeaponCategory, Armor, DamageType, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, SPECIALStats, CharacterSkills, VehicleProfile, CustomConsumable, ConsumableCategory, CustomAreaEffect, AreaAttackKind, CustomAreaDamageType, AreaRangeUnit } from '@/context/types';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { CatalogImageEditor } from '@/components/CatalogImageEditor';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
 import CustomRulesPanel from '@/components/CustomRulesPanel';
 import { SelectableTagMenu } from '@/components/SelectableTagMenu';
+import { AREA_ATTACK_KINDS, AREA_DAMAGE_TYPES, validateCustomAreaEffects } from '@/data/customAreaEffects';
 import {
   resolveVehiclePerformance,
   spawnVehicleCharacter,
@@ -78,6 +79,138 @@ const EMPTY_ARMOR_SKILLS: Record<keyof CharacterSkills, number> = {
 const GUN_CATEGORIES: string[] = ['smallGuns', 'bigGuns', 'energyWeapons'];
 const isGunCategory = (cat: string) => GUN_CATEGORIES.includes(cat);
 const isMeleeCategory = (cat: string) => cat === 'meleeWeapons' || cat === 'unarmed' || cat === 'natural';
+
+function CustomAreaEffectsEditor({
+  effects,
+  onChange,
+  rangeUnit,
+  onRangeUnitChange,
+}: {
+  effects: CustomAreaEffect[];
+  onChange: (effects: CustomAreaEffect[]) => void;
+  rangeUnit: AreaRangeUnit;
+  onRangeUnitChange: (unit: AreaRangeUnit) => void;
+}) {
+  const colors = useColors();
+  const update = (id: string, patch: Partial<CustomAreaEffect>) =>
+    onChange(effects.map(effect => effect.id === id ? { ...effect, ...patch } : effect));
+  const addEffect = () => onChange([...effects, {
+    id: genId(),
+    label: `Effect ${effects.length + 1}`,
+    kind: 'explosion',
+    damageType: 'normal',
+    damageDieCount: 1,
+    damageDie: 6,
+    damageBonus: 0,
+  }]);
+  const numberInput = (value: number | undefined, placeholder: string, onValue: (value: number | undefined) => void) => (
+    <TextInput
+      value={value === undefined ? '' : String(value)}
+      onChangeText={text => {
+        const cleaned = text.replace(/[^0-9]/g, '');
+        onValue(cleaned === '' ? undefined : Number.parseInt(cleaned, 10));
+      }}
+      keyboardType="numeric"
+      placeholder={placeholder}
+      placeholderTextColor={colors.mutedForeground}
+      style={{ width: 75, padding: 7, color: colors.foreground, borderWidth: 1, borderColor: colors.border, borderRadius: 5, textAlign: 'center' }}
+    />
+  );
+  const chipStyle = (selected: boolean) => ({
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: selected ? colors.primary : colors.border,
+    borderRadius: 5,
+    backgroundColor: selected ? colors.primary + '22' : colors.secondary,
+  });
+  const validationMessage = validateCustomAreaEffects(effects, rangeUnit)[0];
+
+  return (
+    <View style={{ gap: 10, padding: 11, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.background }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>AREA BLAST ZONES</Text>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Use printed ranges or leave blank to set a GM range per campaign.</Text>
+        </View>
+        {effects.length < 8 && (
+          <TouchableOpacity onPress={addEffect} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 5, borderWidth: 1, borderColor: colors.primary }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>+ EFFECT</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {(['hex', 'm'] as const).map(unit => (
+          <TouchableOpacity key={unit} onPress={() => onRangeUnitChange(unit)} style={{ ...chipStyle(rangeUnit === unit), flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: rangeUnit === unit ? colors.primary : colors.foreground }}>{unit === 'hex' ? 'HEXES' : 'METERS'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {effects.map((effect, index) => (
+        <View key={effect.id} style={{ gap: 8, padding: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 5 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <TextInput
+              value={effect.label}
+              onChangeText={label => update(effect.id, { label })}
+              placeholder={`Effect ${index + 1}`}
+              placeholderTextColor={colors.mutedForeground}
+              style={{ flex: 1, padding: 6, color: colors.foreground, borderBottomWidth: 1, borderBottomColor: colors.border }}
+            />
+            <TouchableOpacity onPress={() => onChange(effects.filter(item => item.id !== effect.id))} accessibilityLabel={`Remove ${effect.label}`}>
+              <Feather name="trash-2" size={16} color={colors.destructive} />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>EFFECT KIND</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            {AREA_ATTACK_KINDS.map((kind: AreaAttackKind) => (
+              <TouchableOpacity key={kind} onPress={() => update(effect.id, { kind })} style={chipStyle(effect.kind === kind)}>
+                <Text style={{ fontSize: 9, color: effect.kind === kind ? colors.primary : colors.foreground }}>{kind.replace(/([A-Z])/g, ' $1')}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>DAMAGE / EXPOSURE TYPE</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            {AREA_DAMAGE_TYPES.map((type: CustomAreaDamageType) => (
+              <TouchableOpacity key={type} onPress={() => update(effect.id, { damageType: type })} style={chipStyle(effect.damageType === type)}>
+                <Text style={{ fontSize: 9, color: effect.damageType === type ? colors.primary : colors.foreground }}>{type}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {[
+              { label: 'DICE', value: effect.damageDieCount, key: 'damageDieCount' as const },
+              { label: 'DIE', value: effect.damageDie, key: 'damageDie' as const },
+              { label: effect.damageType === 'radiation' ? 'EXPOSURE' : 'BONUS', value: effect.damageBonus, key: 'damageBonus' as const },
+            ].map(field => (
+              <View key={field.key} style={{ gap: 3, alignItems: 'center' }}>
+                <Text style={{ fontSize: 8, color: colors.mutedForeground }}>{field.label}</Text>
+                <TextInput
+                  value={String(field.value)}
+                  onChangeText={text => {
+                    const parsed = Number.parseInt(text.replace(/[^0-9-]/g, ''), 10);
+                    update(effect.id, { [field.key]: Number.isFinite(parsed) ? parsed : 0 });
+                  }}
+                  keyboardType="numeric"
+                  style={{ width: 54, padding: 6, color: colors.foreground, borderWidth: 1, borderColor: colors.border, borderRadius: 5, textAlign: 'center' }}
+                />
+              </View>
+            ))}
+            <View style={{ gap: 3, alignItems: 'center' }}>
+              <Text style={{ fontSize: 8, color: colors.mutedForeground }}>MIN DIST.</Text>
+              {numberInput(effect.minDistance, '0', value => update(effect.id, { minDistance: value }))}
+            </View>
+            <View style={{ gap: 3, alignItems: 'center' }}>
+              <Text style={{ fontSize: 8, color: colors.mutedForeground }}>MAX RANGE</Text>
+              {numberInput(effect.radius, 'GM range', value => update(effect.id, { radius: value }))}
+            </View>
+          </View>
+        </View>
+      ))}
+      {effects.length === 0 && <Text style={{ fontSize: 10, color: colors.mutedForeground }}>No area effects configured.</Text>}
+      {validationMessage && <Text style={{ fontSize: 10, color: colors.destructive }}>{validationMessage}</Text>}
+    </View>
+  );
+}
 
 /**
  * Whether a weapon mod (by its appliesTo tag) can be applied to a weapon of
@@ -158,6 +291,8 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
   const [tab, setTab] = useState<'basic' | 'advanced' | 'mods'>('basic');
   const [showPresets, setShowPresets] = useState(false);
   const [areaAttackProfileId, setAreaAttackProfileId] = useState<string | undefined>();
+  const [customAreaEffects, setCustomAreaEffects] = useState<CustomAreaEffect[]>([]);
+  const [areaRangeUnit, setAreaRangeUnit] = useState<AreaRangeUnit>('hex');
 
   const isEditing = !!editWeapon;
 
@@ -165,6 +300,8 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
     setName(nameOverride ?? w.name);
     setCategory(w.category);
     setAreaAttackProfileId(w.areaAttackProfileId);
+    setCustomAreaEffects((w.customAreaEffects ?? []).map(effect => ({ ...effect })));
+    setAreaRangeUnit(w.areaRangeUnit ?? 'hex');
     setDamageType(w.damageType);
     setDieCount(w.damageDieCount);
     setDieSides(w.damageDie);
@@ -202,10 +339,15 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       setSelectedMods([]);
       setTagText('');
       setAreaAttackProfileId(undefined);
+      setCustomAreaEffects([]);
+      setAreaRangeUnit('hex');
     }
   }, [visible, editWeapon]);
 
-  const isValid = name.trim().length > 0 && ((dieCount > 0 && dieSides > 0) || !!areaAttackProfileId);
+  const areaEffectErrors = validateCustomAreaEffects(customAreaEffects, areaRangeUnit);
+  const isValid = name.trim().length > 0
+    && ((dieCount > 0 && dieSides > 0) || !!areaAttackProfileId || customAreaEffects.length > 0)
+    && areaEffectErrors.length === 0;
 
   const modEffects = computeModEffects(selectedMods);
   const ammoCompatibleCategory = weaponCategorySupportsAmmo(category);
@@ -305,6 +447,8 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
       id: isEditing ? editWeapon!.id : genId(), name: name.trim(),
       category,
       areaAttackProfileId: category === 'minesTraps' ? areaAttackProfileId : undefined,
+      customAreaEffects: category === 'minesTraps' && customAreaEffects.length ? customAreaEffects : undefined,
+      areaRangeUnit: category === 'minesTraps' ? areaRangeUnit : undefined,
       damageType, damageDieCount: dieCount, damageDie: dieSides,
       damageBonus, skill: (category === 'minesTraps' ? 'traps' : category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
       burstLimit, isDoubleShot, magazineSize,
@@ -398,12 +542,26 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon }: {
                 {/* Damage type */}
                 {category === 'minesTraps' && (
                   <View style={{ gap: 6 }}>
-                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Shared trigger profile overrides the damage fields below. Choose custom damage to use your own dice.</Text>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Choose a built-in profile or define your own multiple damage zones below.</Text>
                     {[undefined, ...Object.keys(MINE_TRAP_PROFILES)].map(id => (
-                      <TouchableOpacity key={id ?? 'custom'} onPress={() => setAreaAttackProfileId(id)} style={{ padding: 8, borderWidth: 1, borderColor: areaAttackProfileId === id ? colors.primary : colors.border }}>
-                        <Text style={{ color: colors.foreground }}>{id ? (BUILT_IN_WEAPONS.find(w => w.areaAttackProfileId === id)?.name ?? id) : 'Custom damage — no shared profile'}</Text>
+                      <TouchableOpacity key={id ?? 'custom'} onPress={() => {
+                        setAreaAttackProfileId(id);
+                        if (id) setCustomAreaEffects([]);
+                      }} style={{ padding: 8, borderWidth: 1, borderColor: areaAttackProfileId === id ? colors.primary : colors.border }}>
+                        <Text style={{ color: colors.foreground }}>{id ? (BUILT_IN_WEAPONS.find(w => w.areaAttackProfileId === id)?.name ?? id) : 'Custom profile'}</Text>
                       </TouchableOpacity>
                     ))}
+                    {!areaAttackProfileId && (
+                      <CustomAreaEffectsEditor
+                        effects={customAreaEffects}
+                        onChange={effects => {
+                          setCustomAreaEffects(effects);
+                          if (effects.length) setAreaAttackProfileId(undefined);
+                        }}
+                        rangeUnit={areaRangeUnit}
+                        onRangeUnitChange={setAreaRangeUnit}
+                      />
+                    )}
                   </View>
                 )}
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>DAMAGE TYPE</Text>
@@ -1015,6 +1173,8 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
   const [poisonType, setPoisonType] = useState<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'>('A');
   const [poisonEffect, setPoisonEffect] = useState('');
   const [components, setComponents] = useState<AmmoDamageComponent[]>([]);
+  const [areaEffects, setAreaEffects] = useState<CustomAreaEffect[]>([]);
+  const [areaRangeUnit, setAreaRangeUnit] = useState<AreaRangeUnit>('hex');
 
   const newComponent = (index: number): AmmoDamageComponent => ({
     id: genId(),
@@ -1036,6 +1196,8 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
       setPoisonEnabled(!!editAmmo.poison);
       setPoisonType(editAmmo.poison?.type ?? 'A');
       setPoisonEffect(editAmmo.poison?.effectText ?? '');
+      setAreaEffects((editAmmo.areaEffects ?? []).map(effect => ({ ...effect })));
+      setAreaRangeUnit(editAmmo.areaRangeUnit ?? 'hex');
       setComponents((editAmmo.components ?? [{
         id: genId(), label: 'Damage', type: 'normal',
         dmgDieCount: editAmmo.dmgDieCount, dmgDie: editAmmo.dmgDie, dmgBonus: editAmmo.dmgBonus,
@@ -1043,6 +1205,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
     } else {
       setName(''); setAcMod(0); setDrMod(0); setIgnoresDT(false); setNotes('');
       setPoisonEnabled(false); setPoisonType('A'); setPoisonEffect('');
+      setAreaEffects([]); setAreaRangeUnit('hex');
       setComponents([newComponent(0)]);
     }
   }, [visible, editAmmo]);
@@ -1065,11 +1228,15 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
     notes: notes.trim() || undefined,
     poison: poisonEnabled ? { type: poisonType, effectText: poisonEffect.trim() } : undefined,
     components,
+    areaEffects: areaEffects.length ? areaEffects : undefined,
+    areaRangeUnit: areaEffects.length ? areaRangeUnit : undefined,
     isCustom: true,
   };
   const validationCatalog = catalog.filter(ammo => ammo.id !== editAmmo?.id && ammo.id !== '__new_custom_ammo__');
   const errors = validateCustomAmmo(candidate, validationCatalog);
-  const isValid = errors.length === 0 && (!poisonEnabled || poisonEffect.trim().length > 0);
+  const isValid = errors.length === 0
+    && validateCustomAreaEffects(areaEffects, areaRangeUnit).length === 0
+    && (!poisonEnabled || poisonEffect.trim().length > 0);
 
   const save = () => {
     if (!isValid) return;
@@ -1146,6 +1313,13 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
                 })}
               </View>
             ))}
+
+            <CustomAreaEffectsEditor
+              effects={areaEffects}
+              onChange={setAreaEffects}
+              rangeUnit={areaRangeUnit}
+              onRangeUnitChange={setAreaRangeUnit}
+            />
 
             <TextInput style={{ minHeight: 72, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, padding: 11, color: colors.foreground, textAlignVertical: 'top' }} multiline placeholder="Special notes (optional)" placeholderTextColor={colors.mutedForeground} value={notes} onChangeText={setNotes} />
             <TouchableOpacity onPress={() => setPoisonEnabled(value => !value)} style={{ padding: 11, borderWidth: 1, borderColor: poisonEnabled ? colors.primary : colors.border, borderRadius: colors.radius }}>
