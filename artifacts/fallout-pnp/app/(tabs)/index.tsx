@@ -857,6 +857,8 @@ export default function CombatScreen() {
   const combatBladePlayer = useAudioPlayer(require('../../assets/combat-blade-slice.wav'));
   const combatBluntPlayer = useAudioPlayer(require('../../assets/combat-blunt-hit.wav'));
   const combatLaserPlayer = useAudioPlayer(require('../../assets/combat-energy-laser.wav'));
+  const combatBlastPlayer = useAudioPlayer(require('../../assets/combat-blast.wav'));
+  const combatThrowPlayer = useAudioPlayer(require('../../assets/combat-throw.wav'));
   const { characters, allWeapons, allArmor, allAmmo, customWeaponMods, customPerks, addCharacter, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
     hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -887,6 +889,8 @@ export default function CombatScreen() {
       blade: combatBladePlayer,
       blunt: combatBluntPlayer,
       laser: combatLaserPlayer,
+      blast: combatBlastPlayer,
+      throw: combatThrowPlayer,
     }[family];
     const intervalMs = getCombatAttackSoundIntervalMs(family);
     const safeShotCount = Math.max(1, Math.floor(shotCount));
@@ -903,7 +907,10 @@ export default function CombatScreen() {
       }
     };
     playShot(0);
-  }, [combatFirearmPlayer, combatBladePlayer, combatBluntPlayer, combatLaserPlayer]);
+  }, [
+    combatFirearmPlayer, combatBladePlayer, combatBluntPlayer, combatLaserPlayer,
+    combatBlastPlayer, combatThrowPlayer,
+  ]);
   useEffect(() => () => {
     attackSoundSequenceIdRef.current += 1;
     attackSoundTimersRef.current.forEach(clearTimeout);
@@ -2149,9 +2156,20 @@ export default function CombatScreen() {
 
   const handleAreaAttackApply = useCallback((attack: AreaAttack, targetIds: string[]) => {
     const requestId = applyAreaAttack(attack, targetIds);
+    if (weapon?.category === 'minesTraps') {
+      const isExplosiveAreaAttack = attack.kind === 'explosion'
+        || attack.kind === 'fragmentation'
+        || attack.kind === 'concussion';
+      const soundFamily = getCombatAttackSoundFamily(
+        weapon,
+        isMeleeOrUnarmed,
+        isExplosiveAreaAttack,
+      );
+      if (soundFamily) playCombatAttackSounds(soundFamily, 1);
+    }
     if (attack.directHitTargetId) setDamageApplied(true);
     return requestId;
-  }, [applyAreaAttack]);
+  }, [applyAreaAttack, weapon, isMeleeOrUnarmed, playCombatAttackSounds]);
 
   const selectAttackWeapon = useCallback((weaponId: string) => {
     if (weapon?.id === weaponId) return;

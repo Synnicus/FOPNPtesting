@@ -1,6 +1,6 @@
 import type { DamageType, WeaponCategory } from '../context/types.ts';
 
-export type CombatAttackSoundFamily = 'firearm' | 'blade' | 'blunt' | 'laser';
+export type CombatAttackSoundFamily = 'firearm' | 'blade' | 'blunt' | 'laser' | 'blast' | 'throw';
 
 export interface CombatAttackSoundWeapon {
   category: WeaponCategory;
@@ -16,19 +16,23 @@ const SOUND_INTERVAL_MS: Record<CombatAttackSoundFamily, number> = {
   blade: 410,
   blunt: 350,
   laser: 330,
+  blast: 700,
+  throw: 460,
 };
 
 export function getCombatAttackSoundFamily(
   weapon: CombatAttackSoundWeapon | null,
   isMeleeOrUnarmed = false,
+  isExplosiveAttack = false,
 ): CombatAttackSoundFamily | null {
+  if (isExplosiveAttack || weapon?.damageType === 'explosion') return 'blast';
   if (!weapon) return isMeleeOrUnarmed ? 'blunt' : null;
 
   if (weapon.category === 'energyWeapons') return 'laser';
   if (weapon.category === 'smallGuns' || weapon.category === 'bigGuns') return 'firearm';
 
   if (weapon.category === 'throwing') {
-    return BLADED_WEAPON_NAME.test(weapon.name) ? 'blade' : null;
+    return BLADED_WEAPON_NAME.test(weapon.name) ? 'blade' : 'throw';
   }
 
   if (weapon.category === 'natural' && !isMeleeOrUnarmed) return null;
