@@ -16,6 +16,7 @@ import type { Perk as BuiltInPerk } from './perks';
 import { calcBaseSkills } from './derived.ts';
 import { rebaseSkillValue } from './skillAdvancement.ts';
 import { getCharacterRaceTagIds } from './races.ts';
+import { CONDITION_DEFINITIONS } from './conditions.ts';
 
 export const BUILT_IN_RULE_TAGS: CampaignRuleTag[] = [
   { id: 'unarmed', label: 'Unarmed', appliesTo: 'weapon' },
@@ -117,6 +118,18 @@ export function normalizeRuleTag(value: string): string {
 
 export function parseRuleTagList(value: string): string[] {
   return [...new Set(value.split(',').map(normalizeRuleTag).filter(Boolean))];
+}
+
+export function getSelectablePerkStatuses(
+  selectedStatuses: readonly string[] = [],
+): { id: string; label: string }[] {
+  const statuses = new Map<string, { id: string; label: string }>(
+    CONDITION_DEFINITIONS.map(condition => [condition.id, { id: condition.id, label: condition.name }]),
+  );
+  for (const status of selectedStatuses) {
+    if (status && !statuses.has(status)) statuses.set(status, { id: status, label: status });
+  }
+  return [...statuses.values()];
 }
 
 export function inferWeaponTags(weapon: Weapon): string[] {

@@ -15,6 +15,7 @@ import {
   customRuleConditionMatches,
   customPerkAsPerk,
   getSelectableArmorTags,
+  getSelectablePerkStatuses,
   getSelectableWeaponTags,
   inferArmorTags,
   inferWeaponTags,
@@ -277,11 +278,26 @@ test('custom perk conditions require every populated group and allow any listed 
     statuses: ['poisoned', 'hidden'],
   };
   assert.equal(customRuleConditionMatches(character, weapon, [armor], 'burst', condition), true);
+  assert.equal(customRuleConditionMatches({ ...character, conditions: ['hidden'] }, weapon, [armor], 'burst', condition), true);
   assert.equal(customRuleConditionMatches(character, weapon, [], 'burst', condition), false);
   assert.equal(customRuleConditionMatches(character, weapon, [armor], 'single', condition), false);
   assert.equal(customRuleConditionMatches(character, weapon, [armor], null, condition), false);
   assert.equal(customRuleConditionMatches({ ...character, conditions: [] }, weapon, [armor], 'burst', condition), false);
   assert.equal(customRuleConditionMatches(character, null, [armor], 'burst', condition), false);
+});
+
+test('perk status choices include supported conditions and preserve legacy saved status strings', () => {
+  const statuses = getSelectablePerkStatuses(['poisoned', 'hidden']);
+  assert.deepEqual(statuses.slice(0, 4), [
+    { id: 'minorWithdrawal', label: 'Minor Withdrawal' },
+    { id: 'majorWithdrawal', label: 'Major Withdrawal' },
+    { id: 'addictionRecovery', label: 'Addiction Recovery' },
+    { id: 'drunk', label: 'Drunk' },
+  ]);
+  assert.deepEqual(statuses.slice(-2), [
+    { id: 'poisoned', label: 'poisoned' },
+    { id: 'hidden', label: 'hidden' },
+  ]);
 });
 
 test('custom perk race conditions match exact races, including distinct Half-Mutant and Super Mutant values', () => {

@@ -23,9 +23,9 @@ import { TRAITS } from '@/data/traits';
 import {
   BUILT_IN_RULE_TAGS,
   getSelectableArmorTags,
+  getSelectablePerkStatuses,
   getSelectableWeaponTags,
   normalizeRuleTag,
-  parseRuleTagList,
 } from '@/data/customRules';
 import { useColors } from '@/hooks/useColors';
 
@@ -338,7 +338,7 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const [perkRequiredRaceTags, setPerkRequiredRaceTags] = useState<string[]>([]);
   const [perkExcludedRaceTags, setPerkExcludedRaceTags] = useState<string[]>([]);
   const [perkTraits, setPerkTraits] = useState<string[]>([]);
-  const [perkStatuses, setPerkStatuses] = useState('');
+  const [perkStatuses, setPerkStatuses] = useState<string[]>([]);
   const [perkModes, setPerkModes] = useState<RuleAttackMode[]>([]);
   const [perkEffects, setPerkEffects] = useState<CustomRuleEffect[]>([]);
   const changeRules = (changes: Partial<{
@@ -354,6 +354,7 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const visibleModWeaponTags = getSelectableWeaponTags(campaignRuleTags, modAppliesToTags);
   const visiblePerkWeaponTags = getSelectableWeaponTags(campaignRuleTags, perkWeaponTags);
   const visiblePerkArmorTags = getSelectableArmorTags(campaignRuleTags, perkArmorTags);
+  const visiblePerkStatuses = getSelectablePerkStatuses(perkStatuses);
   const visibleRaceTags = getSelectableRaceTags(
     customRaces, campaignRaceTags, characters,
     [...perkRaceTags, ...perkRequiredRaceTags, ...perkExcludedRaceTags],
@@ -437,7 +438,7 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     setPerkLevel('1'); setPerkMaxRanks('1'); setPerkProgrammatic(true);
     setPerkWeaponTags([]); setPerkArmorTags([]); setPerkRaceTags([]);
     setPerkRequiredRaceTags([]); setPerkExcludedRaceTags([]); setPerkTraits([]);
-    setPerkStatuses(''); setPerkModes([]); setPerkEffects([]);
+    setPerkStatuses([]); setPerkModes([]); setPerkEffects([]);
   };
   const editPerk = (perk: CustomPerkDefinition) => {
     setEditingPerkId(perk.id); setPerkName(perk.name); setPerkDescription(perk.description);
@@ -455,7 +456,7 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     setPerkRequiredRaceTags([...new Set([...(perk.requiresRaceTags ?? []), ...legacyRequiredRaceTags])]);
     setPerkExcludedRaceTags([...new Set([...(perk.excludedRaceTags ?? []), ...legacyExcludedRaceTags])]);
     setPerkTraits([...(perk.conditions?.attackerTraits ?? [])]);
-    setPerkStatuses((perk.conditions?.statuses ?? []).join(', '));
+    setPerkStatuses([...(perk.conditions?.statuses ?? [])]);
     setPerkModes(perk.conditions?.attackModes ?? []);
     setPerkEffects(perk.effects);
   };
@@ -463,7 +464,7 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     if (!perkName.trim()) return;
     const weaponTags = perkWeaponTags;
     const armorTags = perkArmorTags;
-    const statuses = parseRuleTagList(perkStatuses);
+    const statuses = perkStatuses;
     const conditions = weaponTags.length || armorTags.length || perkRaceTags.length || perkTraits.length || statuses.length || perkModes.length
       ? {
         weaponTags, armorTags, attackerRaceTags: perkRaceTags, attackerTraits: perkTraits,
@@ -625,7 +626,16 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
               : [...current, tagId])}
             onAddCustomTag={addCustomPerkArmorTag}
           />
-          <Field label="REQUIRES STATUS (ANY MATCH)" value={perkStatuses} onChangeText={setPerkStatuses} placeholder="aiming, hidden" />
+          <SelectableConditionMenu
+            title="REQUIRES STATUS (ANY MATCH)"
+            buttonLabel="SELECT STATUSES"
+            testID="custom-perk-status-menu"
+            options={visiblePerkStatuses}
+            selectedIds={perkStatuses}
+            onToggle={statusId => setPerkStatuses(current => current.includes(statusId)
+              ? current.filter(id => id !== statusId)
+              : [...current, statusId])}
+          />
           <Text style={{ color: colors.mutedForeground, fontSize: 10, marginBottom: 5 }}>When selected, every condition group above must be satisfied.</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
             {ATTACK_MODES.map(mode => <Choice key={mode} label={mode.toUpperCase()} selected={perkModes.includes(mode)} onPress={() => setPerkModes(perkModes.includes(mode) ? perkModes.filter(item => item !== mode) : [...perkModes, mode])} />)}
