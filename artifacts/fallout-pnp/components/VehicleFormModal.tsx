@@ -477,23 +477,28 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
                 </Text>
                 {VEHICLE_ENHANCEMENTS.map(enhancement => {
                   const selected = enhancementsText.split('\n').includes(enhancement.name);
+                  const available = enhancement.id !== 'slicks' || draft.category === 'car' || draft.category === 'motorcycle';
                   return (
                     <TouchableOpacity
                       key={enhancement.id}
+                      disabled={!available && !selected}
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: selected }}
                       onPress={() => {
+                        if (!available && !selected) return;
                         const lines = enhancementsText.split('\n').map(line => line.trim()).filter(Boolean);
                         setEnhancementsText(selected
                           ? lines.filter(line => line !== enhancement.name).join('\n')
                           : [...lines, enhancement.name].join('\n'));
                       }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 9, borderRadius: 6, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '18' : colors.secondary }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 9, borderRadius: 6, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '18' : colors.secondary, opacity: available || selected ? 1 : 0.5 }}
                     >
                       <Feather name={selected ? 'check-square' : 'square'} size={15} color={selected ? colors.primary : colors.mutedForeground} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 10 }}>{enhancement.name} · {enhancement.cost.toLocaleString()} caps</Text>
-                        <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 9 }}>{enhancement.description}</Text>
+                        <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 9 }}>
+                          {enhancement.description}{!available ? ' Not applicable to this vehicle type.' : ''}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   );

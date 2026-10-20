@@ -51,7 +51,15 @@ import {
   requestCombatImpact,
 } from '@/data/combatImpact';
 import { BUILT_IN_VEHICLE_WEAPONS } from '@/data/vehicleWeapons';
-import { vehicleTargetToHitPenalty, vehicleWeaponSlotsFromNames } from '@/data/vehicles';
+import {
+  resolveVehiclePerformance,
+  vehiclePerformanceSummary,
+  vehicleTargetToHitPenalty,
+  vehicleUpgradeEffects,
+  vehicleUpgradePlayNotes,
+  vehicleWeaponSlotsFromNames,
+  useVehicleNozBooster,
+} from '@/data/vehicles';
 import {
   getCombatAttackSoundFamily,
   getCombatAttackSoundIntervalMs,
@@ -84,7 +92,7 @@ import {
   type AreaProfileRangeOverrides,
   type AreaResolution,
 } from '@/data/areaEffects';
-import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, DamageType, PositionType, SkillType } from '@/context/types';
+import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, EMPTY_NATURAL_PROTECTION, DamageType, PositionType, SkillType } from '@/context/types';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
 function resolveCombatSheet(
@@ -1021,6 +1029,8 @@ export default function CombatScreen() {
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
   const defender = characters.find(c => c.id === defenderId) ?? null;
+  const attackerVehiclePerformance = attacker?.vehicle ? resolveVehiclePerformance(attacker.vehicle) : null;
+  const defenderVehiclePerformance = defender?.vehicle ? resolveVehiclePerformance(defender.vehicle) : null;
   const vehiclePilot = attacker?.vehicle && attacker.vehicleCrew?.pilotCharacterId
     ? characters.find(character => character.id === attacker.vehicleCrew?.pilotCharacterId && !character.inStorage && !character.vehicle) ?? null
     : null;
@@ -1031,9 +1041,9 @@ export default function CombatScreen() {
   const pilotSheet = vehiclePilot ? resolveCombatSheet(
     vehiclePilot, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
   ) : null;
-  const selectedVehicleSystem = defender?.vehicle?.systems.find(system => system.id === selectedVehicleSystemId)
-    ?? defender?.vehicle?.systems.find(system => system.kind === 'structure')
-    ?? defender?.vehicle?.systems[0]
+  const selectedVehicleSystem = defenderVehiclePerformance?.systems.find(system => system.id === selectedVehicleSystemId)
+    ?? defenderVehiclePerformance?.systems.find(system => system.kind === 'structure')
+    ?? defenderVehiclePerformance?.systems[0]
     ?? null;
   const completionHealAction = completionHealActionId
     ? (pendingCombatSkillActions ?? []).find(action => action.id === completionHealActionId && action.kind === 'healFallen') ?? null
@@ -1319,7 +1329,16 @@ export default function CombatScreen() {
 
   // Defender natural protection (creatures like Deathclaws)
   const defenderNatural: NaturalProtection | null = defender
-    ? (defender.naturalProtection ?? getRaceById(defender.race)?.naturalProtection ?? null)
+    ? defenderVehiclePerformance
+      ? {
+          ...(defender.naturalProtection ?? EMPTY_NATURAL_PROTECTION),
+          drNormal: defenderVehiclePerformance.damageResistance.normal,
+          drLaser: defenderVehiclePerformance.damageResistance.laser,
+          drFire: defenderVehiclePerformance.damageResistance.fire,
+          drPlasma: defenderVehiclePerformance.damageResistance.plasma,
+          drExplosion: defenderVehiclePerformance.damageResistance.explosion,
+        }
+      : (defender.naturalProtection ?? getRaceById(defender.race)?.naturalProtection ?? null)
     : null;
 
   // Effective defender AC (with tempAC), adjusted for defender position (manual):
@@ -2967,6 +2986,11 @@ export default function CombatScreen() {
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>
                           MOUNTED: {attacker.vehicle.mountedWeapons.length ? attacker.vehicle.mountedWeapons.join(' · ') : 'No weapons assigned'}
                         </Text>
+                        {attackerVehiclePerformance && (
+                          <Text style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+                            {vehiclePerformanceSummary(attacker.vehicle)}
+                          </Text>
+                        )}
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                           Pilot: {vehiclePilot?.name ?? 'Unassigned'} · Gunner: {vehicleGunner?.name ?? 'Unassigned'}
                         </Text>
@@ -2976,7 +3000,7 @@ export default function CombatScreen() {
                             onPress={event => {
                               event.stopPropagation?.();
                               const chance = Math.max(0, Math.min(100,
-                                (pilotSheet.effectiveSkills.pilot ?? 0) + attacker.vehicle!.terrainPilotModifier,
+                                (pilotSheet.effectiveSkills.pilot ?? 0) + (attackerVehiclePerformance?.terrainPilotModifier ?? 0),
                               ));
                               const roll = Math.floor(Math.random() * 100) + 1;
                               setPilotRollResult(`${roll} vs ${chance}% — ${roll <= chance ? 'SUCCESS' : 'FAILURE'}`);
@@ -2987,13 +3011,44 @@ export default function CombatScreen() {
                             style={{ alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.card }}
                           >
                             <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
-                              ROLL PILOT CHECK · {Math.max(0, Math.min(100, (pilotSheet.effectiveSkills.pilot ?? 0) + attacker.vehicle.terrainPilotModifier))}%
+                              ROLL PILOT CHECK · {Math.max(0, Math.min(100, (pilotSheet.effectiveSkills.pilot ?? 0) + (attackerVehiclePerformance?.terrainPilotModifier ?? 0)))}%
                             </Text>
                           </TouchableOpacity>
                         ) : (
                           <Text style={{ fontSize: 9, color: colors.mutedForeground }}>Assign a pilot in the vehicle editor to roll a piloting check.</Text>
                         )}
                         {pilotRollResult && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: pilotRollResult.includes('SUCCESS') ? '#4a8c3f' : colors.destructive }}>Pilot: {pilotRollResult}</Text>}
+                        {vehicleUpgradePlayNotes(attacker.vehicle).map((note, index) => (
+                          <Text key={`attacker-vehicle-upgrade-${index}`} style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{note}</Text>
+                        ))}
+                        {vehicleUpgradeEffects(attacker.vehicle).nozBooster && (() => {
+                          const engine = attacker.vehicle!.systems.find(system => system.kind === 'engine');
+                          return (
+                            <View style={{ gap: 3, alignSelf: 'flex-start' }}>
+                              <TouchableOpacity
+                                accessibilityRole="button"
+                                accessibilityLabel="Use NOz booster; reach top speed in one round and damage the engine by five hit points"
+                                disabled={!engine || engine.currentHp <= 0}
+                                onPress={event => {
+                                  event.stopPropagation?.();
+                                  const updatedVehicle = useVehicleNozBooster(attacker.vehicle!);
+                                  if (!updatedVehicle) return;
+                                  updateCharacter({ ...attacker, vehicle: updatedVehicle });
+                                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                                }}
+                                style={{ paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: engine && engine.currentHp > 0 ? colors.primary : colors.border, backgroundColor: colors.card, opacity: engine && engine.currentHp > 0 ? 1 : 0.5 }}
+                              >
+                                <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
+                                  USE NOz BOOST · ENGINE −5 HP
+                                </Text>
+                              </TouchableOpacity>
+                              <Text style={{ fontSize: 8, color: engine && engine.currentHp > 0 ? colors.mutedForeground : colors.destructive }}>
+                                Engine {engine?.currentHp ?? 0}/{engine?.maxHp ?? 0} HP
+                                {engine && engine.currentHp <= 0 ? ' · unavailable while destroyed' : ''}
+                              </Text>
+                            </View>
+                          );
+                        })()}
                         {attacker.vehicle.mountedWeapons.length > 0 && !vehicleGunner && (
                           <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>Assign a gunner to fire the mounted weapons.</Text>
                         )}
@@ -3065,6 +3120,11 @@ export default function CombatScreen() {
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
                           VEHICLE · Structure {defender.currentHp}/{defender.maxHp} HP · {defender.vehicle.inMotion ? 'Moving (−10% to hit)' : 'Stopped'}
                         </Text>
+                        {defenderVehiclePerformance && (
+                          <Text style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+                            {vehiclePerformanceSummary(defender.vehicle)}
+                          </Text>
+                        )}
                         <TouchableOpacity
                           accessibilityRole="button"
                           accessibilityLabel={`Choose vehicle system to target. Current target: ${selectedVehicleSystem?.name ?? 'Structure'}`}
@@ -3727,7 +3787,7 @@ export default function CombatScreen() {
                     <>
                       <Text style={{ fontSize: 10, color: colors.mutedForeground, marginBottom: 6 }}>Choose the vehicle system this hit targets.</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {defender.vehicle.systems.map(system => {
+                        {(defenderVehiclePerformance?.systems ?? defender.vehicle.systems).map(system => {
                           const selected = selectedVehicleSystem?.id === system.id;
                           return (
                             <TouchableOpacity
@@ -4289,7 +4349,7 @@ export default function CombatScreen() {
               <TouchableOpacity onPress={() => setShowVehicleSystemPicker(false)} accessibilityLabel="Close vehicle system picker"><Feather name="x" size={20} color={colors.mutedForeground} /></TouchableOpacity>
             </View>
             <FlatList
-              data={defender?.vehicle?.systems ?? []}
+              data={defenderVehiclePerformance?.systems ?? []}
               keyExtractor={system => system.id}
               contentContainerStyle={{ padding: 12, gap: 7, paddingBottom: insets.bottom + 14 }}
               renderItem={({ item: system }) => (

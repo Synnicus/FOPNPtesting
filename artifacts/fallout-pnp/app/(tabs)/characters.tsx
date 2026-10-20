@@ -57,7 +57,12 @@ import { getCharacterPerkReminders } from '@/data/perkReminders';
 import { hasUnsavedCharacterChanges, snapshotCharacterDraft } from '@/data/characterDraft';
 import { CONDITION_DEFINITIONS, computeConditionModifiers, isHealingBlocked, resolveHpChange } from '@/data/conditions';
 import { getLegacyPremadeRepairCandidateWeaponIds } from '@/data/condition';
-import { vehicleSystemStatus } from '@/data/vehicles';
+import {
+  resolveVehiclePerformance,
+  vehiclePerformanceSummary,
+  vehicleSystemStatus,
+  vehicleUpgradePlayNotes,
+} from '@/data/vehicles';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
 import { clearUnconsciousness, setUnconsciousness } from '@/data/unconsciousness';
 import {
@@ -2948,7 +2953,8 @@ export default function CharactersScreen() {
     const index = visibleCharacters.findIndex(character => character.id === item.id);
     if (item.vehicle) {
       const vehicle = item.vehicle;
-      const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
+      const performance = resolveVehiclePerformance(vehicle);
+      const structure = performance.systems.find(system => system.kind === 'structure') ?? performance.systems[0];
       return (
         <TouchableOpacity
           key={item.id}
@@ -2970,7 +2976,7 @@ export default function CharactersScreen() {
             </View>
             {item.inStorage && <Text style={{ color: colors.mutedForeground, fontSize: 9, fontFamily: 'Inter_700Bold' }}>STORED</Text>}
           </View>
-          {vehicle.systems.map(system => (
+          {performance.systems.map(system => (
             <View key={system.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
               <Text style={{ flex: 1, color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{system.name}</Text>
               <Text style={{ color: vehicleSystemStatus(system) === 'operational' ? colors.mutedForeground : colors.destructive, fontSize: 10, fontFamily: 'Inter_700Bold' }}>
@@ -2978,13 +2984,19 @@ export default function CharactersScreen() {
               </Text>
             </View>
           ))}
+          <Text style={{ color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>
+            {vehiclePerformanceSummary(vehicle)}
+          </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Normal DR:</Text> {vehicle.damageResistance.normal}%</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Laser DR:</Text> {vehicle.damageResistance.laser}%</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Fire DR:</Text> {vehicle.damageResistance.fire}%</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Plasma DR:</Text> {vehicle.damageResistance.plasma}%</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Explosive DR:</Text> {vehicle.damageResistance.explosion}%</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Normal DR:</Text> {performance.damageResistance.normal}%</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Laser DR:</Text> {performance.damageResistance.laser}%</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Fire DR:</Text> {performance.damageResistance.fire}%</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Plasma DR:</Text> {performance.damageResistance.plasma}%</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}><Text>Explosive DR:</Text> {performance.damageResistance.explosion}%</Text>
           </View>
+          {vehicleUpgradePlayNotes(vehicle).map((note, index) => (
+            <Text key={`vehicle-note-${index}`} style={{ color: colors.primary, fontSize: 9, fontFamily: 'Inter_600SemiBold' }}>{note}</Text>
+          ))}
           {vehicle.mountedWeapons.map((mountedWeapon, weaponIndex) => (
             <Text key={`${item.id}-mounted-${weaponIndex}`} style={{ color: colors.primary, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>
               <Text>Weapon:</Text> {mountedWeapon}
@@ -3124,7 +3136,8 @@ export default function CharactersScreen() {
         onClose={() => setEditingVehicleCharacter(null)}
         onSave={(vehicle, crew) => {
           if (!editingVehicleCharacter) return;
-          const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
+          const performance = resolveVehiclePerformance(vehicle);
+          const structure = performance.systems.find(system => system.kind === 'structure') ?? performance.systems[0];
           updateCharacter({
             ...editingVehicleCharacter,
             name: vehicle.name,
@@ -3136,11 +3149,11 @@ export default function CharactersScreen() {
             naturalProtection: {
               ...(editingVehicleCharacter.naturalProtection ?? EMPTY_NATURAL_PROTECTION),
               armorClass: vehicle.armorClass,
-              drNormal: vehicle.damageResistance.normal,
-              drLaser: vehicle.damageResistance.laser,
-              drFire: vehicle.damageResistance.fire,
-              drPlasma: vehicle.damageResistance.plasma,
-              drExplosion: vehicle.damageResistance.explosion,
+              drNormal: performance.damageResistance.normal,
+              drLaser: performance.damageResistance.laser,
+              drFire: performance.damageResistance.fire,
+              drPlasma: performance.damageResistance.plasma,
+              drExplosion: performance.damageResistance.explosion,
             },
             manualDerivedStats: {
               ...editingVehicleCharacter.manualDerivedStats,

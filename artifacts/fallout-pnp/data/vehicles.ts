@@ -238,12 +238,121 @@ export const VEHICLE_CATEGORIES: Record<VehicleCategory, string> = {
 };
 
 export const VEHICLE_ENHANCEMENTS = [
-  { id: 'slicks', name: 'Slicks', cost: 2000, description: 'AR +10 KPH; top speed +20%; braking −10 KPH; turn radius +5m; Pilot −10%; tire HP 5 each.' },
-  { id: 'noz_booster', name: 'NOz Booster', cost: 5000, description: 'Reach top speed in one round; each use deals 5 HP to the engine.' },
+  { id: 'slicks', name: 'Slicks', cost: 2000, description: 'Cars and motorcycles only: acceleration +10 KPH/round; top speed +20%; braking −10 KPH/round; turn radius +5 m; Pilot rolls −10%; tires have 5 HP each.' },
+  { id: 'noz_booster', name: 'NOz Booster', cost: 5000, description: 'Requires Nitrous tanks. When used, reaches top speed in 1 round and deals 5 HP damage to the engine.' },
   { id: 'reinforced_struts', name: 'Reinforced Struts', cost: 9000, description: 'Carrying capacity +50%.' },
   { id: 'fuel_cell_converter', name: 'Fuel Cell Converter', cost: 10000, description: 'Driving range +50%.' },
-  { id: 'antigrav_plates', name: 'Antigrav Plates', cost: 25000, description: 'Removes most terrain restrictions and adds 50 mph top speed; ineffective over water.' },
+  { id: 'antigrav_plates', name: 'Antigrav Plates', cost: 25000, description: 'Adds 50 mph (80.5 km/h) top speed and removes most terrain restrictions, except the rockiest ground; ineffective over water.' },
 ] as const;
+
+export interface VehicleUpgradeEffects {
+  slicks: boolean;
+  nozBooster: boolean;
+  reinforcedStruts: boolean;
+  fuelCellConverter: boolean;
+  antigravPlates: boolean;
+}
+
+function hasVehicleEnhancement(vehicle: VehicleProfile, id: typeof VEHICLE_ENHANCEMENTS[number]['id']): boolean {
+  const enhancement = VEHICLE_ENHANCEMENTS.find(candidate => candidate.id === id);
+  return !!enhancement && vehicle.enhancements.some(value => {
+    const normalized = value.trim().toLowerCase();
+    return normalized === enhancement.id || normalized === enhancement.name.toLowerCase();
+  });
+}
+
+/** Resolve manual vehicle upgrades on a copy; the saved profile remains its unmodified base. */
+export function vehicleUpgradeEffects(vehicle: VehicleProfile): VehicleUpgradeEffects {
+  return {
+    slicks: hasVehicleEnhancement(vehicle, 'slicks') && (vehicle.category === 'car' || vehicle.category === 'motorcycle'),
+    nozBooster: hasVehicleEnhancement(vehicle, 'noz_booster'),
+    reinforcedStruts: hasVehicleEnhancement(vehicle, 'reinforced_struts'),
+    fuelCellConverter: hasVehicleEnhancement(vehicle, 'fuel_cell_converter'),
+    antigravPlates: hasVehicleEnhancement(vehicle, 'antigrav_plates') && vehicle.category !== 'boat',
+  };
+}
+
+function multiplyCapacity(value: string, multiplier: number): string {
+  if (!/^\s*[\d,]+(?:\s*[–-]\s*[\d,]+)?\s*$/.test(value)) return value;
+  return value.replace(/[\d,]+/g, token =>
+    Math.round(Number(token.replaceAll(',', '')) * multiplier).toLocaleString('en-US'));
+}
+
+export function resolveVehiclePerformance(vehicle: VehicleProfile): VehicleProfile {
+  const effects = vehicleUpgradeEffects(vehicle);
+  const topSpeedKph = vehicle.topSpeedKph === null
+    ? null
+    : vehicle.topSpeedKph * (effects.slicks ? 1.2 : 1) + (effects.antigravPlates ? 80.5 : 0);
+  const accelerationKphPerRound = vehicle.accelerationKphPerRound === null
+    ? null
+    : vehicle.accelerationKphPerRound + (effects.slicks ? 10 : 0);
+
+  return {
+    ...vehicle,
+    topSpeedKph,
+    accelerationKphPerRound,
+    brakingKphPerRound: vehicle.brakingKphPerRound === null
+      ? null
+      : Math.max(0, vehicle.brakingKphPerRound - (effects.slicks ? 10 : 0)),
+    turningRadiusMeters: vehicle.turningRadiusMeters === null
+      ? null
+      : vehicle.turningRadiusMeters + (effects.slicks ? 5 : 0),
+    rangeKm: vehicle.rangeKm === null
+      ? null
+      : vehicle.rangeKm * (effects.fuelCellConverter ? 1.5 : 1),
+    carryingWeightLb: effects.reinforcedStruts
+      ? multiplyCapacity(vehicle.carryingWeightLb, 1.5)
+      : vehicle.carryingWeightLb,
+    terrainPilotModifier: vehicle.terrainPilotModifier - (effects.slicks ? 10 : 0),
+    systems: vehicle.systems.map(system => effects.slicks && system.kind === 'tire'
+      ? { ...system, currentHp: Math.min(system.currentHp, 5), maxHp: 5 }
+      : { ...system }),
+    damageResistance: { ...vehicle.damageResistance },
+    mountedWeapons: [...vehicle.mountedWeapons],
+    weaponSlots: vehicle.weaponSlots?.map(slot => ({ ...slot })),
+    enhancements: [...vehicle.enhancements],
+    notes: [...vehicle.notes],
+  };
+}
+
+export function vehiclePerformanceSummary(vehicle: VehicleProfile): string {
+  const performance = resolveVehiclePerformance(vehicle);
+  const rows = [
+    `Speed ${performance.topSpeedKph === null ? '—' : `${performance.topSpeedKph} km/h`}`,
+    `Accel ${performance.accelerationKphPerRound === null ? '—' : `${performance.accelerationKphPerRound} km/h/round`}`,
+    `Brake ${performance.brakingKphPerRound === null ? '—' : `${performance.brakingKphPerRound} km/h/round`}`,
+    `Turn ${performance.turningRadiusMeters === null ? '—' : `${performance.turningRadiusMeters} m`}`,
+    `Range ${performance.rangeKm === null ? '—' : `${performance.rangeKm} km`}`,
+    `Pilot ${performance.terrainPilotModifier >= 0 ? '+' : ''}${performance.terrainPilotModifier}%`,
+    performance.carryingWeightLb ? `Capacity ${performance.carryingWeightLb} lb` : null,
+  ];
+  return rows.filter((value): value is string => value !== null).join(' · ');
+}
+
+export function vehicleUpgradePlayNotes(vehicle: VehicleProfile): string[] {
+  const effects = vehicleUpgradeEffects(vehicle);
+  return [
+    ...(hasVehicleEnhancement(vehicle, 'slicks') && !effects.slicks
+      ? ['Slicks only apply to cars and motorcycles.']
+      : []),
+    ...(effects.nozBooster
+      ? ['NOz Booster: reaches top speed in 1 round; each use damages the engine by 5 HP. Requires Nitrous tanks.']
+      : []),
+    ...(hasVehicleEnhancement(vehicle, 'antigrav_plates')
+      ? [effects.antigravPlates
+        ? 'Antigrav Plates: removes most terrain restrictions except the rockiest ground; ineffective over water.'
+        : 'Antigrav Plates are ineffective for waterborne vehicles.']
+      : []),
+  ];
+}
+
+/** Apply one NOz use, including the manual's 5 HP engine cost. */
+export function useVehicleNozBooster(vehicle: VehicleProfile): VehicleProfile | null {
+  if (!vehicleUpgradeEffects(vehicle).nozBooster) return null;
+  const engine = vehicle.systems.find(system => system.kind === 'engine');
+  if (!engine || engine.currentHp <= 0) return null;
+  return applyVehicleSystemDamage(vehicle, engine.id, 5);
+}
 
 export function vehicleWithDefaults(vehicle: VehicleProfile): VehicleProfile {
   return {
@@ -266,17 +375,18 @@ export function vehicleTargetToHitPenalty(vehicle: VehicleProfile | null | undef
 
 export function spawnVehicleCharacter(vehicle: VehicleProfile, id: string): Character {
   const snapshot = vehicleWithDefaults(vehicle);
+  const performance = resolveVehiclePerformance(snapshot);
   snapshot.id = `vehicle-${id}`;
   snapshot.systems = snapshot.systems.map(system => ({ ...system, currentHp: system.maxHp }));
   const structure = snapshot.systems.find(system => system.kind === 'structure') ?? snapshot.systems[0];
   const emptyProtection: NaturalProtection = {
     armorClass: 0,
     dtNormal: 0, dtLaser: 0, dtFire: 0, dtPlasma: 0, dtExplosion: 0,
-    drNormal: snapshot.damageResistance.normal,
-    drLaser: snapshot.damageResistance.laser,
-    drFire: snapshot.damageResistance.fire,
-    drPlasma: snapshot.damageResistance.plasma,
-    drExplosion: snapshot.damageResistance.explosion,
+    drNormal: performance.damageResistance.normal,
+    drLaser: performance.damageResistance.laser,
+    drFire: performance.damageResistance.fire,
+    drPlasma: performance.damageResistance.plasma,
+    drExplosion: performance.damageResistance.explosion,
   };
   return {
     id,
@@ -324,7 +434,8 @@ export function vehicleProtectionForDamageType(
   vehicle: VehicleProfile,
   damageType: DamageType,
 ): { dt: 0; dr: number } {
-  return { dt: 0, dr: Math.max(0, Math.min(100, vehicle.damageResistance[damageType])) };
+  const performance = resolveVehiclePerformance(vehicle);
+  return { dt: 0, dr: Math.max(0, Math.min(100, performance.damageResistance[damageType])) };
 }
 
 export function vehicleSystemStatus(system: VehicleSystem): 'destroyed' | 'disabled' | 'operational' {
@@ -339,10 +450,12 @@ export function applyVehicleSystemDamage(
   damage: number,
 ): VehicleProfile {
   if (!Number.isFinite(damage) || damage <= 0) return vehicle;
+  const resolvedSystem = resolveVehiclePerformance(vehicle).systems.find(system => system.id === systemId);
+  if (!resolvedSystem) return vehicle;
   return {
     ...vehicle,
     systems: vehicle.systems.map(system => system.id === systemId
-      ? { ...system, currentHp: Math.max(0, system.currentHp - Math.floor(damage)) }
+      ? { ...system, currentHp: Math.max(0, resolvedSystem.currentHp - Math.floor(damage)) }
       : system),
   };
 }

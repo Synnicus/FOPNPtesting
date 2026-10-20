@@ -32,7 +32,13 @@ import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
 import CustomRulesPanel from '@/components/CustomRulesPanel';
 import { SelectableTagMenu } from '@/components/SelectableTagMenu';
-import { spawnVehicleCharacter, VEHICLE_CATEGORIES } from '@/data/vehicles';
+import {
+  resolveVehiclePerformance,
+  spawnVehicleCharacter,
+  vehiclePerformanceSummary,
+  vehicleUpgradePlayNotes,
+  VEHICLE_CATEGORIES,
+} from '@/data/vehicles';
 
 const genId = () => Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -1503,24 +1509,25 @@ function VehicleDetailsModal({ vehicle, onClose, onSpawn, onCopy, onEdit, onSetP
   const insets = useSafeAreaInsets();
   const [cropDragging, setCropDragging] = useState(false);
   if (!vehicle) return null;
-  const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
+  const performance = resolveVehiclePerformance(vehicle);
+  const structure = performance.systems.find(system => system.kind === 'structure') ?? performance.systems[0];
   const detailRows: [string, string][] = [
-    ['Top speed', vehicle.topSpeedKph === null ? '—' : `${vehicle.topSpeedKph} km/h`],
-    ['Acceleration', vehicle.accelerationKphPerRound === null ? '—' : `${vehicle.accelerationKphPerRound} km/h per round`],
-    ['Braking', vehicle.brakingKphPerRound === null ? '—' : `${vehicle.brakingKphPerRound} km/h per round`],
-    ['Turning radius', vehicle.turningRadiusMeters === null ? '—' : `${vehicle.turningRadiusMeters} m`],
-    ['Range', vehicle.rangeKm === null ? '—' : `${vehicle.rangeKm} km`],
-    ['Passengers', vehicle.passengers || '—'],
-    ['Cargo capacity', vehicle.carryingWeightLb ? `${vehicle.carryingWeightLb} lb` : '—'],
-    ['Fuel charges', vehicle.fuelCharges === null ? 'No fuel use' : `${vehicle.fuelCharges}`],
-    ['Terrain pilot modifier', `${vehicle.terrainPilotModifier >= 0 ? '+' : ''}${vehicle.terrainPilotModifier}%`],
+    ['Top speed', performance.topSpeedKph === null ? '—' : `${performance.topSpeedKph} km/h`],
+    ['Acceleration', performance.accelerationKphPerRound === null ? '—' : `${performance.accelerationKphPerRound} km/h per round`],
+    ['Braking', performance.brakingKphPerRound === null ? '—' : `${performance.brakingKphPerRound} km/h per round`],
+    ['Turning radius', performance.turningRadiusMeters === null ? '—' : `${performance.turningRadiusMeters} m`],
+    ['Range', performance.rangeKm === null ? '—' : `${performance.rangeKm} km`],
+    ['Passengers', performance.passengers || '—'],
+    ['Cargo capacity', performance.carryingWeightLb ? `${performance.carryingWeightLb} lb` : '—'],
+    ['Fuel charges', performance.fuelCharges === null ? 'No fuel use' : `${performance.fuelCharges}`],
+    ['Terrain pilot modifier', `${performance.terrainPilotModifier >= 0 ? '+' : ''}${performance.terrainPilotModifier}%`],
   ];
   const resistanceRows: [string, number][] = [
-    ['Normal DR', vehicle.damageResistance.normal],
-    ['Laser DR', vehicle.damageResistance.laser],
-    ['Fire DR', vehicle.damageResistance.fire],
-    ['Plasma DR', vehicle.damageResistance.plasma],
-    ['Explosive DR', vehicle.damageResistance.explosion],
+    ['Normal DR', performance.damageResistance.normal],
+    ['Laser DR', performance.damageResistance.laser],
+    ['Fire DR', performance.damageResistance.fire],
+    ['Plasma DR', performance.damageResistance.plasma],
+    ['Explosive DR', performance.damageResistance.explosion],
   ];
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -1571,7 +1578,7 @@ function VehicleDetailsModal({ vehicle, onClose, onSpawn, onCopy, onEdit, onSetP
             </View>
             <View style={{ gap: 6 }}>
               <Text style={{ color: colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1 }}>SYSTEMS</Text>
-              {vehicle.systems.map(system => (
+              {performance.systems.map(system => (
                 <View key={system.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: colors.card, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
                   <Text style={{ flex: 1, color: colors.foreground, fontSize: 11 }}>{system.name}</Text>
                   <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{system.maxHp} HP</Text>
@@ -1590,6 +1597,8 @@ function VehicleDetailsModal({ vehicle, onClose, onSpawn, onCopy, onEdit, onSetP
               <View style={{ gap: 5 }}>
                 <Text style={{ color: colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1 }}>ENHANCEMENTS</Text>
                 {vehicle.enhancements.map((value, index) => <Text key={`${index}-${value}`} style={{ color: colors.foreground, fontSize: 11 }}>• {value}</Text>)}
+                {vehicleUpgradePlayNotes(vehicle).map((value, index) => <Text key={`upgrade-effect-${index}`} style={{ color: colors.primary, fontSize: 10 }}>EFFECT: {value}</Text>)}
+                <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>{vehiclePerformanceSummary(vehicle)}</Text>
               </View>
             )}
             {vehicle.notes.length > 0 && (

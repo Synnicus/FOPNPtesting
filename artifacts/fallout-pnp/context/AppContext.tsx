@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -75,7 +75,7 @@ import {
 } from '@/data/radiation';
 import { normalizeKarmaFields } from '@/data/karma';
 import { normalizeFactionReputations } from '@/data/factionReputation';
-import { applyVehicleSystemDamage } from '@/data/vehicles';
+import { applyVehicleSystemDamage, resolveVehiclePerformance } from '@/data/vehicles';
 import { BUILT_IN_VEHICLES } from '@/data/vehicles';
 import {
   DEFAULT_CAMPAIGN_OPTIONS,
@@ -1338,7 +1338,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           } satisfies AreaResolution];
         }
         const { bodyArmor: body, helmet } = wornArmor(c, armor);
-        const natural = c.naturalProtection;
+        const vehiclePerformance = c.vehicle ? resolveVehiclePerformance(c.vehicle) : null;
+        const natural = vehiclePerformance
+          ? {
+              ...(c.naturalProtection ?? EMPTY_NATURAL_PROTECTION),
+              drNormal: vehiclePerformance.damageResistance.normal,
+              drLaser: vehiclePerformance.damageResistance.laser,
+              drFire: vehiclePerformance.damageResistance.fire,
+              drPlasma: vehiclePerformance.damageResistance.plasma,
+              drExplosion: vehiclePerformance.damageResistance.explosion,
+            }
+          : c.naturalProtection;
         const cap = attack.damageType === 'normal' ? 'Normal'
           : attack.damageType === 'laser' ? 'Laser'
           : attack.damageType === 'fire' ? 'Fire'
