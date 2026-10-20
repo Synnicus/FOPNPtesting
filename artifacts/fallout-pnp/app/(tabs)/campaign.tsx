@@ -1178,6 +1178,7 @@ export default function CampaignScreen() {
               <TouchableOpacity onPress={() => setShowImportModal(false)}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
             </View>
             <TextInput
+              testID="campaign-import-json-input"
               style={{
                 backgroundColor: colors.input,
                 borderWidth: 1,
@@ -1197,6 +1198,7 @@ export default function CampaignScreen() {
               multiline
             />
             <TouchableOpacity
+              testID="campaign-import-json-submit"
               style={{ backgroundColor: importJson.trim() ? colors.primary : colors.secondary, borderRadius: colors.radius, paddingVertical: 14, alignItems: 'center', marginTop: 12, marginBottom: 8 }}
               disabled={!importJson.trim()}
               onPress={handleImportText}

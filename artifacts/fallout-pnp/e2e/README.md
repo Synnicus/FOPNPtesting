@@ -32,6 +32,16 @@ pnpm --filter @workspace/fallout-pnp run test:native:character-actions
 
 The flow adds three uniquely named characters and deletes only its own Beta copy. It verifies canceling and confirming healing, storage/return, copying, reordering, and deletion, then cold-restarts the app to confirm the healed and stored Alpha, surviving Alpha copy, deleted Beta copy, and Gamma-before-Beta order persist. The canceled Gamma copy, canceled storage return, and canceled reorder remain unapplied. Backstory opens without an action prompt. Use a disposable campaign because the test characters remain in the campaign after the run. This must run on a native device or simulator; the rule test covers the shared web/native modal wiring but does not replace device interaction testing.
 
+# Native imported injury attribution regression
+
+Run against an installed, launchable Android or iOS build using:
+
+```sh
+pnpm --filter @workspace/fallout-pnp run test:native:injury-attribution
+```
+
+The flow creates a uniquely identified portable character export, imports it through the JSON paste screen, opens the imported character's Effects tab, and checks the attacker-and-weapon cause line. The same imported character includes a source-less legacy injury, for which the cause-line test ID must not appear. It deletes only the temporary character afterward. This requires a native device or simulator; source-level formatter checks do not verify the rendered character screen.
+
 # Native combatant picker regression
 
 Run against an installed, launchable Android or iOS build using:

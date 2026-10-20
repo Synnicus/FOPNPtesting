@@ -1157,7 +1157,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           contentContainerStyle={{ paddingHorizontal: 8 }}
         >
           {TABS.map((t, i) => (
-            <TouchableOpacity key={t} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primary : 'transparent' }} onPress={() => { setCropDragging(false); setActiveTab(i); }}>
+            <TouchableOpacity key={t} testID={t === 'Effects' ? 'character-editor-tab-effects' : undefined} style={{ paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: activeTab === i ? colors.primary : 'transparent' }} onPress={() => { setCropDragging(false); setActiveTab(i); }}>
               <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: activeTab === i ? colors.primary : colors.mutedForeground }}>{t.toUpperCase()}</Text>
             </TouchableOpacity>
           ))}
@@ -2184,7 +2184,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                         <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: inj.isActive ? colors.destructive : colors.mutedForeground }}>{info?.label ?? inj.location} — {inj.severity}</Text>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{inj.description}</Text>
                         {causeText && (
-                          <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                          <Text testID={`character-injury-cause-${inj.id}`} style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                             {causeText}
                           </Text>
                         )}

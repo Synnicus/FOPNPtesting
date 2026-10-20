@@ -1,0 +1,48 @@
+# Run against an installed, launchable Android or iOS build (not the web preview).
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn: "Campaign"
+- tapOn: "PASTE JSON INSTEAD"
+- tapOn:
+    id: campaign-import-json-input
+- inputText: ${TEST_IMPORT_JSON}
+- hideKeyboard
+- tapOn:
+    id: campaign-import-json-submit
+- assertVisible: "${TEST_NAME} was imported."
+
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: "${TEST_NAME}"
+    direction: DOWN
+- tapOn: "${TEST_NAME}"
+- scrollUntilVisible:
+    element:
+      id: character-editor-tab-effects
+    direction: RIGHT
+- tapOn:
+    id: character-editor-tab-effects
+- scrollUntilVisible:
+    element:
+      id: character-injury-cause-${TEST_CHARACTER_ID}-attributed
+    direction: DOWN
+- assertVisible:
+    id: character-injury-cause-${TEST_CHARACTER_ID}-attributed
+- assertVisible: "Caused by: Raider with Hunting Rifle"
+- scrollUntilVisible:
+    element: "The left arm was already crippled in an older export."
+    direction: DOWN
+- assertVisible: "The left arm was already crippled in an older export."
+- assertNotVisible:
+    id: character-injury-cause-${TEST_CHARACTER_ID}-legacy
+
+# Remove only the uniquely identified test character, leaving the campaign as it was.
+- tapOn:
+    id: character-editor-close
+- tapOn:
+    id: character-action-delete-${TEST_CHARACTER_ID}
+- assertVisible: "Delete Character?"
+- tapOn:
+    id: character-delete-confirmation-confirm
+- assertNotVisible: "${TEST_NAME}"
