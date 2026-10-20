@@ -15,9 +15,11 @@ import {
   vehicleTargetToHitPenalty,
   vehicleUpgradeEffects,
   useVehicleNozBooster,
+  resolveVehicleCrewAssignments,
 } from './vehicles.ts';
 import { BUILT_IN_VEHICLE_WEAPONS } from './vehicleWeapons.ts';
 import { getWeaponAreaAttack } from './weapons.ts';
+import { DEFAULT_SKILLS } from '../context/types.ts';
 
 test('manual vehicle catalog includes 24 profiles with AC defaulted to zero', () => {
   assert.equal(BUILT_IN_VEHICLES.length, 24);
@@ -258,6 +260,43 @@ test('mounted vehicle weapons resolve to combat weapons, including duplicate mou
     BUILT_IN_VEHICLE_WEAPONS.some(weapon => weapon.id === slot.weaponId)
       || slot.weaponId === 'm2hb'
       || slot.weaponId === 'tow_ii_missile_defense_system'));
+});
+
+test('vehicle crew resolution ignores missing, stored, vehicle, and combat-device references', () => {
+  const pilot = {
+    id: 'crew-pilot',
+    name: 'Pilot',
+    type: 'pc' as const,
+    race: 'human' as const,
+    level: 1,
+    xp: 0,
+    special: { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 },
+    maxHp: 30, currentHp: 30, armorClass: 5, tempAC: 0, maxAP: 7, currentAP: 7,
+    position: 'standing' as const, sequence: 10, skills: { ...DEFAULT_SKILLS },
+    taggedSkills: [], unspentSkillPoints: 0, perks: [], weaponAmmoStates: [], injuries: [],
+    isKnockedOut: false, knockOutRoundsLeft: 0, conditions: [],
+    radiationResistance: 0, gasResistance: 0, electricityResistance: 0,
+  };
+  const storedGunner = { ...pilot, id: 'stored-gunner', inStorage: true };
+  const combatDevice = { ...pilot, id: 'combat-device', combatDevice: {
+    kind: 'mine' as const, weaponId: 'mine', ownerCharacterId: pilot.id, status: 'armed' as const,
+  } };
+  const vehicle = spawnVehicleCharacter(BUILT_IN_VEHICLES[0], 'crew-resolution');
+  const crew = resolveVehicleCrewAssignments({
+    ...vehicle,
+    vehicleCrew: { pilotCharacterId: pilot.id, gunnerCharacterId: storedGunner.id },
+  }, [pilot, storedGunner, combatDevice]);
+
+  assert.equal(crew.pilot?.id, pilot.id);
+  assert.equal(crew.gunner, null, 'stored crew is not treated as an active gunner');
+  assert.deepEqual(resolveVehicleCrewAssignments({
+    ...vehicle,
+    vehicleCrew: { pilotCharacterId: 'deleted-character', gunnerCharacterId: vehicle.id },
+  }, [vehicle]), { pilot: null, gunner: null });
+  assert.deepEqual(resolveVehicleCrewAssignments({
+    ...vehicle,
+    vehicleCrew: { pilotCharacterId: combatDevice.id, gunnerCharacterId: storedGunner.id },
+  }, [combatDevice, storedGunner]), { pilot: null, gunner: null });
 });
 
 test('vehicle cannon weapon profiles follow the manual damage, range, and AP values', () => {

@@ -51,7 +51,19 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     createdAt: '2026-10-19T12:00:00.000Z',
   });
   assert.ok(repairAttempt);
-  const persistentVehicle = { ...vehicleSpawn, vehicle: repairAttempt.vehicle };
+  const vehicleSlots = [
+    { id: 'main-gun', name: 'Main gun', weaponId: 'rheinmetall_120mm_gun', quantity: 1 },
+    { id: 'coax', name: 'Coaxial M2HB', weaponId: 'm2hb', quantity: 2 },
+  ];
+  const persistentVehicle = {
+    ...vehicleSpawn,
+    vehicleCrew: { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id },
+    vehicle: {
+      ...repairAttempt.vehicle,
+      weaponSlots: vehicleSlots,
+      mountedWeapons: ['Rheinmetall 120mm Gun', 'M2HB ×2'],
+    },
+  };
   const fixture = {
     characters: [legacyNpc, printedNpc, persistentVehicle],
     customBestiaryTemplates: [legacyTemplate],
@@ -191,6 +203,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       const savedVehicle = restored.characters.find(character => character.id === persistentVehicle.id)!;
       assert.equal(savedVehicle.vehicle?.systems.find(system => system.id === 'engine')?.currentHp, 45, `${reload}: repaired engine HP restored`);
       assert.deepEqual(savedVehicle.vehicle?.repairHistory, repairAttempt.record ? [repairAttempt.record] : [], `${reload}: repair history restored`);
+      assert.deepEqual(savedVehicle.vehicle?.weaponSlots, vehicleSlots, `${reload}: vehicle weapon slots restored`);
+      assert.deepEqual(savedVehicle.vehicle?.mountedWeapons, ['Rheinmetall 120mm Gun', 'M2HB ×2'], `${reload}: mounted weapon names restored`);
+      assert.deepEqual(savedVehicle.vehicleCrew, { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id }, `${reload}: crew IDs restored`);
       await act(async () => renderer!.unmount());
       renderer = undefined;
     }
@@ -201,6 +216,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
     assert.equal(saved.characters[2].vehicle.systems.find((system: { id: string }) => system.id === 'engine').currentHp, 45);
     assert.equal(saved.characters[2].vehicle.repairHistory[0].restoredHp, 15);
+    assert.deepEqual(saved.characters[2].vehicle.weaponSlots, vehicleSlots);
+    assert.deepEqual(saved.characters[2].vehicle.mountedWeapons, ['Rheinmetall 120mm Gun', 'M2HB ×2']);
+    assert.deepEqual(saved.characters[2].vehicleCrew, { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id });
 
     await t.test('importCampaign repairs legacy custom armor and saves the imported repair', async () => {
       storage.clear();
@@ -246,6 +264,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
            const savedVehicle = state.characters.find(character => character.id === persistentVehicle.id)!;
            assert.equal(savedVehicle.vehicle?.systems.find(system => system.id === 'engine')?.currentHp, 45, `${stage}: repaired engine HP`);
            assert.deepEqual(savedVehicle.vehicle?.repairHistory, [repairAttempt.record], `${stage}: repair log`);
+            assert.deepEqual(savedVehicle.vehicle?.weaponSlots, vehicleSlots, `${stage}: weapon slots`);
+            assert.deepEqual(savedVehicle.vehicle?.mountedWeapons, ['Rheinmetall 120mm Gun', 'M2HB ×2'], `${stage}: mounted weapons`);
+            assert.deepEqual(savedVehicle.vehicleCrew, { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id }, `${stage}: crew IDs`);
         };
         assertRepaired(campaign, 'imported state');
         assert.deepEqual(writes.slice(writesBeforeImport), [STORAGE_KEY], 'import triggers save-back');

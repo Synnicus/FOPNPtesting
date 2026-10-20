@@ -6,6 +6,7 @@ import {
   applyVehicleSystemDamage,
   BUILT_IN_VEHICLES,
   resolveVehicleRepairAttempt,
+  resolveVehicleCrewAssignments,
   spawnVehicleCharacter,
 } from './vehicles.ts';
 import { BUILT_IN_BESTIARY } from './bestiary.ts';
@@ -806,6 +807,45 @@ test('damaged vehicle systems and repair results survive campaign JSON export an
   assert.equal(imported.vehicle?.systems.find(system => system.id === 'engine')?.currentHp, 45);
   assert.equal(imported.vehicle?.repairHistory?.length, 1);
   assert.deepEqual(imported.vehicle?.repairHistory?.[0], repair.record);
+});
+
+test('portable campaigns preserve deployed vehicle mounts, duplicate quantities, and crew assignments', () => {
+  const activePilot = { ...character, id: 'vehicle-pilot', name: 'Vehicle Pilot' };
+  const storedGunner = { ...character, id: 'stored-gunner', name: 'Stored Gunner', inStorage: true };
+  const mountedVehicle: VehicleProfile = {
+    ...BUILT_IN_VEHICLES.find(vehicle => vehicle.id === 'm1a1_abrams')!,
+    id: 'custom-abrams',
+    name: 'Custom Abrams',
+    isCustom: true,
+    weaponSlots: [
+      { id: 'main-gun', name: 'Rheinmetall 120mm Gun', weaponId: 'rheinmetall_120mm_gun', quantity: 1 },
+      { id: 'coax', name: 'M2HB', weaponId: 'm2hb', quantity: 2 },
+      { id: 'tow', name: 'TOW-II Missile Defense System', weaponId: 'tow_ii_missile_defense_system', quantity: 3 },
+    ],
+    mountedWeapons: ['Rheinmetall 120mm Gun', 'M2HB ×2', 'TOW-II Missile Defense System ×3'],
+  };
+  const deployedVehicle = {
+    ...spawnVehicleCharacter(mountedVehicle, 'deployed-abrams'),
+    vehicleCrew: { pilotCharacterId: activePilot.id, gunnerCharacterId: storedGunner.id },
+  };
+  const bundle = createCampaignBundle({
+    ...state,
+    characters: [activePilot, storedGunner, deployedVehicle],
+    customVehicles: [mountedVehicle],
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') return;
+  const importedVehicle = parsed.bundle.state.characters.find(candidate => candidate.id === deployedVehicle.id)!;
+  assert.deepEqual(importedVehicle.vehicle?.weaponSlots, mountedVehicle.weaponSlots);
+  assert.deepEqual(importedVehicle.vehicle?.mountedWeapons, mountedVehicle.mountedWeapons);
+  assert.deepEqual(importedVehicle.vehicleCrew, deployedVehicle.vehicleCrew);
+  assert.deepEqual(parsed.bundle.state.customVehicles?.[0].weaponSlots, mountedVehicle.weaponSlots);
+  assert.deepEqual(parsed.bundle.state.customVehicles?.[0].mountedWeapons, mountedVehicle.mountedWeapons);
+  const resolvedCrew = resolveVehicleCrewAssignments(importedVehicle, parsed.bundle.state.characters);
+  assert.equal(resolvedCrew.pilot?.id, activePilot.id);
+  assert.equal(resolvedCrew.gunner, null, 'stored gunner reference remains harmless after import');
 });
 
 test('custom vehicle profiles export as importable individual files with portraits', async () => {

@@ -580,6 +580,25 @@ export function spawnVehicleCharacter(vehicle: VehicleProfile, id: string): Char
   };
 }
 
+/** Resolve only active, non-vehicle characters as crew; stale references stay harmless. */
+export function resolveVehicleCrewAssignments(
+  vehicleCharacter: Pick<Character, 'vehicleCrew'> | null | undefined,
+  characters: readonly Character[],
+): { pilot: Character | null; gunner: Character | null } {
+  const resolveCrewMember = (characterId: string | undefined) => characterId
+    ? characters.find(character =>
+      character.id === characterId
+      && !character.inStorage
+      && !character.vehicle
+      && !character.combatDevice) ?? null
+    : null;
+
+  return {
+    pilot: resolveCrewMember(vehicleCharacter?.vehicleCrew?.pilotCharacterId),
+    gunner: resolveCrewMember(vehicleCharacter?.vehicleCrew?.gunnerCharacterId),
+  };
+}
+
 export function vehicleProtectionForDamageType(
   vehicle: VehicleProfile,
   damageType: DamageType,

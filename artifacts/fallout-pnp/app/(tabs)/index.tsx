@@ -63,6 +63,7 @@ import {
   vehicleRequiresImmediatePilotCheck,
   vehicleSystemLimitations,
   vehicleWeaponSlotsFromNames,
+  resolveVehicleCrewAssignments,
   useVehicleNozBooster,
 } from '@/data/vehicles';
 import {
@@ -1042,12 +1043,7 @@ export default function CombatScreen() {
   const attackerVehiclePerformance = attacker?.vehicle ? resolveVehiclePerformance(attacker.vehicle) : null;
   const defenderVehiclePerformance = defender?.vehicle ? resolveVehiclePerformance(defender.vehicle) : null;
   const defenderVehicleIsMoving = defenderVehiclePerformance?.inMotion ?? false;
-  const vehiclePilot = attacker?.vehicle && attacker.vehicleCrew?.pilotCharacterId
-    ? characters.find(character => character.id === attacker.vehicleCrew?.pilotCharacterId && !character.inStorage && !character.vehicle) ?? null
-    : null;
-  const vehicleGunner = attacker?.vehicle && attacker.vehicleCrew?.gunnerCharacterId
-    ? characters.find(character => character.id === attacker.vehicleCrew?.gunnerCharacterId && !character.inStorage && !character.vehicle) ?? null
-    : null;
+  const { pilot: vehiclePilot, gunner: vehicleGunner } = resolveVehicleCrewAssignments(attacker, characters);
   const attackActor = attacker?.vehicle ? vehicleGunner : attacker;
   const pilotSheet = vehiclePilot ? resolveCombatSheet(
     vehiclePilot, allArmor, true, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
