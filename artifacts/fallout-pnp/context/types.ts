@@ -53,7 +53,9 @@ export interface CampaignRuleTag {
 }
 
 /** Empty conditions mean an unconditional perk. Each populated condition
- *  group is required; a group passes when any one of its listed values matches. */
+ *  group is required; a group passes when any one of its listed values matches.
+ *  Race matching is exact (Half-Mutant is distinct from Super Mutant), and
+ *  trait requirements match traits selected on the character. */
 export interface CustomRuleCondition {
   weaponTags?: string[];
   armorTags?: string[];

@@ -246,7 +246,8 @@ export function customRuleConditionMatches(
     const active = new Set((character.conditions ?? []).map(normalizeRuleTag));
     if (!condition.statuses.some(status => active.has(normalizeRuleTag(status)))) return false;
   }
-  if (condition.attackerRaces?.length && !condition.attackerRaces.includes(character.race)) return false;
+  if (condition.attackerRaces?.length
+    && !condition.attackerRaces.some(race => race === character.race)) return false;
   if (condition.attackerTraits?.length) {
     const traits = new Set(character.traits ?? []);
     if (!condition.attackerTraits.some(trait => traits.has(trait))) return false;

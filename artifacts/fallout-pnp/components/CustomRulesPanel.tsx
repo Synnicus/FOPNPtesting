@@ -15,9 +15,12 @@ import type {
   CustomRuleEffectKind,
   CustomWeaponMod,
   DamageType,
+  RaceType,
   RuleAttackMode,
   SkillType,
 } from '@/context/types';
+import { RACES } from '@/data/races';
+import { TRAITS } from '@/data/traits';
 import {
   BUILT_IN_RULE_TAGS,
   getSelectableArmorTags,
@@ -97,6 +100,90 @@ function Choice({ label, selected, onPress }: { label: string; selected: boolean
     >
       <Text style={{ color: selected ? colors.primary : colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+function SelectableConditionMenu({
+  title, buttonLabel, testID, options, selectedIds, onToggle,
+}: {
+  title: string;
+  buttonLabel: string;
+  testID: string;
+  options: readonly { id: string; label: string }[];
+  selectedIds: readonly string[];
+  onToggle: (id: string) => void;
+}) {
+  const colors = useColors();
+  const [expanded, setExpanded] = useState(false);
+  const selected = new Set(selectedIds);
+  const visibleOptions = [
+    ...options,
+    ...selectedIds
+      .filter(id => !options.some(option => option.id === id))
+      .map(id => ({ id, label: id })),
+  ];
+
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={{ color: colors.mutedForeground, fontSize: 10, letterSpacing: 1, marginBottom: 4 }}>{title}</Text>
+      <TouchableOpacity
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(value => !value)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          borderWidth: 1, borderColor: expanded ? colors.primary : colors.border,
+          borderRadius: colors.radius, paddingHorizontal: 10, paddingVertical: 9,
+          backgroundColor: colors.background,
+        }}
+      >
+        <Text style={{ color: colors.primary, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5 }}>{buttonLabel}</Text>
+        <Text style={{ color: colors.primary, marginLeft: 8 }}>{expanded ? '−' : '+'}</Text>
+      </TouchableOpacity>
+      {selectedIds.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+          {selectedIds.map((selectedId, index) => (
+            <React.Fragment key={selectedId}>
+              {index > 0 && <Text style={{ color: colors.mutedForeground, fontSize: 10 }}> · </Text>}
+              <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
+                {visibleOptions.find(option => option.id === selectedId)?.label ?? selectedId}
+              </Text>
+            </React.Fragment>
+          ))}
+        </View>
+      )}
+      {expanded && (
+        <View style={{ marginTop: 7, padding: 8, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.background }}>
+          <ScrollView nestedScrollEnabled style={{ maxHeight: 190 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {visibleOptions.map(option => {
+                const isSelected = selected.has(option.id);
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    testID={`${testID}-option-${option.id}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    onPress={() => onToggle(option.id)}
+                    style={{
+                      borderWidth: 1, borderColor: isSelected ? colors.primary : colors.border,
+                      backgroundColor: isSelected ? `${colors.primary}22` : 'transparent',
+                      paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6,
+                      marginRight: 6, marginBottom: 6,
+                    }}
+                  >
+                    <Text style={{ color: isSelected ? colors.primary : colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -247,6 +334,8 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const [perkProgrammatic, setPerkProgrammatic] = useState(true);
   const [perkWeaponTags, setPerkWeaponTags] = useState<string[]>([]);
   const [perkArmorTags, setPerkArmorTags] = useState<string[]>([]);
+  const [perkRaces, setPerkRaces] = useState<RaceType[]>([]);
+  const [perkTraits, setPerkTraits] = useState<string[]>([]);
   const [perkStatuses, setPerkStatuses] = useState('');
   const [perkModes, setPerkModes] = useState<RuleAttackMode[]>([]);
   const [perkEffects, setPerkEffects] = useState<CustomRuleEffect[]>([]);
@@ -330,7 +419,8 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const resetPerk = () => {
     setEditingPerkId(null); setPerkName(''); setPerkDescription(''); setPerkCategory('combat');
     setPerkLevel('1'); setPerkMaxRanks('1'); setPerkProgrammatic(true);
-    setPerkWeaponTags([]); setPerkArmorTags([]); setPerkStatuses(''); setPerkModes([]); setPerkEffects([]);
+    setPerkWeaponTags([]); setPerkArmorTags([]); setPerkRaces([]); setPerkTraits([]);
+    setPerkStatuses(''); setPerkModes([]); setPerkEffects([]);
   };
   const editPerk = (perk: CustomPerkDefinition) => {
     setEditingPerkId(perk.id); setPerkName(perk.name); setPerkDescription(perk.description);
@@ -338,6 +428,8 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     setPerkProgrammatic(perk.programmatic);
     setPerkWeaponTags([...(perk.conditions?.weaponTags ?? [])]);
     setPerkArmorTags([...(perk.conditions?.armorTags ?? [])]);
+    setPerkRaces([...(perk.conditions?.attackerRaces ?? [])]);
+    setPerkTraits([...(perk.conditions?.attackerTraits ?? [])]);
     setPerkStatuses((perk.conditions?.statuses ?? []).join(', '));
     setPerkModes(perk.conditions?.attackModes ?? []);
     setPerkEffects(perk.effects);
@@ -347,8 +439,11 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     const weaponTags = perkWeaponTags;
     const armorTags = perkArmorTags;
     const statuses = parseRuleTagList(perkStatuses);
-    const conditions = weaponTags.length || armorTags.length || statuses.length || perkModes.length
-      ? { weaponTags, armorTags, statuses, attackModes: perkModes }
+    const conditions = weaponTags.length || armorTags.length || perkRaces.length || perkTraits.length || statuses.length || perkModes.length
+      ? {
+        weaponTags, armorTags, attackerRaces: perkRaces, attackerTraits: perkTraits,
+        statuses, attackModes: perkModes,
+      }
       : undefined;
     const next: CustomPerkDefinition = {
       id: editingPerkId ?? id('custom-perk'),
@@ -430,7 +525,29 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
             <View style={{ flex: 1 }}><Field label="MAX RANKS" value={perkMaxRanks} onChangeText={setPerkMaxRanks} placeholder="1" /></View>
           </View>
           <Choice label={`AUTOMATE EFFECTS: ${perkProgrammatic ? 'ON' : 'OFF (ROLEPLAY ONLY)'}`} selected={perkProgrammatic} onPress={() => setPerkProgrammatic(!perkProgrammatic)} />
-          <Text style={{ color: colors.mutedForeground, fontSize: 10, marginVertical: 6 }}>Conditional requirements: a matching weapon tag, worn armor tag, action mode, or status can activate the perk.</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 10, marginVertical: 6 }}>
+            A perk activates when every selected condition group matches. Within each group, any selected value is enough. Race matching is exact: Half-Mutant and Super Mutant are separate races.
+          </Text>
+          <SelectableConditionMenu
+            title="REQUIRES RACE (ANY MATCH)"
+            buttonLabel="SELECT RACES"
+            testID="custom-perk-race-menu"
+            options={RACES.map(race => ({ id: race.id, label: race.name }))}
+            selectedIds={perkRaces}
+            onToggle={raceId => setPerkRaces(current => current.includes(raceId as RaceType)
+              ? current.filter(id => id !== raceId)
+              : [...current, raceId as RaceType])}
+          />
+          <SelectableConditionMenu
+            title="REQUIRES SELECTED TRAIT (ANY MATCH)"
+            buttonLabel="SELECT TRAITS"
+            testID="custom-perk-trait-menu"
+            options={TRAITS.map(trait => ({ id: trait.id, label: trait.name }))}
+            selectedIds={perkTraits}
+            onToggle={traitId => setPerkTraits(current => current.includes(traitId)
+              ? current.filter(id => id !== traitId)
+              : [...current, traitId])}
+          />
           <SelectableTagMenu
             title="REQUIRES WIELDED WEAPON TAG (ANY MATCH)"
             buttonLabel="SELECT WEAPON TAGS"
@@ -476,6 +593,8 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
                 Level {perk.minLevel} · {perk.maxRanks} rank(s) · {perk.programmatic ? `${perk.effects.length} effect(s)` : 'roleplay only'}
                 {perk.conditions?.weaponTags?.length ? ` · wield ${perk.conditions.weaponTags.join('/')}` : ''}
                 {perk.conditions?.armorTags?.length ? ` · wear ${perk.conditions.armorTags.join('/')}` : ''}
+                {perk.conditions?.attackerRaces?.length ? ` · race ${perk.conditions.attackerRaces.join('/')}` : ''}
+                {perk.conditions?.attackerTraits?.length ? ` · trait ${perk.conditions.attackerTraits.join('/')}` : ''}
                 {perk.conditions?.statuses?.length ? ` · status ${perk.conditions.statuses.join('/')}` : ''}
               </Text>
             </View>

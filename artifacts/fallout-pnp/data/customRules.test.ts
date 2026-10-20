@@ -50,7 +50,7 @@ const character = {
   id: 'pc',
   name: 'Test Character',
   race: 'human',
-  traits: ['night_owl'],
+  traits: ['night_person'],
   conditions: ['poisoned'],
   perks: [{ perkId: 'custom-perk', rank: 2 }],
 } as unknown as Character;
@@ -276,6 +276,62 @@ test('custom perk conditions require every populated group and allow any listed 
   assert.equal(customRuleConditionMatches(character, weapon, [armor], null, condition), false);
   assert.equal(customRuleConditionMatches({ ...character, conditions: [] }, weapon, [armor], 'burst', condition), false);
   assert.equal(customRuleConditionMatches(character, null, [armor], 'burst', condition), false);
+});
+
+test('custom perk race conditions match exact races, including distinct Half-Mutant and Super Mutant values', () => {
+  assert.equal(customRuleConditionMatches(character, null, [], 'single', {
+    attackerRaces: ['human', 'halfMutant'],
+  }), true);
+  assert.equal(customRuleConditionMatches(character, null, [], 'single', {
+    attackerRaces: ['superMutant'],
+  }), false);
+  assert.equal(customRuleConditionMatches({ ...character, race: 'halfMutant' }, null, [], 'single', {
+    attackerRaces: ['superMutant'],
+  }), false);
+  assert.equal(customRuleConditionMatches({ ...character, race: 'halfMutant' }, null, [], 'single', {
+    attackerRaces: ['superMutant', 'halfMutant'],
+  }), true);
+});
+
+test('custom perk trait conditions accept any selected trait and require all populated groups', () => {
+  assert.equal(customRuleConditionMatches(character, null, [], 'single', {
+    attackerTraits: ['fast_shot', 'night_person'],
+  }), true);
+  assert.equal(customRuleConditionMatches(character, null, [], 'single', {
+    attackerTraits: ['fast_shot'],
+  }), false);
+  assert.equal(customRuleConditionMatches(character, null, [], 'single', {
+    attackerRaces: ['human'],
+    attackerTraits: ['fast_shot'],
+  }), false);
+  assert.equal(customRuleConditionMatches(character, null, [], 'single', {
+    attackerRaces: ['human', 'halfMutant'],
+    attackerTraits: ['night_person', 'fast_shot'],
+  }), true);
+});
+
+test('race and trait requirements use the same evaluator for sheet and combat custom perk effects', () => {
+  const perk: CustomPerkDefinition = {
+    id: 'race-trait-perk',
+    name: 'Mutant Marksman',
+    description: 'A race- and trait-specific bonus.',
+    category: 'combat',
+    minLevel: 1,
+    maxRanks: 2,
+    programmatic: true,
+    conditions: { attackerRaces: ['halfMutant'], attackerTraits: ['night_person'] },
+    effects: [{ id: 'to-hit', kind: 'toHit', value: 2 }],
+  };
+  assert.equal(validateCustomPerk(perk), true);
+  const halfMutant = {
+    ...character,
+    race: 'halfMutant',
+    perks: [{ perkId: perk.id, rank: 1 }],
+  } as unknown as Character;
+  assert.equal(computeCustomPerkEffects(halfMutant, [perk]).toHit, 2);
+  assert.equal(computeCustomPerkEffects(halfMutant, [perk], { weapon, armor: [armor], mode: 'burst' }).toHit, 2);
+  assert.equal(computeCustomPerkEffects({ ...halfMutant, race: 'superMutant' }, [perk]).toHit, 0);
+  assert.equal(computeCustomPerkEffects({ ...halfMutant, traits: [] }, [perk], { weapon, armor: [armor], mode: 'single' }).toHit, 0);
 });
 
 test('custom perk effects honor conditions and ranks, with typed damage kept separate from radiation exposure', () => {
