@@ -37,7 +37,16 @@
     "Metal Armor": "Armure métallique",
     "Chitin Armor": "Armure en chitine",
     "Environmental Armor": "Armure environnementale",
-    "Clothing": "Vêtements"
+    "Clothing": "Vêtements",
+    "Unarmed": "Sans arme",
+    "Melee Weapons": "Armes de mêlée",
+    "Small Guns": "Petites armes",
+    "Big Guns": "Grosses armes",
+    "Energy Weapons": "Armes à énergie",
+    "Throwing": "Lancer",
+    "Power Armor": "Armure assistée",
+    "Combat Armor": "Armure de combat",
+    "Radiation Suit": "Combinaison anti-radiations"
   },
   "it": {
     "Pistol": "Pistola",
@@ -77,7 +86,16 @@
     "Metal Armor": "Armatura metallica",
     "Chitin Armor": "Armatura di chitina",
     "Environmental Armor": "Armatura ambientale",
-    "Clothing": "Abiti"
+    "Clothing": "Abiti",
+    "Unarmed": "Senza armi",
+    "Melee Weapons": "Armi da mischia",
+    "Small Guns": "Armi leggere",
+    "Big Guns": "Armi pesanti",
+    "Energy Weapons": "Armi a energia",
+    "Throwing": "Lancio",
+    "Power Armor": "Armatura atomica",
+    "Combat Armor": "Armatura da combattimento",
+    "Radiation Suit": "Tuta antiradiazioni"
   },
   "de": {
     "Pistol": "Pistole",
@@ -117,7 +135,16 @@
     "Metal Armor": "Metallrüstung",
     "Chitin Armor": "Chitinrüstung",
     "Environmental Armor": "Umweltrüstung",
-    "Clothing": "Kleidung"
+    "Clothing": "Kleidung",
+    "Unarmed": "Waffenlos",
+    "Melee Weapons": "Nahkampfwaffen",
+    "Small Guns": "Kleine Waffen",
+    "Big Guns": "Große Waffen",
+    "Energy Weapons": "Energiewaffen",
+    "Throwing": "Werfen",
+    "Power Armor": "Powerrüstung",
+    "Combat Armor": "Kampfrüstung",
+    "Radiation Suit": "Strahlenschutzanzug"
   },
   "es-ES": {
     "Pistol": "Pistola",
@@ -157,7 +184,16 @@
     "Metal Armor": "Armadura metálica",
     "Chitin Armor": "Armadura de quitina",
     "Environmental Armor": "Armadura ambiental",
-    "Clothing": "Ropa"
+    "Clothing": "Ropa",
+    "Unarmed": "Sin armas",
+    "Melee Weapons": "Armas cuerpo a cuerpo",
+    "Small Guns": "Armas pequeñas",
+    "Big Guns": "Armas grandes",
+    "Energy Weapons": "Armas de energía",
+    "Throwing": "Lanzamiento",
+    "Power Armor": "Servoarmadura",
+    "Combat Armor": "Armadura de combate",
+    "Radiation Suit": "Traje antirradiación"
   },
   "es-MX": {
     "Pistol": "Pistola",
@@ -197,7 +233,16 @@
     "Metal Armor": "Armadura metálica",
     "Chitin Armor": "Armadura de quitina",
     "Environmental Armor": "Armadura ambiental",
-    "Clothing": "Ropa"
+    "Clothing": "Ropa",
+    "Unarmed": "Sin armas",
+    "Melee Weapons": "Armas cuerpo a cuerpo",
+    "Small Guns": "Armas pequeñas",
+    "Big Guns": "Armas grandes",
+    "Energy Weapons": "Armas de energía",
+    "Throwing": "Lanzamiento",
+    "Power Armor": "Servoarmadura",
+    "Combat Armor": "Armadura de combate",
+    "Radiation Suit": "Traje antirradiación"
   },
   "ja": {
     "Pistol": "ピストル",
@@ -237,7 +282,16 @@
     "Metal Armor": "メタルアーマー",
     "Chitin Armor": "キチンアーマー",
     "Environmental Armor": "環境防護アーマー",
-    "Clothing": "衣服"
+    "Clothing": "衣服",
+    "Unarmed": "素手",
+    "Melee Weapons": "近接武器",
+    "Small Guns": "小火器",
+    "Big Guns": "ビッグガン",
+    "Energy Weapons": "エネルギー武器",
+    "Throwing": "投擲",
+    "Power Armor": "パワーアーマー",
+    "Combat Armor": "コンバットアーマー",
+    "Radiation Suit": "放射能防護スーツ"
   },
   "pl": {
     "Pistol": "Pistolet",
@@ -277,7 +331,16 @@
     "Metal Armor": "Pancerz metalowy",
     "Chitin Armor": "Pancerz chitynowy",
     "Environmental Armor": "Pancerz środowiskowy",
-    "Clothing": "Ubranie"
+    "Clothing": "Ubranie",
+    "Unarmed": "Bez broni",
+    "Melee Weapons": "Broń do walki wręcz",
+    "Small Guns": "Broń palna mała",
+    "Big Guns": "Broń ciężka",
+    "Energy Weapons": "Broń energetyczna",
+    "Throwing": "Rzucanie",
+    "Power Armor": "Pancerz wspomagany",
+    "Combat Armor": "Pancerz bojowy",
+    "Radiation Suit": "Kombinezon przeciwradiacyjny"
   },
   "pt-BR": {
     "Pistol": "Pistola",
@@ -317,7 +380,16 @@
     "Metal Armor": "Armadura metálica",
     "Chitin Armor": "Armadura de quitina",
     "Environmental Armor": "Armadura ambiental",
-    "Clothing": "Roupas"
+    "Clothing": "Roupas",
+    "Unarmed": "Desarmado",
+    "Melee Weapons": "Armas corpo a corpo",
+    "Small Guns": "Armas pequenas",
+    "Big Guns": "Armas pesadas",
+    "Energy Weapons": "Armas de energia",
+    "Throwing": "Arremesso",
+    "Power Armor": "Armadura motorizada",
+    "Combat Armor": "Armadura de combate",
+    "Radiation Suit": "Traje de Proteção contra Radiação"
   },
   "ru": {
     "Pistol": "Пистолет",
@@ -357,7 +429,16 @@
     "Metal Armor": "Металлическая броня",
     "Chitin Armor": "Хитиновая броня",
     "Environmental Armor": "Защитный костюм",
-    "Clothing": "Одежда"
+    "Clothing": "Одежда",
+    "Unarmed": "Без оружия",
+    "Melee Weapons": "Оружие ближнего боя",
+    "Small Guns": "Лёгкое оружие",
+    "Big Guns": "Тяжёлое оружие",
+    "Energy Weapons": "Энергетическое оружие",
+    "Throwing": "Метание",
+    "Power Armor": "Силовая броня",
+    "Combat Armor": "Боевая броня",
+    "Radiation Suit": "Противорадиационный костюм"
   },
   "zh-Hans": {
     "Pistol": "手枪",
@@ -397,7 +478,16 @@
     "Metal Armor": "金属护甲",
     "Chitin Armor": "甲壳护甲",
     "Environmental Armor": "环境防护护甲",
-    "Clothing": "衣物"
+    "Clothing": "衣物",
+    "Unarmed": "空手",
+    "Melee Weapons": "近战武器",
+    "Small Guns": "小型枪械",
+    "Big Guns": "大枪",
+    "Energy Weapons": "能量武器",
+    "Throwing": "投掷",
+    "Power Armor": "动力装甲",
+    "Combat Armor": "战斗装甲",
+    "Radiation Suit": "辐射防护服"
   },
   "zh-Hant": {
     "Pistol": "手槍",
@@ -437,6 +527,15 @@
     "Metal Armor": "金屬護甲",
     "Chitin Armor": "甲殼護甲",
     "Environmental Armor": "環境防護護甲",
-    "Clothing": "衣物"
+    "Clothing": "衣物",
+    "Unarmed": "空手",
+    "Melee Weapons": "近戰武器",
+    "Small Guns": "小型槍械",
+    "Big Guns": "大槍",
+    "Energy Weapons": "能量武器",
+    "Throwing": "投擲",
+    "Power Armor": "動力裝甲",
+    "Combat Armor": "戰鬥裝甲",
+    "Radiation Suit": "輻射防護服"
   }
 }

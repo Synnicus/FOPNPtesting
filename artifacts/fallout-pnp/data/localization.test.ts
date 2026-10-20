@@ -6,6 +6,7 @@ import { URL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import * as ts from 'typescript';
+import { BUILT_IN_RULE_TAGS } from './customRules.ts';
 
 const localeIds = [
   'fr', 'it', 'de', 'es-ES', 'es-MX', 'ja', 'pl', 'pt-BR', 'ru', 'zh-Hans', 'zh-Hant',
@@ -94,6 +95,17 @@ test('every supported non-English locale bundles app UI and built-in content tra
     for (const source of requiredStrings) {
       assert.ok(translations[source]?.trim(), `${locale} includes “${source}”`);
       assert.notEqual(translations[source], source, `${locale} translates “${source}”`);
+    }
+  }
+});
+
+test('every built-in equipment tag has a localized label in every supported language', () => {
+  for (const locale of localeIds) {
+    const translations = equipmentTagTranslations[locale] ?? {};
+
+    for (const { label } of BUILT_IN_RULE_TAGS) {
+      assert.ok(translations[label]?.trim(), `${locale} translates built-in equipment tag “${label}”`);
+      assert.notEqual(translations[label], label, `${locale} does not show English for equipment tag “${label}”`);
     }
   }
 });

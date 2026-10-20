@@ -17,7 +17,11 @@ test('custom weapon mods select registered and campaign weapon tags from a butto
   assert.match(modPanelSource, /addCustomModWeaponTag/);
   assert.match(modPanelSource, /custom-perk-weapon-tag-menu/);
   assert.match(modPanelSource, /custom-perk-armor-tag-menu/);
+  assert.match(modPanelSource, /options=\{visiblePerkWeaponTags\}/);
+  assert.match(modPanelSource, /selectedTagIds=\{perkWeaponTags\}/);
   assert.match(modPanelSource, /getSelectableArmorTags\(campaignRuleTags, perkArmorTags\)/);
+  assert.match(modPanelSource, /options=\{visiblePerkArmorTags\}/);
+  assert.match(modPanelSource, /selectedTagIds=\{perkArmorTags\}/);
   assert.match(modPanelSource, /weaponTags, armorTags/);
   assert.doesNotMatch(modPanelSource, /ELIGIBLE WEAPON TAGS \(COMMA-SEPARATED; BLANK = ANY\)/);
 });
