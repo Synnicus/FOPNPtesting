@@ -6,7 +6,14 @@ import { URL } from 'node:url';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import ts from 'typescript';
-import type { BestiaryTemplate, Character, CustomPerkDefinition, InitiativeEntry } from '../context/types.ts';
+import type {
+  BestiaryTemplate,
+  CampaignRuleTag,
+  Character,
+  CustomPerkDefinition,
+  CustomWeaponMod,
+  InitiativeEntry,
+} from '../context/types.ts';
 import { BUILT_IN_BESTIARY, MANUAL_BESTIARY, resolveBestiaryTemplates, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
@@ -43,10 +50,26 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     category: 'utility',
     minLevel: 1,
     maxRanks: 2,
+    conditions: {
+      weaponTags: ['campaign-ranged'],
+      armorTags: ['campaign-insulated'],
+    },
     programmatic: true,
     effects: [
       { id: 'repair-training', kind: 'skillBonus', skill: 'repair', value: 5, application: 'oneTime' },
     ],
+  };
+  const campaignRuleTags: CampaignRuleTag[] = [
+    { id: 'campaign-ranged', label: 'Campaign Ranged', appliesTo: 'weapon' },
+    { id: 'campaign-insulated', label: 'Campaign Insulated', appliesTo: 'armor' },
+  ];
+  const customWeaponMod: CustomWeaponMod = {
+    id: 'saved-custom-mod',
+    name: 'Campaign Scope',
+    description: 'A campaign-specific scope.',
+    programmatic: false,
+    appliesToTags: ['campaign-ranged'],
+    effects: [],
   };
   legacyNpc.perks = [{
     perkId: customPerk.id,
@@ -88,6 +111,8 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     characters: [legacyNpc, printedNpc, persistentVehicle],
     customBestiaryTemplates: [legacyTemplate],
     customPerks: [customPerk],
+    customWeaponMods: [customWeaponMod],
+    campaignRuleTags,
     customWeapons: [],
     customArmor: [],
     customAmmo: [],
@@ -201,6 +226,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     for (const reload of ['legacy load', 'repaired save reload']) {
       const restored = await mount();
       assert.equal(restored.customBestiaryTemplates.length, 1, reload);
+      assert.deepEqual(restored.campaignRuleTags, campaignRuleTags, `${reload}: custom tag definitions retained`);
+      assert.deepEqual(restored.customWeaponMods[0]?.appliesToTags, customWeaponMod.appliesToTags, `${reload}: mod tag references retained`);
+      assert.deepEqual(restored.customPerks[0]?.conditions, customPerk.conditions, `${reload}: perk weapon and armor conditions retained`);
       const template = restored.customBestiaryTemplates[0];
       assert.equal(template.usesDerivedArmorClass, true, `${reload}: template repaired`);
       const npc = restored.characters.find(character => character.id === legacyNpc.id)!;
@@ -242,6 +270,9 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
     assert.deepEqual(saved.characters[0].perks[0].appliedCustomPerkGrants, legacyNpc.perks[0].appliedCustomPerkGrants);
     assert.equal(saved.customPerks[0].effects[0].application, 'oneTime');
+    assert.deepEqual(saved.campaignRuleTags, campaignRuleTags);
+    assert.deepEqual(saved.customWeaponMods[0].appliesToTags, customWeaponMod.appliesToTags);
+    assert.deepEqual(saved.customPerks[0].conditions, customPerk.conditions);
     assert.equal(saved.characters[2].vehicle.systems.find((system: { id: string }) => system.id === 'engine').currentHp, 45);
     assert.equal(saved.characters[2].vehicle.repairHistory[0].restoredHp, 15);
     assert.deepEqual(saved.characters[2].vehicle.weaponSlots, vehicleSlots);

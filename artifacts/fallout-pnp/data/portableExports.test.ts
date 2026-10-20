@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
-import type { Armor, CampaignRaceTag, Character, CustomRaceDefinition, VehicleProfile, Weapon } from '../context/types.ts';
+import type {
+  Armor,
+  CampaignRaceTag,
+  CampaignRuleTag,
+  Character,
+  CustomPerkDefinition,
+  CustomRaceDefinition,
+  CustomWeaponMod,
+  VehicleProfile,
+  Weapon,
+} from '../context/types.ts';
 import {
   applyVehicleSystemDamage,
   BUILT_IN_VEHICLES,
@@ -485,6 +495,55 @@ test('portable campaigns preserve custom equipment tags and keep imported items 
     weaponTags: ['small guns'],
     armorTags: ['power armor'],
   }), true, 'inferred weapon and armor tags still satisfy perk conditions');
+});
+
+test('portable campaigns preserve custom rule tag definitions and mod/perk references', () => {
+  const campaignRuleTags: CampaignRuleTag[] = [
+    { id: 'campaign-ranged', label: 'Campaign Ranged', appliesTo: 'weapon' },
+    { id: 'campaign-insulated', label: 'Campaign Insulated', appliesTo: 'armor' },
+  ];
+  const customWeaponMod: CustomWeaponMod = {
+    id: 'campaign-scope',
+    name: 'Campaign Scope',
+    description: 'A scope for campaign-specific ranged weapons.',
+    programmatic: false,
+    appliesToTags: ['campaign-ranged'],
+    effects: [],
+  };
+  const customPerk: CustomPerkDefinition = {
+    id: 'campaign-marksman',
+    name: 'Campaign Marksman',
+    description: 'A perk for campaign-specific equipment.',
+    category: 'combat',
+    minLevel: 1,
+    maxRanks: 1,
+    conditions: {
+      weaponTags: ['campaign-ranged'],
+      armorTags: ['campaign-insulated'],
+    },
+    programmatic: false,
+    effects: [],
+  };
+  const bundle = createCampaignBundle({
+    ...state,
+    customWeaponMods: [customWeaponMod],
+    customPerks: [customPerk],
+    campaignRuleTags,
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (parsed.ok && parsed.source === 'portable') {
+    assert.deepEqual(parsed.bundle.state.campaignRuleTags, campaignRuleTags);
+    assert.deepEqual(parsed.bundle.state.customWeaponMods, [customWeaponMod]);
+    assert.deepEqual(parsed.bundle.state.customPerks, [customPerk]);
+    assert.ok(parsed.bundle.state.campaignRuleTags?.some(tag =>
+      tag.id === parsed.bundle.state.customWeaponMods?.[0].appliesToTags?.[0]));
+    assert.ok(parsed.bundle.state.campaignRuleTags?.some(tag =>
+      tag.id === parsed.bundle.state.customPerks?.[0].conditions?.weaponTags?.[0]));
+    assert.ok(parsed.bundle.state.campaignRuleTags?.some(tag =>
+      tag.id === parsed.bundle.state.customPerks?.[0].conditions?.armorTags?.[0]));
+  }
 });
 
 test('malformed equipment tags are discarded without rejecting the rest of an imported campaign', () => {

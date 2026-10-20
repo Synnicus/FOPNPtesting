@@ -100,6 +100,22 @@ test('armor-tag selection includes built-in and campaign armor tags while preser
   assert.equal(byId.get('orphaned-armor-tag')?.label, 'orphaned-armor-tag');
 });
 
+test('removing a campaign tag definition keeps already-selected weapon and armor tags selectable', () => {
+  const removedWeaponTag = 'retired-campaign-weapon-tag';
+  const removedArmorTag = 'retired-campaign-armor-tag';
+  const weaponOptions = getSelectableWeaponTags([], [removedWeaponTag]);
+  const armorOptions = getSelectableArmorTags([], [removedArmorTag]);
+
+  assert.deepEqual(
+    weaponOptions.find(tag => tag.id === removedWeaponTag),
+    { id: removedWeaponTag, label: removedWeaponTag, appliesTo: 'weapon' },
+  );
+  assert.deepEqual(
+    armorOptions.find(tag => tag.id === removedArmorTag),
+    { id: removedArmorTag, label: removedArmorTag, appliesTo: 'armor' },
+  );
+});
+
 test('every built-in weapon and vehicle weapon has explicit, registered family tags', () => {
   const familyTagByCategory: Record<Weapon['category'], string> = {
     unarmed: 'unarmed',
