@@ -5,6 +5,7 @@ import { applyImmediateTraitSpecial, calculateRebasedEffectiveSkills } from './e
 import { breakTheRulesWaivesRequirements } from './breakTheRules';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks';
 import { RAD_RESIST_PERK_BONUSES } from './radiation';
+import { evaluateRaceTagPerkEligibility } from './races';
 
 export type PerkCategory = 'combat' | 'defense' | 'utility' | 'social' | 'survival' | 'racial';
 
@@ -85,6 +86,9 @@ export interface Perk {
   requiresRace?: RaceType[];
   // Races that CANNOT choose this perk (from the manual text).
   excludedRaces?: RaceType[];
+  /** Campaign race tags can grant or exclude custom racial perk eligibility. */
+  requiresRaceTags?: string[];
+  excludedRaceTags?: string[];
   // Combat effect (null = non-combat)
   combatEffect: PerkCombatEffect | null;
 }
@@ -1100,6 +1104,15 @@ export function canTakePerk(
   // Race exclusion.
   if (perk.excludedRaces && perk.excludedRaces.includes(char.race)) {
     reasons.push('Your race cannot choose this perk');
+  }
+  const raceTagEligibility = evaluateRaceTagPerkEligibility(
+    char, perk.requiresRaceTags, perk.excludedRaceTags,
+  );
+  if (raceTagEligibility.missingRequiredTag) {
+    reasons.push(`Requires a race tag: ${(perk.requiresRaceTags ?? []).join(', ')}`);
+  }
+  if (raceTagEligibility.excludedTagMatched) {
+    reasons.push('Your race tags cannot choose this perk');
   }
 
   // Level.

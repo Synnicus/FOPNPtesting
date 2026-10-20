@@ -247,7 +247,9 @@ export default function CampaignScreen() {
     lootTables,
     encounterTables,
     campaignMaps,
+    campaignRaceTags,
     saveCampaignTools,
+    saveCampaignRaceTags,
     allVehicles,
     allWeapons,
     allArmor,
@@ -562,6 +564,13 @@ export default function CampaignScreen() {
         if (exists && choice === 'replace') updateCustomArmor(armor);
         else if (!exists) addCustomArmor(armor);
       }
+      if (willImportCharacter && bundle.campaignRaceTags?.length) {
+        const mergedTags = new Map(campaignRaceTags.map(tag => [tag.id, tag]));
+        for (const tag of bundle.campaignRaceTags) {
+          if (choice === 'replace' || !mergedTags.has(tag.id)) mergedTags.set(tag.id, tag);
+        }
+        saveCampaignRaceTags([...mergedTags.values()]);
+      }
       if (willImportCharacter) {
         if (characterExists) updateCharacter(importedCharacter);
         else addCharacter(importedCharacter);
@@ -643,7 +652,7 @@ export default function CampaignScreen() {
     setBusyAction(`character:${character.id}`);
     try {
       const asset = await readPortrait(character);
-      const bundle = createCharacterBundle(character, customWeapons, customArmor, asset);
+      const bundle = createCharacterBundle(character, customWeapons, customArmor, asset, campaignRaceTags);
       const filename = sanitizeFilename(`${character.vehicle ? 'fallout-vehicle' : 'fallout-character'}-${character.name}`);
       const saved = await saveJsonFile(JSON.stringify(bundle, null, 2), filename);
       const dependencyCount = bundle.customWeapons.length + bundle.customArmor.length;

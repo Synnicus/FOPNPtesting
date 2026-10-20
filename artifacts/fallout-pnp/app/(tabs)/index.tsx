@@ -37,7 +37,7 @@ import { applyTightNutsDamageResistance, isCriticalFailureRoll } from '@/data/tr
 import { calcMeleeDamageBonus, calcSequence } from '@/data/derived';
 import { applyProtection } from '@/data/armor';
 import { computeDefensivePerkBonuses, describeAmmoProtectionModifier, resolveAmmoDamageComponents, resolveAttackWeapon, resolveDamagePipeline, resolveDamageProtection, type DamageProtectionBreakdown } from '@/data/attackResolution';
-import { getRaceById } from '@/data/races';
+import { getCharacterRaceDefinition } from '@/data/races';
 import { computeConditionModifiers, type ConditionDefinition } from '@/data/conditions';
 import {
   fastShotAppliesToSkill,
@@ -109,7 +109,7 @@ function resolveCombatSheet(
   mutantGhoulRadiationRules = false,
   ghoulRadiationHealingOption: 1 | 2 | 3 | 4 = 1,
 ): ResolvedArmorSheet {
-  const race = getRaceById(character.race);
+  const race = getCharacterRaceDefinition(character);
   const sheet = resolveArmorAwareSheet({
     special: character.special,
     skills: character.skills,
@@ -119,6 +119,7 @@ function resolveCombatSheet(
     conditions: character.conditions,
     effects: character.effects,
     raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
+    raceDefinition: race,
     nightPersonPeriod: character.nightPersonPeriod,
     racialNaturalArmorClass: race?.naturalACBonus,
     naturalArmorClass: character.naturalProtection?.armorClass,
@@ -1351,7 +1352,7 @@ export default function CombatScreen() {
           drPlasma: defenderVehiclePerformance.damageResistance.plasma,
           drExplosion: defenderVehiclePerformance.damageResistance.explosion,
         }
-      : (defender.naturalProtection ?? getRaceById(defender.race)?.naturalProtection ?? null)
+      : (defender.naturalProtection ?? getCharacterRaceDefinition(defender)?.naturalProtection ?? null)
     : null;
 
   // Effective defender AC (with tempAC), adjusted for defender position (manual):
@@ -1945,7 +1946,9 @@ export default function CombatScreen() {
     // bonus (e.g. Deathclaw +5) + Bonus HtH Damage perk (+2/rank — the perk
     // raises MD itself, so it lives HERE and not in perkBonuses) + traits
     // (Heavy Handed +4, Domesticated −2).
-    const raceMeleeBonus = isMeleeOrUnarmed ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
+    const raceMeleeBonus = isMeleeOrUnarmed && attacker
+      ? (getCharacterRaceDefinition(attacker)?.bonusMeleeDamage ?? 0)
+      : 0;
     const hthPerkBonus = isMeleeOrUnarmed ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
     const traitMeleeBonus = isMeleeOrUnarmed && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
     const meleeDmgBonus = isMeleeOrUnarmed && !manualNaturalAttack
@@ -2673,7 +2676,7 @@ export default function CombatScreen() {
         // Attacker's own armor applies per normal damage rules.
         const selfBodyArmor = attackerSheet?.bodyArmor ?? null;
         const selfHelmet = attackerSheet?.helmet ?? null;
-        const selfNatural = attacker.naturalProtection ?? getRaceById(attacker.race)?.naturalProtection ?? null;
+        const selfNatural = attacker.naturalProtection ?? getCharacterRaceDefinition(attacker)?.naturalProtection ?? null;
         const sp = combinedProtectionFor(weapon.damageType, selfBodyArmor as any, selfHelmet as any, selfNatural, shieldFor(attacker).prot);
         const finalSelf = applyProtection(half, sp.dt, sp.dr);
         applyDamage(attacker.id, finalSelf);
@@ -4066,7 +4069,9 @@ export default function CombatScreen() {
                     + empShieldingResistance(defender, loadedAmmo),
                   damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
                 });
-                const raceMeleeBonus = isMelee ? (getRaceById(attacker?.race ?? '')?.bonusMeleeDamage ?? 0) : 0;
+                const raceMeleeBonus = isMelee && attacker
+                  ? (getCharacterRaceDefinition(attacker)?.bonusMeleeDamage ?? 0)
+                  : 0;
                 const hthPerkBonus = isMelee ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
                 const traitMeleeBonus = isMelee && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
                 const meleeDmgBonus = isMelee

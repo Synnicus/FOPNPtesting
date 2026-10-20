@@ -9,7 +9,7 @@ import {
   replaceStoredNaturalArmorClass,
   calculateSequence,
 } from './effectiveRules';
-import { getRaceById } from './races';
+import { getCharacterRaceDefinition } from './races';
 
 // ─── Effects framework — Fallout PnP 2.0 ──────────────────────────────────────
 // Merges chems (data/chems.ts) into the character's ActiveEffect[] and provides
@@ -225,7 +225,7 @@ export interface EffectiveSpecial {
  * by ending (the delta disappears from this computation).
  */
 export function effectiveSpecial(
-  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'traits' | 'race' | 'nightPersonPeriod'>,
+  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'traits' | 'race' | 'nightPersonPeriod' | 'customRaceProfile' | 'customRaceId'>,
 ): EffectiveSpecial {
   const perkBonus = computePerkStatBonuses(char);
   const chem = computeEffectModifiers(char).statMods;
@@ -236,7 +236,7 @@ export function effectiveSpecial(
   const withTraits = applyImmediateTraitSpecial(char.special, char.traits);
   const withPerks = { ...withTraits };
   for (const key of SPECIAL_KEYS) withPerks[key] += perkBonus[key] ?? 0;
-  const race = getRaceById(char.race);
+  const race = getCharacterRaceDefinition(char);
   const stats = applyNightPersonSpecial(
     withPerks,
     char.traits,
@@ -263,11 +263,11 @@ export interface EffectiveDerivedStats {
 
 /** Stored derived values adjusted by temporary SPECIAL and explicit effects. */
 export function effectiveDerivedStats(
-  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'traits' | 'race' | 'nightPersonPeriod' | 'maxAP' | 'armorClass' | 'sequence'>,
+  char: Pick<Character, 'special' | 'perks' | 'effects' | 'conditions' | 'traits' | 'race' | 'nightPersonPeriod' | 'maxAP' | 'armorClass' | 'sequence' | 'customRaceProfile' | 'customRaceId'>,
 ): EffectiveDerivedStats {
   const workingSpecial = effectiveSpecial(char).stats;
   const explicit = computeEffectModifiers(char);
-  const race = getRaceById(char.race);
+  const race = getCharacterRaceDefinition(char);
   // armorClass is persisted including armor/racial AC. Replace only the
   // natural agility portion so Kamikaze preserves those other sources.
   const perkBonus = computePerkStatBonuses(char);

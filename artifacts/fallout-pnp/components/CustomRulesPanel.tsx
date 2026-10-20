@@ -15,11 +15,10 @@ import type {
   CustomRuleEffectKind,
   CustomWeaponMod,
   DamageType,
-  RaceType,
   RuleAttackMode,
   SkillType,
 } from '@/context/types';
-import { RACES } from '@/data/races';
+import { getBuiltInRaceTagId, getSelectableRaceTags } from '@/data/races';
 import { TRAITS } from '@/data/traits';
 import {
   BUILT_IN_RULE_TAGS,
@@ -317,6 +316,7 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const colors = useColors();
   const {
     customWeaponMods, customPerks, campaignRuleTags, saveCustomRules,
+    customRaces, campaignRaceTags, characters, saveCampaignRaceTags,
   } = useApp();
   const tab = section;
   const [editingModId, setEditingModId] = useState<string | null>(null);
@@ -334,7 +334,9 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const [perkProgrammatic, setPerkProgrammatic] = useState(true);
   const [perkWeaponTags, setPerkWeaponTags] = useState<string[]>([]);
   const [perkArmorTags, setPerkArmorTags] = useState<string[]>([]);
-  const [perkRaces, setPerkRaces] = useState<RaceType[]>([]);
+  const [perkRaceTags, setPerkRaceTags] = useState<string[]>([]);
+  const [perkRequiredRaceTags, setPerkRequiredRaceTags] = useState<string[]>([]);
+  const [perkExcludedRaceTags, setPerkExcludedRaceTags] = useState<string[]>([]);
   const [perkTraits, setPerkTraits] = useState<string[]>([]);
   const [perkStatuses, setPerkStatuses] = useState('');
   const [perkModes, setPerkModes] = useState<RuleAttackMode[]>([]);
@@ -352,6 +354,10 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const visibleModWeaponTags = getSelectableWeaponTags(campaignRuleTags, modAppliesToTags);
   const visiblePerkWeaponTags = getSelectableWeaponTags(campaignRuleTags, perkWeaponTags);
   const visiblePerkArmorTags = getSelectableArmorTags(campaignRuleTags, perkArmorTags);
+  const visibleRaceTags = getSelectableRaceTags(
+    customRaces, campaignRaceTags, characters,
+    [...perkRaceTags, ...perkRequiredRaceTags, ...perkExcludedRaceTags],
+  ).map(tag => ({ ...tag, appliesTo: 'both' as const }));
 
   const toggleModWeaponTag = (tagId: string) => {
     setModAppliesToTags(current => current.includes(tagId)
@@ -390,6 +396,16 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const addCustomModWeaponTag = (label: string) => registerCampaignTag(label, 'weapon', setModAppliesToTags);
   const addCustomPerkWeaponTag = (label: string) => registerCampaignTag(label, 'weapon', setPerkWeaponTags);
   const addCustomPerkArmorTag = (label: string) => registerCampaignTag(label, 'armor', setPerkArmorTags);
+  const addCustomRaceTag = (label: string, setSelected: React.Dispatch<React.SetStateAction<string[]>>) => {
+    const cleanLabel = label.trim().slice(0, 80);
+    const slug = normalizeRuleTag(cleanLabel);
+    if (!slug) return;
+    const tagId = `race-custom-${slug}`;
+    if (!campaignRaceTags.some(tag => tag.id === tagId)) {
+      saveCampaignRaceTags([...campaignRaceTags, { id: tagId, label: cleanLabel }]);
+    }
+    setSelected(current => current.includes(tagId) ? current : [...current, tagId]);
+  };
 
   const resetMod = () => {
     setEditingModId(null); setModName(''); setModDescription(''); setModAppliesToTags([]);
@@ -419,7 +435,8 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
   const resetPerk = () => {
     setEditingPerkId(null); setPerkName(''); setPerkDescription(''); setPerkCategory('combat');
     setPerkLevel('1'); setPerkMaxRanks('1'); setPerkProgrammatic(true);
-    setPerkWeaponTags([]); setPerkArmorTags([]); setPerkRaces([]); setPerkTraits([]);
+    setPerkWeaponTags([]); setPerkArmorTags([]); setPerkRaceTags([]);
+    setPerkRequiredRaceTags([]); setPerkExcludedRaceTags([]); setPerkTraits([]);
     setPerkStatuses(''); setPerkModes([]); setPerkEffects([]);
   };
   const editPerk = (perk: CustomPerkDefinition) => {
@@ -428,7 +445,15 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     setPerkProgrammatic(perk.programmatic);
     setPerkWeaponTags([...(perk.conditions?.weaponTags ?? [])]);
     setPerkArmorTags([...(perk.conditions?.armorTags ?? [])]);
-    setPerkRaces([...(perk.conditions?.attackerRaces ?? [])]);
+    const legacyConditionRaceTags = (perk.conditions?.attackerRaces ?? [])
+      .map(getBuiltInRaceTagId).filter((tagId): tagId is string => !!tagId);
+    const legacyRequiredRaceTags = (perk.requiresRace ?? [])
+      .map(getBuiltInRaceTagId).filter((tagId): tagId is string => !!tagId);
+    const legacyExcludedRaceTags = (perk.excludedRaces ?? [])
+      .map(getBuiltInRaceTagId).filter((tagId): tagId is string => !!tagId);
+    setPerkRaceTags([...new Set([...(perk.conditions?.attackerRaceTags ?? []), ...legacyConditionRaceTags])]);
+    setPerkRequiredRaceTags([...new Set([...(perk.requiresRaceTags ?? []), ...legacyRequiredRaceTags])]);
+    setPerkExcludedRaceTags([...new Set([...(perk.excludedRaceTags ?? []), ...legacyExcludedRaceTags])]);
     setPerkTraits([...(perk.conditions?.attackerTraits ?? [])]);
     setPerkStatuses((perk.conditions?.statuses ?? []).join(', '));
     setPerkModes(perk.conditions?.attackModes ?? []);
@@ -439,9 +464,9 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
     const weaponTags = perkWeaponTags;
     const armorTags = perkArmorTags;
     const statuses = parseRuleTagList(perkStatuses);
-    const conditions = weaponTags.length || armorTags.length || perkRaces.length || perkTraits.length || statuses.length || perkModes.length
+    const conditions = weaponTags.length || armorTags.length || perkRaceTags.length || perkTraits.length || statuses.length || perkModes.length
       ? {
-        weaponTags, armorTags, attackerRaces: perkRaces, attackerTraits: perkTraits,
+        weaponTags, armorTags, attackerRaceTags: perkRaceTags, attackerTraits: perkTraits,
         statuses, attackModes: perkModes,
       }
       : undefined;
@@ -452,6 +477,8 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
       category: perkCategory,
       minLevel: Math.max(1, Number(perkLevel) || 1),
       maxRanks: Math.max(1, Math.floor(Number(perkMaxRanks) || 1)),
+      requiresRaceTags: perkRequiredRaceTags,
+      excludedRaceTags: perkExcludedRaceTags,
       programmatic: perkProgrammatic,
       effects: perkProgrammatic ? perkEffects : [],
       ...(conditions ? { conditions } : {}),
@@ -526,17 +553,43 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
           </View>
           <Choice label={`AUTOMATE EFFECTS: ${perkProgrammatic ? 'ON' : 'OFF (ROLEPLAY ONLY)'}`} selected={perkProgrammatic} onPress={() => setPerkProgrammatic(!perkProgrammatic)} />
           <Text style={{ color: colors.mutedForeground, fontSize: 10, marginVertical: 6 }}>
-            A perk activates when every selected condition group matches. Within each group, any selected value is enough. Race matching is exact: Half-Mutant and Super Mutant are separate races.
+            A perk activates when every selected condition group matches. Within each group, any selected value is enough. Built-in races and custom race profiles have stable, exact tags.
           </Text>
-          <SelectableConditionMenu
-            title="REQUIRES RACE (ANY MATCH)"
-            buttonLabel="SELECT RACES"
-            testID="custom-perk-race-menu"
-            options={RACES.map(race => ({ id: race.id, label: race.name }))}
-            selectedIds={perkRaces}
-            onToggle={raceId => setPerkRaces(current => current.includes(raceId as RaceType)
-              ? current.filter(id => id !== raceId)
-              : [...current, raceId as RaceType])}
+          <SelectableTagMenu
+            title="REQUIRES RACE TAG (ANY MATCH)"
+            buttonLabel="SELECT RACE TAGS"
+            customTagButtonLabel="+ CUSTOM RACE TAG"
+            testID="custom-perk-required-race-tags"
+            options={visibleRaceTags}
+            selectedTagIds={perkRequiredRaceTags}
+            onToggle={tagId => setPerkRequiredRaceTags(current => current.includes(tagId)
+              ? current.filter(id => id !== tagId)
+              : [...current, tagId])}
+            onAddCustomTag={label => addCustomRaceTag(label, setPerkRequiredRaceTags)}
+          />
+          <SelectableTagMenu
+            title="EXCLUDES RACE TAG (ANY MATCH)"
+            buttonLabel="SELECT EXCLUDED RACE TAGS"
+            customTagButtonLabel="+ CUSTOM RACE TAG"
+            testID="custom-perk-excluded-race-tags"
+            options={visibleRaceTags}
+            selectedTagIds={perkExcludedRaceTags}
+            onToggle={tagId => setPerkExcludedRaceTags(current => current.includes(tagId)
+              ? current.filter(id => id !== tagId)
+              : [...current, tagId])}
+            onAddCustomTag={label => addCustomRaceTag(label, setPerkExcludedRaceTags)}
+          />
+          <SelectableTagMenu
+            title="ATTACKER RACE TAG (ANY MATCH)"
+            buttonLabel="SELECT ATTACKER RACE TAGS"
+            customTagButtonLabel="+ CUSTOM RACE TAG"
+            testID="custom-perk-attacker-race-tags"
+            options={visibleRaceTags}
+            selectedTagIds={perkRaceTags}
+            onToggle={tagId => setPerkRaceTags(current => current.includes(tagId)
+              ? current.filter(id => id !== tagId)
+              : [...current, tagId])}
+            onAddCustomTag={label => addCustomRaceTag(label, setPerkRaceTags)}
           />
           <SelectableConditionMenu
             title="REQUIRES SELECTED TRAIT (ANY MATCH)"
@@ -591,9 +644,11 @@ export default function CustomRulesPanel({ section }: { section: Section }) {
               <Text style={{ color: colors.mutedForeground, fontSize: 10, marginTop: 3 }}>{perk.description}</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 9, marginTop: 3 }}>
                 Level {perk.minLevel} · {perk.maxRanks} rank(s) · {perk.programmatic ? `${perk.effects.length} effect(s)` : 'roleplay only'}
+                {perk.requiresRaceTags?.length ? ` · for ${perk.requiresRaceTags.join('/')}` : ''}
+                {perk.excludedRaceTags?.length ? ` · excludes ${perk.excludedRaceTags.join('/')}` : ''}
                 {perk.conditions?.weaponTags?.length ? ` · wield ${perk.conditions.weaponTags.join('/')}` : ''}
                 {perk.conditions?.armorTags?.length ? ` · wear ${perk.conditions.armorTags.join('/')}` : ''}
-                {perk.conditions?.attackerRaces?.length ? ` · race ${perk.conditions.attackerRaces.join('/')}` : ''}
+                {perk.conditions?.attackerRaceTags?.length ? ` · race ${perk.conditions.attackerRaceTags.join('/')}` : ''}
                 {perk.conditions?.attackerTraits?.length ? ` · trait ${perk.conditions.attackerTraits.join('/')}` : ''}
                 {perk.conditions?.statuses?.length ? ` · status ${perk.conditions.statuses.join('/')}` : ''}
               </Text>

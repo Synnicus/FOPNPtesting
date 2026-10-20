@@ -1,36 +1,14 @@
-import type { SPECIALStats, NaturalProtection } from '../context/types.ts';
+import type {
+  CampaignRaceTag,
+  Character,
+  CustomRaceDefinition,
+  NaturalProtection,
+  RaceProfile,
+  RaceType,
+  SPECIALStats,
+} from '../context/types.ts';
 
-export interface RaceDefinition {
-  id: string;
-  name: string;
-  description: string;
-  // SPECIAL bounds
-  specialMin: SPECIALStats;
-  specialMax: SPECIALStats;
-  // Default base SPECIAL
-  specialDefault: SPECIALStats;
-  // Derived stat overrides
-  naturalDR: number;       // base radiation resistance %
-  naturalGasDR: number;
-  naturalElecDR: number;
-  // Natural weapon IDs (from weapons.ts)
-  naturalWeaponIds: string[];
-  // Traits
-  benefits: string[];
-  penalties: string[];
-  // Can be PC?
-  playable: boolean;
-  // Perks per level (default is 1 per 3 levels)
-  perksPerLevels?: number;
-  // Natural AC bonus (e.g. Deathclaw's hide)
-  naturalACBonus: number;
-  // Extra HP gained per level (Deathclaws: +2)
-  bonusHPPerLevel?: number;
-  // Extra melee damage bonus (Deathclaws: +5)
-  bonusMeleeDamage?: number;
-  // Default built-in DT/DR per damage type (editable per character)
-  naturalProtection?: NaturalProtection;
-}
+export interface RaceDefinition extends RaceProfile {}
 
 export const RACES: RaceDefinition[] = [
   // ─── PLAYABLE RACES ────────────────────────────────────────────────────────
@@ -225,6 +203,157 @@ export const RACES: RaceDefinition[] = [
 
 export function getRaceById(id: string): RaceDefinition | undefined {
   return RACES.find(r => r.id === id);
+}
+
+const SPECIAL_KEYS: (keyof SPECIALStats)[] = [
+  'strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck',
+];
+const PROTECTION_KEYS: (keyof NaturalProtection)[] = [
+  'dtNormal', 'dtLaser', 'dtFire', 'dtPlasma', 'dtExplosion',
+  'drNormal', 'drLaser', 'drFire', 'drPlasma', 'drExplosion',
+];
+const RACE_TAG_SLUG = (value: string) => value.trim()
+  .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-|-$/g, '');
+
+const BUILT_IN_RACE_TAG_ID: Record<RaceType, string> = {
+  human: 'race-human',
+  ghoul: 'race-ghoul',
+  superMutant: 'race-super-mutant',
+  halfMutant: 'race-half-mutant',
+  robot: 'race-robot',
+  deathclaw: 'race-deathclaw',
+  dog: 'race-dog',
+  molerat: 'race-molerat',
+  yaoguai: 'race-yao-guai',
+  radscorpion: 'race-radscorpion',
+  centaur: 'race-centaur',
+  floater: 'race-floater',
+  brahmin: 'race-brahmin',
+  customRace: 'race-custom',
+};
+
+export interface RaceTagOption {
+  id: string;
+  label: string;
+}
+
+export const BUILT_IN_RACE_TAGS: RaceTagOption[] = RACES.map(race => ({
+  id: BUILT_IN_RACE_TAG_ID[race.id as RaceType],
+  label: race.name,
+}));
+
+export function getBuiltInRaceTagId(race: string): string | undefined {
+  return BUILT_IN_RACE_TAG_ID[race as RaceType];
+}
+
+/** A profile's canonical tag remains stable if its display name is edited. */
+export function getCustomRaceProfileTagId(id: string): string {
+  return `race-profile-${RACE_TAG_SLUG(id)}`;
+}
+
+/** Resolve the mechanical race profile used by character calculations. */
+export function getCharacterRaceDefinition(
+  character: Pick<Character, 'race' | 'customRaceId' | 'customRaceProfile'>,
+): RaceDefinition | CustomRaceDefinition | undefined {
+  if (character.race === 'customRace' && character.customRaceProfile
+    && (!character.customRaceId || character.customRaceProfile.id === character.customRaceId)) {
+    return character.customRaceProfile;
+  }
+  return getRaceById(character.race);
+}
+
+export function getCharacterRaceTagIds(
+  character: Pick<Character, 'race' | 'customRaceId' | 'customRaceProfile' | 'raceTags'>,
+): string[] {
+  const builtInTag = getBuiltInRaceTagId(character.race);
+  const customProfileId = character.race === 'customRace'
+    ? character.customRaceId ?? character.customRaceProfile?.id
+    : undefined;
+  const profileTag = customProfileId ? getCustomRaceProfileTagId(customProfileId) : undefined;
+  const customTags = character.race === 'customRace' ? character.raceTags ?? [] : [];
+  return [...new Set([builtInTag, profileTag, ...customTags].filter((id): id is string => !!id))];
+}
+
+export function evaluateRaceTagPerkEligibility(
+  character: Pick<Character, 'race' | 'customRaceId' | 'customRaceProfile' | 'raceTags'>,
+  requiredTags: readonly string[] = [],
+  excludedTags: readonly string[] = [],
+): { missingRequiredTag: boolean; excludedTagMatched: boolean } {
+  const raceTags = new Set(getCharacterRaceTagIds(character));
+  return {
+    missingRequiredTag: requiredTags.length > 0 && !requiredTags.some(tag => raceTags.has(tag)),
+    excludedTagMatched: excludedTags.some(tag => raceTags.has(tag)),
+  };
+}
+
+export function getSelectableRaceTags(
+  customRaces: readonly CustomRaceDefinition[] = [],
+  campaignTags: readonly CampaignRaceTag[] = [],
+  characters: readonly Pick<Character, 'race' | 'customRaceId' | 'customRaceProfile' | 'raceTags'>[] = [],
+  selectedIds: readonly string[] = [],
+): RaceTagOption[] {
+  const tags = new Map<string, RaceTagOption>();
+  for (const tag of BUILT_IN_RACE_TAGS) tags.set(tag.id, tag);
+  for (const race of customRaces) {
+    const id = getCustomRaceProfileTagId(race.id);
+    tags.set(id, { id, label: race.name });
+  }
+  for (const tag of campaignTags) tags.set(tag.id, { id: tag.id, label: tag.label });
+  for (const character of characters) {
+    if (character.race === 'customRace' && character.customRaceProfile
+      && (!character.customRaceId || character.customRaceProfile.id === character.customRaceId)) {
+      const id = getCustomRaceProfileTagId(character.customRaceProfile.id);
+      if (!tags.has(id)) tags.set(id, { id, label: character.customRaceProfile.name });
+    }
+    for (const tagId of getCharacterRaceTagIds(character)) {
+      if (!tags.has(tagId)) tags.set(tagId, { id: tagId, label: tagId });
+    }
+  }
+  for (const id of selectedIds) {
+    if (!tags.has(id)) tags.set(id, { id, label: id });
+  }
+  return [...tags.values()];
+}
+
+export function validateCustomRace(value: unknown): value is CustomRaceDefinition {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const race = value as Record<string, unknown>;
+  const validSpecial = (candidate: unknown): candidate is SPECIALStats =>
+    !!candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    && SPECIAL_KEYS.every(key => Number.isFinite((candidate as Record<string, unknown>)[key]));
+  if (typeof race.id !== 'string' || !race.id.trim() || race.id.length > 128
+    || typeof race.name !== 'string' || !race.name.trim() || race.name.length > 80
+    || typeof race.description !== 'string' || race.description.length > 1000
+    || typeof race.playable !== 'boolean'
+    || !validSpecial(race.specialMin) || !validSpecial(race.specialMax) || !validSpecial(race.specialDefault)
+    || !Array.isArray(race.naturalWeaponIds) || !race.naturalWeaponIds.every(item => typeof item === 'string')
+    || !Array.isArray(race.benefits) || !race.benefits.every(item => typeof item === 'string')
+    || !Array.isArray(race.penalties) || !race.penalties.every(item => typeof item === 'string')
+    || !['naturalDR', 'naturalGasDR', 'naturalElecDR', 'naturalACBonus']
+      .every(key => typeof race[key] === 'number' && Number.isFinite(race[key]))
+    || (race.perksPerLevels !== undefined && (!Number.isInteger(race.perksPerLevels) || (race.perksPerLevels as number) < 1 || (race.perksPerLevels as number) > 99))
+    || (race.bonusHPPerLevel !== undefined && (!Number.isFinite(race.bonusHPPerLevel) || (race.bonusHPPerLevel as number) < 0 || (race.bonusHPPerLevel as number) > 100))
+    || (race.bonusMeleeDamage !== undefined && (!Number.isFinite(race.bonusMeleeDamage) || (race.bonusMeleeDamage as number) < 0 || (race.bonusMeleeDamage as number) > 100))) return false;
+  if (![race.naturalDR, race.naturalGasDR, race.naturalElecDR].every(value => (value as number) >= -100 && (value as number) <= 100)
+    || (race.naturalACBonus as number) < 0 || (race.naturalACBonus as number) > 100) return false;
+  for (const key of SPECIAL_KEYS) {
+    const min = race.specialMin[key];
+    const max = race.specialMax[key];
+    const base = race.specialDefault[key];
+    if (min < 1 || max > 20 || min > base || base > max) return false;
+  }
+  if (race.naturalProtection !== undefined) {
+    if (!race.naturalProtection || typeof race.naturalProtection !== 'object' || Array.isArray(race.naturalProtection)) return false;
+    const protection = race.naturalProtection as Record<string, unknown>;
+    if (!PROTECTION_KEYS.every(key => typeof protection[key] === 'number' && Number.isFinite(protection[key])
+      && (protection[key] as number) >= 0 && (protection[key] as number) <= 100)) return false;
+    if (protection.armorClass !== undefined && (typeof protection.armorClass !== 'number'
+      || !Number.isFinite(protection.armorClass) || protection.armorClass < 0 || protection.armorClass > 100)) return false;
+  }
+  return true;
 }
 
 export const PLAYABLE_RACES = RACES.filter(r => r.playable);

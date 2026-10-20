@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { DEFAULT_SKILLS } from '../context/types.ts';
 import type {
   Armor,
   Character,
@@ -12,6 +13,7 @@ import {
   computeCustomPerkEffects,
   computeCustomWeaponModEffects,
   customRuleConditionMatches,
+  customPerkAsPerk,
   getSelectableArmorTags,
   getSelectableWeaponTags,
   inferArmorTags,
@@ -21,6 +23,10 @@ import {
   validateCustomPerk,
   validateCustomWeaponMod,
 } from './customRules.ts';
+import {
+  evaluateRaceTagPerkEligibility,
+  getCustomRaceProfileTagId,
+} from './races.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
 import { BUILT_IN_VEHICLE_WEAPONS } from './vehicleWeapons.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
@@ -291,6 +297,60 @@ test('custom perk race conditions match exact races, including distinct Half-Mut
   assert.equal(customRuleConditionMatches({ ...character, race: 'halfMutant' }, null, [], 'single', {
     attackerRaces: ['superMutant', 'halfMutant'],
   }), true);
+});
+
+test('custom race tags gate custom perk eligibility and effect conditions', () => {
+  const profileTag = getCustomRaceProfileTagId('synth');
+  const perk: CustomPerkDefinition = {
+    id: 'synth-specialist',
+    name: 'Synth Specialist',
+    description: 'A synthetic-only perk.',
+    category: 'combat',
+    minLevel: 1,
+    maxRanks: 2,
+    requiresRaceTags: [profileTag],
+    excludedRaceTags: ['race-robot'],
+    programmatic: true,
+    conditions: { attackerRaceTags: ['race-cybernetic'] },
+    effects: [{ id: 'synth-to-hit', kind: 'toHit', value: 2 }],
+  };
+  const synth = {
+    ...character,
+    race: 'customRace',
+    customRaceId: 'synth',
+    raceTags: ['race-cybernetic'],
+    level: 1,
+    special: { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 },
+    skills: { ...DEFAULT_SKILLS },
+    taggedSkills: [],
+    breakTheRulesPending: false,
+    perks: [],
+  } as unknown as Character;
+
+  assert.equal(validateCustomPerk(perk), true);
+  const mappedPerk = customPerkAsPerk(perk);
+  assert.deepEqual(mappedPerk.requiresRaceTags, [profileTag]);
+  assert.deepEqual(mappedPerk.excludedRaceTags, ['race-robot']);
+  assert.deepEqual(evaluateRaceTagPerkEligibility(synth, mappedPerk.requiresRaceTags, mappedPerk.excludedRaceTags), {
+    missingRequiredTag: false,
+    excludedTagMatched: false,
+  });
+  assert.equal(customRuleConditionMatches(synth, null, [], 'single', perk.conditions), true);
+  assert.equal(computeCustomPerkEffects({
+    ...synth,
+    perks: [{ perkId: perk.id, rank: 1 }],
+  }, [perk]).toHit, 2);
+
+  const noProfileMatch = { ...synth, customRaceId: 'other', raceTags: [] };
+  assert.deepEqual(evaluateRaceTagPerkEligibility(noProfileMatch, mappedPerk.requiresRaceTags, mappedPerk.excludedRaceTags), {
+    missingRequiredTag: true,
+    excludedTagMatched: false,
+  });
+  assert.equal(customRuleConditionMatches(noProfileMatch, null, [], 'single', perk.conditions), false);
+  assert.equal(computeCustomPerkEffects({
+    ...noProfileMatch,
+    perks: [{ perkId: perk.id, rank: 1 }],
+  }, [perk]).toHit, 0);
 });
 
 test('custom perk trait conditions accept any selected trait and require all populated groups', () => {

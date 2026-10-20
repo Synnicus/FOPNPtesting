@@ -8,7 +8,9 @@ import type {
   VehicleProfile,
   VehicleRepairRecord,
   Weapon,
+  CampaignRaceTag,
   CampaignRuleTag,
+  CustomRaceDefinition,
   CustomPerkDefinition,
   CustomWeaponMod,
   CustomConsumable,
@@ -22,6 +24,7 @@ import type { CampaignMap, CampaignTable } from '../context/types.ts';
 import { validCampaignMap, validCampaignTable } from './campaignTools.ts';
 import { isValidAreaProfileRangeOverrides, type AreaProfileRangeOverrides } from './areaEffects.ts';
 import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
+import { validateCustomRace } from './races.ts';
 import { isCustomConsumableRecord } from './consumables.ts';
 import {
   isCatalogImageDataUri,
@@ -49,6 +52,8 @@ export interface CampaignStateSnapshot {
   customWeaponMods?: CustomWeaponMod[];
   customPerks?: CustomPerkDefinition[];
   campaignRuleTags?: CampaignRuleTag[];
+  customRaces?: CustomRaceDefinition[];
+  campaignRaceTags?: CampaignRaceTag[];
   customVehicles?: VehicleProfile[];
   customConsumables?: CustomConsumable[];
   lootTables?: CampaignTable[];
@@ -113,6 +118,7 @@ export interface PortableCharacterBundle {
   character: Character;
   customWeapons: Weapon[];
   customArmor: Armor[];
+  campaignRaceTags?: CampaignRaceTag[];
   assets: PortablePortraitAsset[];
 }
 
@@ -322,6 +328,7 @@ export function createCharacterBundle(
   customWeapons: readonly Weapon[],
   customArmor: readonly Armor[],
   asset?: PortablePortraitAsset | null,
+  campaignRaceTags: readonly CampaignRaceTag[] = [],
 ): PortableCharacterBundle {
   const validAsset = asset?.kind === 'character-portrait'
     && asset.characterId === character.id
@@ -336,6 +343,7 @@ export function createCharacterBundle(
     kind: 'character',
     character: characterForBundle(character),
     ...dependencies,
+    campaignRaceTags: campaignRaceTags.filter(tag => (character.raceTags ?? []).includes(tag.id)),
     assets: validAsset ? [validAsset] : [],
   };
 }
@@ -517,6 +525,14 @@ function isCharacterRecord(value: unknown): value is Character {
     && typeof value.name === 'string'
     && (value.type === 'pc' || value.type === 'npc')
     && typeof value.race === 'string'
+    && (value.customRaceId === undefined
+      || typeof value.customRaceId === 'string' && value.customRaceId.length <= 128)
+    && (value.customRaceProfile === undefined
+      || validateCustomRace(value.customRaceProfile)
+        && value.race === 'customRace'
+        && (value.customRaceId === undefined || value.customRaceProfile.id === value.customRaceId))
+    && (value.raceTags === undefined || isStringArray(value.raceTags))
+    && (value.raceNaturalWeaponIds === undefined || isStringArray(value.raceNaturalWeaponIds))
     && hasValidKarmaData(value)
     && hasValidFactionReputationData(value)
     && numericFields.every(field => isFiniteNumber(value[field]))
@@ -672,6 +688,8 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || (value.customWeaponMods !== undefined && !Array.isArray(value.customWeaponMods))
     || (value.customPerks !== undefined && !Array.isArray(value.customPerks))
     || (value.campaignRuleTags !== undefined && !Array.isArray(value.campaignRuleTags))
+    || (value.customRaces !== undefined && !Array.isArray(value.customRaces))
+    || (value.campaignRaceTags !== undefined && !Array.isArray(value.campaignRaceTags))
     || !Array.isArray(value.initiativeEntries)) return false;
   if (!value.characters.every(isCharacterRecord)
     || !value.customWeapons.every(isWeaponRecord)
@@ -685,6 +703,10 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !((value.builtInBestiaryOverrides ?? []) as unknown[]).every(isBestiaryTemplateRecord)
     || !((value.customWeaponMods ?? []) as unknown[]).every(validateCustomWeaponMod)
     || !((value.customPerks ?? []) as unknown[]).every(validateCustomPerk)
+    || !((value.customRaces ?? []) as unknown[]).every(validateCustomRace)
+    || !((value.campaignRaceTags ?? []) as unknown[]).every(tag => isRecord(tag)
+      && typeof tag.id === 'string' && !!tag.id
+      && typeof tag.label === 'string' && !!tag.label.trim())
     || !((value.campaignRuleTags ?? []) as unknown[]).every(tag => {
       if (!isRecord(tag)) return false;
       return typeof tag.id === 'string' && typeof tag.label === 'string'
@@ -706,6 +728,8 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     && hasUniqueIds((value.customWeaponMods ?? []) as CustomWeaponMod[])
     && hasUniqueIds((value.customPerks ?? []) as CustomPerkDefinition[])
     && hasUniqueIds((value.campaignRuleTags ?? []) as CampaignRuleTag[])
+    && hasUniqueIds((value.customRaces ?? []) as CustomRaceDefinition[])
+    && hasUniqueIds((value.campaignRaceTags ?? []) as CampaignRaceTag[])
     && hasUniqueIds(value.initiativeEntries)
     && isFiniteNumber(value.currentRound)
     && typeof value.combatActive === 'boolean'
@@ -729,11 +753,16 @@ function isCompletePortableCharacterBundle(value: unknown): value is PortableCha
     || !isCharacterRecord(value.character)
     || !Array.isArray(value.customWeapons)
     || !Array.isArray(value.customArmor)
+    || (value.campaignRaceTags !== undefined && !Array.isArray(value.campaignRaceTags))
     || !Array.isArray(value.assets)) return false;
   return value.customWeapons.every(item => isWeaponRecord(item) && item.isCustom)
     && value.customArmor.every(item => isArmorRecord(item) && item.isCustom)
     && hasUniqueIds(value.customWeapons)
-    && hasUniqueIds(value.customArmor);
+    && hasUniqueIds(value.customArmor)
+    && ((value.campaignRaceTags ?? []) as unknown[]).every(tag => isRecord(tag)
+      && typeof tag.id === 'string' && !!tag.id
+      && typeof tag.label === 'string' && !!tag.label.trim())
+    && hasUniqueIds((value.campaignRaceTags ?? []) as CampaignRaceTag[]);
 }
 
 function isCompletePortableEquipmentBundle(value: unknown): value is PortableEquipmentBundle {
@@ -816,6 +845,7 @@ export function parseIndividualFile(json: string): IndividualFileParseResult {
         character: characterForBundle(parsed.character),
         customWeapons: parsed.customWeapons,
         customArmor: parsed.customArmor,
+        campaignRaceTags: parsed.campaignRaceTags ?? [],
         assets: validAssets,
       },
     };

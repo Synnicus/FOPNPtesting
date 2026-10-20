@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRuleTag, CustomPerkDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
+import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRaceTag, CampaignRuleTag, CustomPerkDefinition, CustomRaceDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -10,7 +10,7 @@ import { clampConditionBoxes, CONDITION_BOXES_MAX, markConditionSemanticsV2, mig
 import { computeModEffects } from '@/data/mods';
 import { computeCustomWeaponModEffects } from '@/data/customRules';
 import { resolveHpChange } from '@/data/conditions';
-import { getRaceById } from '@/data/races';
+import { getCharacterRaceDefinition, validateCustomRace } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
 import { computeInjurySkillPenalty } from '@/data/injuries';
 import { applyTightNutsRepairHealing } from '@/data/traitRules';
@@ -181,7 +181,7 @@ function resolveCharacterArmorSheet(
   mutantGhoulRadiationRules = false,
   ghoulRadiationHealingOption: GhoulRadiationHealingOption = 1,
 ) {
-  const race = getRaceById(c.race);
+  const race = getCharacterRaceDefinition(c);
   const sheet = resolveArmorAwareSheet({
     special: c.special,
     skills: c.skills,
@@ -191,6 +191,7 @@ function resolveCharacterArmorSheet(
     conditions: c.conditions,
     effects: c.effects,
     raceBounds: race ? { min: race.specialMin, max: race.specialMax } : undefined,
+    raceDefinition: race,
     nightPersonPeriod: c.nightPersonPeriod,
     racialNaturalArmorClass: race?.naturalACBonus,
     naturalArmorClass: c.naturalProtection?.armorClass,
@@ -371,6 +372,8 @@ interface AppState extends CampaignOptions {
   customWeaponMods: CustomWeaponMod[];
   customPerks: CustomPerkDefinition[];
   campaignRuleTags: CampaignRuleTag[];
+  customRaces: CustomRaceDefinition[];
+  campaignRaceTags: CampaignRaceTag[];
   lootTables: CampaignTable[];
   encounterTables: CampaignTable[];
   campaignMaps: CampaignMap[];
@@ -407,6 +410,8 @@ const CAMPAIGN_COLLECTIONS = [
   'customWeaponMods',
   'customPerks',
   'campaignRuleTags',
+  'customRaces',
+  'campaignRaceTags',
   'initiativeEntries',
   'pendingCombatSkillActions',
 ] as const;
@@ -476,6 +481,15 @@ function hasValidCharacterRecord(value: unknown): value is Character {
     const collection = character[field];
     if (collection !== undefined && !isStringArray(collection)) return false;
   }
+  if (character.customRaceId !== undefined
+    && (typeof character.customRaceId !== 'string' || character.customRaceId.length > 128
+      || character.race !== 'customRace')) return false;
+  if (character.raceTags !== undefined && !isStringArray(character.raceTags)) return false;
+  if (character.raceNaturalWeaponIds !== undefined && !isStringArray(character.raceNaturalWeaponIds)) return false;
+  if (character.customRaceProfile !== undefined
+    && (!validateCustomRace(character.customRaceProfile)
+      || character.race !== 'customRace'
+      || (character.customRaceId !== undefined && character.customRaceProfile.id !== character.customRaceId))) return false;
   if (character.combatDevice !== undefined) {
     const device = character.combatDevice;
     if (!isRecord(device)
@@ -506,6 +520,12 @@ function hasValidCampaignImport(value: unknown): value is AppState {
     && (!Array.isArray(value.campaignRuleTags) || !value.campaignRuleTags.every(tag =>
       isRecord(tag) && typeof tag.id === 'string' && typeof tag.label === 'string'
       && ['weapon', 'armor', 'both'].includes(tag.appliesTo as string)))) return false;
+  if (value.customRaces !== undefined
+    && (!Array.isArray(value.customRaces) || !value.customRaces.every(validateCustomRace))) return false;
+  if (value.campaignRaceTags !== undefined
+    && (!Array.isArray(value.campaignRaceTags) || !value.campaignRaceTags.every(tag =>
+      isRecord(tag) && typeof tag.id === 'string' && !!tag.id
+      && typeof tag.label === 'string' && !!tag.label.trim()))) return false;
   if (value.builtInBestiaryOverrides !== undefined
     && (!Array.isArray(value.builtInBestiaryOverrides)
       || !value.builtInBestiaryOverrides.every(isBestiaryTemplateRecord))) return false;
@@ -660,6 +680,9 @@ function normalizePersistedState(parsed: AppState): AppState {
     compatibleAmmo: filterCompatibleAmmoIds(weapon.compatibleAmmo, allAmmo),
   }));
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
+  const customRaces = (normalized.customRaces ?? []).filter(validateCustomRace);
+  const campaignRaceTags = (normalized.campaignRaceTags ?? []).filter(tag =>
+    typeof tag?.id === 'string' && !!tag.id && typeof tag.label === 'string' && !!tag.label.trim());
   return {
     ...currentState,
     campaignName: typeof normalized.campaignName === 'string' && normalized.campaignName.trim()
@@ -674,6 +697,8 @@ function normalizePersistedState(parsed: AppState): AppState {
     customWeapons,
     customWeaponMods: (normalized.customWeaponMods ?? []).filter(validateCustomWeaponMod),
     customPerks: (normalized.customPerks ?? []).filter(validateCustomPerk),
+    customRaces,
+    campaignRaceTags,
     campaignRuleTags: (normalized.campaignRuleTags ?? []).filter(tag =>
       typeof tag?.id === 'string' && typeof tag.label === 'string'
       && ['weapon', 'armor', 'both'].includes(tag.appliesTo)),
@@ -694,8 +719,18 @@ function normalizePersistedState(parsed: AppState): AppState {
     lootTables: (parsed.lootTables ?? []).map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
     encounterTables: (parsed.encounterTables ?? []).map(normalizeCampaignTable).filter((table): table is CampaignTable => table !== null),
     campaignMaps: (parsed.campaignMaps ?? []).map(normalizeCampaignMap).filter((map): map is CampaignMap => map !== null),
-    characters: (normalized.characters ?? []).map(character =>
-      normalizeCharacterAmmoStates(character, allWeapons, allAmmo, normalized.customWeaponMods ?? [])),
+    characters: (normalized.characters ?? []).map(character => {
+      const currentProfile = character.customRaceId
+        ? customRaces.find(race => race.id === character.customRaceId)
+        : undefined;
+      const withRaceProfile = currentProfile
+        ? { ...character, customRaceProfile: currentProfile }
+        : character;
+      return normalizeCharacterAmmoStates({
+        ...withRaceProfile,
+        ...(Array.isArray(character.raceTags) ? { raceTags: [...new Set(character.raceTags)] } : {}),
+      }, allWeapons, allAmmo, normalized.customWeaponMods ?? []);
+    }),
   };
 }
 
@@ -807,6 +842,8 @@ interface AppContextValue extends AppState {
     customPerks: CustomPerkDefinition[];
     campaignRuleTags: CampaignRuleTag[];
   }) => void;
+  saveCustomRaces: (races: CustomRaceDefinition[]) => void;
+  saveCampaignRaceTags: (tags: CampaignRaceTag[]) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -829,6 +866,8 @@ const defaultState: AppState = markConditionSemanticsV2({
   customWeaponMods: [],
   customPerks: [],
   campaignRuleTags: [],
+  customRaces: [],
+  campaignRaceTags: [],
   lootTables: [],
   encounterTables: [],
   campaignMaps: [],
@@ -2366,6 +2405,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       campaignRuleTags: rules.campaignRuleTags.filter(tag => !!tag.id && !!tag.label),
     }));
   }, []);
+  const saveCustomRaces = useCallback((races: CustomRaceDefinition[]) => {
+    const validRaces = races.filter(validateCustomRace);
+    setState(s => {
+      const byId = new Map(validRaces.map(race => [race.id, race]));
+      const knownWeaponIds = new Set([...BUILT_IN_WEAPONS, ...s.customWeapons].map(weapon => weapon.id));
+      return {
+        ...s,
+        customRaces: validRaces,
+        characters: s.characters.map(character => {
+          if (character.race !== 'customRace' || !character.customRaceId) return character;
+          const updatedProfile = byId.get(character.customRaceId);
+          if (!updatedProfile) return character;
+          const previouslyGranted = new Set(character.raceNaturalWeaponIds ?? []);
+          const inventoryBeforeGrant = (character.inventoryWeaponIds ?? [])
+            .filter(id => !previouslyGranted.has(id));
+          const requestedWeapons = updatedProfile.naturalWeaponIds.filter(id => knownWeaponIds.has(id));
+          const grantedNow = requestedWeapons.filter(id => !inventoryBeforeGrant.includes(id));
+          const inventoryWeaponIds = [...new Set([...inventoryBeforeGrant, ...requestedWeapons])];
+          const equippedWasRemoved = !!character.equippedWeaponId
+            && previouslyGranted.has(character.equippedWeaponId)
+            && !requestedWeapons.includes(character.equippedWeaponId);
+          const rightHandWasRemoved = !!character.rightHandWeaponId
+            && previouslyGranted.has(character.rightHandWeaponId)
+            && !requestedWeapons.includes(character.rightHandWeaponId);
+          const leftHandWasRemoved = !!character.leftHandWeaponId
+            && previouslyGranted.has(character.leftHandWeaponId)
+            && !requestedWeapons.includes(character.leftHandWeaponId);
+          return {
+            ...character,
+            customRaceProfile: updatedProfile,
+            raceNaturalWeaponIds: grantedNow,
+            inventoryWeaponIds,
+            equippedWeaponId: equippedWasRemoved
+              ? requestedWeapons[0]
+              : character.equippedWeaponId ?? requestedWeapons[0],
+            rightHandWeaponId: rightHandWasRemoved
+              ? requestedWeapons[0]
+              : character.rightHandWeaponId ?? requestedWeapons[0],
+            leftHandWeaponId: leftHandWasRemoved
+              ? requestedWeapons[1]
+              : character.leftHandWeaponId ?? requestedWeapons[1],
+          };
+        }),
+      };
+    });
+  }, []);
+  const saveCampaignRaceTags = useCallback((tags: CampaignRaceTag[]) => {
+    const seen = new Set<string>();
+    const validTags = tags.filter(tag => {
+      if (!tag || typeof tag.id !== 'string' || !tag.id.trim()
+        || typeof tag.label !== 'string' || !tag.label.trim() || seen.has(tag.id)) return false;
+      seen.add(tag.id);
+      return true;
+    }).map(tag => ({ id: tag.id.trim(), label: tag.label.trim().slice(0, 80) }));
+    setState(s => ({ ...s, campaignRaceTags: validTags }));
+  }, []);
   const importCampaign = useCallback(async (json: string): Promise<boolean> => {
     try {
       const parsed: unknown = JSON.parse(json);
@@ -2557,7 +2652,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCustomBestiaryTemplate, removeCustomBestiaryTemplate,
        saveBuiltInBestiaryOverride, removeBuiltInBestiaryTemplate, restoreBuiltInBestiaryDefaults,
       setBestiaryPortrait, setVehicleCatalogPortrait,
-      exportCampaign, importCampaign, saveCampaignTools, saveCustomRules,
+      exportCampaign, importCampaign, saveCampaignTools, saveCustomRules, saveCustomRaces, saveCampaignRaceTags,
     }}>
       {children}
     </AppContext.Provider>

@@ -2,7 +2,7 @@
  * Pure armor-effect aggregation and sheet resolver.  It deliberately has no
  * React, storage, or catalogue dependency: callers provide the armor list.
  */
-import type { Armor, ArmorEffects, CharacterSkills, ManualDerivedStats, SPECIALStats } from '../context/types.ts';
+import type { Armor, ArmorEffects, CharacterSkills, ManualDerivedStats, RaceProfile, SPECIALStats } from '../context/types.ts';
 import {
   applyImmediateTraitSpecial,
   applyNightPersonSpecial,
@@ -119,6 +119,7 @@ export interface ArmorResolverInput {
     poisonResistMod?: number;
   }[];
   raceBounds?: { min: SPECIALStats; max: SPECIALStats };
+  raceDefinition?: RaceProfile;
   nightPersonPeriod?: 'day' | 'night';
   racialNaturalArmorClass?: number;
   naturalArmorClass?: number;
@@ -198,7 +199,9 @@ export function resolveArmorAwareSheet(input: ArmorResolverInput): ResolvedArmor
   const { bodyArmor, helmet } = wornArmor({ ...input, armorConditionStates: input.armorConditionStates ? [...input.armorConditionStates] : undefined }, input.allArmor);
   const armorEffects = aggregateArmorEffects(bodyArmor, helmet);
   const fastMetabolism = hasTrait(input.traits, 'fast_metabolism');
-  const racialRadiationResistance = getRaceById(input.raceId ?? '')?.naturalDR ?? 0;
+  const racialRadiationResistance = input.raceDefinition?.naturalDR
+    ?? getRaceById(input.raceId ?? '')?.naturalDR
+    ?? 0;
   const baseRadiationResistance = fastMetabolism
     ? Math.max(0, numeric(input.radiationResistance) - racialRadiationResistance)
     : numeric(input.radiationResistance);

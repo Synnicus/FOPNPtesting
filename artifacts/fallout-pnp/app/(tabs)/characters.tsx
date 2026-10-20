@@ -11,7 +11,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import {
-  Character, CharacterType, RaceType,
+  Character, CharacterType, RaceType, CustomRaceDefinition,
   SkillType, SPECIALStats, Injury, NaturalProtection, DamageType, Weapon, Armor,
   COMBAT_SKILLS, SUPPORT_SKILLS, SKILL_LABELS,
   DAMAGE_TYPE_NAMES, EMPTY_NATURAL_PROTECTION, VehicleProfile,
@@ -20,6 +20,8 @@ import { ArmorConditionMeter, WeaponConditionMeter } from '@/components/Equipmen
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { VehicleRepairModal } from '@/components/VehicleRepairModal';
+import { CustomRaceEditorModal } from '@/components/CustomRaceEditorModal';
+import { SelectableTagMenu } from '@/components/SelectableTagMenu';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import KarmaTracker from '@/components/KarmaTracker';
 import FactionReputationTracker from '@/components/FactionReputationTracker';
@@ -32,12 +34,13 @@ import {
   xpForLevel, levelForXP,
   computePerkDerivedBonuses, brutishHulkExtraHP,
 } from '@/data/derived';
-import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
+import { RACES, PLAYABLE_RACES, getCharacterRaceDefinition, getSelectableRaceTags } from '@/data/races';
 import { translateText } from '@/data/localization';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
 import {
   computeCustomPerkEffects,
   customPerkAsPerk,
+  normalizeRuleTag,
   reverseCustomPerkOneTimeGrants,
   syncCustomPerkOneTimeGrants,
 } from '@/data/customRules';
@@ -366,6 +369,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const {
     allWeapons, allArmor, customPerks, hardcoreRadiationRules,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+    customRaces, campaignRaceTags, saveCustomRaces, saveCampaignRaceTags,
   } = useApp();
   const resolvePerkById = useCallback((perkId: string) => {
     const builtIn = getPerkById(perkId);
@@ -381,6 +385,8 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const [perkSearch, setPerkSearch] = useState('');
   const [showNaturalProt, setShowNaturalProt] = useState(false);
   const [showBioEditor, setShowBioEditor] = useState(false);
+  const [customRaceEditorVisible, setCustomRaceEditorVisible] = useState(false);
+  const [customRaceEditorId, setCustomRaceEditorId] = useState<string | null>(null);
 
   // Weapon/armor pickers
   const [showBodyPick, setShowBodyPick] = useState(false);
@@ -413,6 +419,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       // interrupted (e.g. modal dismissed by swipe while dragging).
       setCropDragging(false);
       setShowUnsavedChangesPrompt(false);
+      setCustomRaceEditorVisible(false);
       return;
     }
     const c = character ?? makeDefaultCharacter();
@@ -428,7 +435,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   }, [visible]);
 
   // ─── Derived computations ────────────────────────────────────────────────────
-  const race = getRaceById(char.race) ?? RACES[0];
+  const race = getCharacterRaceDefinition(char) ?? RACES[0];
+  const raceTagOptions = useMemo(
+    () => getSelectableRaceTags(customRaces, campaignRaceTags, [], char.raceTags)
+      .map(tag => ({ ...tag, appliesTo: 'both' as const })),
+    [customRaces, campaignRaceTags, char.raceTags],
+  );
   const baseSkills = useMemo(() => calcBaseSkills(char.special), [char.special]);
   // Purchases are stored against saved SPECIAL.  Rebase them for display only;
   // traits/perks must never be written back into char.skills.
@@ -452,6 +464,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     taggedSkills: [...char.taggedSkills, ...tagRules.freeTagSkills],
     traits: char.traits, perks: char.perks, conditions: char.conditions, effects: char.effects,
     raceBounds: { min: race.specialMin, max: race.specialMax },
+    raceDefinition: race,
     racialNaturalArmorClass: race.naturalACBonus,
     naturalArmorClass: char.naturalProtection?.armorClass,
     manualDerivedStats: char.manualDerivedStats,
@@ -498,7 +511,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   );
 
   const recomputeDerived = useCallback((updatedChar: Character): Character => {
-    const raceRef = getRaceById(updatedChar.race) ?? RACES[0];
+    const raceRef = getCharacterRaceDefinition(updatedChar) ?? RACES[0];
     // Derived stats use base SPECIAL + permanent Gain-X perks (NOT chem mods —
     // chems are temporary and applied at display/combat time instead).
     const perkStat = computePerkStatBonuses(updatedChar);
@@ -552,9 +565,22 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     };
   }, []);
 
+  const addCustomRaceTag = useCallback((value: string) => {
+    const label = value.trim().slice(0, 80);
+    const slug = normalizeRuleTag(label);
+    if (!slug) return;
+    const id = `race-custom-${slug}`;
+    if (!campaignRaceTags.some(tag => tag.id === id)) {
+      saveCampaignRaceTags([...campaignRaceTags, { id, label }]);
+    }
+    setChar(current => current.race === 'customRace'
+      ? { ...current, raceTags: [...new Set([...(current.raceTags ?? []), id])] }
+      : current);
+  }, [campaignRaceTags, saveCampaignRaceTags]);
+
   const setSPECIAL = useCallback((key: keyof SPECIALStats, value: number) => {
     setChar(prev => {
-      const raceRef = getRaceById(prev.race) ?? RACES[0];
+      const raceRef = getCharacterRaceDefinition(prev) ?? RACES[0];
       const min = raceRef.specialMin[key];
       const max = raceRef.specialMax[key];
       const clamped = Math.max(min, Math.min(max, value));
@@ -573,10 +599,14 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     });
   }, [recomputeDerived]);
 
-  const setRace = useCallback((newRace: RaceType) => {
+  const setRace = useCallback((newRace: RaceType, customProfile?: CustomRaceDefinition) => {
     setChar(prev => {
-      const raceRef = getRaceById(newRace) ?? RACES[0];
-      const special = { ...prev.special };
+      const selectedProfile = newRace === 'customRace'
+        ? customProfile ?? (prev.race === 'customRace' ? prev.customRaceProfile : undefined)
+        : undefined;
+      const raceRef = selectedProfile ?? RACES.find(r => r.id === newRace) ?? RACES[0];
+      const switchingProfile = !!selectedProfile && selectedProfile.id !== prev.customRaceId;
+      const special = switchingProfile ? { ...selectedProfile.specialDefault } : { ...prev.special };
       for (const k of SPECIAL_KEYS) {
         special[k] = Math.max(raceRef.specialMin[k], Math.min(raceRef.specialMax[k], special[k]));
       }
@@ -598,12 +628,45 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       const electricityResistance = raceRef.naturalElecDR;
       // Reset natural protection to the new race's defaults (or undefined)
       const naturalProtection = raceRef.naturalProtection ? { ...raceRef.naturalProtection } : undefined;
+      const previousRaceWeapons = new Set(prev.raceNaturalWeaponIds ?? []);
+      const inventoryBeforeRaceWeapons = (prev.inventoryWeaponIds ?? []).filter(id => !previousRaceWeapons.has(id));
+      const raceNaturalWeaponIds = selectedProfile
+        ? selectedProfile.naturalWeaponIds.filter(id => allWeapons.some(weapon => weapon.id === id))
+        : [];
+      const inventoryWeaponIds = [...new Set([...inventoryBeforeRaceWeapons, ...raceNaturalWeaponIds])];
+      const raceWeaponRemoved = (id?: string) => !!id && previousRaceWeapons.has(id) && !raceNaturalWeaponIds.includes(id);
       return recomputeDerived({
-        ...prev, race: newRace, special, skills, unspentSkillPoints,
+        ...prev,
+        race: newRace,
+        customRaceId: selectedProfile?.id,
+        customRaceProfile: selectedProfile,
+        raceTags: newRace === 'customRace' ? prev.raceTags : undefined,
+        raceNaturalWeaponIds,
+        inventoryWeaponIds,
+        equippedWeaponId: raceWeaponRemoved(prev.equippedWeaponId)
+          ? raceNaturalWeaponIds[0]
+          : prev.equippedWeaponId ?? raceNaturalWeaponIds[0],
+        rightHandWeaponId: raceWeaponRemoved(prev.rightHandWeaponId)
+          ? raceNaturalWeaponIds[0]
+          : prev.rightHandWeaponId ?? raceNaturalWeaponIds[0],
+        leftHandWeaponId: raceWeaponRemoved(prev.leftHandWeaponId)
+          ? raceNaturalWeaponIds[1]
+          : prev.leftHandWeaponId ?? raceNaturalWeaponIds[1],
+        special, skills, unspentSkillPoints,
         radiationResistance, gasResistance, electricityResistance, naturalProtection,
       });
     });
-  }, [recomputeDerived]);
+  }, [recomputeDerived, allWeapons]);
+
+  const saveCustomRaceProfile = useCallback((profile: CustomRaceDefinition) => {
+    const updated = customRaces.some(raceProfile => raceProfile.id === profile.id)
+      ? customRaces.map(raceProfile => raceProfile.id === profile.id ? profile : raceProfile)
+      : [...customRaces, profile];
+    saveCustomRaces(updated);
+    setCustomRaceEditorVisible(false);
+    setCustomRaceEditorId(null);
+    setRace('customRace', profile);
+  }, [customRaces, saveCustomRaces, setRace]);
 
   // Apply a level change: sync XP, adjust unspent skill points, recompute derived
   const applyLevel = useCallback((newLevel: number) => {
@@ -1070,6 +1133,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const INJURY_LOCATIONS: Injury['location'][] = ['head', 'eyes', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleSystemBack}>
       <View style={{ flex: 1, paddingTop: modalTopInset, backgroundColor: colors.background }}>
         {/* Header */}
@@ -1211,12 +1275,73 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     ))}
                   </View>
                 </ScrollView>
+                {char.race === 'customRace' && (
+                  <View style={{ marginTop: 10, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.card }}>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginBottom: 6 }}>CUSTOM RACE PROFILE</Text>
+                    {customRaces.length === 0 && (
+                      <Text style={{ color: colors.mutedForeground, fontSize: 10, marginBottom: 7 }}>Create a profile to set this race’s SPECIAL limits, resistances, natural protection, and progression.</Text>
+                    )}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 7 }}>
+                      {customRaces.map(profile => {
+                        const selected = char.customRaceId === profile.id;
+                        return (
+                          <TouchableOpacity
+                            key={profile.id}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected }}
+                            onPress={() => setRace('customRace', profile)}
+                            style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: colors.radius, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}
+                          >
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: selected ? colors.primaryForeground : colors.foreground }}>{profile.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 7 }}>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        testID="character-create-custom-race"
+                        onPress={() => { setCustomRaceEditorId(null); setCustomRaceEditorVisible(true); }}
+                        style={{ flex: 1, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: colors.primary, borderStyle: 'dashed', borderRadius: colors.radius }}
+                      >
+                        <Text style={{ color: colors.primary, fontSize: 10, fontFamily: 'Inter_700Bold' }}>+ CREATE RACE</Text>
+                      </TouchableOpacity>
+                      {!!char.customRaceId && (
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          testID="character-edit-custom-race"
+                          onPress={() => { setCustomRaceEditorId(char.customRaceId ?? null); setCustomRaceEditorVisible(true); }}
+                          style={{ paddingHorizontal: 12, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius }}
+                        >
+                          <Text style={{ color: colors.foreground, fontSize: 10, fontFamily: 'Inter_700Bold' }}>EDIT</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <View style={{ marginTop: 10 }}>
+                      <SelectableTagMenu
+                        title="ADDITIONAL RACE TAGS"
+                        buttonLabel="SELECT RACE TAGS"
+                        customTagButtonLabel="+ CUSTOM RACE TAG"
+                        testID="character-race-tag-menu"
+                        options={raceTagOptions}
+                        selectedTagIds={char.raceTags ?? []}
+                        onToggle={tagId => setChar(current => ({
+                          ...current,
+                          raceTags: (current.raceTags ?? []).includes(tagId)
+                            ? (current.raceTags ?? []).filter(id => id !== tagId)
+                            : [...(current.raceTags ?? []), tagId],
+                        }))}
+                        onAddCustomTag={addCustomRaceTag}
+                      />
+                    </View>
+                  </View>
+                )}
                 {/* Race traits */}
                 <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 10, gap: 4, marginTop: 8 }}>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>SPECIAL range: {SPECIAL_KEYS.map(k => `${SPECIAL_SHORT[k]} ${race.specialMin[k]}–${race.specialMax[k]}`).join(' · ')}</Text>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>✓ {race.benefits.join(' · ')}</Text>
                   {race.penalties.length > 0 && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.destructive }}>✗ {race.penalties.join(' · ')}</Text>}
-                  {race.naturalDR > 0 && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>🛡 Natural: {race.naturalDR}% Rad · {race.naturalGasDR}% Gas · {race.naturalElecDR > 0 ? `+${race.naturalElecDR}%` : `${race.naturalElecDR}%`} Elec</Text>}
+                  {(race.naturalDR !== 0 || race.naturalGasDR !== 0 || race.naturalElecDR !== 0) && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>🛡 Natural: {race.naturalDR}% Rad · {race.naturalGasDR}% Gas · {race.naturalElecDR > 0 ? `+${race.naturalElecDR}%` : `${race.naturalElecDR}%`} Elec</Text>}
                 </View>
               </View>
 
@@ -2471,6 +2596,14 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         )}
       </View>
     </Modal>
+    <CustomRaceEditorModal
+      visible={customRaceEditorVisible}
+      initial={customRaces.find(profile => profile.id === customRaceEditorId) ?? null}
+      naturalWeapons={allWeapons.filter(weapon => weapon.category === 'natural')}
+      onClose={() => { setCustomRaceEditorVisible(false); setCustomRaceEditorId(null); }}
+      onSave={saveCustomRaceProfile}
+    />
+    </>
   );
 }
 
@@ -2523,7 +2656,7 @@ function PremadePickerModal({ visible, onClose, onPick }: {
             data={PREMADE_CHARACTERS}
             keyExtractor={p => p.premadeId}
             renderItem={({ item }) => {
-              const raceRef = getRaceById(item.race);
+              const raceRef = getCharacterRaceDefinition(item);
               return (
                 <TouchableOpacity style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 }} onPress={() => onPick(item)}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -2610,13 +2743,14 @@ function CharacterCard({ character, hardcoreRadiationRules, mutantGhoulRadiation
   const activeInjuries = (character.injuries ?? []).filter(i => i.isActive);
   const injuryEffects = computeInjuryEffects(character);
   const activeEffects = (character.effects ?? []).filter(e => e.isActive);
-  const race = getRaceById(character.race) ?? RACES[0];
+  const race = getCharacterRaceDefinition(character) ?? RACES[0];
   const tagRules = calculateTagSkillRules(character.traits, undefined, character.perks);
   const armorSheet = resolveArmorAwareSheet({
     special: character.special, skills: character.skills,
     taggedSkills: [...character.taggedSkills, ...tagRules.freeTagSkills],
     traits: character.traits, perks: character.perks, conditions: character.conditions, effects: character.effects,
-    raceBounds: { min: race.specialMin, max: race.specialMax }, racialNaturalArmorClass: race.naturalACBonus,
+    raceBounds: { min: race.specialMin, max: race.specialMax }, raceDefinition: race,
+    racialNaturalArmorClass: race.naturalACBonus,
     naturalArmorClass: character.naturalProtection?.armorClass,
     manualDerivedStats: character.manualDerivedStats,
     usesDerivedArmorClass: character.usesDerivedArmorClass,
@@ -2823,7 +2957,7 @@ export default function CharactersScreen() {
   const repairMechanics = useMemo(() => characters
     .filter(character => !character.inStorage && !character.vehicle && !character.combatDevice)
     .map(character => {
-      const race = getRaceById(character.race) ?? RACES[0];
+      const race = getCharacterRaceDefinition(character) ?? RACES[0];
       const tagRules = calculateTagSkillRules(character.traits, undefined, character.perks);
       const sheet = resolveArmorAwareSheet({
         special: character.special,
@@ -2834,6 +2968,7 @@ export default function CharactersScreen() {
         conditions: character.conditions,
         effects: character.effects,
         raceBounds: { min: race.specialMin, max: race.specialMax },
+        raceDefinition: race,
         racialNaturalArmorClass: race.naturalACBonus,
         naturalArmorClass: character.naturalProtection?.armorClass,
         manualDerivedStats: character.manualDerivedStats,

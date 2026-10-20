@@ -15,6 +15,7 @@ import type {
 import type { Perk as BuiltInPerk } from './perks';
 import { calcBaseSkills } from './derived.ts';
 import { rebaseSkillValue } from './skillAdvancement.ts';
+import { getCharacterRaceTagIds } from './races.ts';
 
 export const BUILT_IN_RULE_TAGS: CampaignRuleTag[] = [
   { id: 'unarmed', label: 'Unarmed', appliesTo: 'weapon' },
@@ -248,6 +249,10 @@ export function customRuleConditionMatches(
   }
   if (condition.attackerRaces?.length
     && !condition.attackerRaces.some(race => race === character.race)) return false;
+  if (condition.attackerRaceTags?.length) {
+    const raceTags = new Set(getCharacterRaceTagIds(character));
+    if (!condition.attackerRaceTags.some(tag => raceTags.has(tag))) return false;
+  }
   if (condition.attackerTraits?.length) {
     const traits = new Set(character.traits ?? []);
     if (!condition.attackerTraits.some(trait => traits.has(trait))) return false;
@@ -498,6 +503,8 @@ export function customPerkAsPerk(perk: CustomPerkDefinition): BuiltInPerk {
     maxRanks: perk.maxRanks,
     requiresRace: perk.requiresRace,
     excludedRaces: perk.excludedRaces,
+    requiresRaceTags: perk.requiresRaceTags,
+    excludedRaceTags: perk.excludedRaceTags,
     requirements: perk.requirements,
     combatEffect: null,
   };
@@ -548,6 +555,7 @@ function validCondition(value: unknown): value is CustomRuleCondition | undefine
     && isStringList(value.armorTags)
     && isStringList(value.statuses)
     && isStringList(value.attackerRaces)
+    && isStringList(value.attackerRaceTags)
     && isStringList(value.attackerTraits)
     && (value.attackModes === undefined
       || Array.isArray(value.attackModes) && value.attackModes.every(mode => RULE_MODES.has(mode as RuleAttackMode)));
@@ -573,6 +581,10 @@ export function validateCustomPerk(value: unknown): value is CustomPerkDefinitio
     && RULE_CATEGORIES.has(value.category as string)
     && Number.isInteger(value.minLevel) && (value.minLevel as number) >= 1
     && Number.isInteger(value.maxRanks) && (value.maxRanks as number) >= 1
+    && isStringList(value.requiresRace)
+    && isStringList(value.excludedRaces)
+    && isStringList(value.requiresRaceTags)
+    && isStringList(value.excludedRaceTags)
     && validCondition(value.conditions)
     && Array.isArray(value.effects)
     && effects.every(effect => validRuleEffect(effect, CUSTOM_PERK_EFFECTS)

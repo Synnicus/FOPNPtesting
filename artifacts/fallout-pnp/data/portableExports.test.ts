@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
-import type { Armor, Character, VehicleProfile, Weapon } from '../context/types.ts';
+import type { Armor, CampaignRaceTag, Character, CustomRaceDefinition, VehicleProfile, Weapon } from '../context/types.ts';
 import {
   applyVehicleSystemDamage,
   BUILT_IN_VEHICLES,
@@ -122,6 +122,58 @@ test('condition survives character/campaign bundles including unequipped custom 
   const loaded = parseCampaignFile(JSON.stringify(campaign));
   assert.equal(loaded.ok, true);
   if (loaded.ok && loaded.source === 'portable') assert.deepEqual(loaded.bundle.state.characters[0].armorConditionStates, wornCharacter.armorConditionStates);
+});
+
+test('custom race profiles and racial tags survive individual and campaign portable exports', () => {
+  const five = { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 };
+  const profile: CustomRaceDefinition = {
+    id: 'synth-profile',
+    name: 'Synth',
+    description: 'Synthetic humanoid.',
+    specialMin: { ...five },
+    specialMax: { strength: 10, perception: 10, endurance: 10, charisma: 10, intelligence: 10, agility: 10, luck: 10 },
+    specialDefault: { ...five },
+    naturalDR: 10,
+    naturalGasDR: 100,
+    naturalElecDR: 25,
+    naturalWeaponIds: [],
+    benefits: ['Gas immunity'],
+    penalties: [],
+    playable: true,
+    perksPerLevels: 3,
+    naturalACBonus: 1,
+  };
+  const tag: CampaignRaceTag = { id: 'race-cybernetic', label: 'Cybernetic' };
+  const customRaceCharacter: Character = {
+    ...character,
+    race: 'customRace',
+    customRaceId: profile.id,
+    customRaceProfile: profile,
+    raceTags: [tag.id],
+  };
+
+  const individual = createCharacterBundle(customRaceCharacter, [], [], null, [tag]);
+  const individualParsed = parseIndividualFile(JSON.stringify(individual));
+  assert.equal(individualParsed.ok, true);
+  if (individualParsed.ok && individualParsed.kind === 'character') {
+    assert.equal(individualParsed.bundle.character.customRaceProfile?.id, profile.id);
+    assert.deepEqual(individualParsed.bundle.campaignRaceTags, [tag]);
+    assert.deepEqual(individualParsed.bundle.character.raceTags, [tag.id]);
+  }
+
+  const campaign = createCampaignBundle({
+    ...state,
+    characters: [customRaceCharacter],
+    customRaces: [profile],
+    campaignRaceTags: [tag],
+  }, []);
+  const campaignParsed = parseCampaignFile(JSON.stringify(campaign));
+  assert.equal(campaignParsed.ok, true);
+  if (campaignParsed.ok && campaignParsed.source === 'portable') {
+    assert.deepEqual(campaignParsed.bundle.state.customRaces, [profile]);
+    assert.deepEqual(campaignParsed.bundle.state.campaignRaceTags, [tag]);
+    assert.deepEqual(campaignParsed.bundle.state.characters[0].raceTags, [tag.id]);
+  }
 });
 
 test('portable imports reject invalid armor wear before mutation, while accepting older saves', () => {

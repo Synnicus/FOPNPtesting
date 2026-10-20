@@ -52,6 +52,39 @@ export interface CampaignRuleTag {
   appliesTo: RuleTagAppliesTo;
 }
 
+/** A campaign-owned tag that describes a custom racial identity. */
+export interface CampaignRaceTag {
+  id: string;
+  label: string;
+}
+
+/** Mechanical profile shared by built-in races and campaign-defined races. */
+export interface RaceProfile {
+  id: string;
+  name: string;
+  description: string;
+  specialMin: SPECIALStats;
+  specialMax: SPECIALStats;
+  specialDefault: SPECIALStats;
+  naturalDR: number;
+  naturalGasDR: number;
+  naturalElecDR: number;
+  naturalWeaponIds: string[];
+  benefits: string[];
+  penalties: string[];
+  playable: boolean;
+  perksPerLevels?: number;
+  naturalACBonus: number;
+  bonusHPPerLevel?: number;
+  bonusMeleeDamage?: number;
+  naturalProtection?: NaturalProtection;
+}
+
+/** Player-created profile; stored once in the campaign and snapshotted on characters. */
+export interface CustomRaceDefinition extends RaceProfile {
+  id: string;
+}
+
 /** Empty conditions mean an unconditional perk. Each populated condition
  *  group is required; a group passes when any one of its listed values matches.
  *  Race matching is exact (Half-Mutant is distinct from Super Mutant), and
@@ -62,6 +95,7 @@ export interface CustomRuleCondition {
   attackModes?: RuleAttackMode[];
   statuses?: string[];
   attackerRaces?: RaceType[];
+  attackerRaceTags?: string[];
   attackerTraits?: string[];
 }
 
@@ -113,6 +147,9 @@ export interface CustomPerkDefinition {
   maxRanks: number;
   requiresRace?: RaceType[];
   excludedRaces?: RaceType[];
+  /** Tag requirements let campaign-made races participate without new RaceType values. */
+  requiresRaceTags?: string[];
+  excludedRaceTags?: string[];
   requirements?: {
     stats?: Partial<SPECIALStats>;
     skills?: Partial<CharacterSkills>;
@@ -571,6 +608,14 @@ export interface Character {
   type: CharacterType;
 
   race: RaceType;
+  /** Selected campaign race profile when `race` is `customRace`. */
+  customRaceId?: string;
+  /** Snapshot keeps standalone character exports and orphaned profiles functional. */
+  customRaceProfile?: CustomRaceDefinition;
+  /** Campaign-defined racial identity tags; only active for Custom Race characters. */
+  raceTags?: string[];
+  /** Weapon IDs automatically granted by the selected custom race profile. */
+  raceNaturalWeaponIds?: string[];
 
   level: number;
 
