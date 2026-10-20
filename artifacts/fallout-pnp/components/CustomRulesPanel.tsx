@@ -132,6 +132,8 @@ function EffectEditor({ available, effects, setEffects, scaleByRank = false }: {
   const [skill, setSkill] = useState<SkillType>('smallGuns');
   const [special, setSpecial] = useState<(typeof SPECIALS)[number]>('strength');
   const [perRank, setPerRank] = useState(true);
+  const [application, setApplication] = useState<'ongoing' | 'oneTime'>('ongoing');
+  const supportsOneTime = kind === 'skillBonus' || kind === 'specialBonus';
   const needsDamageType = kind === 'damage' || kind === 'damageResistance';
   const needsDice = kind === 'damage' || kind === 'radiationExposure';
 
@@ -150,9 +152,11 @@ function EffectEditor({ available, effects, setEffects, scaleByRank = false }: {
       ...(kind === 'skillBonus' ? { skill } : {}),
       ...(kind === 'specialBonus' ? { special } : {}),
       ...(scaleByRank ? { perRank } : {}),
+      ...(scaleByRank && supportsOneTime ? { application } : {}),
     }]);
     setValue('1');
     setDiceCount('0');
+    setApplication('ongoing');
   };
 
   return (
@@ -187,6 +191,18 @@ function EffectEditor({ available, effects, setEffects, scaleByRank = false }: {
         </>}
       </View>
       {scaleByRank && <Choice label={`SCALE BY RANK: ${perRank ? 'ON' : 'OFF'}`} selected={perRank} onPress={() => setPerRank(!perRank)} />}
+      {scaleByRank && supportsOneTime && (
+        <>
+          <Text style={{ color: colors.mutedForeground, fontSize: 10, marginBottom: 5 }}>
+            Ongoing modifiers apply while owned. One-time grants are added to the character and undone when the perk is removed.
+          </Text>
+          <Choice
+            label={`APPLICATION: ${application === 'oneTime' ? 'ONE-TIME GRANT' : 'ONGOING MODIFIER'}`}
+            selected={application === 'oneTime'}
+            onPress={() => setApplication(application === 'oneTime' ? 'ongoing' : 'oneTime')}
+          />
+        </>
+      )}
       <PanelButton label="ADD EFFECT" onPress={addEffect} />
       {effects.map(effect => (
         <View key={effect.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5, borderTopWidth: 1, borderTopColor: colors.border }}>
@@ -197,6 +213,9 @@ function EffectEditor({ available, effects, setEffects, scaleByRank = false }: {
             {effect.skill ? ` · ${effect.skill}` : ''}
             {effect.special ? ` · ${effect.special}` : ''}
             {effect.perRank === false ? ' · fixed' : ''}
+            {(effect.kind === 'skillBonus' || effect.kind === 'specialBonus')
+              ? effect.application === 'oneTime' ? ' · one-time grant' : ' · ongoing modifier'
+              : ''}
           </Text>
           <TouchableOpacity onPress={() => setEffects(effects.filter(item => item.id !== effect.id))}>
             <Text style={{ color: colors.destructive, paddingHorizontal: 8, fontSize: 16 }}>×</Text>

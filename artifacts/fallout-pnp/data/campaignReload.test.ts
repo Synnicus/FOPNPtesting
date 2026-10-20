@@ -6,7 +6,7 @@ import { URL } from 'node:url';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import ts from 'typescript';
-import type { BestiaryTemplate, Character, InitiativeEntry } from '../context/types.ts';
+import type { BestiaryTemplate, Character, CustomPerkDefinition, InitiativeEntry } from '../context/types.ts';
 import { MANUAL_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
@@ -36,6 +36,26 @@ test('AppProvider campaign storage lifecycle', async (t) => {
   // Spawning now sets the policy, so explicitly remove it to represent an old save.
   const legacyNpc = spawnBestiaryTemplate(legacyTemplate, BUILT_IN_WEAPONS, legacyTemplate.name, 'legacy-npc');
   delete legacyNpc.usesDerivedArmorClass;
+  const customPerk: CustomPerkDefinition = {
+    id: 'saved-custom-perk',
+    name: 'Saved Training',
+    description: 'A campaign custom perk.',
+    category: 'utility',
+    minLevel: 1,
+    maxRanks: 2,
+    programmatic: true,
+    effects: [
+      { id: 'repair-training', kind: 'skillBonus', skill: 'repair', value: 5, application: 'oneTime' },
+    ],
+  };
+  legacyNpc.perks = [{
+    perkId: customPerk.id,
+    rank: 2,
+    appliedCustomPerkGrants: [
+      { effectId: 'repair-training', rank: 1, kind: 'skillBonus', skill: 'repair', amount: 5 },
+      { effectId: 'repair-training', rank: 2, kind: 'skillBonus', skill: 'repair', amount: 5 },
+    ],
+  }];
   const printedNpc = spawnBestiaryTemplate(brahmin, BUILT_IN_WEAPONS, 'Printed Brahmin', 'printed-npc');
   delete printedNpc.usesDerivedArmorClass;
   const vehicleSpawn = spawnVehicleCharacter(BUILT_IN_VEHICLES[0], 'persistent-vehicle');
@@ -67,6 +87,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
   const fixture = {
     characters: [legacyNpc, printedNpc, persistentVehicle],
     customBestiaryTemplates: [legacyTemplate],
+    customPerks: [customPerk],
     customWeapons: [],
     customArmor: [],
     customAmmo: [],
@@ -184,6 +205,11 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       assert.equal(template.usesDerivedArmorClass, true, `${reload}: template repaired`);
       const npc = restored.characters.find(character => character.id === legacyNpc.id)!;
       assert.ok(npc, `${reload}: linked NPC restored`);
+      assert.deepEqual(
+        npc.perks[0].appliedCustomPerkGrants,
+        legacyNpc.perks[0].appliedCustomPerkGrants,
+        `${reload}: custom perk source grants restored`,
+      );
       assert.equal(npc.bestiaryTemplateId, template.id);
       assert.equal(npc.usesDerivedArmorClass, true, `${reload}: NPC repaired`);
       const resolved = sheet(npc);
@@ -214,6 +240,8 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     const saved = JSON.parse(storage.get(STORAGE_KEY)!);
     assert.equal(saved.customBestiaryTemplates[0].usesDerivedArmorClass, true);
     assert.equal(saved.characters[0].usesDerivedArmorClass, true);
+    assert.deepEqual(saved.characters[0].perks[0].appliedCustomPerkGrants, legacyNpc.perks[0].appliedCustomPerkGrants);
+    assert.equal(saved.customPerks[0].effects[0].application, 'oneTime');
     assert.equal(saved.characters[2].vehicle.systems.find((system: { id: string }) => system.id === 'engine').currentHp, 45);
     assert.equal(saved.characters[2].vehicle.repairHistory[0].restoredHp, 15);
     assert.deepEqual(saved.characters[2].vehicle.weaponSlots, vehicleSlots);

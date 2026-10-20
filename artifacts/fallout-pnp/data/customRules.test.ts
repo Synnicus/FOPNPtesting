@@ -16,6 +16,8 @@ import {
   getSelectableWeaponTags,
   inferArmorTags,
   inferWeaponTags,
+  reverseCustomPerkOneTimeGrants,
+  syncCustomPerkOneTimeGrants,
   validateCustomPerk,
   validateCustomWeaponMod,
 } from './customRules.ts';
@@ -303,4 +305,107 @@ test('custom perk effects honor conditions and ranks, with typed damage kept sep
   const inactive = computeCustomPerkEffects(character, [perk], { weapon, armor: [armor], mode: 'single' });
   assert.equal(inactive.toHit, 0);
   assert.deepEqual(inactive.damageComponents, []);
+});
+
+test('custom perk one-time skill and SPECIAL grants are recorded per rank and removed without touching later changes', () => {
+  const perk: CustomPerkDefinition = {
+    id: 'permanent-perk',
+    name: 'Trained Specialist',
+    description: 'Permanent training.',
+    category: 'utility',
+    minLevel: 1,
+    maxRanks: 3,
+    programmatic: true,
+    effects: [
+      { id: 'skill-grant', kind: 'skillBonus', skill: 'smallGuns', value: 4, application: 'oneTime' },
+      { id: 'special-grant', kind: 'specialBonus', special: 'strength', value: 1, perRank: false, application: 'oneTime' },
+      { id: 'ongoing-skill', kind: 'skillBonus', skill: 'repair', value: 2 },
+      { id: 'ongoing-special', kind: 'specialBonus', special: 'luck', value: 1 },
+    ],
+  };
+  const original = {
+    ...character,
+    special: { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 },
+    skills: {
+      smallGuns: 25, bigGuns: 10, energyWeapons: 10, meleeWeapons: 20, unarmed: 20, throwing: 20,
+      firstAid: 20, doctor: 10, sneak: 20, lockpick: 20, steal: 15, traps: 20,
+      science: 20, repair: 15, speech: 25, barter: 20, gambling: 25, outdoorsman: 20, pilot: 20,
+    },
+    perks: [{ perkId: perk.id, rank: 1 }],
+  } as unknown as Character;
+
+  assert.equal(validateCustomPerk(perk), true);
+  const rankOne = syncCustomPerkOneTimeGrants(original, perk, 0, 1);
+  assert.equal(rankOne.skills.smallGuns, original.skills.smallGuns); // Grants do not become purchased skill offsets.
+  assert.equal(rankOne.special.strength, 6);
+  assert.equal(rankOne.skills.meleeWeapons, 22); // Preserve skill offsets when SPECIAL changes.
+  assert.equal(rankOne.perks[0].appliedCustomPerkGrants?.length, 2);
+
+  // A repeated application for the same rank is idempotent.
+  const duplicate = syncCustomPerkOneTimeGrants(rankOne, perk, 0, 1);
+  assert.equal(duplicate.skills.smallGuns, original.skills.smallGuns);
+  assert.equal(duplicate.special.strength, 6);
+
+  const rankTwo = syncCustomPerkOneTimeGrants(
+    { ...rankOne, perks: [{ ...rankOne.perks[0], rank: 2 }] },
+    perk,
+    1,
+    2,
+  );
+  assert.equal(rankTwo.skills.smallGuns, original.skills.smallGuns);
+  assert.equal(computeCustomPerkEffects(rankTwo, [perk]).skillBonuses.smallGuns, 8);
+  assert.equal(rankTwo.special.strength, 6); // Fixed grants are not repeated for later ranks.
+  assert.equal(rankTwo.perks[0].appliedCustomPerkGrants?.length, 3);
+
+  const rankOneAgain = syncCustomPerkOneTimeGrants(rankTwo, perk, 2, 1);
+  assert.equal(rankOneAgain.skills.smallGuns, original.skills.smallGuns);
+  assert.equal(rankOneAgain.special.strength, 6);
+  assert.equal(rankOneAgain.perks[0].appliedCustomPerkGrants?.length, 2);
+
+  const characterWithLaterChanges = {
+    ...rankOneAgain,
+    skills: {
+      ...rankOneAgain.skills,
+      smallGuns: rankOneAgain.skills.smallGuns + 7,
+      meleeWeapons: rankOneAgain.skills.meleeWeapons + 4,
+    },
+    special: { ...rankOneAgain.special, strength: rankOneAgain.special.strength + 2 },
+  };
+  const restored = reverseCustomPerkOneTimeGrants(
+    JSON.parse(JSON.stringify(characterWithLaterChanges)) as Character,
+    perk.id,
+  );
+  assert.equal(restored.skills.smallGuns, original.skills.smallGuns + 7);
+  assert.equal(restored.special.strength, original.special.strength + 2);
+  assert.equal(restored.skills.meleeWeapons, original.skills.meleeWeapons + 4);
+  assert.equal(computeCustomPerkEffects(restored, [perk]).skillBonuses.smallGuns, undefined);
+  assert.deepEqual(reverseCustomPerkOneTimeGrants(restored, perk.id), restored);
+
+  const ongoing = computeCustomPerkEffects(rankOneAgain, [perk]);
+  assert.equal(ongoing.skillBonuses.smallGuns, 4); // One-time rank-1 grant; the ongoing modifier has another target.
+  assert.equal(ongoing.skillBonuses.repair, 2);
+  assert.equal(ongoing.specialBonuses.strength, undefined);
+  assert.equal(ongoing.specialBonuses.luck, 1);
+});
+
+test('custom perk one-time classification rejects unsupported effect kinds and malformed targets', () => {
+  const base: CustomPerkDefinition = {
+    id: 'invalid-one-time',
+    name: 'Invalid One-Time',
+    description: '',
+    category: 'utility',
+    minLevel: 1,
+    maxRanks: 1,
+    programmatic: true,
+    effects: [{ id: 'bad', kind: 'toHit', value: 2, application: 'oneTime' }],
+  };
+  assert.equal(validateCustomPerk(base), false);
+  assert.equal(validateCustomPerk({
+    ...base,
+    effects: [{ id: 'bad-target', kind: 'skillBonus', value: 2, skill: 'not-a-skill', application: 'oneTime' }],
+  }), false);
+  assert.equal(validateCustomPerk({
+    ...base,
+    effects: [{ id: 'valid', kind: 'specialBonus', value: 1, special: 'luck', application: 'oneTime' }],
+  }), true);
 });

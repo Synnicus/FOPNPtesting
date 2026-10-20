@@ -35,7 +35,12 @@ import {
 import { RACES, PLAYABLE_RACES, getRaceById } from '@/data/races';
 import { translateText } from '@/data/localization';
 import { PERKS, getPerkById, getPerksForRace, calcAvailablePerkPoints, calcUsedPerkPoints, canTakePerk } from '@/data/perks';
-import { computeCustomPerkEffects, customPerkAsPerk } from '@/data/customRules';
+import {
+  computeCustomPerkEffects,
+  customPerkAsPerk,
+  reverseCustomPerkOneTimeGrants,
+  syncCustomPerkOneTimeGrants,
+} from '@/data/customRules';
 import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
@@ -750,6 +755,20 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           return prev;
         }
         const breakTheRulesPending = breakTheRulesPendingAfterPurchase(prev.breakTheRulesPending, perkId);
+        const customDefinition = customPerks.find(custom => custom.id === perkId);
+        const applyCustomGrants = (updated: Character, previousRank: number, targetRank: number): Character => {
+          if (!customDefinition) return updated;
+          const oldTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * prev.level;
+          const withGrants = syncCustomPerkOneTimeGrants(updated, customDefinition, previousRank, targetRank);
+          const newTotal = calculateRuleSkillPointsPerLevel(
+            permanentIntelligence(withGrants),
+            withGrants.traits,
+          ) * withGrants.level;
+          return {
+            ...withGrants,
+            unspentSkillPoints: reconcileUnspentSkillPoints(withGrants.unspentSkillPoints, oldTotal, newTotal),
+          };
+        };
         if (!existing) {
           const newPerk: Character['perks'][number] = { perkId, rank: 1, takenAtLevel: prev.level };
           let xpBonus = 0;
@@ -758,29 +777,33 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             newPerk.appliedXpBonus = xpBonus;
             newPerk.levelBeforeXpBonus = prev.level;
           }
-          return recomputeDerived({
+          const updated = {
             ...prev,
             breakTheRulesPending,
             xp: prev.xp + xpBonus,
             level: levelForXP(prev.xp + xpBonus),
             perks: [...prev.perks, newPerk],
-          });
+          };
+          return recomputeDerived(applyCustomGrants(updated, 0, 1));
         }
-        return recomputeDerived({
+        const targetRank = existing.rank + 1;
+        const updated = {
           ...prev,
           breakTheRulesPending,
-          perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: p.rank + 1 } : p),
-        });
+          perks: prev.perks.map(p => p.perkId === perkId ? { ...p, rank: targetRank } : p),
+        };
+        return recomputeDerived(applyCustomGrants(updated, existing.rank, targetRank));
       }
       return prev;
     });
-  }, [perkPointsRemaining, recomputeDerived, allArmor, resolvePerkById]);
+  }, [perkPointsRemaining, recomputeDerived, allArmor, resolvePerkById, customPerks]);
 
   const confirmPerkRefund = useCallback(() => {
     if (!perkRefundId) return;
     setChar(prev => {
       const owned = prev.perks.find(perk => perk.perkId === perkRefundId);
       const refunded = refundPerk(prev.perks, perkRefundId);
+      const withoutCustomGrants = reverseCustomPerkOneTimeGrants(prev, perkRefundId);
       let traits = prev.traits ?? [];
       if (owned?.replacedTrait) {
         traits = traits
@@ -790,13 +813,23 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       const perkTrackers = { ...(prev.perkTrackers ?? {}) };
       delete perkTrackers[perkRefundId];
       const remainingXp = Math.max(0, prev.xp - (owned?.appliedXpBonus ?? 0));
+      const updatedWithoutPerk = { ...withoutCustomGrants, perks: refunded.perks };
+      const oldSkillPointTotal = calculateRuleSkillPointsPerLevel(permanentIntelligence(prev), prev.traits) * prev.level;
+      const newSkillPointTotal = calculateRuleSkillPointsPerLevel(
+        permanentIntelligence(updatedWithoutPerk),
+        updatedWithoutPerk.traits,
+      ) * updatedWithoutPerk.level;
       return recomputeDerived({
-        ...prev,
+        ...updatedWithoutPerk,
         xp: remainingXp,
         level: Math.max(owned?.levelBeforeXpBonus ?? 1, levelForXP(remainingXp)),
         traits,
         perkTrackers,
-        perks: refunded.perks,
+        unspentSkillPoints: reconcileUnspentSkillPoints(
+          prev.unspentSkillPoints,
+          oldSkillPointTotal,
+          newSkillPointTotal,
+        ),
         breakTheRulesPending: perkRefundId === 'break_the_rules' ? false : prev.breakTheRulesPending,
       });
     });

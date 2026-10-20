@@ -3,6 +3,7 @@ import type {
   CampaignRuleTag,
   Character,
   CustomPerkDefinition,
+  CustomPerkGrant,
   CustomRuleCondition,
   CustomRuleEffect,
   CustomWeaponMod,
@@ -12,6 +13,8 @@ import type {
   Weapon,
 } from '../context/types';
 import type { Perk as BuiltInPerk } from './perks';
+import { calcBaseSkills } from './derived.ts';
+import { rebaseSkillValue } from './skillAdvancement.ts';
 
 export const BUILT_IN_RULE_TAGS: CampaignRuleTag[] = [
   { id: 'unarmed', label: 'Unarmed', appliesTo: 'weapon' },
@@ -327,6 +330,91 @@ export interface CustomPerkTotals {
   specialBonuses: Partial<Record<string, number>>;
 }
 
+function applyCustomPerkGrant(character: Character, grant: CustomPerkGrant, direction: 1 | -1): Character {
+  const amount = grant.amount * direction;
+  // Keep these outside purchased skill values so they never affect refunds or tag locks.
+  if (grant.kind === 'skillBonus') return character;
+  if (grant.kind === 'specialBonus' && grant.special) {
+    const oldBase = calcBaseSkills(character.special);
+    const special = { ...character.special, [grant.special]: character.special[grant.special] + amount };
+    const newBase = calcBaseSkills(special);
+    const skills = { ...character.skills };
+    for (const skill of Object.keys(skills) as (keyof typeof skills)[]) {
+      skills[skill] = rebaseSkillValue(skills[skill], oldBase[skill], newBase[skill]);
+    }
+    return { ...character, special, skills };
+  }
+  return character;
+}
+
+/**
+ * Apply newly gained custom-perk ranks or reverse ranks removed from an owned
+ * perk. Recorded grants make repeated calls idempotent and survive definition edits.
+ */
+export function syncCustomPerkOneTimeGrants(
+  character: Character,
+  definition: CustomPerkDefinition,
+  previousRank: number,
+  targetRank: number,
+): Character {
+  const owned = character.perks.find(perk => perk.perkId === definition.id);
+  if (!owned) return character;
+
+  let nextCharacter = character;
+  let grants = [...(owned.appliedCustomPerkGrants ?? [])];
+  const rank = Math.max(0, Math.floor(targetRank));
+
+  if (rank < previousRank) {
+    const removed = grants.filter(grant => grant.rank > rank);
+    for (const grant of removed) nextCharacter = applyCustomPerkGrant(nextCharacter, grant, -1);
+    grants = grants.filter(grant => grant.rank <= rank);
+  } else if (definition.programmatic) {
+    for (let grantRank = Math.max(0, Math.floor(previousRank)) + 1; grantRank <= rank; grantRank++) {
+      for (const effect of definition.effects) {
+        if (effect.application !== 'oneTime'
+          || (effect.kind !== 'skillBonus' && effect.kind !== 'specialBonus')
+          || (effect.perRank === false && grantRank > 1)) continue;
+        if (grants.some(grant => grant.effectId === effect.id && grant.rank === grantRank)) continue;
+        const grant: CustomPerkGrant = {
+          effectId: effect.id,
+          rank: grantRank,
+          kind: effect.kind,
+          amount: effect.value,
+          ...(effect.kind === 'skillBonus' && effect.skill ? { skill: effect.skill } : {}),
+          ...(effect.kind === 'specialBonus' && effect.special ? { special: effect.special } : {}),
+        };
+        if ((grant.kind === 'skillBonus' && !grant.skill)
+          || (grant.kind === 'specialBonus' && !grant.special)) continue;
+        nextCharacter = applyCustomPerkGrant(nextCharacter, grant, 1);
+        grants.push(grant);
+      }
+    }
+  }
+
+  return {
+    ...nextCharacter,
+    perks: nextCharacter.perks.map(perk => perk.perkId === definition.id
+      ? { ...perk, rank, appliedCustomPerkGrants: grants }
+      : perk),
+  };
+}
+
+/** Reverse all recorded custom gains for a perk, even if its definition was deleted. */
+export function reverseCustomPerkOneTimeGrants(character: Character, perkId: string): Character {
+  const owned = character.perks.find(perk => perk.perkId === perkId);
+  if (!owned?.appliedCustomPerkGrants?.length) return character;
+  let nextCharacter = character;
+  for (const grant of owned.appliedCustomPerkGrants) {
+    nextCharacter = applyCustomPerkGrant(nextCharacter, grant, -1);
+  }
+  return {
+    ...nextCharacter,
+    perks: nextCharacter.perks.map(perk => perk.perkId === perkId
+      ? { ...perk, appliedCustomPerkGrants: [] }
+      : perk),
+  };
+}
+
 export function computeCustomPerkEffects(
   character: Character | null | undefined,
   definitions: CustomPerkDefinition[],
@@ -340,6 +428,11 @@ export function computeCustomPerkEffects(
   if (!character) return result;
   const equipped = new Map(definitions.map(definition => [definition.id, definition]));
   for (const owned of character.perks ?? []) {
+    for (const grant of owned.appliedCustomPerkGrants ?? []) {
+      if (grant.kind === 'skillBonus' && grant.skill) {
+        result.skillBonuses[grant.skill] = (result.skillBonuses[grant.skill] ?? 0) + grant.amount;
+      }
+    }
     const perk = equipped.get(owned.perkId);
     if (!perk?.programmatic
       || !customRuleConditionMatches(
@@ -347,6 +440,7 @@ export function computeCustomPerkEffects(
         context.mode === undefined ? 'single' : context.mode, perk.conditions,
       )) continue;
     for (const effect of perk.effects) {
+      if (effect.application === 'oneTime') continue;
       const multiplier = effect.perRank === false ? 1 : Math.max(1, owned.rank);
       const amount = effect.value * multiplier;
       switch (effect.kind) {
@@ -419,6 +513,12 @@ const CUSTOM_PERK_EFFECTS = new Set([
 ]);
 const RULE_MODES = new Set<RuleAttackMode>(['single', 'targeted', 'burst']);
 const RULE_CATEGORIES = new Set(['combat', 'defense', 'utility', 'social', 'survival', 'racial']);
+const RULE_SKILLS = new Set<SkillType>([
+  'smallGuns', 'bigGuns', 'energyWeapons', 'meleeWeapons', 'unarmed', 'throwing',
+  'firstAid', 'doctor', 'sneak', 'lockpick', 'steal', 'traps', 'science', 'repair',
+  'speech', 'barter', 'gambling', 'outdoorsman', 'pilot',
+]);
+const RULE_SPECIALS = new Set(['strength', 'perception', 'endurance', 'charisma', 'intelligence', 'agility', 'luck']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -436,6 +536,7 @@ function validRuleEffect(value: unknown, kinds: Set<string>): value is CustomRul
   if (value.diceCount !== undefined && (!Number.isInteger(value.diceCount) || (value.diceCount as number) < 0)) return false;
   if (value.dieSides !== undefined && (!Number.isInteger(value.dieSides) || (value.dieSides as number) < 0)) return false;
   if (value.perRank !== undefined && typeof value.perRank !== 'boolean') return false;
+  if (value.application !== undefined && value.application !== 'ongoing' && value.application !== 'oneTime') return false;
   return true;
 }
 
@@ -458,11 +559,13 @@ export function validateCustomWeaponMod(value: unknown): value is CustomWeaponMo
     && typeof value.description === 'string' && typeof value.programmatic === 'boolean'
     && isStringList(value.appliesToTags)
     && Array.isArray(value.effects)
-    && value.effects.every(effect => validRuleEffect(effect, WEAPON_MOD_EFFECTS));
+    && value.effects.every(effect => validRuleEffect(effect, WEAPON_MOD_EFFECTS)
+      && effect.application !== 'oneTime');
 }
 
 export function validateCustomPerk(value: unknown): value is CustomPerkDefinition {
   if (!isRecord(value)) return false;
+  const effects = Array.isArray(value.effects) ? value.effects : [];
   return typeof value.id === 'string' && value.id.length > 0
     && typeof value.name === 'string' && value.name.trim().length > 0
     && typeof value.description === 'string' && typeof value.programmatic === 'boolean'
@@ -471,5 +574,9 @@ export function validateCustomPerk(value: unknown): value is CustomPerkDefinitio
     && Number.isInteger(value.maxRanks) && (value.maxRanks as number) >= 1
     && validCondition(value.conditions)
     && Array.isArray(value.effects)
-    && value.effects.every(effect => validRuleEffect(effect, CUSTOM_PERK_EFFECTS));
+    && effects.every(effect => validRuleEffect(effect, CUSTOM_PERK_EFFECTS)
+      && (effect.application !== 'oneTime'
+        || (effect.kind === 'skillBonus' && RULE_SKILLS.has(effect.skill as SkillType)
+          || effect.kind === 'specialBonus' && RULE_SPECIALS.has(effect.special as string))))
+    && new Set(effects.map(effect => isRecord(effect) ? effect.id : null)).size === effects.length;
 }

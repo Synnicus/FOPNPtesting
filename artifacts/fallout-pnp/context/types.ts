@@ -67,6 +67,8 @@ export interface CustomRuleEffect {
   id: string;
   kind: CustomRuleEffectKind;
   value: number;
+  /** Skill and SPECIAL effects can be granted once instead of remaining modifiers. */
+  application?: 'ongoing' | 'oneTime';
   /** Damage type for typed damage or resistance. */
   damageType?: DamageType;
   /** When true, scale numeric value and dice count by the perk rank. */
@@ -279,6 +281,8 @@ export interface Armor {
 export interface CharacterPerk {
   perkId: string;
   rank: number;
+  /** Exact custom skill/SPECIAL gains applied at each rank, for safe reversal. */
+  appliedCustomPerkGrants?: CustomPerkGrant[];
   /** Level at which the perk was (first) taken — used so per-level HP perks
    *  (Lifegiver, Brutish Hulk) only count levels gained AFTER acquisition. */
   takenAtLevel?: number;
@@ -289,6 +293,15 @@ export interface CharacterPerk {
   replacedTrait?: { removedTraitId: string; addedTraitId: string };
   appliedXpBonus?: number;
   levelBeforeXpBonus?: number;
+}
+
+export interface CustomPerkGrant {
+  effectId: string;
+  rank: number;
+  kind: 'skillBonus' | 'specialBonus';
+  skill?: SkillType;
+  special?: keyof SPECIALStats;
+  amount: number;
 }
 
 export interface CharacterPerkTracker {
