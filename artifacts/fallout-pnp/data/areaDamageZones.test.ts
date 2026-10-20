@@ -4,11 +4,16 @@ import {
   buildAreaDamageZones,
   createCustomAmmoAreaDamageProfiles,
   createCustomWeaponAreaDamageProfiles,
+  ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+  BUILT_IN_EXPLOSIVE_AMMO_AREA_PROFILE_DEFINITIONS,
   EXPLOSIVE_AMMO_AREA_PROFILES,
+  getBuiltInAreaDamageProfiles,
   MINE_TRAP_AOE_PROFILES,
   normalizeAreaProfileRangeOverrides,
   formatAreaResolution,
   resolveAreaZoneTarget,
+  STANDARD_MINE_HOUSE_RULE_EXPLOSIVE_AMMO_AREA_PROFILES,
+  STANDARD_MINE_HOUSE_RULE_RADIUS_METERS,
   THROWN_EXPLOSIVE_AREA_PROFILES,
   VEHICLE_CANNON_AREA_PROFILES,
 } from './areaEffects.ts';
@@ -49,37 +54,107 @@ test('plasma grenade and C-14 adjacent effects reuse the center roll at their pr
   assert.equal(plastiqueZones.find(zone => zone.minDistance === 1)?.effects.find(effect => effect.id === 'adjacent_blast')?.rawDamage, 14);
 });
 
-test('custom ammo and trap profiles preserve independent effects, units, and per-campaign missing ranges', () => {
+test('built-in ammunition without manual blast zones is absent from the area profile catalog', () => {
+  const excludedIds = [
+    'ammo:rocket_explosive',
+    'ammo:rocket_ap',
+    'ammo:rocket_emp',
+    'ammo:tow_ii_rocket',
+    'ammo:40mm_frag',
+    'ammo:40mm_plasma',
+    'ammo:40mm_pulse',
+  ];
+  for (const id of excludedIds) {
+    assert.equal(EXPLOSIVE_AMMO_AREA_PROFILES.some(profile => profile.id === id), false, id);
+    assert.ok(BUILT_IN_EXPLOSIVE_AMMO_AREA_PROFILE_DEFINITIONS.some(profile => profile.id === id), `source profile retained: ${id}`);
+  }
+});
+
+test('5m house rule derives temporary explosive ammo profiles without changing archived originals', () => {
+  const excludedIds = [
+    'ammo:rocket_explosive',
+    'ammo:rocket_ap',
+    'ammo:rocket_emp',
+    'ammo:tow_ii_rocket',
+    'ammo:40mm_frag',
+    'ammo:40mm_plasma',
+    'ammo:40mm_pulse',
+  ];
+  assert.equal(STANDARD_MINE_HOUSE_RULE_RADIUS_METERS, 5);
+  assert.equal(getBuiltInAreaDamageProfiles(false), ALL_BUILT_IN_AREA_DAMAGE_PROFILES);
+  assert.deepEqual(STANDARD_MINE_HOUSE_RULE_EXPLOSIVE_AMMO_AREA_PROFILES.map(profile => profile.id), excludedIds);
+
+  for (const id of excludedIds) {
+    const original = BUILT_IN_EXPLOSIVE_AMMO_AREA_PROFILE_DEFINITIONS.find(profile => profile.id === id)!;
+    const houseRule = STANDARD_MINE_HOUSE_RULE_EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === id)!;
+    assert.ok(original);
+    assert.ok(houseRule);
+    assert.ok(original.effects.every(effect => effect.radius === undefined), `original unchanged: ${id}`);
+    assert.ok(houseRule.effects.every(effect =>
+      effect.radius === STANDARD_MINE_HOUSE_RULE_RADIUS_METERS && effect.rangeUnit === 'm'), id);
+    assert.deepEqual(
+      houseRule.effects.map(({ radius: _radius, rangeUnit: _rangeUnit, ...effect }) => effect),
+      original.effects.map(({ radius: _radius, rangeUnit: _rangeUnit, ...effect }) => effect),
+      `only the radius is derived: ${id}`,
+    );
+    assert.equal(buildAreaDamageZones(houseRule, {}, {}).length, 1, id);
+  }
+
+  const enabledProfiles = getBuiltInAreaDamageProfiles(true);
+  assert.equal(enabledProfiles.length, ALL_BUILT_IN_AREA_DAMAGE_PROFILES.length + excludedIds.length);
+  assert.ok(excludedIds.every(id => enabledProfiles.some(profile => profile.id === id)));
+  assert.deepEqual(getBuiltInAreaDamageProfiles(false), ALL_BUILT_IN_AREA_DAMAGE_PROFILES);
+});
+
+test('custom ammo and trap profiles preserve authored effects, units, and zone ranges', () => {
   const ammoProfiles = createCustomAmmoAreaDamageProfiles([{
     id: 'custom-shell', name: 'Custom Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
-    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, areaRangeUnit: 'm',
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, hasBlastRadius: true, areaRangeUnit: 'm',
     areaEffects: [
       { id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion', damageDieCount: 2, damageDie: 8, damageBonus: 2, radius: 12 },
-      { id: 'fallout', label: 'Radiation fallout', kind: 'explosion', damageType: 'radiation', damageDieCount: 0, damageDie: 0, damageBonus: 20 },
+      { id: 'fallout', label: 'Radiation fallout', kind: 'explosion', damageType: 'radiation', damageDieCount: 0, damageDie: 0, damageBonus: 20, radius: 20 },
     ],
   }]);
   assert.equal(ammoProfiles[0].rangeUnit, 'm');
   assert.deepEqual(ammoProfiles[0].effects.map(effect => effect.id), ['blast', 'fallout']);
-  assert.deepEqual(buildAreaDamageZones(ammoProfiles[0], {}, { blast: 10, fallout: 20 }).map(zone => zone.maxDistance), [12]);
+  assert.deepEqual(buildAreaDamageZones(ammoProfiles[0], {}, { blast: 10, fallout: 20 }).map(zone => zone.maxDistance), [12, 20]);
+
+  assert.deepEqual(createCustomAmmoAreaDamageProfiles([{
+    id: 'unconfigured-shell', name: 'Unconfigured Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, hasBlastRadius: true,
+    areaEffects: [{
+      id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+    }],
+  }]), []);
+  assert.deepEqual(createCustomAmmoAreaDamageProfiles([{
+    id: 'disabled-shell', name: 'Disabled Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, hasBlastRadius: false,
+    areaEffects: [{
+      id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0, radius: 5,
+    }],
+  }]), []);
 
   const trapProfiles = createCustomWeaponAreaDamageProfiles([{
     id: 'custom-trap', name: 'Custom Mine', category: 'minesTraps', damageType: 'explosion',
     damageDieCount: 1, damageDie: 6, damageBonus: 0, skill: 'traps', burstLimit: 1,
     isDoubleShot: false, magazineSize: 0, weight: 0, minStr: 1, rangeNormal: 0,
     knockdownChance: 0, mods: [], isCustom: true, areaRangeUnit: 'hex',
+    hasBlastRadius: true,
     customAreaEffects: [{
       id: 'main', label: 'Blast', kind: 'explosion', damageType: 'explosion',
-      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+      damageDieCount: 1, damageDie: 6, damageBonus: 0, radius: 3,
     }],
   }]);
   assert.equal(trapProfiles[0].id, 'custom-weapon:custom-trap');
-  assert.equal(buildAreaDamageZones(trapProfiles[0], { [trapProfiles[0].id]: { main: 3 } }, { main: 6 })[0].label, '0–3 hex');
+  assert.equal(buildAreaDamageZones(trapProfiles[0], {}, { main: 6 })[0].label, '0–3 hex');
 });
 
 test('radiation-only zone effects return exposure without HP damage', () => {
   const profile = createCustomAmmoAreaDamageProfiles([{
     id: 'rad-shell', name: 'Radiation Shell', value: 0, volume: 0, acMod: 0, drMod: 0,
-    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true,
+    dmgDieCount: 1, dmgDie: 6, dmgBonus: 0, isCustom: true, hasBlastRadius: true,
     areaEffects: [{
       id: 'rads', label: 'Radiation', kind: 'explosion', damageType: 'radiation',
       damageDieCount: 0, damageDie: 0, damageBonus: 20, radius: 5,
@@ -106,16 +181,13 @@ test('mortar zones stack the 20m blast with concussion through 50m', () => {
   assert.equal(zones[1].effects[0].rawDamage, 3);
 });
 
-test('profiles without manual ranges need campaign overrides before zones can be assigned', () => {
-  const profile = EXPLOSIVE_AMMO_AREA_PROFILES.find(candidate => candidate.id === 'ammo:rocket_explosive');
-  assert.ok(profile);
-  assert.equal(buildAreaDamageZones(profile, {}, { main: 12 }).length, 0);
-
-  const ranges = normalizeAreaProfileRangeOverrides({ [profile.id]: { main: 35, invalid: -1 } });
-  const zones = buildAreaDamageZones(profile, ranges, { main: 12 });
-  assert.equal(zones.length, 1);
-  assert.equal(zones[0].label, '0–35 m');
-  assert.deepEqual(ranges[profile.id], { main: 35 });
+test('built-in profiles without manual ranges cannot be assigned zones in combat', () => {
+  assert.equal(EXPLOSIVE_AMMO_AREA_PROFILES.some(candidate => candidate.id === 'ammo:rocket_explosive'), false);
+  assert.equal(EXPLOSIVE_AMMO_AREA_PROFILES.some(candidate => candidate.id === 'ammo:40mm_frag'), false);
+  const mortar = EXPLOSIVE_AMMO_AREA_PROFILES.find(candidate => candidate.id === 'ammo:51mm_explosive_mortar');
+  assert.ok(mortar);
+  const zones = buildAreaDamageZones(mortar, {}, { main: 12 });
+  assert.deepEqual(zones.map(zone => zone.maxDistance), [20, 50]);
 });
 
 test('one assigned zone resolves all stacked damage effects in one result', () => {

@@ -1279,15 +1279,17 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
               {/* Race */}
               <View>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 8 }}>RACE</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {PLAYABLE_RACES.map(r => (
-                      <TouchableOpacity key={r.id} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: char.race === r.id ? colors.primary : colors.secondary, borderWidth: 1, borderColor: char.race === r.id ? colors.primary : colors.border }} onPress={() => setRace(r.id as RaceType)}>
-                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: char.race === r.id ? colors.primaryForeground : colors.foreground }}>{r.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
+                <ScrollableTabStrip
+                  accessibilityLabel="Character race selection"
+                  colors={colors}
+                  contentContainerStyle={{ flexDirection: 'row', gap: 8 }}
+                >
+                  {PLAYABLE_RACES.map(r => (
+                    <TouchableOpacity key={r.id} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: char.race === r.id ? colors.primary : colors.secondary, borderWidth: 1, borderColor: char.race === r.id ? colors.primary : colors.border }} onPress={() => setRace(r.id as RaceType)}>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: char.race === r.id ? colors.primaryForeground : colors.foreground }}>{r.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollableTabStrip>
                 {char.race === 'customRace' && (
                   <View style={{ marginTop: 10, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, backgroundColor: colors.card }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1, marginBottom: 6 }}>CUSTOM RACE PROFILE</Text>

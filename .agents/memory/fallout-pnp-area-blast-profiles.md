@@ -3,12 +3,10 @@ name: Fallout PnP area blast profiles
 description: Rules for explosive ammunition, distance zones, custom blast ranges, and deployed mines or traps.
 ---
 
-Use the manual's blast ranges where printed. Let the GM set and save omitted ranges per campaign and profile. Assign each combatant to one blast zone and resolve every effect whose range reaches that zone in one application. The triggerer starts in the closest zone. Place a mine or trap into combat only after the GM confirms its Traps check succeeded. Keep non-area traps out of the general area-attack chooser while allowing them in the deployment picker.
+Expose built-in blast profiles only when every effect has a manual range; omit ammunition with no printed blast radius. Configure custom ammunition and mine/trap zones in Equipment with the Blast Radius toggle, not during combat. Assign each combatant to one saved zone and resolve every effect reaching that zone together. The triggerer starts in the closest zone. Place a mine or trap into combat only after the GM confirms its Traps check succeeded; keep non-area traps out of the general blast chooser.
 
-Treat range overrides as optional campaign data: normalize missing or malformed values to an empty/filtered map, and never let an override replace a printed manual radius.
+Vehicle blast damage always reaches Structure and each selected additional system; EMP remains limited to an electronic system. For successful vehicle cannon shots, the direct-hit target is the impact point: apply the cannon's blast and any in-range concussion through one area resolution, not as a second direct weapon-damage application.
 
-For successful vehicle cannon shots, the direct-hit target is the impact point: apply the cannon's blast and any in-range concussion through one area resolution, not as a second direct weapon-damage application.
+**Why:** The user wants only explicitly configured zones in the combat picker, authored blast settings on custom equipment, and one resolution that can damage multiple vehicle systems.
 
-**Why:** The user wants distance-dependent effects resolved together while preserving manual ranges and GM control over unspecified range data. Malformed optional ranges should not prevent an otherwise valid campaign from being restored.
-
-**How to apply:** When adding explosive ammunition, cannons, or mine/trap profiles, distinguish printed values from GM-entered ranges, retain campaign-level overrides through save/export/import, normalize optional range data, and keep placement confirmation and triggerer selection explicit.
+**How to apply:** Keep manual ranges authoritative for built-ins; require custom blast profiles to define every effect's radius before they appear in combat. Combat should assign targets to those saved zones, apply all in-range effects together, and preserve the Structure-plus-selected-systems vehicle rule.

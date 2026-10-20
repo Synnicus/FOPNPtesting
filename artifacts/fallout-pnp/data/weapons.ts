@@ -365,7 +365,10 @@ export function getWeaponById(id: string): Weapon | undefined {
  * canonical catalog entry while pre-filling a modal's rolled damage.
  */
 export function getWeaponAreaAttack(weapon: Weapon): AreaAttack | undefined {
-  if (weapon.isCustom && weapon.hasBlastRadius === false) return undefined;
+  if (weapon.isCustom && weapon.hasBlastRadius === false
+    && ['t13_antipersonnel_mine', 't45_se_antivehicle_mine'].includes(weapon.areaAttackProfileId ?? '')) {
+    return undefined;
+  }
   const customProfile = createCustomWeaponAreaDamageProfile(weapon);
   if (customProfile) return areaDamageProfileToAttack(customProfile);
   const profileId = weapon.areaAttackProfileId;

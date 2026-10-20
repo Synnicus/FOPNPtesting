@@ -124,8 +124,8 @@ export interface AreaAttack {
   nonBiologicalOnly?: boolean;
   /** EMP payload: affects electronic vehicle systems only. */
   emp?: boolean;
-  /** Per-vehicle subsystem selected for the blast's secondary system damage. */
-  vehicleSystemTargets?: Record<string, string>;
+  /** Per-vehicle subsystems receiving blast damage; old saves may store one id. */
+  vehicleSystemTargets?: Record<string, string | string[]>;
 }
 
 /**
@@ -382,8 +382,12 @@ function ammoDamageEffect(
   };
 }
 
-/** Built-in launched area ammunition with manual values retained verbatim. */
-export const EXPLOSIVE_AMMO_AREA_PROFILES: readonly AreaDamageProfile[] =
+/**
+ * Authoritative built-in launched-ammo profiles. Keep this complete catalog
+ * intact, including profiles whose manual ranges are omitted; campaign rules
+ * may expose a derived profile without overwriting these source definitions.
+ */
+export const BUILT_IN_EXPLOSIVE_AMMO_AREA_PROFILE_DEFINITIONS: readonly AreaDamageProfile[] =
   Object.entries(explosiveAmmoProfileDefinitions).map(([ammoId, definition]) => {
     const ammo = AMMO_TYPES.find(candidate => candidate.id === ammoId);
     const main = ammoDamageEffect(
@@ -413,7 +417,45 @@ export const EXPLOSIVE_AMMO_AREA_PROFILES: readonly AreaDamageProfile[] =
       ...(definition.nonBiologicalOnly ? { nonBiologicalOnly: true } : {}),
       ...(definition.emp ? { emp: true } : {}),
     };
-  }).filter(hasConfiguredAreaRanges);
+  });
+
+/** Built-in launched ammunition with manual blast ranges configured. */
+export const EXPLOSIVE_AMMO_AREA_PROFILES: readonly AreaDamageProfile[] =
+  BUILT_IN_EXPLOSIVE_AMMO_AREA_PROFILE_DEFINITIONS.filter(hasConfiguredAreaRanges);
+
+/** House-rule-only range for explosive ammunition whose manual omits a radius. */
+export const STANDARD_MINE_HOUSE_RULE_RADIUS_METERS = 5;
+
+function removeMissingRangeGuidance(notes: readonly string[] | undefined): string[] {
+  return (notes ?? [])
+    .map(note => note
+      .replace(/blast radius is not specified in the manual\.?/gi, '')
+      .replace(/manual does not specify (?:the blast or concussion ranges|their ranges)\.?/gi, '')
+      .replace(/manual lists concussion and fragmentation damage but does not specify their ranges\.?/gi, '')
+      .replace(/set (?:a campaign range before assigning targets|each range for this campaign|the campaign blast range)\.?/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^[\s.;,]+|[\s.;,]+$/g, ''))
+    .filter(Boolean);
+}
+
+/**
+ * Separate derived profiles for the optional 5m house rule. The authoritative
+ * profile definitions above remain untouched so toggling the rule off restores
+ * the exact original manual-range behavior.
+ */
+export const STANDARD_MINE_HOUSE_RULE_EXPLOSIVE_AMMO_AREA_PROFILES: readonly AreaDamageProfile[] =
+  BUILT_IN_EXPLOSIVE_AMMO_AREA_PROFILE_DEFINITIONS
+    .filter(profile => !hasConfiguredAreaRanges(profile))
+    .map(profile => ({
+      ...profile,
+      effects: profile.effects.map(effect => effect.radius === undefined
+        ? { ...effect, radius: STANDARD_MINE_HOUSE_RULE_RADIUS_METERS, rangeUnit: 'm' as const }
+        : effect),
+      notes: [
+        ...removeMissingRangeGuidance(profile.notes),
+        `House rule: uses one ${STANDARD_MINE_HOUSE_RULE_RADIUS_METERS}m blast zone (standard mine radius); original damage is unchanged.`,
+      ],
+    }));
 
 function customAreaProfile(
   id: string,
@@ -745,6 +787,15 @@ export const ALL_BUILT_IN_AREA_DAMAGE_PROFILES: readonly AreaDamageProfile[] = [
   ...VEHICLE_CANNON_AREA_PROFILES,
 ].filter(hasConfiguredAreaRanges);
 
+/** Built-in area profiles with an optional derived 5m profile for omitted ammo ranges. */
+export function getBuiltInAreaDamageProfiles(
+  missingExplosiveBlastZoneHouseRule = false,
+): readonly AreaDamageProfile[] {
+  return missingExplosiveBlastZoneHouseRule
+    ? [...ALL_BUILT_IN_AREA_DAMAGE_PROFILES, ...STANDARD_MINE_HOUSE_RULE_EXPLOSIVE_AMMO_AREA_PROFILES]
+    : ALL_BUILT_IN_AREA_DAMAGE_PROFILES;
+}
+
 export function areaProfileRange(profile: AreaDamageProfile, effect: AreaAttackComponent, overrides: AreaProfileRangeOverrides): number | undefined {
   return effect.radius ?? overrides[profile.id]?.[effect.id ?? 'main'];
 }
@@ -829,6 +880,8 @@ export interface AreaResolution {
   damage: number;
   resisted: boolean;
   vehicleSystemId?: string;
+  vehicleSystemIds?: string[];
+  vehicleSystemNames?: string[];
   resistanceRoll?: number;
   enduranceRoll?: number;
   unconsciousRounds: number;
@@ -1034,6 +1087,7 @@ export function formatAreaResolution(result: AreaResolution): string {
   const parts = [`${result.targetName}: ${result.damage} damage`];
   if (result.directHit) parts.push('direct hit / impact point');
   if (result.zoneLabel) parts.push(result.zoneLabel);
+  if (result.vehicleSystemNames?.length) parts.push(`vehicle systems: ${result.vehicleSystemNames.join(', ')}`);
   if (result.resisted) parts.push('resisted');
   if (result.unconsciousRounds > 0) parts.push(`unconscious ${result.unconsciousRounds} rounds`);
   if (result.radiationExposure) parts.push(`${result.radiationExposure} radiation exposure (not yet applied)`);

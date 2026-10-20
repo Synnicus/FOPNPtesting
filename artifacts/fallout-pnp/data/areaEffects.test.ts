@@ -137,13 +137,14 @@ test('blast range overrides normalize malformed values and never replace printed
 });
 
 test('EMP explosive profiles are marked non-biological and preserve EMP behavior when opened', () => {
-  for (const id of ['ammo:rocket_emp', 'ammo:40mm_pulse', 'ammo:60mm_pulse_mortar']) {
-    const profile = EXPLOSIVE_AMMO_AREA_PROFILES.find(candidate => candidate.id === id);
-    assert.ok(profile, `missing EMP area profile ${id}`);
-    assert.equal(profile.emp, true);
-    assert.equal(profile.nonBiologicalOnly, true);
-    const attack = areaDamageProfileToAttack(profile);
-    assert.equal(attack.emp, true);
-    assert.equal(attack.nonBiologicalOnly, true);
+  for (const id of ['ammo:rocket_emp', 'ammo:40mm_pulse']) {
+    assert.equal(EXPLOSIVE_AMMO_AREA_PROFILES.some(candidate => candidate.id === id), false, `${id} has no manual blast radius`);
   }
+  const profile = EXPLOSIVE_AMMO_AREA_PROFILES.find(candidate => candidate.id === 'ammo:60mm_pulse_mortar');
+  assert.ok(profile, 'the manual-ranged EMP mortar remains available');
+  assert.equal(profile.emp, true);
+  assert.equal(profile.nonBiologicalOnly, true);
+  const attack = areaDamageProfileToAttack(profile);
+  assert.equal(attack.emp, true);
+  assert.equal(attack.nonBiologicalOnly, true);
 });

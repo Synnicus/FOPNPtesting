@@ -433,6 +433,15 @@ test('translated interface fallbacks override English identity entries and match
   assert.notEqual(runtimeTranslateText('FACTION REPUTATION', 'ja'), 'FACTION REPUTATION');
   for (const locale of Object.keys(uiSupplemental)) {
     assert.notEqual(runtimeTranslateText('Hardcore Radiation Penalties', locale), 'Hardcore Radiation Penalties', locale);
+    assert.notEqual(runtimeTranslateText('5m Blast Radius for Explosive Ammo', locale), '5m Blast Radius for Explosive Ammo', locale);
+    assert.notEqual(
+      runtimeTranslateText(
+        'House rule: built-in explosive ammo without a manual blast range gets one 5-meter zone, matching a standard mine. Turn this off to restore the original profiles; printed blast zones are unchanged.',
+        locale,
+      ),
+      'House rule: built-in explosive ammo without a manual blast range gets one 5-meter zone, matching a standard mine. Turn this off to restore the original profiles; printed blast zones are unchanged.',
+      locale,
+    );
     assert.notEqual(runtimeTranslateText('CUSTOM ARMOR', locale), 'CUSTOM ARMOR', locale);
     assert.notEqual(runtimeTranslateText('CUSTOM AMMO', locale), 'CUSTOM AMMO', locale);
     assert.notEqual(runtimeTranslateText('Public Domain 1920s', locale), 'Public Domain 1920s', locale);

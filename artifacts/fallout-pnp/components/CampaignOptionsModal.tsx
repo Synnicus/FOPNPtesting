@@ -3,8 +3,8 @@ import {
   AccessibilityInfo,
   findNodeHandle,
   Modal,
+  Pressable,
   ScrollView,
-  Switch,
   Platform,
   Text as NativeText,
   View,
@@ -261,6 +261,59 @@ function VaultRadioTrackLabels({
   );
 }
 
+function ThemeSwitch({
+  value,
+  onValueChange,
+  label,
+  hint,
+  testID,
+  activeColor,
+  inactiveColor,
+  thumbColor,
+}: {
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  label: string;
+  hint: string;
+  testID: string;
+  activeColor: string;
+  inactiveColor: string;
+  thumbColor: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ checked: value }}
+      testID={testID}
+      onPress={() => onValueChange(!value)}
+      hitSlop={8}
+      style={{
+        width: 48,
+        height: 28,
+        padding: 3,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: value ? activeColor : inactiveColor,
+        backgroundColor: value ? activeColor : inactiveColor,
+        alignItems: value ? 'flex-end' : 'flex-start',
+        justifyContent: 'center',
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          backgroundColor: thumbColor,
+        }}
+      />
+    </Pressable>
+  );
+}
+
 function PreferenceSwitchRow({
   label,
   description,
@@ -294,15 +347,14 @@ function PreferenceSwitchRow({
           {description}
         </Text>
       </View>
-      <Switch
-        accessibilityRole="switch"
-        accessibilityLabel={label}
-        accessibilityHint={description}
-        accessibilityState={{ checked: value }}
+      <ThemeSwitch
         testID={testID}
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: palette.border, true: palette.primary }}
+        label={label}
+        hint={description}
+        activeColor={palette.primary}
+        inactiveColor={palette.border}
         thumbColor={palette.card}
       />
     </View>
@@ -555,6 +607,8 @@ export default function CampaignOptionsModal({
   const {
     hardcoreRadiationRules,
     setHardcoreRadiationRules,
+    missingExplosiveBlastZoneHouseRule,
+    setMissingExplosiveBlastZoneHouseRule,
     mutantGhoulRadiationRules,
     setMutantGhoulRadiationRules,
     ghoulRadiationHealingOption,
@@ -686,15 +740,14 @@ export default function CampaignOptionsModal({
                     Optional campaign-wide SPECIAL penalties. Separate from core radiation sickness.
                   </Text>
                 </View>
-                <Switch
-                  accessibilityRole="switch"
-                  accessibilityLabel="Enable Hardcore radiation penalties"
-                  accessibilityHint="Applies optional campaign-wide SPECIAL penalties"
-                  accessibilityState={{ checked: hardcoreRadiationRules }}
+                <ThemeSwitch
                   testID="hardcore-radiation-toggle"
                   value={hardcoreRadiationRules}
                   onValueChange={handleHardcoreToggle}
-                  trackColor={{ false: palette.border, true: palette.destructive }}
+                  label="Enable Hardcore radiation penalties"
+                  hint="Applies optional campaign-wide SPECIAL penalties"
+                  activeColor={palette.primary}
+                  inactiveColor={palette.border}
                   thumbColor={palette.card}
                 />
               </View>
@@ -714,6 +767,14 @@ export default function CampaignOptionsModal({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            <PreferenceSwitchRow
+              label="5m Blast Radius for Explosive Ammo"
+              description="House rule: built-in explosive ammo without a manual blast range gets one 5-meter zone, matching a standard mine. Turn this off to restore the original profiles; printed blast zones are unchanged."
+              value={missingExplosiveBlastZoneHouseRule}
+              onValueChange={setMissingExplosiveBlastZoneHouseRule}
+              testID="explosive-ammo-mine-radius-toggle"
+            />
 
             <PreferenceSwitchRow
               label="Mutant/Ghoul Radiation Immunity/Healing"

@@ -117,8 +117,9 @@ test('Hardcore campaign controls live in options and announce their roles and st
   assert.match(campaignControls, /accessibilityLabel=\{`Review Hardcore radiation thresholds\. Currently \$\{hardcoreRadiationRules \? 'enabled' : 'disabled'\}`\}/);
   assert.match(campaignControls, /accessibilityHint="Opens an explanation without changing the campaign setting"/);
   assert.match(campaignControls, /accessibilityState=\{\{ expanded: showHardcorePreview \}\}/);
-  assert.match(optionsSource, /accessibilityLabel="Enable Hardcore radiation penalties"/);
-  assert.match(optionsSource, /accessibilityState=\{\{ checked: hardcoreRadiationRules \}\}/);
+  assert.match(optionsSource, /label="Enable Hardcore radiation penalties"/);
+  assert.match(optionsSource, /accessibilityState=\{\{ checked: value \}\}/);
+  assert.match(optionsSource, /value=\{hardcoreRadiationRules\}/);
   assert.match(optionsSource, /accessibilityRole="switch"/);
   assert.match(optionsSource, /onValueChange=\{handleHardcoreToggle\}/);
 });

@@ -18,7 +18,7 @@ import {
   computeCustomWeaponModEffects,
 } from '@/data/customRules';
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
-import { BUILT_IN_WEAPONS, MINE_TRAP_PROFILES, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponAttackModes, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
+import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponAttackModes, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
 import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { ALCOHOL_CONSUMABLES, CHEMS } from '@/data/chems';
@@ -301,6 +301,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
   const [blastRadiusEnabled, setBlastRadiusEnabled] = useState(false);
 
   const isEditing = !!editWeapon;
+  const isCreatingTrap = !isEditing && initialCategory === 'minesTraps';
 
   const applyWeaponFields = (w: Weapon, nameOverride?: string) => {
     setName(nameOverride ?? w.name);
@@ -504,7 +505,11 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.85)' }}>
         <View style={{ maxHeight: '90%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: colors.border }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>{isEditing ? 'EDIT CUSTOM WEAPON' : 'CREATE CUSTOM WEAPON'}</Text>
+            <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>
+              {isEditing
+                ? category === 'minesTraps' ? 'EDIT CUSTOM TRAP' : 'EDIT CUSTOM WEAPON'
+                : isCreatingTrap ? 'CREATE CUSTOM TRAP' : 'CREATE CUSTOM WEAPON'}
+            </Text>
             <TouchableOpacity onPress={onClose}><Feather name="x" size={22} color={colors.mutedForeground} /></TouchableOpacity>
           </View>
 
@@ -520,7 +525,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
             {showPresets && (
               <View style={{ maxHeight: 180, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
                 <ScrollView>
-                  {BUILT_IN_WEAPONS.map(w => (
+                  {BUILT_IN_WEAPONS.filter(w => !isCreatingTrap || w.category === 'minesTraps').map(w => (
                     <TouchableOpacity key={w.id} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }} onPress={() => copyFromPreset(w)}>
                       <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{w.name}</Text>
                       <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{formatWeaponDamage(w)} · {SKILL_LABELS[w.category] ?? w.category}</Text>
@@ -544,7 +549,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
               <>
                 <TextInput
                   style={{ backgroundColor: colors.secondary, borderWidth: 1, borderColor: isValid ? colors.border : colors.destructive + '88', borderRadius: colors.radius, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}
-                  placeholder="Weapon name*" placeholderTextColor={colors.mutedForeground}
+                  placeholder={category === 'minesTraps' ? 'Trap name*' : 'Weapon name*'} placeholderTextColor={colors.mutedForeground}
                   value={name} onChangeText={setName}
                 />
                 <SelectableTagMenu
@@ -558,14 +563,18 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
                   onAddCustomTag={addCustomWeaponTag}
                 />
                 {/* Category */}
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CATEGORY</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {Object.entries(WEAPON_CATEGORIES).map(([label, val]) => (
-                    <TouchableOpacity key={val} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: category === val ? colors.primary : colors.secondary, borderWidth: 1, borderColor: category === val ? colors.primary : colors.border }} onPress={() => setCategory(val)}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: category === val ? colors.primaryForeground : colors.foreground }}>{label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {!isCreatingTrap && (
+                  <>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CATEGORY</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {Object.entries(WEAPON_CATEGORIES).map(([label, val]) => (
+                        <TouchableOpacity key={val} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: category === val ? colors.primary : colors.secondary, borderWidth: 1, borderColor: category === val ? colors.primary : colors.border }} onPress={() => setCategory(val)}>
+                          <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: category === val ? colors.primaryForeground : colors.foreground }}>{label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
                 {/* Damage type */}
                 {category === 'minesTraps' && (
                   <View style={{ gap: 6 }}>
@@ -588,7 +597,6 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
                       onPress={() => {
                         const enabled = !blastRadiusEnabled;
                         setBlastRadiusEnabled(enabled);
-                        if (!enabled && hasPresetBlastProfile) setAreaAttackProfileId(undefined);
                       }}
                       style={{ padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: blastRadiusEnabled ? colors.primary : colors.border, backgroundColor: blastRadiusEnabled ? colors.primary + '22' : colors.secondary }}
                     >
@@ -833,7 +841,9 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
 
           <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
             <TouchableOpacity style={{ paddingVertical: 14, borderRadius: colors.radius, alignItems: 'center', backgroundColor: isValid ? colors.primary : colors.secondary, opacity: isValid ? 1 : 0.5 }} onPress={handleSave} disabled={!isValid}>
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>{isEditing ? 'SAVE CHANGES' : 'CREATE WEAPON'}</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: isValid ? colors.primaryForeground : colors.mutedForeground }}>
+                {isEditing ? 'SAVE CHANGES' : category === 'minesTraps' ? 'CREATE TRAP' : 'CREATE WEAPON'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1987,11 +1997,14 @@ export default function EquipmentScreen() {
   useEffect(() => {
     if (!manualTab) return;
 
-    if (manualTab === 'weapons' || manualTab === 'armor' || manualTab === 'ammo' || manualTab === 'consumables') {
-      setTab(manualTab);
+    if (manualTab === 'weapons' || manualTab === 'traps' || manualTab === 'armor' || manualTab === 'ammo' || manualTab === 'consumables') {
+      const weaponTrapsLink = manualTab === 'weapons' && manualCategory === 'minesTraps';
+      setTab(weaponTrapsLink ? 'traps' : manualTab);
       setSearch(typeof manualSearch === 'string' ? manualSearch : '');
+      if (weaponTrapsLink) setCategoryFilter('all');
       if (
         manualTab === 'weapons'
+        && manualCategory !== 'minesTraps'
         && (manualCategory === 'all' || WEAPON_CATEGORY_ORDER.includes(manualCategory as WeaponCategory))
       ) {
         setCategoryFilter(manualCategory as WeaponCategory | 'all');

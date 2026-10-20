@@ -63,6 +63,11 @@ test('vehicle blasts damage Structure plus the chosen system, while EMP only dam
   assert.equal(blast.systems.find(system => system.kind === 'structure')?.currentHp, structure.currentHp - 9);
   assert.equal(blast.systems.find(system => system.kind === 'engine')?.currentHp, engine.currentHp - 9);
 
+  const multiSystemBlast = applyVehicleBlastDamage(humvee, 9, [engine.id, tire.id, structure.id]);
+  assert.equal(multiSystemBlast.systems.find(system => system.kind === 'structure')?.currentHp, structure.currentHp - 9);
+  assert.equal(multiSystemBlast.systems.find(system => system.kind === 'engine')?.currentHp, engine.currentHp - 9);
+  assert.equal(multiSystemBlast.systems.find(system => system.id === tire.id)?.currentHp, tire.currentHp - 9);
+
   const structureOnly = applyVehicleBlastDamage(humvee, 9, structure.id);
   assert.equal(structureOnly.systems.find(system => system.kind === 'structure')?.currentHp, structure.currentHp - 9);
 

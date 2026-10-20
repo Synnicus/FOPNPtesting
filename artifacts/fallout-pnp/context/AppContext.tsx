@@ -557,6 +557,8 @@ function hasValidCampaignImport(value: unknown): value is AppState {
       || (Array.isArray(value.radioStations)
         && !value.radioStations.some(station => isRadioStationRecord(station) && station.id === value.activeRadioStationId)))) return false;
   if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
+  if (value.missingExplosiveBlastZoneHouseRule !== undefined
+    && typeof value.missingExplosiveBlastZoneHouseRule !== 'boolean') return false;
   if (!isValidAreaProfileRangeOverrides(value.areaProfileRangeOverrides)) return false;
   return true;
 }
@@ -775,6 +777,7 @@ interface AppContextValue extends AppState {
   adjustRadiation: (characterId: string, delta: number) => void;
   hardcoreRadiationRules: boolean;
   setHardcoreRadiationRules: (enabled: boolean) => void;
+  setMissingExplosiveBlastZoneHouseRule: (enabled: boolean) => void;
   setAreaProfileRangeOverride: (profileId: string, effectId: string, range: number) => void;
   setMutantGhoulRadiationRules: (enabled: boolean) => void;
   setGhoulRadiationHealingOption: (option: GhoulRadiationHealingOption) => void;
@@ -1507,8 +1510,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const result = zone
           ? resolveAreaZoneTarget(zone, areaTarget, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)])
           : resolveAreaTarget(attack, areaTarget, () => fixed.resistance, () => dieRolls[Math.min(dieIndex++, dieRolls.length - 1)]);
-        const vehicleSystemId = attack.vehicleSystemTargets?.[c.id];
-        const vehicleSystem = c.vehicle?.systems.find(system => system.id === vehicleSystemId);
+        const systemTargetValue = attack.vehicleSystemTargets?.[c.id];
+        const selectedVehicleSystemIds = Array.isArray(systemTargetValue)
+          ? systemTargetValue
+          : systemTargetValue ? [systemTargetValue] : [];
+        const vehicleSystemId = selectedVehicleSystemIds[0];
+        const vehicleSystems = vehiclePerformance?.systems ?? [];
+        const vehicleSystem = vehicleSystems.find(system => system.id === vehicleSystemId);
         const empBlocked = !!attack.emp && !!c.vehicle
           && (!vehicleSystem || !isVehicleSystemElectronic(vehicleSystem));
         if (empBlocked) {
@@ -1522,9 +1530,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (physicalExposure && result.damage > 0) {
           result.notes.push('Armor condition: one damaging area exposure recorded on body armor (aggregate result). Adjust individual hits in Equipment if the GM rules otherwise.');
         }
+        const vehicleSystemNames = c.vehicle && result.damage > 0
+          ? attack.emp
+            ? (vehicleSystem ? [vehicleSystem.name] : [])
+            : [...new Set([
+                (vehicleSystems.find(system => system.kind === 'structure') ?? vehicleSystems[0])?.id,
+                ...selectedVehicleSystemIds,
+              ].filter((systemId): systemId is string => !!systemId))]
+                .flatMap(systemId => {
+                  const system = vehicleSystems.find(candidate => candidate.id === systemId);
+                  return system ? [system.name] : [];
+                })
+          : undefined;
         return [{
           ...result,
           ...(vehicleSystemId ? { vehicleSystemId } : {}),
+          ...(c.vehicle && selectedVehicleSystemIds.length
+            ? { vehicleSystemIds: attack.emp ? [selectedVehicleSystemIds[0]] : selectedVehicleSystemIds }
+            : {}),
+          ...(vehicleSystemNames?.length ? { vehicleSystemNames } : {}),
           ...(attack.directHitTargetId === c.id ? { directHit: true } : {}),
           ...(zone ? { zoneId: zone.id, zoneLabel: zone.label } : {}),
         }];
@@ -1555,7 +1579,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const updatedVehicle = result.damage <= 0
             ? c.vehicle
             : isExplosiveDamage
-              ? applyVehicleBlastDamage(c.vehicle, result.damage, result.vehicleSystemId, !!attack.emp)
+              ? applyVehicleBlastDamage(c.vehicle, result.damage, result.vehicleSystemIds ?? result.vehicleSystemId, !!attack.emp)
               : structure
                 ? applyVehicleSystemDamage(c.vehicle, structure.id, result.damage)
                 : c.vehicle;
@@ -2686,6 +2710,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, musicVolume: normalizedVolume }));
   }, []);
 
+  const setMissingExplosiveBlastZoneHouseRule = useCallback((enabled: boolean) => {
+    setState(s => ({ ...s, missingExplosiveBlastZoneHouseRule: enabled }));
+  }, []);
+
   const saveRadioStations = useCallback((stations: RadioStation[]) => {
     setState(s => {
       const radioStations = normalizeRadioStations(stations);
@@ -2731,6 +2759,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setMutantGhoulRadiationRules, setGhoulRadiationHealingOption, setAreaProfileRangeOverride,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
           setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled, setMusicVolume,
+          setMissingExplosiveBlastZoneHouseRule,
           saveRadioStations, selectRadioStation,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,

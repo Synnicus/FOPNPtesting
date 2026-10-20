@@ -11,6 +11,8 @@ export interface CampaignOptions {
   combatSoundsEnabled: boolean;
   musicEnabled: boolean;
   musicVolume: number;
+  /** Give built-in explosive ammo without manual blast zones a temporary 5m radius. */
+  missingExplosiveBlastZoneHouseRule: boolean;
   mutantGhoulRadiationRules: boolean;
   ghoulRadiationHealingOption: GhoulRadiationHealingOption;
 }
@@ -21,6 +23,7 @@ export const DEFAULT_CAMPAIGN_OPTIONS: CampaignOptions = {
   combatSoundsEnabled: true,
   musicEnabled: false,
   musicVolume: 0.5,
+  missingExplosiveBlastZoneHouseRule: false,
   mutantGhoulRadiationRules: false,
   ghoulRadiationHealingOption: 1,
 };
@@ -50,6 +53,9 @@ export function normalizeCampaignOptions(value: unknown): CampaignOptions {
     musicVolume: hasValidMusicVolume
       ? options.musicVolume as number
       : DEFAULT_CAMPAIGN_OPTIONS.musicVolume,
+    missingExplosiveBlastZoneHouseRule: typeof options.missingExplosiveBlastZoneHouseRule === 'boolean'
+      ? options.missingExplosiveBlastZoneHouseRule
+      : DEFAULT_CAMPAIGN_OPTIONS.missingExplosiveBlastZoneHouseRule,
     mutantGhoulRadiationRules: typeof options.mutantGhoulRadiationRules === 'boolean'
       ? options.mutantGhoulRadiationRules
       : DEFAULT_CAMPAIGN_OPTIONS.mutantGhoulRadiationRules,

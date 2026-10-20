@@ -23,6 +23,7 @@ test('campaign options preserve explicit preferences and normalize invalid value
     combatSoundsEnabled: false,
     musicEnabled: false,
     musicVolume: 0.35,
+    missingExplosiveBlastZoneHouseRule: false,
     mutantGhoulRadiationRules: false,
     ghoulRadiationHealingOption: 1,
   });
@@ -65,4 +66,11 @@ test('campaign options persist the mutant radiation toggle and selected Ghoul ru
     mutantGhoulRadiationRules: 'on',
     ghoulRadiationHealingOption: 9,
   }), DEFAULT_CAMPAIGN_OPTIONS);
+});
+
+test('the missing explosive blast-zone house rule defaults off and only accepts booleans', () => {
+  assert.equal(normalizeCampaignOptions({}).missingExplosiveBlastZoneHouseRule, false);
+  assert.equal(normalizeCampaignOptions({ missingExplosiveBlastZoneHouseRule: true }).missingExplosiveBlastZoneHouseRule, true);
+  assert.equal(normalizeCampaignOptions({ missingExplosiveBlastZoneHouseRule: false }).missingExplosiveBlastZoneHouseRule, false);
+  assert.equal(normalizeCampaignOptions({ missingExplosiveBlastZoneHouseRule: 'enabled' }).missingExplosiveBlastZoneHouseRule, false);
 });

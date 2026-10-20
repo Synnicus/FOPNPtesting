@@ -615,18 +615,21 @@ export function isVehicleSystemElectronic(system: VehicleSystem): boolean {
 }
 
 /**
- * Explosive area damage reaches Structure and the selected system. EMP is the
- * exception: it can damage electronic systems only and never Structure, tires,
- * or treads.
+ * Explosive area damage reaches Structure and every selected system. EMP is
+ * the exception: it can damage one electronic system only, never Structure,
+ * tires, or treads.
  */
 export function applyVehicleBlastDamage(
   vehicle: VehicleProfile,
   damage: number,
-  selectedSystemId?: string,
+  selectedSystemId?: string | readonly string[],
   emp = false,
 ): VehicleProfile {
-  const selectedSystem = vehicle.systems.find(system => system.id === selectedSystemId);
+  const selectedSystemIds = Array.isArray(selectedSystemId)
+    ? [...selectedSystemId]
+    : selectedSystemId ? [selectedSystemId] : [];
   if (emp) {
+    const selectedSystem = vehicle.systems.find(system => system.id === selectedSystemIds[0]);
     return selectedSystem && isVehicleSystemElectronic(selectedSystem)
       ? applyVehicleSystemDamage(vehicle, selectedSystem.id, damage)
       : vehicle;
@@ -635,8 +638,8 @@ export function applyVehicleBlastDamage(
   const structure = vehicle.systems.find(system => system.kind === 'structure') ?? vehicle.systems[0];
   if (!structure) return vehicle;
   let updated = applyVehicleSystemDamage(vehicle, structure.id, damage);
-  if (selectedSystem && selectedSystem.id !== structure.id) {
-    updated = applyVehicleSystemDamage(updated, selectedSystem.id, damage);
+  for (const systemId of new Set(selectedSystemIds)) {
+    if (systemId !== structure.id) updated = applyVehicleSystemDamage(updated, systemId, damage);
   }
   return updated;
 }

@@ -7,12 +7,25 @@ const source = readFileSync(new URL('../app/(tabs)/index.tsx', import.meta.url),
 
 test('area chooser lists built-in and custom explosives without unrelated traps', () => {
   assert.match(source, /MINE_TRAP_PROFILES,[\s\S]*?from '@\/data\/areaEffects'/);
-  assert.match(source, /ALL_BUILT_IN_AREA_DAMAGE_PROFILES/);
+  assert.match(source, /getBuiltInAreaDamageProfiles\(missingExplosiveBlastZoneHouseRule\)/);
   assert.match(source, /profiles\.map\(profile =>/);
   assert.match(source, /testID=\{`aoe-profile-choice-/);
-  assert.match(source, /Choose a grenade, explosive ammunition, area mine\/trap, vehicle cannon, or custom area profile/);
+  assert.match(source, /SELECT A CONFIGURED BLAST PROFILE/);
+  assert.match(source, /Only profiles with saved zone ranges are shown/);
   assert.match(source, /createCustomAmmoAreaDamageProfiles\(allAmmo\)/);
   assert.match(source, /createCustomWeaponAreaDamageProfiles\(allWeapons\)/);
+  assert.match(source, /Blast ranges and damage components cannot be edited during combat/);
+  assert.doesNotMatch(source, /aoe-save-ranges|aoe-range-/);
+});
+
+test('equipment exposes a dedicated trap tab and profile-owned blast radius editors', () => {
+  const equipment = readFileSync(new URL('../app/(tabs)/equipment.tsx', import.meta.url), 'utf8');
+  assert.match(equipment, /key: 'traps', label: `TRAPS/);
+  assert.match(equipment, /openNewTrap/);
+  assert.match(equipment, /CREATE CUSTOM TRAP/);
+  assert.match(equipment, /BLAST RADIUS/i);
+  assert.match(equipment, /CustomAreaEffectsEditor/);
+  assert.match(equipment, /initialCategory=\{initialWeaponCategory\}/);
 });
 
 test('area profiles provide per-target blast zones and a single resolver payload', () => {

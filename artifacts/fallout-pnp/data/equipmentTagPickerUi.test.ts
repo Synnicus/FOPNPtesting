@@ -37,7 +37,8 @@ test('selectable tag menus expose tag buttons and custom tag creation inside the
 test('weapon and armor catalog filters include a final custom-only option', () => {
   assert.match(equipmentSource, /testID="custom-weapon-tag-menu"/);
   assert.match(equipmentSource, /buttonLabel="SELECT WEAPON TAGS"/);
-  assert.match(equipmentSource, /\['all', \.\.\.WEAPON_CATEGORY_ORDER, 'custom'\]/);
+  assert.match(equipmentSource, /\['all', \.\.\.WEAPON_CATEGORY_ORDER\.filter\(category => category !== 'minesTraps'\), 'custom'\]/);
+  assert.match(equipmentSource, /key: 'traps', label: `TRAPS/);
   assert.match(equipmentSource, /categoryFilter === 'custom' \? !!w\.isCustom/);
   assert.match(equipmentSource, /\['all', 'custom'\] as const/);
   assert.match(equipmentSource, /armorFilter === 'all' \|\| !!a\.isCustom/);

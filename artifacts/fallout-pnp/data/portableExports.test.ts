@@ -25,7 +25,12 @@ import { customRuleConditionMatches } from './customRules.ts';
 import { BUILT_IN_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
 import { getInjuryCauseText } from './injuries.ts';
-import { areaProfileRange, EXPLOSIVE_AMMO_AREA_PROFILES, normalizeAreaProfileRangeOverrides } from './areaEffects.ts';
+import {
+  areaProfileRange,
+  createCustomWeaponAreaDamageProfiles,
+  EXPLOSIVE_AMMO_AREA_PROFILES,
+  normalizeAreaProfileRangeOverrides,
+} from './areaEffects.ts';
 import {
   createCampaignBundle,
   createCharacterBundle,
@@ -266,27 +271,37 @@ test('portable campaign round-trips loot and encounter ranges, weights, and map 
   assert.deepEqual(parsed.bundle.state.campaignMaps, [campaignMap]);
 });
 
-test('portable campaign round-trips campaign-specific blast distances', () => {
-  const rangeOverrides = {
-    'ammo:rocket_explosive': { main: 45 },
-    'ammo:40mm_frag': { concussion: 30, fragmentation: 15 },
+test('portable campaign round-trips custom trap blast settings and zone ranges', () => {
+  const customTrap: Weapon = {
+    ...weaponTemplate,
+    id: 'custom-trap',
+    name: 'Custom Trap',
+    category: 'minesTraps',
+    hasBlastRadius: true,
+    areaRangeUnit: 'hex',
+    customAreaEffects: [{
+      id: 'blast',
+      label: 'Blast',
+      kind: 'explosion',
+      damageType: 'explosion',
+      damageDieCount: 1,
+      damageDie: 8,
+      damageBonus: 2,
+      radius: 4,
+    }],
   };
-  const bundle = createCampaignBundle({ ...state, areaProfileRangeOverrides: rangeOverrides }, []);
+  const bundle = createCampaignBundle({
+    ...state,
+    customWeapons: [customTrap],
+  }, []);
   const parsed = parseCampaignFile(JSON.stringify(bundle));
 
   assert.equal(parsed.ok, true);
   if (!parsed.ok || parsed.source !== 'portable') {
     assert.fail('Expected the exported campaign to import as a portable bundle.');
   }
-  assert.deepEqual(parsed.bundle.state.areaProfileRangeOverrides, rangeOverrides);
-
-  const rocket = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:rocket_explosive')!;
-  const fragmentation = EXPLOSIVE_AMMO_AREA_PROFILES.find(profile => profile.id === 'ammo:40mm_frag')!;
-  assert.equal(areaProfileRange(rocket, rocket.effects[0], parsed.bundle.state.areaProfileRangeOverrides!), 45);
-  assert.deepEqual(
-    fragmentation.effects.map(effect => areaProfileRange(fragmentation, effect, parsed.bundle.state.areaProfileRangeOverrides!)),
-    [undefined, 30, 15],
-  );
+  assert.deepEqual(parsed.bundle.state.customWeapons, [customTrap]);
+  assert.equal(createCustomWeaponAreaDamageProfiles(parsed.bundle.state.customWeapons)[0].effects[0].radius, 4);
 });
 
 test('campaign imports normalize invalid or missing blast ranges without changing printed ranges', () => {
@@ -573,6 +588,7 @@ test('portable campaign exports round-trip theme, audio, and mutant radiation pr
     radioStations,
     activeRadioStationId: 'custom-station',
     mutantGhoulRadiationRules: true,
+    missingExplosiveBlastZoneHouseRule: true,
     ghoulRadiationHealingOption: 3,
   }, []);
   const json = JSON.stringify(bundle);
@@ -588,6 +604,7 @@ test('portable campaign exports round-trip theme, audio, and mutant radiation pr
     assert.deepEqual(parsed.bundle.state.radioStations, radioStations);
     assert.equal(parsed.bundle.state.activeRadioStationId, 'custom-station');
     assert.equal(parsed.bundle.state.mutantGhoulRadiationRules, true);
+    assert.equal(parsed.bundle.state.missingExplosiveBlastZoneHouseRule, true);
     assert.equal(parsed.bundle.state.ghoulRadiationHealingOption, 3);
   }
 });
@@ -722,6 +739,7 @@ test('legacy and portable campaigns without options remain accepted', () => {
     systemSoundsEnabled: _sounds,
     combatSoundsEnabled: _combatSounds,
     musicEnabled: _music,
+    missingExplosiveBlastZoneHouseRule: _blastHouseRule,
     mutantGhoulRadiationRules: _mutantRadiation,
     ghoulRadiationHealingOption: _ghoulHealing,
     ...olderState
@@ -736,6 +754,7 @@ test('legacy and portable campaigns without options remain accepted', () => {
       assert.equal(loadedState.systemSoundsEnabled, undefined);
       assert.equal(loadedState.combatSoundsEnabled, undefined);
       assert.equal(loadedState.musicEnabled, undefined);
+      assert.equal(loadedState.missingExplosiveBlastZoneHouseRule, undefined);
       assert.equal(loadedState.mutantGhoulRadiationRules, undefined);
       assert.equal(loadedState.ghoulRadiationHealingOption, undefined);
     }
@@ -749,6 +768,7 @@ test('campaign imports reject invalid theme, audio, and mutant radiation options
     { systemSoundsEnabled: 'false' },
     { combatSoundsEnabled: 1 },
     { musicEnabled: 0 },
+    { missingExplosiveBlastZoneHouseRule: 'yes' },
     { mutantGhoulRadiationRules: 'yes' },
     { ghoulRadiationHealingOption: 5 },
   ]) {

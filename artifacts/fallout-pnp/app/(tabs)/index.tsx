@@ -88,17 +88,15 @@ import {
 } from '@/data/specialUnarmedAttacks';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+  getBuiltInAreaDamageProfiles,
   createCustomAmmoAreaDamageProfiles,
   createCustomWeaponAreaDamageProfiles,
   buildAreaDamageZones,
   formatAreaResolution,
   MINE_TRAP_PROFILES,
-  missingAreaProfileRanges,
   type AreaAttack,
   type AreaAttackKind,
   type AreaDamageProfile,
-  type AreaProfileRangeOverrides,
   type AreaResolution,
 } from '@/data/areaEffects';
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, EMPTY_NATURAL_PROTECTION, DamageType, PositionType, SkillType } from '@/context/types';
@@ -645,17 +643,6 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
   );
 }
 
-const AREA_ATTACK_OPTIONS: { kind: AreaAttackKind; label: string; note: string }[] = [
-  { kind: 'explosion', label: 'Explosion', note: 'Explosion DT/DR' },
-  { kind: 'fragmentation', label: 'Fragmentation', note: 'Normal DT/DR' },
-  { kind: 'concussion', label: 'Concussion', note: 'Ignores DT; Explosion DR' },
-  { kind: 'flamethrower', label: 'Flamethrower / Firestream', note: 'Fire DT/DR + 1d6 ongoing' },
-  { kind: 'gasInhaled', label: 'Gas — Inhaled', note: 'Inhaled gas resistance' },
-  { kind: 'gasContact', label: 'Gas — Contact', note: 'Contact gas resistance' },
-  { kind: 'electricity', label: 'Electricity', note: 'Resistance, then Endurance; failure = 1d10 rounds unconscious' },
-  { kind: 'acid', label: 'Acid', note: 'Fire protection + 1d6 ongoing' },
-];
-
 function LightPickerModal({ visible, value, onChange, onClose }: {
   visible: boolean; value: number; onChange: (v: number) => void; onClose: () => void;
 }) {
@@ -866,7 +853,8 @@ export default function CombatScreen() {
   const combatThrowPlayer = useAudioPlayer(require('../../assets/combat-throw.wav'));
   const { characters, allWeapons, allArmor, allAmmo, customWeaponMods, customPerks, addCharacter, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
-    hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
+    hardcoreRadiationRules, missingExplosiveBlastZoneHouseRule,
+    mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
   } = app;
@@ -4602,7 +4590,7 @@ export default function CombatScreen() {
         initialDefenderId={areaAttackPreset ? defender?.id : undefined}
         sourceWeaponName={areaAttackPreset ? weapon?.name : undefined}
         profiles={[
-          ...ALL_BUILT_IN_AREA_DAMAGE_PROFILES,
+          ...getBuiltInAreaDamageProfiles(missingExplosiveBlastZoneHouseRule),
           ...createCustomAmmoAreaDamageProfiles(allAmmo),
           ...createCustomWeaponAreaDamageProfiles(allWeapons),
         ]}
@@ -5233,9 +5221,12 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
       </View>
     );
   };
+  const canManuallyEnterProfileDamage = !areaProfile || areaProfile.id.startsWith('vehicle-cannon:');
   const rollProfileDamage = () => {
-    if (!selectedComponent || selectedDamageSource || selectedDiceCount <= 0 || selectedDice <= 0) return;
-    const rolls = Array.from({ length: selectedDiceCount }, () => Math.floor(Math.random() * selectedDice) + 1);
+    if (!selectedComponent || selectedDamageSource) return;
+    const rolls = selectedDiceCount > 0 && selectedDice > 0
+      ? Array.from({ length: selectedDiceCount }, () => Math.floor(Math.random() * selectedDice) + 1)
+      : [];
     const total = rolls.reduce((sum, roll) => sum + roll, 0) + selectedBonus;
     setRawDamage(total);
     setProfileDamageRolled(total);
@@ -5270,8 +5261,8 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
             <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }}>
               {!initialAttack && (
                 <>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>AREA PROFILE (OPTIONAL)</Text>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Choose a grenade, explosive ammunition, area mine/trap, vehicle cannon, or custom area profile.</Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>SELECT A CONFIGURED BLAST PROFILE</Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Only profiles with saved zone ranges are shown. Set up custom zones in Equipment before combat.</Text>
                   <View style={{ gap: 7 }}>
                     {profiles.map(profile => {
                       const selected = catalogProfileId === profile.id;
@@ -5288,10 +5279,6 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                             setProfileDamageRolled(null);
                             setTargets([]);
                             setTargetZones({});
-                            setProfileRangeInputs(Object.fromEntries(profile.effects.map(effect => {
-                              const effectId = effect.id ?? 'main';
-                              return [effectId, String(rangeOverrides[profile.id]?.[effectId] ?? '')];
-                            })));
                           }}
                           style={{ padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '22' : colors.secondary }}
                         >
@@ -5301,9 +5288,16 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                       );
                     })}
                   </View>
+                  {profiles.length === 0 && (
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                      No configured blast profiles are available yet. Add a blast radius to custom ammunition or a trap in Equipment.
+                    </Text>
+                  )}
                 </>
               )}
-              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>{profileMode ? 'PROFILE COMPONENT' : 'EFFECT'}</Text>
+              {profileMode && (
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>PROFILE COMPONENT</Text>
+              )}
               {profileMode ? (
                 <View style={{ gap: 7 }}>
                   {directHitTarget && (
@@ -5322,9 +5316,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                       const dice = damageSource
                         ? `×${damageMultiplier ?? 1} of ${damageSource.replace(/[-_]/g, ' ')}`
                         : (component.damageDieCount ?? 0) > 0 ? `${component.damageDieCount}d${component.damageDie}` : 'no printed dice';
-                      const profileRange = areaProfile
-                        ? (component.radius ?? rangeOverrides[areaProfile.id]?.[componentId ?? 'main'])
-                        : component.radius;
+                      const profileRange = component.radius;
                       const reach = profileRange !== undefined
                         ? `range ${profileRange} ${componentRangeUnit ?? areaProfile?.rangeUnit ?? 'hex'}`
                         : component.diameter !== undefined ? `diameter ${component.diameter}` : 'range not set';
@@ -5345,59 +5337,30 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                   </View>
                   {areaProfile && (
                     <View style={{ gap: 7 }}>
-                      {areaMissingRanges.map(component => {
-                        const effectId = component.id ?? 'main';
-                        return (
-                          <View key={effectId} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <Text style={{ flex: 1, fontSize: 10, color: colors.mutedForeground }}>
-                              {effectId.replace(/[-_]/g, ' ')} max range ({component.rangeUnit ?? areaProfile.rangeUnit})
-                            </Text>
-                            <TextInput
-                              testID={`aoe-range-${effectId}`}
-                              value={profileRangeInputs[effectId] ?? ''}
-                              onChangeText={value => setProfileRangeInputs(previous => ({ ...previous, [effectId]: value.replace(/[^0-9]/g, '') }))}
-                              keyboardType="numeric"
-                              placeholder="GM range"
-                              placeholderTextColor={colors.mutedForeground}
-                              style={{ width: 90, paddingVertical: 6, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center' }}
-                            />
-                          </View>
-                        );
-                      })}
-                      {areaMissingRanges.length > 0 && (
-                        <>
-                          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
-                            These distances are not in the manual. Save your GM-defined ranges to this campaign profile before resolving targets.
-                          </Text>
-                          <TouchableOpacity testID="aoe-save-ranges" onPress={saveProfileRanges} style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary }}>
-                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary }}>SAVE CAMPAIGN RANGES</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                        Zone ranges and damage are configured in the equipment profile before combat.
+                      </Text>
                       {areaProfile.notes?.map((note, index) => <Text key={`profile-note-${index}`} style={{ fontSize: 10, color: colors.mutedForeground }}>• {note}</Text>)}
                     </View>
                   )}
                   {selectedNotes.map((note, index) => <Text key={index} style={{ fontSize: 10, color: colors.mutedForeground }}>• {note}</Text>)}
                 </View>
               ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                  {AREA_ATTACK_OPTIONS.map(option => (
-                    <TouchableOpacity key={option.kind} testID={`aoe-kind-${option.kind}`} onPress={() => setKind(option.kind)} style={{ width: '48%', padding: 9, borderRadius: colors.radius, borderWidth: 1, borderColor: kind === option.kind ? colors.primary : colors.border, backgroundColor: kind === option.kind ? colors.primary + '22' : colors.secondary }}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: kind === option.kind ? colors.primary : colors.foreground }}>{option.label}</Text>
-                      <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{option.note}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
+                  Choose a configured profile above. Blast ranges and damage components cannot be edited during combat.
+                </Text>
               )}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>{profileMode ? 'Manual damage roll' : 'Rolled / base damage'}</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+                  {profileMode ? canManuallyEnterProfileDamage ? 'Manual damage roll' : 'Configured damage roll' : 'Rolled / base damage'}
+                </Text>
                 {profileMode ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {selectedDamageSource ? (
                       <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold' }}>
                         {currentProfileDamage[profileComponent] ?? 0} from {selectedDamageSource} × {selectedDamageMultiplier ?? 1}
                       </Text>
-                    ) : (
+                    ) : canManuallyEnterProfileDamage ? (
                       <TextInput
                         testID="aoe-raw-damage"
                         value={String(rawDamage)}
@@ -5411,10 +5374,18 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                         keyboardType="numeric"
                         style={{ minWidth: 58, paddingVertical: 5, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 5, color: colors.foreground, textAlign: 'center', fontFamily: 'Inter_700Bold' }}
                       />
+                    ) : (
+                      <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold' }}>
+                        {currentProfileDamage[profileComponent] ?? 0}
+                      </Text>
                     )}
-                    {!selectedDamageSource && selectedDiceCount > 0 && selectedDice > 0 && (
+                    {!selectedDamageSource && (selectedDiceCount > 0 && selectedDice > 0 || selectedBonus !== 0) && (
                       <TouchableOpacity testID="aoe-roll-profile-damage" onPress={rollProfileDamage} style={{ paddingVertical: 7, paddingHorizontal: 8, borderRadius: 5, backgroundColor: colors.primary }}>
-                        <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>ROLL {selectedDiceCount}d{selectedDice}{selectedBonus ? `+${selectedBonus}` : ''}</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>
+                          {selectedDiceCount > 0 && selectedDice > 0
+                            ? `ROLL ${selectedDiceCount}d${selectedDice}${selectedBonus ? `${selectedBonus > 0 ? '+' : ''}${selectedBonus}` : ''}`
+                            : `SET ${selectedBonus} DAMAGE`}
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -5430,7 +5401,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                   ))}
                 </View>
               )}
-              {profileMode && profileDamageRolled !== null && <Text style={{ fontSize: 10, color: colors.primary }}>Rolled profile damage: {profileDamageRolled}. You may replace it with the table roll.</Text>}
+              {profileMode && profileDamageRolled !== null && <Text style={{ fontSize: 10, color: colors.primary }}>Damage roll: {profileDamageRolled}. This value is shared by targets in the assigned zones.</Text>}
               {vehicleCannonMissingEffects && (
                 <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
                   Roll or enter positive damage for both BLAST and CONCUSSION before applying this hit.
@@ -5500,7 +5471,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
               {areaProfile?.nonBiologicalOnly && !combatants.some(c => c.race === 'robot' || c.vehicle) && (
                 <Text style={{ fontSize: 10, color: colors.mutedForeground }}>This profile can only affect robot or vehicle combatants.</Text>
               )}
-              <TouchableOpacity testID="aoe-apply" disabled={applyTargetIds.length === 0 || applying || vehicleCannonMissingEffects || vehicleSystemTargetMissing || (areaProfile ? areaMissingRanges.length > 0 || areaZones.length === 0 : false)} onPress={() => {
+              <TouchableOpacity testID="aoe-apply" disabled={(!initialAttack && !areaProfile) || applyTargetIds.length === 0 || applying || vehicleCannonMissingEffects || vehicleSystemTargetMissing || (areaProfile ? areaZones.length === 0 : false)} onPress={() => {
                 if (applyingRef.current) return;
                 if (vehicleSystemTargetMissing) {
                   notify('Choose Vehicle Systems', 'Select a system for each vehicle affected by the blast before applying damage.');

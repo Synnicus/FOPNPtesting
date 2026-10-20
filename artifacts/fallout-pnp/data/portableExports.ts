@@ -84,6 +84,7 @@ export interface CampaignStateSnapshot {
   areaAttackReceipt?: unknown;
   conditionSemanticsV2?: boolean;
   hardcoreRadiationRules?: boolean;
+  missingExplosiveBlastZoneHouseRule?: boolean;
   mutantGhoulRadiationRules?: boolean;
   ghoulRadiationHealingOption?: GhoulRadiationHealingOption;
   visualTheme?: CampaignVisualTheme;
@@ -447,6 +448,8 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
         && (!Array.isArray(value.radioStations)
           || value.radioStations.some(station => isRadioStationRecord(station) && station.id === value.activeRadioStationId))))
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
+    && (value.missingExplosiveBlastZoneHouseRule === undefined
+      || typeof value.missingExplosiveBlastZoneHouseRule === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
       || value.ghoulRadiationHealingOption === 1
       || value.ghoulRadiationHealingOption === 2
@@ -649,7 +652,8 @@ function isWeaponRecord(value: unknown): value is Weapon {
       && typeof value.attackModes.burst === 'boolean')
     && isStringArray(value.mods)
     && (value.tags === undefined || isStringArray(value.tags))
-    && (value.compatibleAmmo === undefined || isStringArray(value.compatibleAmmo));
+    && (value.compatibleAmmo === undefined || isStringArray(value.compatibleAmmo))
+    && (value.hasBlastRadius === undefined || typeof value.hasBlastRadius === 'boolean');
 }
 
 function isArmorRecord(value: unknown): value is Armor {
@@ -803,6 +807,8 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
         && (!Array.isArray(value.radioStations)
           || value.radioStations.some(station => isRadioStationRecord(station) && station.id === value.activeRadioStationId))))
     && (value.mutantGhoulRadiationRules === undefined || typeof value.mutantGhoulRadiationRules === 'boolean')
+    && (value.missingExplosiveBlastZoneHouseRule === undefined
+      || typeof value.missingExplosiveBlastZoneHouseRule === 'boolean')
     && (value.ghoulRadiationHealingOption === undefined
       || value.ghoulRadiationHealingOption === 1
       || value.ghoulRadiationHealingOption === 2
