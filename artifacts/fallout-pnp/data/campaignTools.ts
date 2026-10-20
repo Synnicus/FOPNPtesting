@@ -14,6 +14,31 @@ export interface CampaignTableRollResult {
   quantity: number;
 }
 
+export interface CampaignMapExportFile {
+  filename: string;
+  json: string;
+}
+
+export function createCampaignMapExport(map: CampaignMap): CampaignMapExportFile {
+  const filename = `${map.name.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'campaign-map'}.json`;
+  return {
+    filename,
+    json: JSON.stringify({ format: 'fallout-pnp-map', version: 1, map }, null, 2),
+  };
+}
+
+export async function exportCampaignMap(
+  map: CampaignMap,
+  platform: 'web' | 'native',
+  handlers: {
+    download: (file: CampaignMapExportFile) => void | Promise<void>;
+    share: (file: CampaignMapExportFile) => void | Promise<void>;
+  },
+): Promise<void> {
+  const file = createCampaignMapExport(map);
+  await (platform === 'web' ? handlers.download : handlers.share)(file);
+}
+
 export function normalizeCampaignTable(value: unknown): CampaignTable | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const table = value as Partial<CampaignTable>;

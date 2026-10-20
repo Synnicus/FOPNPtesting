@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  createCampaignMapExport,
+  exportCampaignMap,
   normalizeCampaignMap,
   normalizeCampaignTable,
   rollEncounterTable,
@@ -111,6 +113,55 @@ test('campaign map normalizes portable image and normalized marker coordinates',
   assert.equal(map?.locations[0].x, 0.25);
   assert.equal(map?.party[0].characterId, 'character-1');
   assert.equal(validCampaignMap(map), true);
+});
+
+test('map JSON export includes image data, locations, and party positions', () => {
+  const map = {
+    id: 'map-1',
+    name: 'Junction & Ruins',
+    description: 'A marked route',
+    imageDataUri: 'data:image/png;base64,aGVsbG8=',
+    locations: [{ id: 'gate', name: 'North Gate', description: 'Main entrance', x: 0.25, y: 0.7 }],
+    party: [{ characterId: 'character-1', x: 0.4, y: 0.6 }],
+  };
+  const file = createCampaignMapExport(map);
+  const parsed = JSON.parse(file.json);
+
+  assert.equal(file.filename, 'Junction-Ruins.json');
+  assert.equal(parsed.format, 'fallout-pnp-map');
+  assert.equal(parsed.version, 1);
+  assert.deepEqual(parsed.map, map);
+});
+
+test('map export dispatches to browser download on web and native sharing elsewhere', async () => {
+  const map = {
+    id: 'map-1',
+    name: 'Export map',
+    description: '',
+    imageDataUri: 'data:image/webp;base64,aGVsbG8=',
+    locations: [],
+    party: [{ characterId: 'character-1', x: 0.5, y: 0.75 }],
+  };
+  const downloads: string[] = [];
+  const shares: string[] = [];
+  const handlers = {
+    download: ({ json }: { filename: string; json: string }) => {
+      downloads.push(json);
+    },
+    share: ({ json }: { filename: string; json: string }) => {
+      shares.push(json);
+    },
+  };
+
+  await exportCampaignMap(map, 'web', handlers);
+  assert.equal(downloads.length, 1);
+  assert.equal(shares.length, 0);
+  assert.deepEqual(JSON.parse(downloads[0]).map, map);
+
+  await exportCampaignMap(map, 'native', handlers);
+  assert.equal(downloads.length, 1);
+  assert.equal(shares.length, 1);
+  assert.deepEqual(JSON.parse(shares[0]).map, map);
 });
 
 test('invalid marker coordinates and unsupported image formats are rejected', () => {

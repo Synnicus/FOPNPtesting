@@ -12,7 +12,7 @@ import {
 } from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
 import type { CampaignMap, CampaignTable, Character } from '@/context/types';
-import { rollEncounterTable, rollLootTable, type CampaignTableRollResult } from '@/data/campaignTools';
+import { exportCampaignMap, rollEncounterTable, rollLootTable, type CampaignTableRollResult } from '@/data/campaignTools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { translateText } from '@/data/localization';
 
@@ -177,26 +177,27 @@ export default function CampaignToolsPanel({
   };
 
   const downloadMap = async (map: CampaignMap) => {
-    const json = JSON.stringify({ format: 'fallout-pnp-map', version: 1, map }, null, 2);
-    const filename = `${map.name.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'campaign-map'}.json`;
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const anchor = document.createElement('a');
-      const objectUrl = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-      anchor.href = objectUrl;
-      anchor.download = filename;
-      anchor.click();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-      return;
-    }
-    const directory = new Directory(Paths.cache, 'campaign-map-exports');
-    directory.create({ idempotent: true, intermediates: true });
-    const file = new ExpoFile(directory, filename);
-    file.write(json);
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
-    } else {
-      await Share.share({ title: filename, message: json });
-    }
+    await exportCampaignMap(map, Platform.OS === 'web' && typeof document !== 'undefined' ? 'web' : 'native', {
+      download: ({ filename, json }) => {
+        const anchor = document.createElement('a');
+        const objectUrl = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        anchor.href = objectUrl;
+        anchor.download = filename;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      },
+      share: async ({ filename, json }) => {
+        const directory = new Directory(Paths.cache, 'campaign-map-exports');
+        directory.create({ idempotent: true, intermediates: true });
+        const file = new ExpoFile(directory, filename);
+        file.write(json);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
+        } else {
+          await Share.share({ title: filename, message: json });
+        }
+      },
+    });
   };
 
   const panelStyle = {

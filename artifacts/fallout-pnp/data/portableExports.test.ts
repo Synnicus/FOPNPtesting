@@ -3,8 +3,10 @@ import test from 'node:test';
 import { DEFAULT_SKILLS } from '../context/types.ts';
 import type {
   Armor,
+  CampaignMap,
   CampaignRaceTag,
   CampaignRuleTag,
+  CampaignTable,
   Character,
   CustomPerkDefinition,
   CustomRaceDefinition,
@@ -211,6 +213,57 @@ const state = {
   combatActive: false,
   activeEntryId: null,
 };
+
+test('portable campaign round-trips loot and encounter ranges, weights, and map markers', () => {
+  const lootTable: CampaignTable = {
+    id: 'loot-supplies',
+    name: 'Supply Cache',
+    description: 'A weighted loot table',
+    rollCountMin: 2,
+    rollCountMax: 5,
+    entries: [
+      { id: 'water', name: 'Purified Water', description: 'Capped bottles', weight: 7, quantityMin: 1, quantityMax: 3 },
+      { id: 'stimpak', name: 'Stimpak', description: 'Medical supplies', weight: 2, quantityMin: 2, quantityMax: 6 },
+    ],
+  };
+  const encounterTable: CampaignTable = {
+    id: 'encounters-road',
+    name: 'Road Encounters',
+    description: 'A campaign encounter table',
+    rollCountMin: 1,
+    rollCountMax: 4,
+    entries: [
+      { id: 'raiders', name: 'Raiders', description: 'A small patrol', weight: 3, quantityMin: 1, quantityMax: 2 },
+      { id: 'geckos', name: 'Geckos', description: 'A hungry pack', weight: 9, quantityMin: 2, quantityMax: 5 },
+    ],
+  };
+  const campaignMap: CampaignMap = {
+    id: 'map-junction',
+    name: 'Junction',
+    description: 'The party approach',
+    imageDataUri: 'data:image/png;base64,aGVsbG8=',
+    locations: [{ id: 'north-gate', name: 'North Gate', description: 'Road entrance', x: 0.15, y: 0.3 }],
+    party: [
+      { characterId: 'character-1', x: 0.4, y: 0.6 },
+      { characterId: 'character-2', x: 0.45, y: 0.65 },
+    ],
+  };
+  const bundle = createCampaignBundle({
+    ...state,
+    lootTables: [lootTable],
+    encounterTables: [encounterTable],
+    campaignMaps: [campaignMap],
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') {
+    assert.fail('Expected the campaign file to round-trip as a portable bundle.');
+  }
+  assert.deepEqual(parsed.bundle.state.lootTables, [lootTable]);
+  assert.deepEqual(parsed.bundle.state.encounterTables, [encounterTable]);
+  assert.deepEqual(parsed.bundle.state.campaignMaps, [campaignMap]);
+});
 
 test('campaign portrait assets restore only to their matching character id', async () => {
   const asset = portraitAsset(character.id, 'image/jpeg', 'AQID');
