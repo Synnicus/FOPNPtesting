@@ -309,6 +309,8 @@ export interface Weapon {
   /** Optional multi-zone profile used by campaign-created explosive traps. */
   customAreaEffects?: CustomAreaEffect[];
   areaRangeUnit?: AreaRangeUnit;
+  /** EMP payload: affects electronic vehicle systems only. */
+  emp?: boolean;
   /** Explicitly enables this custom mine/trap's configured blast zones. */
   hasBlastRadius?: boolean;
 }

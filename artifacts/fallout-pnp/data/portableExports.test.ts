@@ -24,6 +24,7 @@ import {
 import { customRuleConditionMatches } from './customRules.ts';
 import { BUILT_IN_BESTIARY, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
+import type { AmmoType } from './ammo.ts';
 import { getInjuryCauseText } from './injuries.ts';
 import {
   areaProfileRange,
@@ -302,6 +303,60 @@ test('portable campaign round-trips custom trap blast settings and zone ranges',
   }
   assert.deepEqual(parsed.bundle.state.customWeapons, [customTrap]);
   assert.equal(createCustomWeaponAreaDamageProfiles(parsed.bundle.state.customWeapons)[0].effects[0].radius, 4);
+});
+
+test('portable campaign keeps EMP flags on custom ammunition and mine profiles', () => {
+  const customAmmo: AmmoType = {
+    id: 'custom-pulse-round',
+    name: 'Custom Pulse Round',
+    value: 0,
+    acMod: 0,
+    drMod: 0,
+    dmgDieCount: 1,
+    dmgDie: 6,
+    dmgBonus: 0,
+    volume: 0,
+    components: [{ id: 'damage', label: 'Damage', type: 'explosion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
+    areaEffects: [{
+      id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+    }],
+    hasBlastRadius: true,
+    emp: true,
+    isCustom: true,
+  };
+  const customMine: Weapon = {
+    ...customWeapon,
+    id: 'custom-pulse-mine',
+    name: 'Pulse Mine',
+    category: 'minesTraps',
+    hasBlastRadius: true,
+    emp: true,
+    customAreaEffects: [{
+      id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+    }],
+  };
+  const bundle = createCampaignBundle({
+    ...state,
+    customAmmo: [customAmmo],
+    customWeapons: [customMine],
+  }, []);
+  const parsed = parseCampaignFile(JSON.stringify(bundle));
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.source !== 'portable') {
+    assert.fail('Expected the exported EMP campaign to import as a portable bundle.');
+  }
+  assert.equal(parsed.bundle.state.customAmmo?.[0].emp, true);
+  assert.equal(parsed.bundle.state.customAmmo?.[0].hasBlastRadius, true);
+  assert.equal(parsed.bundle.state.customWeapons[0].emp, true);
+  assert.equal(parsed.bundle.state.customWeapons[0].hasBlastRadius, true);
+  assert.equal(parsed.bundle.state.customWeapons[0].customAreaEffects?.[0].id, 'blast');
+
+  const invalid = JSON.parse(JSON.stringify(bundle)) as typeof bundle;
+  (invalid.state.customAmmo![0] as unknown as { emp: unknown }).emp = 'yes';
+  assert.equal(parseCampaignFile(JSON.stringify(invalid)).ok, false);
 });
 
 test('campaign imports normalize invalid or missing blast ranges without changing printed ranges', () => {

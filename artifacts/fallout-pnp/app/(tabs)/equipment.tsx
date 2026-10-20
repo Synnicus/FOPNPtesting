@@ -134,7 +134,7 @@ function CustomAreaEffectsEditor({
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>AREA BLAST ZONES</Text>
-          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Set the distance and damage for each effect here. Every maximum range is required before combat.</Text>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Set a maximum range for every effect. Use printed distances where available.</Text>
         </View>
         {effects.length < 8 && (
           <TouchableOpacity onPress={addEffect} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 5, borderWidth: 1, borderColor: colors.primary }}>
@@ -299,6 +299,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
   const [customAreaEffects, setCustomAreaEffects] = useState<CustomAreaEffect[]>([]);
   const [areaRangeUnit, setAreaRangeUnit] = useState<AreaRangeUnit>('hex');
   const [blastRadiusEnabled, setBlastRadiusEnabled] = useState(false);
+  const [empEnabled, setEmpEnabled] = useState(false);
 
   const isEditing = !!editWeapon;
   const isCreatingTrap = !isEditing && initialCategory === 'minesTraps';
@@ -311,6 +312,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
     setAreaRangeUnit(w.areaRangeUnit ?? 'hex');
     setBlastRadiusEnabled(w.hasBlastRadius
       ?? (!!w.customAreaEffects?.length || w.areaAttackProfileId === 't13_antipersonnel_mine' || w.areaAttackProfileId === 't45_se_antivehicle_mine'));
+    setEmpEnabled(!!w.emp);
     setDamageType(w.damageType);
     setDieCount(w.damageDieCount);
     setDieSides(w.damageDie);
@@ -353,6 +355,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
       setCustomAreaEffects([]);
       setAreaRangeUnit('hex');
       setBlastRadiusEnabled(false);
+      setEmpEnabled(false);
     }
   }, [visible, editWeapon, initialCategory]);
 
@@ -474,6 +477,7 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
       customAreaEffects: category === 'minesTraps' && customAreaEffects.length ? customAreaEffects : undefined,
       areaRangeUnit: category === 'minesTraps' ? areaRangeUnit : undefined,
       hasBlastRadius: category === 'minesTraps' ? blastRadiusEnabled : undefined,
+      emp: category === 'minesTraps' && empEnabled ? true : undefined,
       damageType, damageDieCount: dieCount, damageDie: dieSides,
       damageBonus, skill: (category === 'minesTraps' ? 'traps' : category === 'meleeWeapons' ? 'meleeWeapons' : category === 'unarmed' || category === 'natural' ? 'unarmed' : category === 'throwing' ? 'throwing' : category) as Weapon['skill'],
       burstLimit, isDoubleShot: isDoubleShot && canSingle, magazineSize,
@@ -617,9 +621,23 @@ function WeaponFormModal({ visible, onClose, onSave, editWeapon, initialCategory
                     )}
                     {blastRadiusEnabled && !blastProfileConfigured && (
                       <Text style={{ fontSize: 10, color: colors.destructive }}>
-                        Select a preset blast or choose Custom profile and define a maximum range for every effect.
+                        Select a preset blast or define a maximum range for every custom effect.
                       </Text>
                     )}
+                    <TouchableOpacity
+                      testID="custom-mine-emp-toggle"
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: empEnabled }}
+                      onPress={() => setEmpEnabled(enabled => !enabled)}
+                      style={{ padding: 11, borderWidth: 1, borderColor: empEnabled ? colors.primary : colors.border, backgroundColor: empEnabled ? colors.primary + '22' : colors.secondary, borderRadius: colors.radius }}
+                    >
+                      <Text style={{ fontFamily: 'Inter_700Bold', color: empEnabled ? colors.primary : colors.foreground }}>
+                        {empEnabled ? '✓ ' : ''}EMP ATTACK
+                      </Text>
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                      EMP affects electronic vehicle systems only; Structure, tires, and treads are unaffected.
+                    </Text>
                   </View>
                 )}
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>DAMAGE TYPE</Text>
@@ -1264,6 +1282,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
   const [areaEffects, setAreaEffects] = useState<CustomAreaEffect[]>([]);
   const [areaRangeUnit, setAreaRangeUnit] = useState<AreaRangeUnit>('hex');
   const [blastRadiusEnabled, setBlastRadiusEnabled] = useState(false);
+  const [empEnabled, setEmpEnabled] = useState(false);
 
   const newComponent = (index: number): AmmoDamageComponent => ({
     id: genId(),
@@ -1288,6 +1307,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
       setAreaEffects((editAmmo.areaEffects ?? []).map(effect => ({ ...effect })));
       setAreaRangeUnit(editAmmo.areaRangeUnit ?? 'hex');
       setBlastRadiusEnabled(editAmmo.hasBlastRadius ?? !!editAmmo.areaEffects?.length);
+      setEmpEnabled(!!editAmmo.emp);
       setComponents((editAmmo.components ?? [{
         id: genId(), label: 'Damage', type: 'normal',
         dmgDieCount: editAmmo.dmgDieCount, dmgDie: editAmmo.dmgDie, dmgBonus: editAmmo.dmgBonus,
@@ -1297,6 +1317,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
       setPoisonEnabled(false); setPoisonType('A'); setPoisonEffect('');
       setAreaEffects([]); setAreaRangeUnit('hex');
       setBlastRadiusEnabled(false);
+      setEmpEnabled(false);
       setComponents([newComponent(0)]);
     }
   }, [visible, editAmmo]);
@@ -1322,6 +1343,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
     areaEffects: areaEffects.length ? areaEffects : undefined,
     areaRangeUnit: areaEffects.length ? areaRangeUnit : undefined,
     hasBlastRadius: blastRadiusEnabled,
+    emp: empEnabled ? true : undefined,
     isCustom: true,
   };
   const validationCatalog = catalog.filter(ammo => ammo.id !== editAmmo?.id && ammo.id !== '__new_custom_ammo__');
@@ -1412,6 +1434,21 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
             ))}
 
             <TouchableOpacity
+              testID="custom-ammo-emp-toggle"
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: empEnabled }}
+              onPress={() => setEmpEnabled(enabled => !enabled)}
+              style={{ padding: 11, borderWidth: 1, borderColor: empEnabled ? colors.primary : colors.border, backgroundColor: empEnabled ? colors.primary + '22' : colors.secondary, borderRadius: colors.radius }}
+            >
+              <Text style={{ fontFamily: 'Inter_700Bold', color: empEnabled ? colors.primary : colors.foreground }}>
+                {empEnabled ? '✓ ' : ''}EMP ATTACK
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+              EMP affects electronic vehicle systems only; Structure, tires, and treads are unaffected.
+            </Text>
+
+            <TouchableOpacity
               testID="custom-ammo-blast-radius-toggle"
               accessibilityRole="switch"
               accessibilityState={{ checked: blastRadiusEnabled }}
@@ -1432,7 +1469,7 @@ function AmmoFormModal({ visible, onClose, onSave, editAmmo, catalog }: {
             )}
             {blastRadiusEnabled && !blastRadiusConfigured && (
               <Text style={{ fontSize: 10, color: colors.destructive }}>
-                Add at least one area effect and set a maximum range for each one.
+                Add at least one valid area effect and set a maximum range for each effect.
               </Text>
             )}
 
@@ -1620,6 +1657,7 @@ function AmmoRow({ ammo, onCopy, onEdit, onDelete }: { ammo: AmmoType; onCopy?: 
     { label: `AC ${signed(effects.acModifier)}`, emphasized: effects.acModifier !== 0 },
     { label: `DR ${signed(effects.drModifier, '%')}`, emphasized: effects.drModifier !== 0 },
     { label: effects.ignoresDT ? 'IGNORES DT' : 'DT APPLIES', emphasized: effects.ignoresDT },
+    ...(ammo.emp ? [{ label: 'EMP · ELECTRONIC SYSTEMS', emphasized: true }] : []),
   ];
 
   return (

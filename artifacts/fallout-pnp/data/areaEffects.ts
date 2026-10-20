@@ -463,6 +463,7 @@ function customAreaProfile(
   rangeUnit: AreaRangeUnit,
   rawEffects: readonly CustomAreaEffect[] | undefined,
   sourceNotes: readonly string[] = [],
+  emp = false,
 ): AreaDamageProfile | undefined {
   const effects = sanitizeCustomAreaEffects(rawEffects);
   if (!effects.length) return undefined;
@@ -484,6 +485,7 @@ function customAreaProfile(
       ...(effect.damageMultiplier === undefined ? {} : { damageMultiplier: effect.damageMultiplier }),
     })),
     ...(sourceNotes.length ? { notes: [...sourceNotes] } : {}),
+    ...(emp ? { emp: true } : {}),
   };
 }
 
@@ -496,6 +498,7 @@ export function createCustomAmmoAreaDamageProfiles(ammoCatalog: readonly AmmoTyp
       ammo.areaRangeUnit ?? 'hex',
       ammo.areaEffects,
       ['Custom ammunition blast profile.'],
+      ammo.emp,
     );
     return profile && hasConfiguredAreaRanges(profile) ? [profile] : [];
   });
@@ -509,6 +512,7 @@ export function createCustomWeaponAreaDamageProfile(weapon: Weapon): AreaDamageP
     weapon.areaRangeUnit ?? 'hex',
     weapon.customAreaEffects,
     ['Custom mine or trap blast profile.'],
+    weapon.emp,
   );
   return profile && hasConfiguredAreaRanges(profile) ? profile : undefined;
 }

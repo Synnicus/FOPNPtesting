@@ -32,6 +32,7 @@ import {
 import { validateCustomPerk, validateCustomWeaponMod } from './customRules.ts';
 import { validateCustomRace } from './races.ts';
 import { isCustomConsumableRecord } from './consumables.ts';
+import { AMMO_TYPES, validateCustomAmmo, type AmmoType } from './ammo.ts';
 import {
   isCatalogImageDataUri,
   normalizeCatalogPortraitMap,
@@ -57,6 +58,7 @@ export interface CampaignStateSnapshot {
   characters: Character[];
   customWeapons: Weapon[];
   customArmor: Armor[];
+  customAmmo?: AmmoType[];
   customWeaponMods?: CustomWeaponMod[];
   customPerks?: CustomPerkDefinition[];
   campaignRuleTags?: CampaignRuleTag[];
@@ -168,6 +170,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isCustomAmmoCatalog(value: unknown): value is AmmoType[] {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  const catalog: AmmoType[] = [...AMMO_TYPES];
+  for (const candidate of value) {
+    if (!isRecord(candidate) || candidate.isCustom !== true
+      || validateCustomAmmo(candidate as unknown as AmmoType, catalog).length > 0) return false;
+    catalog.push(candidate as unknown as AmmoType);
+  }
+  return true;
+}
 function sanitizeEquipmentTags(value: unknown): unknown {
   if (!isRecord(value) || !('tags' in value)) return value;
   if (!Array.isArray(value.tags)) {
@@ -420,6 +433,7 @@ function isCampaignState(value: unknown): value is CampaignStateSnapshot {
   return Array.isArray(value.characters)
     && Array.isArray(value.customWeapons ?? [])
     && Array.isArray(value.customArmor ?? [])
+    && isCustomAmmoCatalog(value.customAmmo)
     && (value.customConsumables === undefined
       || (Array.isArray(value.customConsumables)
         && value.customConsumables.every(isCustomConsumableRecord)
@@ -643,6 +657,7 @@ function isWeaponRecord(value: unknown): value is Weapon {
     && numericFields.every(field => isFiniteNumber(value[field]))
     && typeof value.isDoubleShot === 'boolean'
     && typeof value.isCustom === 'boolean'
+    && (value.emp === undefined || typeof value.emp === 'boolean')
     && (value.apSingle === undefined || value.apSingle === null || isFiniteNumber(value.apSingle))
     && (value.apTargeted === undefined || value.apTargeted === null || isFiniteNumber(value.apTargeted))
     && (value.apBurst === undefined || value.apBurst === null || isFiniteNumber(value.apBurst))
@@ -727,6 +742,7 @@ function isCompletePortableCampaignState(value: unknown): value is CampaignState
     || !Array.isArray(value.characters)
     || !Array.isArray(value.customWeapons)
     || !Array.isArray(value.customArmor)
+    || !isCustomAmmoCatalog(value.customAmmo)
     || (value.customVehicles !== undefined && !Array.isArray(value.customVehicles))
     || (value.customConsumables !== undefined && !Array.isArray(value.customConsumables))
     || (value.lootTables !== undefined && !Array.isArray(value.lootTables))

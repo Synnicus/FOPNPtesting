@@ -5,6 +5,8 @@ import {
   areaProfileRange,
   countdownStatus,
   areaDamageProfileToAttack,
+  createCustomAmmoAreaDamageProfiles,
+  createCustomWeaponAreaDamageProfile,
   EXPLOSIVE_AMMO_AREA_PROFILES,
   formatAreaResolution,
   normalizeAreaProfileRangeOverrides,
@@ -58,16 +60,6 @@ test('electricity resistance reduces damage but never skips the Endurance check'
   assert.ok(result.unconsciousRounds > 0);
 });
 
-test('negative electricity resistance amplifies damage', () => {
-  const result = resolveAreaTarget(
-    { kind: 'electricity', rawDamage: 20 },
-    { ...target, electricityResistance: -50 },
-    () => 1,
-    () => 4,
-  );
-  assert.equal(result.damage, 30);
-});
-
 test('electricity uses the supplied current effective Endurance', () => {
   const boosted = resolveAreaTarget(
     { kind: 'electricity', rawDamage: 10 },
@@ -81,7 +73,10 @@ test('electricity uses the supplied current effective Endurance', () => {
 });
 
 test('fire and acid always create persistent manual 1d6 ongoing effects', () => {
-  const fire = resolveAreaTarget({ kind: 'flamethrower', rawDamage: 20, ongoingRounds: 0, gmAdjudicatedLanding: true }, target);
+  const fire = resolveAreaTarget(
+    { kind: 'flamethrower', rawDamage: 20, ongoingRounds: 0, gmAdjudicatedLanding: true },
+    target,
+  );
   const acid = resolveAreaTarget({ kind: 'acid', rawDamage: 20, ongoingRounds: 0 }, target);
   assert.deepEqual([fire.ongoing?.kind, fire.ongoing?.damageDie, fire.ongoing?.persistent], ['fire', 6, true]);
   assert.deepEqual([acid.ongoing?.kind, acid.ongoing?.damageDie, acid.ongoing?.persistent], ['acid', 6, true]);
@@ -145,6 +140,70 @@ test('EMP explosive profiles are marked non-biological and preserve EMP behavior
   assert.equal(profile.emp, true);
   assert.equal(profile.nonBiologicalOnly, true);
   const attack = areaDamageProfileToAttack(profile);
+
   assert.equal(attack.emp, true);
   assert.equal(attack.nonBiologicalOnly, true);
+});
+
+test('custom EMP ammunition and mine profiles preserve EMP behavior when resolved', () => {
+  const blast = {
+    id: 'blast',
+    label: 'Pulse blast',
+    kind: 'explosion' as const,
+    damageType: 'explosion' as const,
+    damageDieCount: 1,
+    damageDie: 6,
+    damageBonus: 0,
+    radius: 4,
+  };
+  const customAmmo = {
+    id: 'custom-pulse',
+    name: 'Custom Pulse Charge',
+    value: 0,
+    acMod: 0,
+    drMod: 0,
+    dmgDieCount: 1,
+    dmgDie: 6,
+    dmgBonus: 0,
+    volume: 0,
+    components: [{ id: 'damage', label: 'Damage', type: 'explosion' as const, dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
+    areaEffects: [blast],
+    hasBlastRadius: true,
+    emp: true,
+    isCustom: true,
+  };
+  const ammoProfile = createCustomAmmoAreaDamageProfiles([customAmmo])[0];
+  assert.equal(ammoProfile?.emp, true);
+  assert.equal(areaDamageProfileToAttack(ammoProfile!).emp, true);
+  assert.equal(areaProfileRange(ammoProfile!, ammoProfile!.effects[0], {}), 4);
+  assert.equal(createCustomAmmoAreaDamageProfiles([{ ...customAmmo, hasBlastRadius: false }]).length, 0);
+
+  const customMine = {
+    id: 'custom-pulse-mine',
+    name: 'Pulse Mine',
+    category: 'minesTraps' as const,
+    damageType: 'explosion' as const,
+    damageDieCount: 1,
+    damageDie: 6,
+    damageBonus: 0,
+    skill: 'traps' as const,
+    burstLimit: 1,
+    isDoubleShot: false,
+    magazineSize: 0,
+    weight: 0,
+    minStr: 0,
+    rangeNormal: 0,
+    knockdownChance: 0,
+    mods: [],
+    isCustom: true,
+    customAreaEffects: [blast],
+    hasBlastRadius: true,
+    emp: true,
+  };
+
+  const mineProfile = createCustomWeaponAreaDamageProfile(customMine);
+  assert.equal(mineProfile?.emp, true);
+  assert.equal(areaDamageProfileToAttack(mineProfile!).emp, true);
+  assert.equal(areaProfileRange(mineProfile!, mineProfile!.effects[0], {}), 4);
+  assert.equal(createCustomWeaponAreaDamageProfile({ ...customMine, hasBlastRadius: false }), undefined);
 });

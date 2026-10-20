@@ -93,10 +93,12 @@ import {
   createCustomWeaponAreaDamageProfiles,
   buildAreaDamageZones,
   formatAreaResolution,
+  missingAreaProfileRanges,
   MINE_TRAP_PROFILES,
   type AreaAttack,
   type AreaAttackKind,
   type AreaDamageProfile,
+  type AreaProfileRangeOverrides,
   type AreaResolution,
 } from '@/data/areaEffects';
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, EMPTY_NATURAL_PROTECTION, DamageType, PositionType, SkillType } from '@/context/types';
@@ -369,8 +371,8 @@ function computePerkBonuses(char: Character | null, weapon: Weapon | null, isRan
   return result;
 }
 
-function empShieldingResistance(defender: Character | null, ammo?: { id: string; name?: string } | null): number {
-  const empAmmo = `${ammo?.id ?? ''} ${ammo?.name ?? ''}`.toLowerCase().includes('emp');
+function empShieldingResistance(defender: Character | null, ammo?: { id: string; name?: string; emp?: boolean } | null, empAttack = false): number {
+  const empAmmo = empAttack || !!ammo?.emp || `${ammo?.id ?? ''} ${ammo?.name ?? ''}`.toLowerCase().includes('emp');
   return defender?.race === 'robot'
     && (defender.traits ?? []).includes('emp_shielding')
     && empAmmo
@@ -478,12 +480,12 @@ function DieFace({ face, rolling, label, highlight, hit }: {
   }, [face, rolling]);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const displayVal = face !== null ? digitVal(face) : null;
-  const faceColor = hit === true ? colors.success : hit === false ? colors.destructive : (highlight && face !== null ? colors.primary : colors.border);
+  const faceColor = hit === true ? '#4a8c3f' : hit === false ? colors.destructive : (highlight && face !== null ? colors.primary : colors.border);
 
   return (
     <Animated.View style={animStyle}>
       <View style={{ width: 56, height: 56, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: highlight && face !== null ? `${colors.primary}22` : colors.secondary, borderColor: rolling ? colors.primary : faceColor }}>
-        <Text style={{ fontSize: 26, fontFamily: 'Inter_700Bold', color: face !== null ? (hit === true ? colors.success : hit === false ? colors.destructive : colors.primary) : colors.mutedForeground, lineHeight: 30 }}>
+        <Text style={{ fontSize: 26, fontFamily: 'Inter_700Bold', color: face !== null ? (hit === true ? '#4a8c3f' : hit === false ? colors.destructive : colors.primary) : colors.mutedForeground, lineHeight: 30 }}>
           {displayVal !== null ? String(displayVal) : '?'}
         </Text>
         <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, marginTop: -2 }}>{label}</Text>
@@ -504,7 +506,7 @@ function Stepper({ value, step = 1, min = -999, max = 999, onChange, formatValue
       <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => onChange(Math.max(min, value - step))}>
         <Feather name="minus" size={14} color={colors.foreground} />
       </TouchableOpacity>
-      <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: value === 0 ? colors.mutedForeground : value > 0 ? colors.success : colors.destructive, minWidth: 44, textAlign: 'center' }}>{fmt(value)}</Text>
+      <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: value === 0 ? colors.mutedForeground : value > 0 ? '#4a8c3f' : colors.destructive, minWidth: 44, textAlign: 'center' }}>{fmt(value)}</Text>
       <TouchableOpacity style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => onChange(Math.min(max, value + step))}>
         <Feather name="plus" size={14} color={colors.foreground} />
       </TouchableOpacity>
@@ -515,7 +517,7 @@ function Stepper({ value, step = 1, min = -999, max = 999, onChange, formatValue
 // ─── Chance-to-Hit Badge ──────────────────────────────────────────────────────
 function ChanceToHitBadge({ value, label }: { value: number; label?: string }) {
   const colors = useColors();
-  const color = value >= 60 ? colors.success : value >= 35 ? colors.primary : colors.destructive;
+  const color = value >= 60 ? '#4a8c3f' : value >= 35 ? colors.primary : colors.destructive;
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
       {label && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 }}>{label}</Text>}
@@ -564,7 +566,7 @@ function ProtectionBreakdownLines({
         </Text>
       )}
       {protection.defenderDRModifier !== 0 && !protection.bypassesArmor && (
-        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: protection.defenderDRModifier > 0 ? colors.success : colors.destructive }}>
+        <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: protection.defenderDRModifier > 0 ? '#4a8c3f' : colors.destructive }}>
           Defender perks/effects: DR {protection.defenderDRModifier > 0 ? '+' : ''}{protection.defenderDRModifier}%
         </Text>
       )}
@@ -659,7 +661,7 @@ function LightPickerModal({ visible, value, onChange, onClose }: {
             renderItem={({ item }) => (
               <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: value === item.value ? colors.primary + '22' : 'transparent' }} onPress={() => { onChange(item.value); onClose(); }}>
                 <Text style={{ fontSize: 14, fontFamily: value === item.value ? 'Inter_600SemiBold' : 'Inter_400Regular', color: value === item.value ? colors.primary : colors.foreground, flex: 1 }}>{item.label}</Text>
-                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: item.value === 0 ? colors.success : colors.destructive, marginLeft: 8 }}>{item.value === 0 ? '0%' : `−${item.value}%`}</Text>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: item.value === 0 ? '#4a8c3f' : colors.destructive, marginLeft: 8 }}>{item.value === 0 ? '0%' : `−${item.value}%`}</Text>
               </TouchableOpacity>
             )}
           />
@@ -681,10 +683,10 @@ function KnockdownCard({ damage, defenderStr, defenderEnd, onProne }: {
   const resisted = rollResult !== null ? rollResult <= resistChance : null;
 
   return (
-    <View style={{ backgroundColor: triggered ? colors.warning + '22' : colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: triggered ? colors.warning + '66' : colors.border, gap: 8 }}>
+    <View style={{ backgroundColor: triggered ? '#f59e0b22' : colors.secondary, borderRadius: colors.radius, padding: 12, borderWidth: 1, borderColor: triggered ? '#f59e0b66' : colors.border, gap: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Feather name="chevrons-down" size={16} color={triggered ? colors.warning : colors.mutedForeground} />
-        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: triggered ? colors.warning : colors.mutedForeground, letterSpacing: 1 }}>
+        <Feather name="chevrons-down" size={16} color={triggered ? '#f59e0b' : colors.mutedForeground} />
+        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: triggered ? '#f59e0b' : colors.mutedForeground, letterSpacing: 1 }}>
           KNOCKDOWN CHECK {triggered ? '— TRIGGERED' : `— NOT triggered (need ${threshold} dmg, got ${damage})`}
         </Text>
       </View>
@@ -695,22 +697,22 @@ function KnockdownCard({ damage, defenderStr, defenderEnd, onProne }: {
             Resist chance: {resistChance}% (END {defenderEnd} × 5)
           </Text>
           <TouchableOpacity
-            style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.warning, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+            style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: '#f59e0b', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setRollResult(Math.floor(Math.random() * 100) + 1); }}
           >
-            <Feather name="refresh-cw" size={14} color={colors.warning} />
-            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.warning }}>ROLL END CHECK (d100)</Text>
+            <Feather name="refresh-cw" size={14} color="#f59e0b" />
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#f59e0b' }}>ROLL END CHECK (d100)</Text>
           </TouchableOpacity>
           {rollResult !== null && (
             <View style={{ gap: 4 }}>
               <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.foreground }}>
-                Roll: <Text style={{ fontFamily: 'Inter_700Bold', color: resisted ? colors.success : colors.destructive }}>{rollResult}</Text>
+                Roll: <Text style={{ fontFamily: 'Inter_700Bold', color: resisted ? '#4a8c3f' : colors.destructive }}>{rollResult}</Text>
                 {' vs '}{resistChance}% → {resisted ? 'RESISTED (stays standing)' : 'KNOCKED DOWN — set to PRONE'}
               </Text>
               {!resisted && (
-              <TouchableOpacity style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.warning, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={onProne}>
-                  <Feather name="chevrons-down" size={14} color={colors.warningForeground} />
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.warningForeground, letterSpacing: 1 }}>SET PRONE</Text>
+                <TouchableOpacity style={{ paddingVertical: 8, alignItems: 'center', borderRadius: colors.radius, backgroundColor: '#f59e0b', flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={onProne}>
+                  <Feather name="chevrons-down" size={14} color="#000" />
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#000', letterSpacing: 1 }}>SET PRONE</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -741,7 +743,7 @@ function CriticalHitModal({ visible, onClose, rolledEntry, onRoll, onSelect, bet
           <ScrollView contentContainerStyle={{ padding: 14, gap: 6 }}>
             <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2, marginBottom: 4 }}>CRITICAL HITS</Text>
             {betterCriticals && (
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.success, marginBottom: 4 }}>Better Criticals: non-fatal crits deal ×1.5 damage.</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: '#4a8c3f', marginBottom: 4 }}>Better Criticals: non-fatal crits deal ×1.5 damage.</Text>
             )}
             {vehicleTarget && (
               <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.primary, marginBottom: 4 }}>
@@ -1339,10 +1341,12 @@ export default function CombatScreen() {
     ? attacker.weaponAmmoStates?.find(a => a.weaponId === weapon.id)?.ammoTypeId
     : undefined;
   const loadedAmmo: AmmoType | null = resolveEquippedAmmoType(weapon, ammoTypeId, allAmmo) ?? null;
+  const empAttack = !!weapon?.emp || !!loadedAmmo?.emp;
   const vehicleSystemSelectionValid = !vehicleTargeting
-    || (!!selectedVehicleSystem && (!loadedAmmo?.emp || isVehicleSystemElectronic(selectedVehicleSystem)));
+    || (!!selectedVehicleSystem && (!empAttack || isVehicleSystemElectronic(selectedVehicleSystem)));
   const explosiveVehicleAttack = !!weapon && (
-    weapon.damageType === 'explosion'
+    empAttack
+    || weapon.damageType === 'explosion'
     || !!loadedAmmo?.components?.some(component => component.type === 'explosion')
     || !!loadedAmmo?.areaEffects?.some(effect => effect.damageType === 'explosion')
   );
@@ -1962,7 +1966,7 @@ export default function CombatScreen() {
     const prot = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
     const damageResistanceCap = defender?.manualDerivedStats ? 100 : 90;
     const defenderDRModifier = defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
-      + empShieldingResistance(defender, loadedAmmo);
+      + empShieldingResistance(defender, loadedAmmo, empAttack);
     // Optional manual base-damage override (replaces the rolled dice total).
     const overrideVal = damageOverride.trim() === '' ? null : Math.max(0, parseInt(damageOverride, 10) || 0);
 
@@ -2086,7 +2090,7 @@ export default function CombatScreen() {
                 defenderDRModifier: typedDefenderPerks.dr
                   + (customDefenderPerkEffects.damageResistance[damageType] ?? 0)
                   + (defenderEffectMods?.drMod ?? 0)
-                  + empShieldingResistance(defender, loadedAmmo),
+                  + empShieldingResistance(defender, loadedAmmo, empAttack),
                 damageResistanceCap,
                 bypassesArmor: bypassArmor,
               });
@@ -2164,7 +2168,7 @@ export default function CombatScreen() {
           ...(profileId ? { profileId } : {}),
           ...(isVehicleCannonAreaAttack && defender ? { directHitTargetId: defender.id } : {}),
           ...(attacker?.combatDevice ? { sourceDeviceId: attacker.id } : {}),
-          ...(loadedAmmo?.emp ? { emp: true } : {}),
+          ...(weapon.emp || loadedAmmo?.emp ? { emp: true } : {}),
           ...(defender?.vehicle && selectedVehicleSystem
             ? { vehicleSystemTargets: { [defender.id]: selectedVehicleSystem.id } }
             : {}),
@@ -2177,13 +2181,13 @@ export default function CombatScreen() {
           ...(profileId ? { profileId } : {}),
           ...(isVehicleCannonAreaAttack && defender ? { directHitTargetId: defender.id } : {}),
           ...(attacker?.combatDevice ? { sourceDeviceId: attacker.id } : {}),
-          ...(loadedAmmo?.emp ? { emp: true } : {}),
+          ...(weapon.emp || loadedAmmo?.emp ? { emp: true } : {}),
           ...(defender?.vehicle && selectedVehicleSystem
             ? { vehicleSystemTargets: { [defender.id]: selectedVehicleSystem.id } }
             : {}),
         });
     setShowAreaAttack(true);
-  }, [attacker, weaponAreaAttack, weapon, loadedAmmo, isVehicleCannonAreaAttack, defender, selectedVehicleSystem?.id]);
+  }, [attacker, weaponAreaAttack, weapon, loadedAmmo, empAttack, isVehicleCannonAreaAttack, defender, selectedVehicleSystem?.id]);
 
   const handleAreaAttackApply = useCallback((attack: AreaAttack, targetIds: string[]) => {
     const requestId = applyAreaAttack(attack, targetIds);
@@ -2582,7 +2586,7 @@ export default function CombatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     if (totalDamage > 0) applyCombatDamage(attackReceipt.current, defender.id, totalDamage,
       shotDamages?.filter(d => d && d.physicalDmg > 0).length ?? 0, targetedBodyPart ?? undefined,
-      selectedVehicleDamageSystem?.id, attacker?.id, !!loadedAmmo?.emp, explosiveVehicleAttack);
+      selectedVehicleDamageSystem?.id, attacker?.id, empAttack, explosiveVehicleAttack);
     if (hasDirectCombatDamage(totalDamage)) playCombatImpact();
     if (totalRadiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, totalRadiationExposure);
     if (hasAppliedPoison && !defender.vehicle) applyPoisonExposure(appliedPoisonResults);
@@ -2591,7 +2595,7 @@ export default function CombatScreen() {
       applyAimedCritEffect();
     }
     setDamageApplied(true);
-  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, selectedVehicleDamageSystem?.id, attacker?.id, loadedAmmo?.emp, explosiveVehicleAttack, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect, playCombatImpact]);
+  }, [defender, totalDamage, totalRadiationExposure, hasAppliedPoison, appliedPoisonResults, applyCombatDamage, shotDamages, targetedBodyPart, selectedVehicleDamageSystem?.id, attacker?.id, empAttack, explosiveVehicleAttack, adjustRadiation, applyPoisonExposure, primaryIsCrit, isAimed, aimedCritPart, aimedCritApplied, applyAimedCritEffect, playCombatImpact]);
 
   // Apply a critical-hit table entry to the defender (shared by the 1d10 roll
   // and the manual "player rolled in real life" selection).
@@ -2752,7 +2756,7 @@ export default function CombatScreen() {
     ammoDRModifier: loadedAmmo?.drMod,
     ignoredDT: perkBonuses.ignoreDT,
     defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
-      + empShieldingResistance(defender, loadedAmmo),
+      + empShieldingResistance(defender, loadedAmmo, empAttack),
     damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
   });
 
@@ -2781,7 +2785,7 @@ export default function CombatScreen() {
             accessibilityRole="button"
             accessibilityLabel={combatActive ? `Round ${currentRound} tracker` : 'Initiative and round tracker'}
             testID="initiative-round-tracker-toggle"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 150, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? colors.success + '33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? colors.success : colors.border }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 150, paddingHorizontal: 10, paddingVertical: 6, borderRadius: colors.radius, backgroundColor: combatActive ? '#4a8c3f33' : colors.secondary, borderWidth: 1, borderColor: combatActive ? '#4a8c3f' : colors.border }}
             onPress={() => {
               const openingTracker = !showRoundTracker;
               setShowRoundTracker(openingTracker);
@@ -2791,19 +2795,19 @@ export default function CombatScreen() {
               }
             }}
           >
-            <Feather name="clock" size={13} color={combatActive ? colors.success : colors.mutedForeground} />
-            <Text style={{ flexShrink: 1, textAlign: 'center', fontSize: 11, fontFamily: 'Inter_700Bold', color: combatActive ? colors.success : colors.mutedForeground }}>
+            <Feather name="clock" size={13} color={combatActive ? '#4a8c3f' : colors.mutedForeground} />
+            <Text style={{ flexShrink: 1, textAlign: 'center', fontSize: 11, fontFamily: 'Inter_700Bold', color: combatActive ? '#4a8c3f' : colors.mutedForeground }}>
               {combatActive ? `R${currentRound}` : 'INITIATIVE / ROUND TRACKER'}
             </Text>
           </TouchableOpacity>
         </View>
         {/* ─── Round Tracker ─── */}
         {showRoundTracker && (
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: combatActive ? colors.success + '88' : colors.border, padding: 14, gap: 10 }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: combatActive ? '#4a8c3f88' : colors.border, padding: 14, gap: 10 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>ROUND TRACKER</Text>
-                {combatActive && <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.success }}>Round {currentRound}</Text>}
+                {combatActive && <Text style={{ fontSize: 20, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>Round {currentRound}</Text>}
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {combatActive && (
@@ -2929,7 +2933,7 @@ export default function CombatScreen() {
                   <TouchableOpacity style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowInitSetup(false)}>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity disabled={initiativeSetupCharacters.length === 0} style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: initiativeSetupCharacters.length > 0 ? colors.success : colors.border, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
+                  <TouchableOpacity disabled={initiativeSetupCharacters.length === 0} style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: initiativeSetupCharacters.length > 0 ? '#4a8c3f' : colors.border, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
                     const entries: InitiativeEntry[] = initiativeSetupCharacters.map(c => {
                       // temp AC is turn-specific and starts separately at zero.
                       const sheet = resolveCombatSheet(
@@ -2966,11 +2970,11 @@ export default function CombatScreen() {
               const isActive = entry.id === activeEntryId;
               const entryChar = characters.find(c => c.id === entry.characterId);
               return (
-                <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: isActive ? colors.success : colors.border, backgroundColor: isActive ? colors.success + '11' : colors.secondary, gap: 8 }}>
-                  {isActive && <Feather name="chevron-right" size={14} color={colors.success} />}
+                <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: isActive ? '#4a8c3f' : colors.border, backgroundColor: isActive ? '#4a8c3f11' : colors.secondary, gap: 8 }}>
+                  {isActive && <Feather name="chevron-right" size={14} color="#4a8c3f" />}
                   <CharacterAvatar portrait={entryChar?.portrait} name={entry.name} size={32} />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontFamily: isActive ? 'Inter_700Bold' : 'Inter_500Medium', color: isActive ? colors.success : colors.foreground }} numberOfLines={1}>{entry.name}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: isActive ? 'Inter_700Bold' : 'Inter_500Medium', color: isActive ? '#4a8c3f' : colors.foreground }} numberOfLines={1}>{entry.name}</Text>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                       Init {entry.initiative} · HP {entry.currentHp}/{entry.maxHp} · AP {entry.currentAP}/{entry.maxAP}{entry.tempAC > 0 ? ` · +${entry.tempAC}AC` : ''}
                     </Text>
@@ -3133,7 +3137,7 @@ export default function CombatScreen() {
                         {!vehicleCanAttemptPilotCheck(attacker.vehicle) && !!vehicleMovementBlockReason(attacker.vehicle) && (
                           <Text style={{ fontSize: 9, color: colors.destructive }}>{vehicleMovementBlockReason(attacker.vehicle)}</Text>
                         )}
-                        {pilotRollResult && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: pilotRollResult.includes('SUCCESS') ? colors.success : colors.destructive }}>Pilot: {pilotRollResult}</Text>}
+                        {pilotRollResult && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: pilotRollResult.includes('SUCCESS') ? '#4a8c3f' : colors.destructive }}>Pilot: {pilotRollResult}</Text>}
                         {vehicleUpgradePlayNotes(attacker.vehicle).map((note, index) => (
                           <Text key={`attacker-vehicle-upgrade-${index}`} style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{note}</Text>
                         ))}
@@ -3186,10 +3190,10 @@ export default function CombatScreen() {
                     </Text>}
                     {attackActor?.isKnockedOut && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>GUNNER KO · {attackActor.knockOutRoundsLeft} turn(s)</Text>}
                     {attackerInjury && attackerInjury.notes.length > 0 && attackerInjury.notes.map((n, i) => (
-                      <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.warning }}>⚠ {n}</Text>
+                      <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
                     ))}
                     {(attacker.effects ?? []).filter(e => e.isActive).map(e => (
-                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.success }}>
+                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>
                         ⚗ {e.name}{describeEffectMods(e) ? ` · ${describeEffectMods(e)}` : ''}
                       </Text>
                     ))}
@@ -3274,10 +3278,10 @@ export default function CombatScreen() {
                     )}
                     {defender.isKnockedOut && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.destructive }}>KO · {defender.knockOutRoundsLeft} turn(s)</Text>}
                     {defenderInjury && defenderInjury.notes.length > 0 && defenderInjury.notes.map((n, i) => (
-                      <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.warning }}>⚠ {n}</Text>
+                      <Text key={i} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#f59e0b' }}>⚠ {n}</Text>
                     ))}
                     {(defender.effects ?? []).filter(e => e.isActive).map(e => (
-                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.success }}>
+                      <Text key={e.id} style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>
                         ⚗ {e.name}{describeEffectMods(e) ? ` · ${describeEffectMods(e)}` : ''}
                       </Text>
                     ))}
@@ -3405,8 +3409,8 @@ export default function CombatScreen() {
                   </TouchableOpacity>
                 )}
                 {apSpent && (
-                  <View style={{ width: '100%', maxWidth: '100%', minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: colors.success + '22', borderWidth: 1, borderColor: colors.success }}>
-                    <Text numberOfLines={2} ellipsizeMode="tail" style={{ width: '100%', minWidth: 0, flexShrink: 1, textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.success }}>
+                  <View style={{ width: '100%', maxWidth: '100%', minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: '#4a8c3f22', borderWidth: 1, borderColor: '#4a8c3f' }}>
+                    <Text numberOfLines={2} ellipsizeMode="tail" style={{ width: '100%', minWidth: 0, flexShrink: 1, textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>
                       ✓ <Text>AP SPENT</Text> — <Text style={{ textTransform: 'uppercase' }}>{weapon ? compactWeaponCombatLabel(weapon) : ''}</Text>
                     </Text>
                   </View>
@@ -3613,10 +3617,10 @@ export default function CombatScreen() {
                     {/* Defend — forfeit remaining AP → temp AC */}
                     <TouchableOpacity
                       disabled={attacker.currentAP < 1}
-                      style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.success, opacity: attacker.currentAP < 1 ? 0.4 : 1 }}
+                      style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: '#4a8c3f', opacity: attacker.currentAP < 1 ? 0.4 : 1 }}
                       onPress={handleDefend}
                     >
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.success }}>DEFEND</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>DEFEND</Text>
                       <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>→ +AC</Text>
                     </TouchableOpacity>
                   </View>
@@ -3740,7 +3744,7 @@ export default function CombatScreen() {
                   <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                     {ammoAccuracyModifier.category} · {loadedAmmo.name}
                   </Text>
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: ammoToHitAdjust > 0 ? colors.success : colors.destructive }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: ammoToHitAdjust > 0 ? '#4a8c3f' : colors.destructive }}>
                     {ammoAccuracyModifier.adjustmentText}
                   </Text>
                 </View>
@@ -3749,27 +3753,27 @@ export default function CombatScreen() {
                 <FormulaLine
                   label={`Range modifier · weapon range ${weapon ? effectiveRange : '—'}`}
                   value={`${rangeMod >= 0 ? '+' : ''}${rangeMod}%`}
-                  color={rangeMod > 0 ? colors.success : colors.destructive}
+                  color={rangeMod > 0 ? '#4a8c3f' : colors.destructive}
                 />
               )}
               {effectiveLightPenalty !== 0 && <FormulaLine label={`Light penalty${perkBonuses.lightReduction > 0 ? ' (halved by perk)' : ''}`} value={`−${effectiveLightPenalty}%`} color={colors.destructive} />}
               {specialUnarmedAttack?.armorClassPiercing
-                ? <FormulaLine label="Armor Class (piercing technique)" value="IGNORED" color={colors.success} />
+                ? <FormulaLine label="Armor Class (piercing technique)" value="IGNORED" color="#4a8c3f" />
                 : <FormulaLine label="Armor Class" value={`−${defenderAC}%`} color={colors.destructive} />}
               {defender?.tempAC && defender.tempAC > 0 ? <FormulaLine label="  (temp AC)" value={`+${defender.tempAC} from unspent AP`} color={colors.mutedForeground} /> : null}
               {vehicleMotionPenalty !== 0 && <FormulaLine label="Vehicle is Moving?" value={`${vehicleMotionPenalty}%`} color={colors.destructive} />}
               {coverPenalty !== 0 && <FormulaLine label="Cover penalty" value={`−${coverPenalty}%`} color={colors.destructive} />}
-              {weaponBonus !== 0 && <FormulaLine label="Manual to-hit adjust" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? colors.success : colors.destructive} />}
-              {modBonuses.toHit !== 0 && <FormulaLine label="Weapon mods (auto)" value={`${modBonuses.toHit >= 0 ? '+' : ''}${modBonuses.toHit}%`} color={modBonuses.toHit > 0 ? colors.success : colors.destructive} />}
+              {weaponBonus !== 0 && <FormulaLine label="Manual to-hit adjust" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? '#4a8c3f' : colors.destructive} />}
+              {modBonuses.toHit !== 0 && <FormulaLine label="Weapon mods (auto)" value={`${modBonuses.toHit >= 0 ? '+' : ''}${modBonuses.toHit}%`} color={modBonuses.toHit > 0 ? '#4a8c3f' : colors.destructive} />}
               {conditionPenalty > 0 && <FormulaLine label="Weapon condition" value={`−${conditionPenalty}%`} color={colors.destructive} />}
-              {positionBonus !== 0 && <FormulaLine label={`Position (${POSITION_OPTIONS[posIdxFromChar].label})`} value={`+${positionBonus}%`} color={colors.success} />}
+              {positionBonus !== 0 && <FormulaLine label={`Position (${POSITION_OPTIONS[posIdxFromChar].label})`} value={`+${positionBonus}%`} color="#4a8c3f" />}
               {targetedPenalty !== 0 && <FormulaLine label={`Targeted (${TARGETED_OPTIONS[effTargetedIdx].label})`} value={`−${targetedPenalty}%`} color={colors.destructive} />}
-              {perkBonuses.toHit !== 0 && <FormulaLine label="Perk to-hit bonus" value={`+${perkBonuses.toHit}%`} color={colors.success} />}
-              {(traitEffects.toHitBonus ?? 0) !== 0 && <FormulaLine label="Trait to-hit bonus" value={`+${traitEffects.toHitBonus}%`} color={colors.success} />}
+              {perkBonuses.toHit !== 0 && <FormulaLine label="Perk to-hit bonus" value={`+${perkBonuses.toHit}%`} color="#4a8c3f" />}
+              {(traitEffects.toHitBonus ?? 0) !== 0 && <FormulaLine label="Trait to-hit bonus" value={`+${traitEffects.toHitBonus}%`} color="#4a8c3f" />}
               {strReqPenalty > 0 && <FormulaLine label={`STR req penalty (STR ${attackerStr}/${effectiveMinStr})`} value={`−${strReqPenalty}%`} color={colors.destructive} />}
               {isBurst && effectiveBurstShots > 1 && <FormulaLine label="Burst penalties" value={burstPenalties.slice(1).map(p => `${p}%`).join(', ')} color={colors.destructive} />}
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-              <FormulaLine label="= Chance to Hit" value={`${shotChances[0]}%`} color={shotChances[0] >= 60 ? colors.success : shotChances[0] >= 35 ? colors.primary : colors.destructive} />
+              <FormulaLine label="= Chance to Hit" value={`${shotChances[0]}%`} color={shotChances[0] >= 60 ? '#4a8c3f' : shotChances[0] >= 35 ? colors.primary : colors.destructive} />
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary, marginTop: 2 }}>
                 Crit chance: {totalCritChance}% (base {attackerBaseCrit}%{aimCritBonus > 0 ? ` + aimed ${aimCritBonus}%` : ''}{perkBonuses.critChance > 0 ? ` + perks ${perkBonuses.critChance}%` : ''}{specialCritBonus > 0 ? ` + ${specialUnarmedAttack?.name} ${specialCritBonus}%` : ''}{helmetHeadCritReduction > 0 ? ` − helmet ${helmetHeadCritReduction}%` : ''})
               </Text>
@@ -3797,8 +3801,8 @@ export default function CombatScreen() {
             {/* Perk bonuses summary */}
             {perkBonuses.notes.length > 0 && (
               <View style={{ backgroundColor: colors.secondary, borderRadius: 6, padding: 8, gap: 2 }}>
-                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.success, letterSpacing: 1 }}>⚔ ACTIVE PERK BONUSES</Text>
-                {perkBonuses.notes.map((n, i) => <Text key={i} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.success }}>• {n}</Text>)}
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: '#4a8c3f', letterSpacing: 1 }}>⚔ ACTIVE PERK BONUSES</Text>
+                {perkBonuses.notes.map((n, i) => <Text key={i} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>• {n}</Text>)}
               </View>
             )}
 
@@ -3822,7 +3826,7 @@ export default function CombatScreen() {
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>LIGHT</Text><Text numberOfLines={1} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{LIGHT_OPTIONS.find(o => o.value === lightPenalty)?.label ?? '—'}</Text></View>
                   <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, paddingHorizontal: 10, paddingVertical: 6 }} onPress={() => setShowLightPicker(true)}>
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: lightPenalty === 0 ? colors.success : colors.destructive }}>{lightPenalty === 0 ? '0%' : `−${lightPenalty}%`}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: lightPenalty === 0 ? '#4a8c3f' : colors.destructive }}>{lightPenalty === 0 ? '0%' : `−${lightPenalty}%`}</Text>
                     <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </View>
@@ -3869,7 +3873,7 @@ export default function CombatScreen() {
                 {/* Auto-computed weapon-mod to-hit (from equipped weapon's mods) */}
                 {weapon && modBonuses.toHit !== 0 && (
                   <View style={{ backgroundColor: colors.secondary, borderRadius: 6, padding: 8 }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.success }}>Weapon mods: {modBonuses.toHit >= 0 ? '+' : ''}{modBonuses.toHit}% to-hit (auto)</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>Weapon mods: {modBonuses.toHit >= 0 ? '+' : ''}{modBonuses.toHit}% to-hit (auto)</Text>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Computed from equipped weapon's mods — no manual entry needed.</Text>
                   </View>
                 )}
@@ -3886,10 +3890,10 @@ export default function CombatScreen() {
                     </View>
                     <View style={{ flexDirection: 'row', gap: 3 }}>
                       {[...Array(CONDITION_BOXES_MAX)].map((_, i) => (
-                        <View key={i} style={{ flex: 1, height: 8, borderRadius: 2, backgroundColor: i < conditionBoxes ? colors.destructive : colors.success }} />
+                        <View key={i} style={{ flex: 1, height: 8, borderRadius: 2, backgroundColor: i < conditionBoxes ? colors.destructive : '#4a8c3f' }} />
                       ))}
                     </View>
-                    <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: weaponBroken ? colors.destructive : conditionPenalty > 0 ? colors.destructive : colors.success }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: weaponBroken ? colors.destructive : conditionPenalty > 0 ? colors.destructive : '#4a8c3f' }}>
                       {conditionLabel(conditionBoxes)}{weaponBroken ? ' — jammed, cannot fire until repaired' : conditionPenalty > 0 ? ` — −${conditionPenalty}% to hit` : ' — 0% penalty'}
                     </Text>
                   </View>
@@ -3907,7 +3911,7 @@ export default function CombatScreen() {
                             if (attacker) setPosition(attacker.id, posMap[i]);
                           }}>
                             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: selected ? colors.primaryForeground : colors.mutedForeground }}>{opt.label.toUpperCase()}</Text>
-                            {opt.bonus !== 0 && <Text style={{ fontSize: 10, color: selected ? colors.primaryForeground + 'cc' : colors.success }}>+{opt.bonus}%</Text>}
+                            {opt.bonus !== 0 && <Text style={{ fontSize: 10, color: selected ? colors.primaryForeground + 'cc' : '#4a8c3f' }}>+{opt.bonus}%</Text>}
                           </TouchableOpacity>
                         );
                       })}
@@ -3921,14 +3925,14 @@ export default function CombatScreen() {
                     <>
                       <Text style={{ fontSize: 10, color: colors.mutedForeground, marginBottom: 6 }}>
                         Every attack at a vehicle must target a named system. There is no body-part penalty; moving vehicles still impose −10%.
-                        {loadedAmmo?.emp ? ' EMP only affects electronic systems.' : ''}
+                        {empAttack ? ' EMP only affects electronic systems.' : ''}
                       </Text>
                       <Text style={{ fontSize: 9, color: colors.mutedForeground, marginBottom: 6 }}>
                         Anti-tank weapons commonly target Structure or Engine; mines commonly target Drive or tires/treads.
                       </Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                         {(defenderVehiclePerformance?.systems ?? defender.vehicle.systems)
-                          .filter(system => !loadedAmmo?.emp || isVehicleSystemElectronic(system))
+                          .filter(system => !empAttack || isVehicleSystemElectronic(system))
                           .map(system => {
                           const selected = selectedVehicleSystem?.id === system.id;
                           return (
@@ -3996,7 +4000,7 @@ export default function CombatScreen() {
                 })} style={{ paddingVertical: 8, alignItems: 'center', borderRadius: 6, backgroundColor: (attacker.conditions ?? []).includes('drunk') ? colors.primary : colors.secondary, borderWidth: 1, borderColor: colors.border }}>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: (attacker.conditions ?? []).includes('drunk') ? colors.primaryForeground : colors.foreground }}>{(attacker.conditions ?? []).includes('drunk') ? 'DRUNK — SET SOBER' : 'SOBER — SET DRUNK'}</Text>
                 </TouchableOpacity>
-                {(attacker.conditions ?? []).includes('drunk') && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.success }}>+20 Unarmed active</Text>}
+                {(attacker.conditions ?? []).includes('drunk') && <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>+20 Unarmed active</Text>}
               </View>
             )}
           </View>
@@ -4028,22 +4032,22 @@ export default function CombatScreen() {
               <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>ROLL FOR ATTACK</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? colors.success : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
               onPress={confirmPhysicalHit}
               disabled={!canRoll || attackBlocked || isBurst}
             >
-              <Feather name="check-circle" size={16} color={physicalHitConfirmed ? colors.success : colors.primary} />
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? colors.success : colors.primary }}>
+              <Feather name="check-circle" size={16} color={physicalHitConfirmed ? '#4a8c3f' : colors.primary} />
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? '#4a8c3f' : colors.primary }}>
                 {physicalHitConfirmed ? 'PHYSICAL HIT CONFIRMED' : 'CONFIRM PHYSICAL HIT'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? colors.success : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
               onPress={() => confirmManualCritical('hit')}
               disabled={!canRoll || attackBlocked || isBurst}
             >
-              <Feather name="zap" size={16} color={primaryIsCrit ? colors.success : colors.primary} />
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: primaryIsCrit ? colors.success : colors.primary }}>
+              <Feather name="zap" size={16} color={primaryIsCrit ? '#4a8c3f' : colors.primary} />
+              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: primaryIsCrit ? '#4a8c3f' : colors.primary }}>
                 {primaryIsCrit ? 'CRITICAL HIT CONFIRMED' : 'CONFIRM CRITICAL HIT'}
               </Text>
             </TouchableOpacity>
@@ -4084,8 +4088,8 @@ export default function CombatScreen() {
                   })}
                 </View>
                 <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center' }}>
-                  <View style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.success + '33', borderRadius: 6 }}>
-                    <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.success }}>{streamlinedHits} HITS</Text>
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#4a8c3f33', borderRadius: 6 }}>
+                    <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>{streamlinedHits} HITS</Text>
                   </View>
                   <View style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.destructive + '33', borderRadius: 6 }}>
                     <Text style={{ fontSize: 16, fontFamily: 'Inter_700Bold', color: colors.destructive }}>{streamlinedMisses} MISSES</Text>
@@ -4109,7 +4113,7 @@ export default function CombatScreen() {
                   ammoDRModifier: loadedAmmo?.drMod,
                   ignoredDT: perkBonuses.ignoreDT,
                   defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
-                    + empShieldingResistance(defender, loadedAmmo),
+                    + empShieldingResistance(defender, loadedAmmo, empAttack),
                   damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
                 });
                 const raceMeleeBonus = isMelee && attacker
@@ -4145,7 +4149,7 @@ export default function CombatScreen() {
                           ammoIgnoresDT: loadedAmmo.ignoresDT, ammoDRModifier: loadedAmmo.drMod,
                           ignoredDT: perkBonuses.ignoreDT,
                           defenderDRModifier: typedPerks.dr + (defenderEffectMods?.drMod ?? 0)
-                            + empShieldingResistance(defender, loadedAmmo),
+                            + empShieldingResistance(defender, loadedAmmo, empAttack),
                           damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
                         });
                         return { damageThreshold: resolved.effectiveDT, damageResistance: resolved.effectiveDR };
@@ -4173,7 +4177,7 @@ export default function CombatScreen() {
                 if (defender) {
                   if (totalBurstDmg > 0) applyCombatDamage(
                     attackReceipt.current, defender.id, totalBurstDmg, damagingHits, undefined,
-                    selectedVehicleSystem?.id, attacker?.id, !!loadedAmmo?.emp, explosiveVehicleAttack,
+                    selectedVehicleSystem?.id, attacker?.id, empAttack, explosiveVehicleAttack,
                   );
                     if (radiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, radiationExposure);
                   if (!defender.vehicle) applyPoisonExposure(poisonResults);
@@ -4200,7 +4204,7 @@ export default function CombatScreen() {
                   </Text>
                 )}
                 {streamlinedDmgResult.poisonResults.map((result, index) => (
-                  <Text key={`${result.poison.type}-${index}`} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : colors.success }}>
+                  <Text key={`${result.poison.type}-${index}`} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
                     Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
                   </Text>
                 ))}
@@ -4220,7 +4224,7 @@ export default function CombatScreen() {
             {shotResults.map((shot, i) => (
               <View key={i} style={{ paddingBottom: 10, borderBottomWidth: i < shotResults.length - 1 ? 1 : 0, borderBottomColor: colors.border, gap: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, backgroundColor: shot.hit ? colors.success : colors.destructive }}>
+                  <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, backgroundColor: shot.hit ? '#4a8c3f' : colors.destructive }}>
                     <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>{shot.isCrit ? '⚡ CRIT' : shot.isCritFail ? '💀 FAIL' : shot.hit ? 'HIT' : 'MISS'}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -4233,7 +4237,7 @@ export default function CombatScreen() {
                          <>
                            <Text style={{ color: colors.primary }}>{String(shot.roll).padStart(2, '0')}</Text>
                            <Text style={{ color: colors.mutedForeground }}> vs </Text>
-                           <Text style={{ color: shot.hit ? colors.success : colors.destructive }}>{shot.chanceToHit}%</Text>
+                           <Text style={{ color: shot.hit ? '#4a8c3f' : colors.destructive }}>{shot.chanceToHit}%</Text>
                          </>
                        )}
                     </Text>
@@ -4256,7 +4260,7 @@ export default function CombatScreen() {
                     Direct hit on {defender?.name ?? 'the target'} marks the impact point. Resolve the blast once for every assigned target, plus concussion within 100 m; do not apply a second direct-damage roll.
                   </Text>
                   {damageApplied ? (
-                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.success }}>Blast and concussion applied.</Text>
+                    <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>Blast and concussion applied.</Text>
                   ) : (
                     <TouchableOpacity
                       testID="resolve-vehicle-cannon-area"
@@ -4384,7 +4388,7 @@ export default function CombatScreen() {
               <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                 Formula: max(0,(base−DT)×(1−DR%))
               </Text>
-              {perkBonuses.damage > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.success }}>Perk damage bonus: +{perkBonuses.damage}</Text>}
+              {perkBonuses.damage > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: '#4a8c3f' }}>Perk damage bonus: +{perkBonuses.damage}</Text>}
             </View>
 
             <View style={{ gap: 6 }}>
@@ -4449,7 +4453,7 @@ export default function CombatScreen() {
                     {dmg.componentBreakdown.map((line, index) => <Text key={index} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.primary }}>{line}</Text>)}
                     {dmg.radiationExposure > 0 && <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>Resolved radiation: {dmg.radiationExposure}</Text>}
                     {dmg.poisonResults.map(result => (
-                      <Text key={result.poison.type} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : colors.success }}>
+                      <Text key={result.poison.type} style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: result.applied ? colors.destructive : '#4a8c3f' }}>
                         Poison Type {result.poison.type}: rolled {result.roll} vs {result.resistance}% — {result.applied ? `NOT RESISTED${result.bonusDamage > 0 ? ` · +${result.bonusDamage} damage` : ' · status applied'}` : 'RESISTED'}
                       </Text>
                     ))}
@@ -4487,9 +4491,9 @@ export default function CombatScreen() {
                     <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: '#fff' }}>APPLY {totalDamage} DMG{totalRadiationExposure > 0 ? ` + ${totalRadiationExposure} RAD` : ''}{hasAppliedPoison ? ' + POISON' : ''} → {defender?.name?.toUpperCase()}</Text>
                   </TouchableOpacity>
                 ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, backgroundColor: colors.success + '22', borderColor: colors.success }}>
-                    <Feather name="check-circle" size={16} color={colors.success} />
-                    <Text style={{ color: colors.success, fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{totalRadiationExposure > 0 ? ' and radiation' : ''}{hasAppliedPoison ? ' and poison' : ''} applied to {defender?.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: colors.radius, borderWidth: 1, backgroundColor: '#4a8c3f22', borderColor: '#4a8c3f' }}>
+                    <Feather name="check-circle" size={16} color="#4a8c3f" />
+                    <Text style={{ color: '#4a8c3f', fontFamily: 'Inter_600SemiBold', marginLeft: 8 }}>{totalDamage > 0 ? 'Damage' : 'Hit'}{totalRadiationExposure > 0 ? ' and radiation' : ''}{hasAppliedPoison ? ' and poison' : ''} applied to {defender?.name}</Text>
                   </View>
                 )}
 
@@ -4594,6 +4598,8 @@ export default function CombatScreen() {
           ...createCustomAmmoAreaDamageProfiles(allAmmo),
           ...createCustomWeaponAreaDamageProfiles(allWeapons),
         ]}
+        rangeOverrides={app.areaProfileRangeOverrides}
+        onSaveRange={app.setAreaProfileRangeOverride}
         onClose={() => { setShowAreaAttack(false); setAreaAttackPreset(null); }}
         onApply={handleAreaAttackApply}
         receipt={areaAttackReceipt}
@@ -4952,7 +4958,7 @@ function MineTrapPlacementModal({ visible, deviceName, effectiveTraps, apCost, o
   );
 }
 
-function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initialAttack, initialDefenderId, sourceWeaponName, profiles }: {
+function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initialAttack, initialDefenderId, sourceWeaponName, profiles, rangeOverrides, onSaveRange }: {
   visible: boolean;
   combatants: Character[];
   onClose: () => void;
@@ -4962,6 +4968,8 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   initialDefenderId?: string;
   sourceWeaponName?: string;
   profiles: readonly AreaDamageProfile[];
+  rangeOverrides: AreaProfileRangeOverrides;
+  onSaveRange: (profileId: string, effectId: string, range: number) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -4976,8 +4984,13 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   const [profileDamageRolled, setProfileDamageRolled] = useState<number | null>(null);
   const [catalogProfileId, setCatalogProfileId] = useState<string | null>(null);
   const [profileDamageByEffect, setProfileDamageByEffect] = useState<Record<string, number>>({});
+  const [profileRangeInputs, setProfileRangeInputs] = useState<Record<string, string>>({});
   const [targetZones, setTargetZones] = useState<Record<string, string>>({});
-  const [vehicleSystemTargets, setVehicleSystemTargets] = useState<Record<string, string[]>>({});
+  const [vehicleSystemTargets, setVehicleSystemTargets] = useState<Record<string, string | string[]>>({});
+  const selectedVehicleSystemIds = (targetId: string): string[] => {
+    const value = vehicleSystemTargets[targetId];
+    return Array.isArray(value) ? value : value ? [value] : [];
+  };
   const [gasExposure, setGasExposure] = useState<'gasInhaled' | 'gasContact' | null>(null);
   const selectedAreaProfile = catalogProfileId ? profiles.find(profile => profile.id === catalogProfileId) : undefined;
   const initialAreaProfile = initialAttack?.profileId
@@ -5020,8 +5033,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   useEffect(() => {
     if (!visible) return;
     setGasExposure(null);
-      setVehicleSystemTargets(Object.fromEntries(Object.entries(initialAttack?.vehicleSystemTargets ?? {})
-        .map(([id, value]) => [id, Array.isArray(value) ? value : value ? [value] : []])));
+    setVehicleSystemTargets(initialAttack?.vehicleSystemTargets ?? {});
     if (initialAttack) {
       setKind(initialAttack.kind);
       setRawDamage(initialAttack.rawDamage);
@@ -5035,9 +5047,15 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
       setProfileComponent(firstEffectId);
       setProfileDamageByEffect({ [firstEffectId]: initialAttack.rawDamage });
       const firstZone = initialProfile
-        ? buildAreaDamageZones(initialProfile, {}, {}).at(0)?.id
+        ? buildAreaDamageZones(initialProfile, rangeOverrides, {}).at(0)?.id
         : undefined;
       setTargetZones(initialDefenderId && firstZone ? { [initialDefenderId]: firstZone } : {});
+      setProfileRangeInputs(initialProfile
+        ? Object.fromEntries(initialProfile.effects.map(effect => {
+            const effectId = effect.id ?? 'main';
+            return [effectId, String(rangeOverrides[initialProfile.id]?.[effectId] ?? '')];
+          }))
+        : {});
     } else {
       setTargets([]);
       setProfileDamageRolled(null);
@@ -5113,12 +5131,13 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   const vehicleCannonMissingEffects = !!areaProfile?.id.startsWith('vehicle-cannon:')
     && areaProfile.effects.some(effect => (currentProfileDamage[effect.id ?? 'main'] ?? 0) <= 0);
   const areaZones = areaProfile
-    ? buildAreaDamageZones(areaProfile, {}, currentProfileDamage)
+    ? buildAreaDamageZones(areaProfile, rangeOverrides, currentProfileDamage)
     : [];
   const profileTargetIds = Object.entries(targetZones)
     .filter(([, zoneId]) => areaZones.some(zone => zone.id === zoneId))
     .map(([characterId]) => characterId);
   const applyTargetIds = areaProfile ? profileTargetIds : targets;
+  const areaMissingRanges = areaProfile ? missingAreaProfileRanges(areaProfile, rangeOverrides) : [];
   const attackToApply: AreaAttack = areaProfile && selectedComponent
     ? {
         kind: selectedComponent.kind,
@@ -5165,15 +5184,14 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
   const vehicleSystemTargetMissing = requiresVehicleSystemAssignment && applyTargetIds.some(id => {
     const target = combatants.find(candidate => candidate.id === id);
     if (!target?.vehicle) return false;
-    const systems = resolveVehiclePerformance(target.vehicle).systems;
-    const selectedIds = vehicleSystemTargets[id] ?? [];
-    if (attackToApply.emp) {
-      const system = systems.find(candidate => candidate.id === selectedIds[0]);
-      return !system || !isVehicleSystemElectronic(system);
-    }
-    const additionalSystems = systems.filter(system => system.kind !== 'structure');
-    return additionalSystems.length > 0
-      && !selectedIds.some(systemId => additionalSystems.some(system => system.id === systemId));
+    const selectedIds = selectedVehicleSystemIds(id);
+    const eligibleSystems = resolveVehiclePerformance(target.vehicle).systems
+      .filter(system => attackToApply.emp
+        ? isVehicleSystemElectronic(system)
+        : system.kind !== 'structure');
+    return selectedIds.length === 0
+      || (!!attackToApply.emp && selectedIds.length !== 1)
+      || selectedIds.some(systemId => !eligibleSystems.some(system => system.id === systemId));
   });
   const renderVehicleSystemPicker = (target: Character) => {
     if (!target.vehicle || !requiresVehicleSystemAssignment) return null;
@@ -5181,17 +5199,24 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
       .filter(system => attackToApply.emp
         ? isVehicleSystemElectronic(system)
         : system.kind !== 'structure');
-    const selectedSystemIds = vehicleSystemTargets[target.id] ?? [];
+    const selectedSystemIds = selectedVehicleSystemIds(target.id);
     return (
       <View style={{ gap: 5, marginTop: 4 }}>
         <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.7 }}>
-          {attackToApply.emp ? 'EMP SYSTEM' : 'ADDITIONAL VEHICLE SYSTEMS'}
+          {attackToApply.emp ? 'EMP SYSTEM' : 'AFFECTED VEHICLE SYSTEM'}
         </Text>
-        <Text style={{ fontSize: 9, color: colors.mutedForeground }}>
-          {attackToApply.emp
-            ? 'Choose one electronic system (Engine, Controls, or Drive); Structure and tires/treads are immune.'
-            : 'Structure always takes blast damage. Select every additional system hit; each takes the same resolved zone damage.'}
-        </Text>
+                <Text style={{ fontSize: 9, color: colors.mutedForeground }}>
+                  {attackToApply.emp
+                    ? 'Choose an electronic system (Engine, Controls, or Drive); Structure and tires/treads are immune.'
+                    : attackToApply.profileId?.includes('antivehicle_mine')
+                      ? 'Anti-vehicle mines commonly target Drive or tires/treads.'
+                      : 'Anti-tank weapons commonly target Structure or Engine; mines target Drive or tires/treads.'}
+                </Text>
+        {!attackToApply.emp && (
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>
+            Blast damage affects Structure and this system. Structure is only damaged once if selected.
+          </Text>
+        )}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
           {systems.map(system => {
             const selected = selectedSystemIds.includes(system.id);
@@ -5203,7 +5228,10 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
                 accessibilityState={{ selected }}
                 onPress={() => setVehicleSystemTargets(previous => {
                   if (attackToApply.emp) return { ...previous, [target.id]: [system.id] };
-                  const current = previous[target.id] ?? [];
+                  const previousValue = previous[target.id];
+                  const current = Array.isArray(previousValue)
+                    ? previousValue
+                    : previousValue ? [previousValue] : [];
                   return {
                     ...previous,
                     [target.id]: current.includes(system.id)
@@ -5231,6 +5259,25 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
     setRawDamage(total);
     setProfileDamageRolled(total);
     if (areaProfile) setProfileDamageByEffect(previous => ({ ...previous, [profileComponent]: total }));
+  };
+  const saveProfileRanges = () => {
+    if (!areaProfile) return;
+    const savedRanges = { ...(rangeOverrides[areaProfile.id] ?? {}) };
+    for (const component of areaMissingRanges) {
+      const componentId = component.id ?? 'main';
+      const range = Number.parseInt(profileRangeInputs[componentId] ?? '', 10);
+      if (Number.isInteger(range) && range >= 0 && range <= 100000) {
+        savedRanges[componentId] = range;
+        onSaveRange(areaProfile.id, componentId, range);
+      }
+    }
+    const firstZone = buildAreaDamageZones(areaProfile, {
+      ...rangeOverrides,
+      [areaProfile.id]: savedRanges,
+    }, currentProfileDamage)[0];
+    if (initialDefenderId && firstZone && !targetZones[initialDefenderId]) {
+      setTargetZones(previous => ({ ...previous, [initialDefenderId]: firstZone.id }));
+    }
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>

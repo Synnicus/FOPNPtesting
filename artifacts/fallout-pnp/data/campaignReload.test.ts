@@ -13,7 +13,9 @@ import type {
   CustomPerkDefinition,
   CustomWeaponMod,
   InitiativeEntry,
+  Weapon,
 } from '../context/types.ts';
+import type { AmmoType } from './ammo.ts';
 import { BUILT_IN_BESTIARY, MANUAL_BESTIARY, resolveBestiaryTemplates, spawnBestiaryTemplate } from './bestiary.ts';
 import { BUILT_IN_ARMOR } from './armor.ts';
 import { BUILT_IN_WEAPONS } from './weapons.ts';
@@ -123,6 +125,48 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       'ammo:51mm_explosive_mortar': { main: 999 },
     },
   };
+  const customEmpAmmo: AmmoType = {
+    id: 'campaign-emp-ammo',
+    name: 'Campaign Pulse Charge',
+    value: 0,
+    acMod: 0,
+    drMod: 0,
+    dmgDieCount: 1,
+    dmgDie: 6,
+    dmgBonus: 0,
+    volume: 0,
+    components: [{ id: 'damage', label: 'Damage', type: 'explosion', dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 }],
+    areaEffects: [{
+      id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+    }],
+    emp: true,
+    isCustom: true,
+  };
+  const campaignEmpMine: Weapon = {
+    id: 'campaign-emp-mine',
+    name: 'Campaign Pulse Mine',
+    category: 'minesTraps',
+    damageType: 'explosion',
+    damageDieCount: 1,
+    damageDie: 6,
+    damageBonus: 0,
+    skill: 'traps',
+    burstLimit: 1,
+    isDoubleShot: false,
+    magazineSize: 0,
+    weight: 0,
+    minStr: 0,
+    rangeNormal: 0,
+    knockdownChance: 0,
+    mods: [],
+    isCustom: true,
+    customAreaEffects: [{
+      id: 'blast', label: 'Blast', kind: 'explosion', damageType: 'explosion',
+      damageDieCount: 1, damageDie: 6, damageBonus: 0,
+    }],
+    emp: true,
+  };
   const raw = JSON.stringify(fixture);
   const persistedRaw = JSON.stringify({
     ...fixture,
@@ -211,6 +255,7 @@ test('AppProvider campaign storage lifecycle', async (t) => {
   try {
     const { AppProvider, useApp } = await import('../context/AppContext.tsx');
     let campaign: ReturnType<typeof useApp> | undefined;
+    const currentCampaign = () => campaign as ReturnType<typeof useApp>;
     function Consumer() {
       campaign = useApp();
       return null;
@@ -304,6 +349,38 @@ test('AppProvider campaign storage lifecycle', async (t) => {
     assert.deepEqual(saved.characters[2].vehicle.weaponSlots, vehicleSlots);
     assert.deepEqual(saved.characters[2].vehicle.mountedWeapons, ['Rheinmetall 120mm Gun', 'M2HB ×2']);
     assert.deepEqual(saved.characters[2].vehicleCrew, { pilotCharacterId: legacyNpc.id, gunnerCharacterId: printedNpc.id });
+
+    await t.test('campaign import and reload preserve custom EMP ammunition and mine settings', async () => {
+      storage.clear();
+      campaign = undefined;
+      try {
+        const empty = await mount();
+        let imported = false;
+        await act(async () => {
+          imported = await empty.importCampaign(JSON.stringify({
+            ...fixture,
+            customAmmo: [customEmpAmmo],
+            customWeapons: [campaignEmpMine],
+          }));
+        });
+        assert.equal(imported, true, 'campaign with custom EMP data imports');
+        assert.equal(currentCampaign().customAmmo[0]?.emp, true);
+        assert.equal(currentCampaign().customWeapons[0]?.emp, true);
+        assert.equal(JSON.parse(currentCampaign().exportCampaign()).customAmmo[0].emp, true);
+
+        await act(async () => renderer!.unmount());
+        renderer = undefined;
+        campaign = undefined;
+
+        const restored = await mount();
+        assert.equal(restored.customAmmo[0]?.emp, true, 'custom ammunition EMP flag survives reload');
+        assert.equal(restored.customWeapons[0]?.emp, true, 'custom mine EMP flag survives reload');
+        assert.deepEqual(restored.customWeapons[0]?.customAreaEffects?.[0].id, 'blast');
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
 
     await t.test('spawned built-in NPCs remain snapshots after catalog edits and removals', async () => {
       storage.clear();

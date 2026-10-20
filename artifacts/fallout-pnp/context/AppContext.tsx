@@ -532,6 +532,10 @@ function hasValidCampaignImport(value: unknown): value is AppState {
     && (!Array.isArray(value.customConsumables)
       || !value.customConsumables.every(isCustomConsumableRecord)
       || sanitizeCustomConsumables(value.customConsumables).length !== value.customConsumables.length)) return false;
+  if (value.customAmmo !== undefined
+    && (!Array.isArray(value.customAmmo)
+      || value.customAmmo.some(ammo => !isRecord(ammo) || ammo.isCustom !== true)
+      || sanitizeCustomAmmoCatalog(value.customAmmo).length !== value.customAmmo.length)) return false;
   if (value.campaignRuleTags !== undefined
     && (!Array.isArray(value.campaignRuleTags) || !value.campaignRuleTags.every(tag =>
       isRecord(tag) && typeof tag.id === 'string' && typeof tag.label === 'string'

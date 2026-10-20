@@ -208,6 +208,7 @@ export function validateCustomAmmo(ammo: AmmoType, catalog: readonly AmmoType[] 
     errors.push('Value and volume must be non-negative whole numbers.');
   }
   if (ammo?.ignoresDT !== undefined && typeof ammo.ignoresDT !== 'boolean') errors.push('Ignores DT must be a boolean.');
+  if (ammo?.emp !== undefined && typeof ammo.emp !== 'boolean') errors.push('EMP must be a boolean.');
   if (ammo?.notes !== undefined && typeof ammo.notes !== 'string') errors.push('Notes must be text.');
   if (ammo?.areaEffects !== undefined) {
     errors.push(...validateCustomAreaEffects(ammo.areaEffects, ammo.areaRangeUnit ?? 'hex'));
