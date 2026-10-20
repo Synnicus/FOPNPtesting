@@ -10,3 +10,9 @@ Vehicle blast damage always reaches Structure and each selected additional syste
 **Why:** The user wants only explicitly configured zones in the combat picker, authored blast settings on custom equipment, and one resolution that can damage multiple vehicle systems.
 
 **How to apply:** Keep manual ranges authoritative for built-ins; require custom blast profiles to define every effect's radius before they appear in combat. Combat should assign targets to those saved zones, apply all in-range effects together, and preserve the Structure-plus-selected-systems vehicle rule.
+
+Keep original built-in explosive-ammo definitions immutable when a house rule supplies missing blast zones. Expose derived copies with the rule's radius, and restore the untouched definitions when the option is disabled.
+
+**Why:** The user explicitly wants the original profiles retained safely so toggling the house rule off can restore their prior behavior.
+
+**How to apply:** Store canonical definitions separately from rule-derived combat profiles; never rewrite or discard the source profiles while applying or removing gameplay options.

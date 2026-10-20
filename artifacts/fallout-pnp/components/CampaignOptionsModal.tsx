@@ -45,6 +45,60 @@ function SectionHeading({ title }: { title: string }) {
   );
 }
 
+function CollapsibleSectionButton({
+  title,
+  expanded,
+  onPress,
+  testID,
+  summary,
+}: {
+  title: string;
+  expanded: boolean;
+  onPress: () => void;
+  testID: string;
+  summary?: string;
+}) {
+  const palette = useColors();
+  return (
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ expanded }}
+      testID={testID}
+      onPress={onPress}
+      style={{
+        minHeight: 52,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderWidth: 1,
+        borderColor: expanded ? palette.primary : palette.border,
+        borderRadius: palette.radius,
+        backgroundColor: palette.secondary,
+      }}
+    >
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={{
+          fontSize: 12,
+          fontFamily: 'Inter_700Bold',
+          color: palette.primary,
+          letterSpacing: 1.2,
+        }}>
+          {title.toUpperCase()}
+        </Text>
+        {!expanded && summary ? (
+          <Text numberOfLines={1} style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+            {summary}
+          </Text>
+        ) : null}
+      </View>
+      <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={palette.primary} />
+    </TouchableOpacity>
+  );
+}
+
 function VaultRadioNowPlaying({
   track,
   hasPlaybackError,
@@ -633,6 +687,8 @@ export default function CampaignOptionsModal({
     skipNext,
   } = useVaultRadioStatus();
   const [showRadioStations, setShowRadioStations] = useState(false);
+  const [showGameplayOptions, setShowGameplayOptions] = useState(false);
+  const [showLanguageOptions, setShowLanguageOptions] = useState(false);
   const [showHardcoreWarning, setShowHardcoreWarning] = useState(false);
   const [showHardcorePreview, setShowHardcorePreview] = useState(false);
   const previewTriggerRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
@@ -669,6 +725,7 @@ export default function CampaignOptionsModal({
   };
 
   const chooseTheme = (theme: CampaignVisualTheme) => setVisualTheme(theme);
+  const selectedLanguageLabel = APP_LANGUAGES.find(language => language.locale === locale)?.label ?? locale;
   const restoreBestiary = () => {
     const message = 'This restores the current built-in NPC roster and removes its edits and removals. Custom NPCs and catalog photos are kept.';
     if (Platform.OS === 'web') {
@@ -722,163 +779,182 @@ export default function CampaignOptionsModal({
             keyboardShouldPersistTaps="handled"
             bottomOffset={20}
           >
-            <SectionHeading title="Gameplay Options" />
-            <View style={{
-              padding: 14,
-              borderWidth: 1,
-              borderColor: hardcoreRadiationRules ? palette.destructive : palette.border,
-              borderRadius: palette.radius,
-              backgroundColor: palette.secondary,
-              gap: 12,
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
-                    Hardcore Radiation Penalties
-                  </Text>
-                  <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-                    Optional campaign-wide SPECIAL penalties. Separate from core radiation sickness.
-                  </Text>
+            <CollapsibleSectionButton
+              title="Gameplay Options"
+              expanded={showGameplayOptions}
+              onPress={() => setShowGameplayOptions(open => !open)}
+              testID="campaign-gameplay-options-toggle"
+            />
+            {showGameplayOptions && (
+              <View style={{ gap: 10 }}>
+                <View style={{
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: hardcoreRadiationRules ? palette.destructive : palette.border,
+                  borderRadius: palette.radius,
+                  backgroundColor: palette.secondary,
+                  gap: 12,
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
+                        Hardcore Radiation Penalties
+                      </Text>
+                      <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                        Optional campaign-wide SPECIAL penalties. Separate from core radiation sickness.
+                      </Text>
+                    </View>
+                    <ThemeSwitch
+                      testID="hardcore-radiation-toggle"
+                      value={hardcoreRadiationRules}
+                      onValueChange={handleHardcoreToggle}
+                      label="Enable Hardcore radiation penalties"
+                      hint="Applies optional campaign-wide SPECIAL penalties"
+                      activeColor={palette.primary}
+                      inactiveColor={palette.border}
+                      thumbColor={palette.card}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    ref={previewTriggerRef}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Review Hardcore radiation thresholds. Currently ${hardcoreRadiationRules ? 'enabled' : 'disabled'}`}
+                    accessibilityHint="Opens an explanation without changing the campaign setting"
+                    accessibilityState={{ expanded: showHardcorePreview }}
+                    testID="hardcore-radiation-preview"
+                    onPress={() => setShowHardcorePreview(true)}
+                    style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingVertical: 3 }}
+                  >
+                    <Feather name="info" size={14} color={palette.primary} />
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: palette.primary, letterSpacing: 0.5 }}>
+                      REVIEW PENALTIES
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <ThemeSwitch
-                  testID="hardcore-radiation-toggle"
-                  value={hardcoreRadiationRules}
-                  onValueChange={handleHardcoreToggle}
-                  label="Enable Hardcore radiation penalties"
-                  hint="Applies optional campaign-wide SPECIAL penalties"
-                  activeColor={palette.primary}
-                  inactiveColor={palette.border}
-                  thumbColor={palette.card}
+
+                <PreferenceSwitchRow
+                  label="5m Blast Radius for Explosive Ammo"
+                  description="House rule: built-in explosive ammo without a manual blast range gets one 5-meter zone, matching a standard mine. Turn this off to restore the original profiles; printed blast zones are unchanged."
+                  value={missingExplosiveBlastZoneHouseRule}
+                  onValueChange={setMissingExplosiveBlastZoneHouseRule}
+                  testID="explosive-ammo-mine-radius-toggle"
                 />
-              </View>
-              <TouchableOpacity
-                ref={previewTriggerRef}
-                accessibilityRole="button"
-                accessibilityLabel={`Review Hardcore radiation thresholds. Currently ${hardcoreRadiationRules ? 'enabled' : 'disabled'}`}
-                accessibilityHint="Opens an explanation without changing the campaign setting"
-                accessibilityState={{ expanded: showHardcorePreview }}
-                testID="hardcore-radiation-preview"
-                onPress={() => setShowHardcorePreview(true)}
-                style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingVertical: 3 }}
-              >
-                <Feather name="info" size={14} color={palette.primary} />
-                <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: palette.primary, letterSpacing: 0.5 }}>
-                  REVIEW PENALTIES
-                </Text>
-              </TouchableOpacity>
-            </View>
 
-            <PreferenceSwitchRow
-              label="5m Blast Radius for Explosive Ammo"
-              description="House rule: built-in explosive ammo without a manual blast range gets one 5-meter zone, matching a standard mine. Turn this off to restore the original profiles; printed blast zones are unchanged."
-              value={missingExplosiveBlastZoneHouseRule}
-              onValueChange={setMissingExplosiveBlastZoneHouseRule}
-              testID="explosive-ammo-mine-radius-toggle"
-            />
-
-            <PreferenceSwitchRow
-              label="Mutant/Ghoul Radiation Immunity/Healing"
-              description="Optional lore-friendly rule: Super Mutants, Ghouls, and Deathclaws do not suffer radiation sickness. Choose how radiation affects Ghoul healing below."
-              value={mutantGhoulRadiationRules}
-              onValueChange={setMutantGhoulRadiationRules}
-              testID="mutant-ghoul-radiation-toggle"
-            />
-            {mutantGhoulRadiationRules && (
-              <View
-                accessibilityRole="radiogroup"
-                accessibilityLabel="Ghoul radiation healing rules"
-                style={{ gap: 7, marginTop: 2 }}
-              >
-                {GHOUL_RADIATION_RULE_OPTIONS.map(option => {
-                  const selected = ghoulRadiationHealingOption === option.value;
-                  return (
-                    <TouchableOpacity
-                      key={option.value}
-                      accessibilityRole="radio"
-                      accessibilityLabel={option.label}
-                      accessibilityHint={option.description}
-                      accessibilityState={{ checked: selected }}
-                      testID={`ghoul-radiation-option-${option.value}`}
-                      onPress={() => setGhoulRadiationHealingOption(option.value)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'flex-start',
-                        gap: 11,
-                        padding: 12,
-                        borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? palette.primary : palette.border,
-                        borderRadius: palette.radius,
-                        backgroundColor: palette.secondary,
-                      }}
-                    >
-                      <Feather
-                        name={selected ? 'check-circle' : 'circle'}
-                        size={17}
-                        color={selected ? palette.primary : palette.mutedForeground}
-                        style={{ marginTop: 1 }}
-                      />
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
-                          {option.label}
-                        </Text>
-                        <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-                          {option.description}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-                <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-                  Super Mutants, Deathclaws, and Option 1 Ghouls are locked at 100% resistance. Options 2–4 set Ghouls' natural resistance to 0% so they can absorb radiation; worn armor and other protection still reduce it. Healing uses radiation that actually accumulates, up to the meter's 1000-rad cap.
-                </Text>
+                <PreferenceSwitchRow
+                  label="Mutant/Ghoul Radiation Immunity/Healing"
+                  description="Optional lore-friendly rule: Super Mutants, Ghouls, and Deathclaws do not suffer radiation sickness. Choose how radiation affects Ghoul healing below."
+                  value={mutantGhoulRadiationRules}
+                  onValueChange={setMutantGhoulRadiationRules}
+                  testID="mutant-ghoul-radiation-toggle"
+                />
+                {mutantGhoulRadiationRules && (
+                  <View
+                    accessibilityRole="radiogroup"
+                    accessibilityLabel="Ghoul radiation healing rules"
+                    style={{ gap: 7, marginTop: 2 }}
+                  >
+                    {GHOUL_RADIATION_RULE_OPTIONS.map(option => {
+                      const selected = ghoulRadiationHealingOption === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          accessibilityRole="radio"
+                          accessibilityLabel={option.label}
+                          accessibilityHint={option.description}
+                          accessibilityState={{ checked: selected }}
+                          testID={`ghoul-radiation-option-${option.value}`}
+                          onPress={() => setGhoulRadiationHealingOption(option.value)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'flex-start',
+                            gap: 11,
+                            padding: 12,
+                            borderWidth: selected ? 2 : 1,
+                            borderColor: selected ? palette.primary : palette.border,
+                            borderRadius: palette.radius,
+                            backgroundColor: palette.secondary,
+                          }}
+                        >
+                          <Feather
+                            name={selected ? 'check-circle' : 'circle'}
+                            size={17}
+                            color={selected ? palette.primary : palette.mutedForeground}
+                            style={{ marginTop: 1 }}
+                          />
+                          <View style={{ flex: 1, gap: 3 }}>
+                            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
+                              {option.label}
+                            </Text>
+                            <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                              {option.description}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                      Super Mutants, Deathclaws, and Option 1 Ghouls are locked at 100% resistance. Options 2–4 set Ghouls' natural resistance to 0% so they can absorb radiation; worn armor and other protection still reduce it. Healing uses radiation that actually accumulates, up to the meter's 1000-rad cap.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
 
             {!hideLanguageOptions && (
               <>
-                <SectionHeading title="Language" />
-                <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground, marginBottom: 2 }}>
-                  Choose the language used for the app interface, built-in rules, and catalogs.
-                </Text>
-                <View accessibilityRole="radiogroup" accessibilityLabel="Language" style={{ gap: 7 }}>
-                  {APP_LANGUAGES.map(language => {
-                    const selected = locale === language.locale;
-                    return (
-                      <TouchableOpacity
-                        key={language.locale}
-                        accessibilityRole="radio"
-                        accessibilityLabel={language.label}
-                        accessibilityState={{ checked: selected }}
-                        testID={`language-option-${language.locale}`}
-                        onPress={() => setLocale(language.locale)}
-                        style={{
-                          minHeight: 46,
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 12,
-                          paddingHorizontal: 13,
-                          paddingVertical: 9,
-                          borderWidth: selected ? 2 : 1,
-                          borderColor: selected ? palette.primary : palette.border,
-                          borderRadius: palette.radius,
-                          backgroundColor: palette.secondary,
-                        }}
-                      >
-                        <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
-                          {language.label}
-                        </Text>
-                        <Feather
-                          name={selected ? 'check-circle' : 'circle'}
-                          size={18}
-                          color={selected ? palette.primary : palette.mutedForeground}
-                        />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-                  Names and notes you enter stay in the language you wrote them.
-                </Text>
+                <CollapsibleSectionButton
+                  title="Language"
+                  summary={selectedLanguageLabel}
+                  expanded={showLanguageOptions}
+                  onPress={() => setShowLanguageOptions(open => !open)}
+                  testID="campaign-language-options-toggle"
+                />
+                {showLanguageOptions && (
+                  <View style={{ gap: 9 }}>
+                    <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground, marginBottom: 2 }}>
+                      Choose the language used for the app interface, built-in rules, and catalogs.
+                    </Text>
+                    <View accessibilityRole="radiogroup" accessibilityLabel="Language" style={{ gap: 7 }}>
+                      {APP_LANGUAGES.map(language => {
+                        const selected = locale === language.locale;
+                        return (
+                          <TouchableOpacity
+                            key={language.locale}
+                            accessibilityRole="radio"
+                            accessibilityLabel={language.label}
+                            accessibilityState={{ checked: selected }}
+                            testID={`language-option-${language.locale}`}
+                            onPress={() => setLocale(language.locale)}
+                            style={{
+                              minHeight: 46,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 12,
+                              paddingHorizontal: 13,
+                              paddingVertical: 9,
+                              borderWidth: selected ? 2 : 1,
+                              borderColor: selected ? palette.primary : palette.border,
+                              borderRadius: palette.radius,
+                              backgroundColor: palette.secondary,
+                            }}
+                          >
+                            <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: palette.foreground }}>
+                              {language.label}
+                            </Text>
+                            <Feather
+                              name={selected ? 'check-circle' : 'circle'}
+                              size={18}
+                              color={selected ? palette.primary : palette.mutedForeground}
+                            />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <Text style={{ fontSize: 10, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+                      Names and notes you enter stay in the language you wrote them.
+                    </Text>
+                  </View>
+                )}
               </>
             )}
 
