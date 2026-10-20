@@ -280,15 +280,34 @@ function multiplyCapacity(value: string, multiplier: number): string {
 
 export function resolveVehiclePerformance(vehicle: VehicleProfile): VehicleProfile {
   const effects = vehicleUpgradeEffects(vehicle);
-  const topSpeedKph = vehicle.topSpeedKph === null
+  const systems = vehicle.systems.map(system => effects.slicks && system.kind === 'tire'
+    ? { ...system, currentHp: Math.min(system.currentHp, 5), maxHp: 5 }
+    : { ...system });
+  const systemOperational = (kind: VehicleSystem['kind']) => {
+    const matching = systems.filter(system => system.kind === kind);
+    return matching.every(system => vehicleSystemStatus(system) === 'operational');
+  };
+  const engineOperational = systemOperational('engine');
+  const controlsOperational = systemOperational('controls');
+  const driveOperational = systemOperational('drive');
+  const treadsOperational = systemOperational('tread');
+  const tiresOperational = systemOperational('tire');
+  const forcedToHalt = !engineOperational || !treadsOperational;
+  const topSpeedKph = forcedToHalt
+    ? 0
+    : vehicle.topSpeedKph === null
     ? null
-    : vehicle.topSpeedKph * (effects.slicks ? 1.2 : 1) + (effects.antigravPlates ? 80.5 : 0);
-  const accelerationKphPerRound = vehicle.accelerationKphPerRound === null
+    : (vehicle.topSpeedKph * (effects.slicks ? 1.2 : 1) + (effects.antigravPlates ? 80.5 : 0))
+      * (tiresOperational ? 1 : 0.25);
+  const accelerationKphPerRound = !engineOperational || !controlsOperational || !driveOperational || !treadsOperational
+    ? 0
+    : vehicle.accelerationKphPerRound === null
     ? null
     : vehicle.accelerationKphPerRound + (effects.slicks ? 10 : 0);
 
   return {
     ...vehicle,
+    inMotion: vehicle.inMotion && !forcedToHalt,
     topSpeedKph,
     accelerationKphPerRound,
     brakingKphPerRound: vehicle.brakingKphPerRound === null
@@ -304,9 +323,7 @@ export function resolveVehiclePerformance(vehicle: VehicleProfile): VehicleProfi
       ? multiplyCapacity(vehicle.carryingWeightLb, 1.5)
       : vehicle.carryingWeightLb,
     terrainPilotModifier: vehicle.terrainPilotModifier - (effects.slicks ? 10 : 0),
-    systems: vehicle.systems.map(system => effects.slicks && system.kind === 'tire'
-      ? { ...system, currentHp: Math.min(system.currentHp, 5), maxHp: 5 }
-      : { ...system }),
+    systems,
     damageResistance: { ...vehicle.damageResistance },
     mountedWeapons: [...vehicle.mountedWeapons],
     weaponSlots: vehicle.weaponSlots?.map(slot => ({ ...slot })),
@@ -346,9 +363,72 @@ export function vehicleUpgradePlayNotes(vehicle: VehicleProfile): string[] {
   ];
 }
 
+const INOPERATIVE_SYSTEM_EFFECTS: Partial<Record<VehicleSystem['kind'], string>> = {
+  structure: 'Vehicle begins to fall apart.',
+  engine: 'Vehicle coasts to a halt; it cannot be driven.',
+  controls: 'Driver cannot steer or control speed.',
+  drive: 'Engine still runs, but the vehicle cannot accelerate and begins to coast.',
+  tread: 'Vehicle stops immediately; treat this as a crash for everyone inside.',
+  tire: 'An immediate Pilot roll is required to avoid a crash; top speed is reduced to 25% of normal.',
+};
+
+/** Manual consequence for any system that has crossed the inoperative threshold. */
+export function vehicleSystemEffectDescription(system: VehicleSystem): string | null {
+  const status = vehicleSystemStatus(system);
+  if (status === 'operational') return null;
+  const effect = INOPERATIVE_SYSTEM_EFFECTS[system.kind];
+  if (!effect) return null;
+  return `${effect}${status === 'destroyed' ? ' System is destroyed and must be replaced.' : ''}`;
+}
+
+export function vehicleSystemLimitations(vehicle: VehicleProfile): Array<{ system: VehicleSystem; effect: string }> {
+  return resolveVehiclePerformance(vehicle).systems.flatMap(system => {
+    const effect = vehicleSystemEffectDescription(system);
+    return effect ? [{ system, effect }] : [];
+  });
+}
+
+function systemKindOperational(vehicle: VehicleProfile, kind: VehicleSystem['kind']): boolean {
+  return resolveVehiclePerformance(vehicle).systems
+    .filter(system => system.kind === kind)
+    .every(system => vehicleSystemStatus(system) === 'operational');
+}
+
+/** Engine or tread failure stops the vehicle under the manual's system table. */
+export function vehicleIsForcedToHalt(vehicle: VehicleProfile): boolean {
+  return !systemKindOperational(vehicle, 'engine') || !systemKindOperational(vehicle, 'tread');
+}
+
+/** A stopped vehicle can only begin moving when propulsion, controls, and treads work. */
+export function vehicleCanStartMoving(vehicle: VehicleProfile): boolean {
+  return !vehicleIsForcedToHalt(vehicle)
+    && systemKindOperational(vehicle, 'controls')
+    && systemKindOperational(vehicle, 'drive');
+}
+
+export function vehicleMovementBlockReason(vehicle: VehicleProfile): string | null {
+  if (!systemKindOperational(vehicle, 'engine')) return 'Engine inoperative: vehicle cannot move.';
+  if (!systemKindOperational(vehicle, 'controls')) return 'Controls inoperative: driver cannot steer or control speed.';
+  if (!systemKindOperational(vehicle, 'drive')) return 'Drive system inoperative: vehicle cannot accelerate from a stop.';
+  if (!systemKindOperational(vehicle, 'tread')) return 'Treads inoperative: vehicle is stopped and occupants face a crash.';
+  return null;
+}
+
+/** Tires require an immediate Pilot check; other driving checks need working controls. */
+export function vehicleCanAttemptPilotCheck(vehicle: VehicleProfile): boolean {
+  return vehicleRequiresImmediatePilotCheck(vehicle) || (
+    !vehicleIsForcedToHalt(vehicle) && systemKindOperational(vehicle, 'controls')
+  );
+}
+
+export function vehicleRequiresImmediatePilotCheck(vehicle: VehicleProfile): boolean {
+  return resolveVehiclePerformance(vehicle).systems.some(system =>
+    system.kind === 'tire' && vehicleSystemStatus(system) !== 'operational');
+}
+
 /** Apply one NOz use, including the manual's 5 HP engine cost. */
 export function useVehicleNozBooster(vehicle: VehicleProfile): VehicleProfile | null {
-  if (!vehicleUpgradeEffects(vehicle).nozBooster) return null;
+  if (!vehicleUpgradeEffects(vehicle).nozBooster || !vehicleCanStartMoving(vehicle)) return null;
   const engine = vehicle.systems.find(system => system.kind === 'engine');
   if (!engine || engine.currentHp <= 0) return null;
   return applyVehicleSystemDamage(vehicle, engine.id, 5);
@@ -370,7 +450,7 @@ export function vehicleWithDefaults(vehicle: VehicleProfile): VehicleProfile {
 
 /** Moving vehicle targets impose −10% to hit; non-moving or absent vehicles do not. */
 export function vehicleTargetToHitPenalty(vehicle: VehicleProfile | null | undefined): number {
-  return vehicle?.inMotion ? -10 : 0;
+  return vehicle?.inMotion && !vehicleIsForcedToHalt(vehicle) ? -10 : 0;
 }
 
 export function spawnVehicleCharacter(vehicle: VehicleProfile, id: string): Character {
@@ -452,11 +532,13 @@ export function applyVehicleSystemDamage(
   if (!Number.isFinite(damage) || damage <= 0) return vehicle;
   const resolvedSystem = resolveVehiclePerformance(vehicle).systems.find(system => system.id === systemId);
   if (!resolvedSystem) return vehicle;
-  return {
+  const systems = vehicle.systems.map(system => system.id === systemId
+    ? { ...system, currentHp: Math.max(0, resolvedSystem.currentHp - Math.floor(damage)) }
+    : system);
+  const updated = {
     ...vehicle,
-    systems: vehicle.systems.map(system => system.id === systemId
-      ? { ...system, currentHp: Math.max(0, resolvedSystem.currentHp - Math.floor(damage)) }
-      : system),
+    systems,
   };
+  return vehicleIsForcedToHalt(updated) ? { ...updated, inMotion: false } : updated;
 }
 
