@@ -61,6 +61,7 @@ import {
   resolveVehiclePerformance,
   vehiclePerformanceSummary,
   vehicleSystemStatus,
+  vehicleSystemEffectDescription,
   vehicleUpgradePlayNotes,
 } from '@/data/vehicles';
 import { aggregateArmorEffects, resolveArmorAwareSheet } from '@/data/armorEffects';
@@ -2977,11 +2978,18 @@ export default function CharactersScreen() {
             {item.inStorage && <Text style={{ color: colors.mutedForeground, fontSize: 9, fontFamily: 'Inter_700Bold' }}>STORED</Text>}
           </View>
           {performance.systems.map(system => (
-            <View key={system.id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-              <Text style={{ flex: 1, color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{system.name}</Text>
-              <Text style={{ color: vehicleSystemStatus(system) === 'operational' ? colors.mutedForeground : colors.destructive, fontSize: 10, fontFamily: 'Inter_700Bold' }}>
-                {system.currentHp}/{system.maxHp} HP · {vehicleSystemStatus(system).toUpperCase()}
-              </Text>
+            <View key={system.id} style={{ gap: 2 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                <Text style={{ flex: 1, color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>{system.name}</Text>
+                <Text style={{ color: vehicleSystemStatus(system) === 'operational' ? colors.mutedForeground : colors.destructive, fontSize: 10, fontFamily: 'Inter_700Bold' }}>
+                  {system.currentHp}/{system.maxHp} HP · {vehicleSystemStatus(system).toUpperCase()}
+                </Text>
+              </View>
+              {!!vehicleSystemEffectDescription(system) && (
+                <Text style={{ color: colors.destructive, fontSize: 9, fontFamily: 'Inter_400Regular' }}>
+                  {vehicleSystemEffectDescription(system)}
+                </Text>
+              )}
             </View>
           ))}
           <Text style={{ color: colors.foreground, fontSize: 10, fontFamily: 'Inter_600SemiBold' }}>

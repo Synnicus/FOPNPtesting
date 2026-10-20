@@ -57,6 +57,11 @@ import {
   vehicleTargetToHitPenalty,
   vehicleUpgradeEffects,
   vehicleUpgradePlayNotes,
+  vehicleCanAttemptPilotCheck,
+  vehicleCanStartMoving,
+  vehicleMovementBlockReason,
+  vehicleRequiresImmediatePilotCheck,
+  vehicleSystemLimitations,
   vehicleWeaponSlotsFromNames,
   useVehicleNozBooster,
 } from '@/data/vehicles';
@@ -1031,6 +1036,7 @@ export default function CombatScreen() {
   const defender = characters.find(c => c.id === defenderId) ?? null;
   const attackerVehiclePerformance = attacker?.vehicle ? resolveVehiclePerformance(attacker.vehicle) : null;
   const defenderVehiclePerformance = defender?.vehicle ? resolveVehiclePerformance(defender.vehicle) : null;
+  const defenderVehicleIsMoving = defenderVehiclePerformance?.inMotion ?? false;
   const vehiclePilot = attacker?.vehicle && attacker.vehicleCrew?.pilotCharacterId
     ? characters.find(character => character.id === attacker.vehicleCrew?.pilotCharacterId && !character.inStorage && !character.vehicle) ?? null
     : null;
@@ -2991,12 +2997,19 @@ export default function CombatScreen() {
                             {vehiclePerformanceSummary(attacker.vehicle)}
                           </Text>
                         )}
+                        {vehicleSystemLimitations(attacker.vehicle).map(({ system, effect }) => (
+                          <Text key={`attacker-vehicle-limit-${system.id}`} style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
+                            {system.name}: {effect}
+                          </Text>
+                        ))}
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
                           Pilot: {vehiclePilot?.name ?? 'Unassigned'} · Gunner: {vehicleGunner?.name ?? 'Unassigned'}
                         </Text>
                         {vehiclePilot && pilotSheet ? (
                           <TouchableOpacity
                             accessibilityRole="button"
+                            accessibilityHint={vehicleMovementBlockReason(attacker.vehicle) ?? undefined}
+                            disabled={!vehicleCanAttemptPilotCheck(attacker.vehicle)}
                             onPress={event => {
                               event.stopPropagation?.();
                               const chance = Math.max(0, Math.min(100,
@@ -3008,14 +3021,21 @@ export default function CombatScreen() {
                                 ? Haptics.NotificationFeedbackType.Success
                                 : Haptics.NotificationFeedbackType.Error);
                             }}
-                            style={{ alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.card }}
+                            style={{ alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.card, opacity: vehicleCanAttemptPilotCheck(attacker.vehicle) ? 1 : 0.5 }}
                           >
                             <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
-                              ROLL PILOT CHECK · {Math.max(0, Math.min(100, (pilotSheet.effectiveSkills.pilot ?? 0) + (attackerVehiclePerformance?.terrainPilotModifier ?? 0)))}%
+                              {vehicleRequiresImmediatePilotCheck(attacker.vehicle) ? 'IMMEDIATE TIRE CHECK' : 'ROLL PILOT CHECK'} · {Math.max(0, Math.min(100, (pilotSheet.effectiveSkills.pilot ?? 0) + (attackerVehiclePerformance?.terrainPilotModifier ?? 0)))}%
                             </Text>
                           </TouchableOpacity>
                         ) : (
-                          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>Assign a pilot in the vehicle editor to roll a piloting check.</Text>
+                          <Text style={{ fontSize: 9, color: vehicleRequiresImmediatePilotCheck(attacker.vehicle) ? colors.destructive : colors.mutedForeground }}>
+                            {vehicleRequiresImmediatePilotCheck(attacker.vehicle)
+                              ? 'Immediate Pilot check required for the damaged tire; assign a pilot.'
+                              : 'Assign a pilot in the vehicle editor to roll a piloting check.'}
+                          </Text>
+                        )}
+                        {!vehicleCanAttemptPilotCheck(attacker.vehicle) && !!vehicleMovementBlockReason(attacker.vehicle) && (
+                          <Text style={{ fontSize: 9, color: colors.destructive }}>{vehicleMovementBlockReason(attacker.vehicle)}</Text>
                         )}
                         {pilotRollResult && <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: pilotRollResult.includes('SUCCESS') ? '#4a8c3f' : colors.destructive }}>Pilot: {pilotRollResult}</Text>}
                         {vehicleUpgradePlayNotes(attacker.vehicle).map((note, index) => (
@@ -3023,12 +3043,15 @@ export default function CombatScreen() {
                         ))}
                         {vehicleUpgradeEffects(attacker.vehicle).nozBooster && (() => {
                           const engine = attacker.vehicle!.systems.find(system => system.kind === 'engine');
+                          const canUseBooster = !!engine && engine.currentHp > 0 && vehicleCanStartMoving(attacker.vehicle!);
+                          const boosterBlockReason = vehicleMovementBlockReason(attacker.vehicle!);
                           return (
                             <View style={{ gap: 3, alignSelf: 'flex-start' }}>
                               <TouchableOpacity
                                 accessibilityRole="button"
                                 accessibilityLabel="Use NOz booster; reach top speed in one round and damage the engine by five hit points"
-                                disabled={!engine || engine.currentHp <= 0}
+                                accessibilityHint={boosterBlockReason ?? undefined}
+                                disabled={!canUseBooster}
                                 onPress={event => {
                                   event.stopPropagation?.();
                                   const updatedVehicle = useVehicleNozBooster(attacker.vehicle!);
@@ -3036,16 +3059,17 @@ export default function CombatScreen() {
                                   updateCharacter({ ...attacker, vehicle: updatedVehicle });
                                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                                 }}
-                                style={{ paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: engine && engine.currentHp > 0 ? colors.primary : colors.border, backgroundColor: colors.card, opacity: engine && engine.currentHp > 0 ? 1 : 0.5 }}
+                                style={{ paddingHorizontal: 9, paddingVertical: 5, marginTop: 3, borderRadius: 5, borderWidth: 1, borderColor: canUseBooster ? colors.primary : colors.border, backgroundColor: colors.card, opacity: canUseBooster ? 1 : 0.5 }}
                               >
                                 <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.primary }}>
                                   USE NOz BOOST · ENGINE −5 HP
                                 </Text>
                               </TouchableOpacity>
-                              <Text style={{ fontSize: 8, color: engine && engine.currentHp > 0 ? colors.mutedForeground : colors.destructive }}>
+                              <Text style={{ fontSize: 8, color: canUseBooster ? colors.mutedForeground : colors.destructive }}>
                                 Engine {engine?.currentHp ?? 0}/{engine?.maxHp ?? 0} HP
-                                {engine && engine.currentHp <= 0 ? ' · unavailable while destroyed' : ''}
+                                {!engine ? ' · no engine system' : engine.currentHp <= 0 ? ' · unavailable while destroyed' : ''}
                               </Text>
+                              {!canUseBooster && !!boosterBlockReason && <Text style={{ fontSize: 8, color: colors.destructive }}>{boosterBlockReason}</Text>}
                             </View>
                           );
                         })()}
@@ -3118,7 +3142,7 @@ export default function CombatScreen() {
                     {defender.vehicle ? (
                       <>
                         <Text style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.mutedForeground }}>
-                          VEHICLE · Structure {defender.currentHp}/{defender.maxHp} HP · {defender.vehicle.inMotion ? 'Moving (−10% to hit)' : 'Stopped'}
+                          VEHICLE · Structure {defender.currentHp}/{defender.maxHp} HP · {defenderVehicleIsMoving ? 'Moving (−10% to hit)' : 'Stopped'}
                         </Text>
                         {defenderVehiclePerformance && (
                           <Text style={{ fontSize: 8, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
@@ -3713,23 +3737,35 @@ export default function CombatScreen() {
                   <Stepper value={weaponBonus} step={5} min={-50} max={50} onChange={setWeaponBonus} />
                 </View>
                 {defender?.vehicle && (
-                  <TouchableOpacity
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: defender.vehicle.inMotion }}
-                    onPress={() => updateCharacter({
-                      ...defender,
-                      vehicle: { ...defender.vehicle!, inMotion: !defender.vehicle!.inMotion },
-                    })}
-                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 10, borderRadius: 7, borderWidth: 1, borderColor: defender.vehicle.inMotion ? colors.destructive : colors.border, backgroundColor: colors.secondary }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Vehicle is Moving?</Text>
-                      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                        {defender.vehicle.inMotion ? '−10% chance to hit' : '0% stationary penalty'}
+                  <>
+                    <TouchableOpacity
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: defenderVehicleIsMoving, disabled: !defenderVehicleIsMoving && !vehicleCanStartMoving(defender.vehicle) }}
+                      disabled={!defenderVehicleIsMoving && !vehicleCanStartMoving(defender.vehicle)}
+                      onPress={() => {
+                        const nextInMotion = !defenderVehicleIsMoving;
+                        if (nextInMotion && !vehicleCanStartMoving(defender.vehicle!)) return;
+                        updateCharacter({
+                          ...defender,
+                          vehicle: { ...defender.vehicle!, inMotion: nextInMotion },
+                        });
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 10, borderRadius: 7, borderWidth: 1, borderColor: defenderVehicleIsMoving ? colors.destructive : colors.border, backgroundColor: colors.secondary, opacity: !defenderVehicleIsMoving && !vehicleCanStartMoving(defender.vehicle) ? 0.55 : 1 }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>Vehicle is Moving?</Text>
+                        <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+                          {defenderVehicleIsMoving ? '−10% chance to hit' : '0% stationary penalty'}
+                        </Text>
+                      </View>
+                      <Feather name={defenderVehicleIsMoving ? 'check-square' : 'square'} size={18} color={defenderVehicleIsMoving ? colors.destructive : colors.mutedForeground} />
+                    </TouchableOpacity>
+                    {!defenderVehicleIsMoving && !vehicleCanStartMoving(defender.vehicle) && (
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.destructive }}>
+                        {vehicleMovementBlockReason(defender.vehicle)}
                       </Text>
-                    </View>
-                    <Feather name={defender.vehicle.inMotion ? 'check-square' : 'square'} size={18} color={defender.vehicle.inMotion ? colors.destructive : colors.mutedForeground} />
-                  </TouchableOpacity>
+                    )}
+                  </>
                 )}
 
                 {/* Auto-computed weapon-mod to-hit (from equipped weapon's mods) */}

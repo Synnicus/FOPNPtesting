@@ -3,6 +3,11 @@ import test from 'node:test';
 import {
   applyVehicleSystemDamage,
   BUILT_IN_VEHICLES,
+  vehicleCanAttemptPilotCheck,
+  vehicleCanStartMoving,
+  vehicleMovementBlockReason,
+  vehicleRequiresImmediatePilotCheck,
+  vehicleSystemEffectDescription,
   resolveVehiclePerformance,
   spawnVehicleCharacter,
   vehicleProtectionForDamageType,
@@ -54,6 +59,82 @@ test('vehicle system is disabled only after losing more than 66 percent of its H
   assert.equal(vehicleSystemStatus({ id: 'engine', name: 'Engine', kind: 'engine', currentHp: 34, maxHp: 100 }), 'operational');
   assert.equal(vehicleSystemStatus({ id: 'engine', name: 'Engine', kind: 'engine', currentHp: 33, maxHp: 100 }), 'disabled');
   assert.equal(vehicleSystemStatus({ id: 'engine', name: 'Engine', kind: 'engine', currentHp: 0, maxHp: 100 }), 'destroyed');
+});
+
+test('inoperative vehicle systems apply their manual movement and driving consequences', () => {
+  const base = BUILT_IN_VEHICLES.find(vehicle => vehicle.id === 'corvega_highwayman');
+  assert.ok(base);
+  const damageSystem = (kind: 'engine' | 'controls' | 'drive' | 'tire' | 'structure' | 'tread') => ({
+    ...base,
+    systems: base.systems.map(system => system.kind === kind
+      ? { ...system, currentHp: Math.floor(system.maxHp * 0.33) }
+      : system),
+  });
+
+  const engineOut = damageSystem('engine');
+  assert.equal(resolveVehiclePerformance(engineOut).topSpeedKph, 0);
+  assert.equal(resolveVehiclePerformance(engineOut).inMotion, false);
+  assert.equal(vehicleCanStartMoving(engineOut), false);
+  assert.match(vehicleMovementBlockReason(engineOut) ?? '', /Engine inoperative/);
+  assert.match(vehicleSystemEffectDescription(resolveVehiclePerformance(engineOut).systems.find(system => system.kind === 'engine')!) ?? '', /coasts to a halt/);
+
+  const controlsOut = damageSystem('controls');
+  assert.equal(vehicleCanStartMoving(controlsOut), false);
+  assert.equal(vehicleCanAttemptPilotCheck(controlsOut), false);
+  assert.match(vehicleMovementBlockReason(controlsOut) ?? '', /cannot steer/);
+
+  const driveOut = damageSystem('drive');
+  assert.equal(resolveVehiclePerformance(driveOut).accelerationKphPerRound, 0);
+  assert.equal(resolveVehiclePerformance(driveOut).inMotion, true);
+  assert.equal(vehicleCanStartMoving(driveOut), false);
+  assert.equal(vehicleCanAttemptPilotCheck(driveOut), true);
+  assert.match(vehicleSystemEffectDescription(resolveVehiclePerformance(driveOut).systems.find(system => system.kind === 'drive')!) ?? '', /cannot accelerate/);
+
+  const tireOut = damageSystem('tire');
+  assert.equal(resolveVehiclePerformance(tireOut).topSpeedKph, base.topSpeedKph! * 0.25);
+  assert.equal(vehicleRequiresImmediatePilotCheck(tireOut), true);
+  assert.equal(vehicleCanAttemptPilotCheck(tireOut), true);
+  assert.match(vehicleSystemEffectDescription(resolveVehiclePerformance(tireOut).systems.find(system => system.kind === 'tire')!) ?? '', /immediate Pilot roll/);
+
+  const trackedBase = BUILT_IN_VEHICLES.find(vehicle => vehicle.systems.some(system => system.kind === 'tread'));
+  assert.ok(trackedBase);
+  const treadOut = {
+    ...trackedBase,
+    systems: trackedBase.systems.map(system => system.kind === 'tread'
+      ? { ...system, currentHp: Math.floor(system.maxHp * 0.33) }
+      : system),
+  };
+  assert.equal(resolveVehiclePerformance(treadOut).topSpeedKph, 0);
+  assert.equal(resolveVehiclePerformance(treadOut).inMotion, false);
+  assert.match(vehicleSystemEffectDescription(resolveVehiclePerformance(treadOut).systems.find(system => system.kind === 'tread')!) ?? '', /treat this as a crash/);
+
+  const structureOut = damageSystem('structure');
+  assert.equal(resolveVehiclePerformance(structureOut).topSpeedKph, base.topSpeedKph);
+  assert.match(vehicleSystemEffectDescription(resolveVehiclePerformance(structureOut).systems.find(system => system.kind === 'structure')!) ?? '', /fall apart/);
+});
+
+test('engine or tread damage stops a moving vehicle, but drive damage allows it to coast', () => {
+  const base = BUILT_IN_VEHICLES.find(vehicle => vehicle.id === 'corvega_highwayman');
+  assert.ok(base);
+  const system = base.systems.find(candidate => candidate.kind === 'engine');
+  const tread = BUILT_IN_VEHICLES.find(vehicle => vehicle.systems.some(candidate => candidate.kind === 'tread'));
+  assert.ok(system);
+  assert.ok(tread);
+
+  const engineStopped = applyVehicleSystemDamage(base, system.id, system.currentHp);
+  assert.equal(engineStopped.inMotion, false);
+  assert.equal(vehicleTargetToHitPenalty(engineStopped), 0);
+
+  const drive = base.systems.find(candidate => candidate.kind === 'drive');
+  assert.ok(drive);
+  const driveCoasting = applyVehicleSystemDamage(base, drive.id, drive.currentHp);
+  assert.equal(driveCoasting.inMotion, true);
+  assert.equal(resolveVehiclePerformance(driveCoasting).accelerationKphPerRound, 0);
+
+  const damagedTread = tread.systems.find(candidate => candidate.kind === 'tread');
+  assert.ok(damagedTread);
+  const treadStopped = applyVehicleSystemDamage(tread, damagedTread.id, damagedTread.currentHp);
+  assert.equal(treadStopped.inMotion, false);
 });
 
 test('vehicle protection has no DT and uses the profile DR for each damage type', () => {
@@ -152,6 +233,12 @@ test('NOz use damages the engine by 5 HP and becomes unavailable after engine de
     systems: withBooster.systems.map(system => system.kind === 'engine' ? { ...system, currentHp: 0 } : system),
   }), null);
   assert.equal(useVehicleNozBooster(base), null);
+  const controls = withBooster.systems.find(system => system.kind === 'controls');
+  assert.ok(controls);
+  assert.equal(useVehicleNozBooster({
+    ...withBooster,
+    systems: withBooster.systems.map(system => system.id === controls.id ? { ...system, currentHp: 0 } : system),
+  }), null);
 });
 
 test('mounted vehicle weapons resolve to combat weapons, including duplicate mounts', () => {

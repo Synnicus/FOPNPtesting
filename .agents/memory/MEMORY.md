@@ -27,6 +27,7 @@
 - [Expo workflow restarts](expo-workflow-restarts.md) — check for an existing Metro process before restarting; duplicate Expo sessions can prompt to move off the injected port.
 - [Vehicle AC default](fallout-pnp-vehicle-ac.md) — built-in manual vehicles start at editable AC 0 when no printed model AC exists.
 - [Vehicle targeting](fallout-pnp-vehicle-targeting.md) — targeted parts follow the defender; moving vehicles default to −10% to hit, with no carryover to nonvehicles.
+- [Vehicle system limitations](fallout-pnp-vehicle-system-limits.md) — disabled vehicle systems apply manual-specific limits; current motion state stands in for untracked velocity.
 - [Catalog photo portability](fallout-pnp-catalog-images.md) — catalog images are user-supplied campaign data; embed validated image data in portable state so spawned entries survive campaign transfer.
 - [Expo web font loading](fallout-pnp-expo-web-font-fallback.md) — a pending font hook can leave the browser preview blank even when Metro is healthy; don't gate web rendering on fonts.
 - [Custom consumable mechanics](fallout-pnp-custom-consumables.md) — effect notes stay descriptive and GM-adjudicated until the user defines automated rules.
