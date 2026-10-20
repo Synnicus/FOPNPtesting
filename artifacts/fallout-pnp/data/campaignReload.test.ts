@@ -757,6 +757,84 @@ test('AppProvider campaign storage lifecycle', async (t) => {
         }
       }
     }
+
+    await t.test('Tight Nuts halves only Repair-based HP recovery in combat', async () => {
+      for (const hasTightNuts of [false, true]) {
+        storage.clear();
+        campaign = undefined;
+        await mount();
+        const current = () => {
+          assert.ok(campaign);
+          return campaign;
+        };
+        const change = async (operation: () => unknown) => {
+          await act(async () => { operation(); });
+        };
+        const healer: Character = {
+          ...legacyNpc,
+          id: `repair-healer-${hasTightNuts}`,
+          name: 'Robot Mechanic',
+          race: 'human',
+          traits: [],
+          skills: { ...legacyNpc.skills, repair: 100 },
+          currentHp: 20,
+          currentAP: 10,
+          isKnockedOut: false,
+          knockOutRoundsLeft: 0,
+        };
+        const target: Character = {
+          ...legacyNpc,
+          id: `repair-target-${hasTightNuts}`,
+          name: 'Robot Target',
+          race: 'robot',
+          traits: hasTightNuts ? ['tight_nuts'] : [],
+          currentHp: 0,
+          maxHp: 20,
+          currentAP: 0,
+          position: 'prone',
+          isKnockedOut: true,
+          knockOutRoundsLeft: 2,
+        };
+        const characters = [healer, target];
+        const entries: InitiativeEntry[] = characters.map((character, index) => ({
+          id: `entry-${character.id}`,
+          characterId: character.id,
+          name: character.name,
+          initiative: 20 - index * 10,
+          sequence: 10,
+          currentAP: character.currentAP,
+          maxAP: 10,
+          currentHp: character.currentHp,
+          maxHp: character.maxHp,
+          armorClass: 10,
+          tempAC: 0,
+          position: character.position,
+          hasActed: false,
+          isActive: false,
+        }));
+        try {
+          await change(() => characters.forEach(character => current().addCharacter(character)));
+          await change(() => current().startCombat(entries));
+          await change(() => current().resolveHealFallen({
+            actorId: healer.id,
+            targetId: target.id,
+            skill: 'repair',
+            resolution: { method: 'automaticSuccess' },
+          }));
+          const revived = current().characters.find(character => character.id === target.id)!;
+          assert.equal(revived.currentHp, hasTightNuts ? 0.5 : 1);
+          assert.equal(revived.isKnockedOut, false);
+
+          await change(() => current().healCharacter(target.id, 4));
+          const healed = current().characters.find(character => character.id === target.id)!;
+          assert.equal(healed.currentHp, (hasTightNuts ? 0.5 : 1) + 4,
+            'ordinary healing is not reduced by Tight Nuts');
+        } finally {
+          if (renderer) await change(() => renderer!.unmount());
+          renderer = undefined;
+        }
+      }
+    });
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
     hooks.deregister();

@@ -72,11 +72,36 @@ function isCrippling(inj: Injury): boolean {
   return inj.isActive && (inj.severity === 'crippled' || inj.severity === 'broken');
 }
 
+function isRabidCrippledLimb(char: Pick<Character, 'traits'>, inj: Injury): boolean {
+  const hasRabid = (char.traits ?? []).some(trait => trait.toLowerCase().replace(/[-\s]+/g, '_') === 'rabid');
+  return hasRabid
+    && isCrippling(inj)
+    && (inj.location === 'leftArm' || inj.location === 'rightArm'
+      || inj.location === 'leftLeg' || inj.location === 'rightLeg');
+}
+
+/** Active crippled limb injuries that still impose effects on this character. */
+export function getEffectiveCripplingInjuries(
+  char: Pick<Character, 'injuries' | 'traits'>,
+): Injury[] {
+  return (char.injuries ?? []).filter(inj => isCrippling(inj) && !isRabidCrippledLimb(char, inj));
+}
+
+/** Sum explicit injury skill adjustments, excluding Rabid's ignored limb penalties. */
+export function computeInjurySkillPenalty(
+  char: Pick<Character, 'injuries' | 'traits'>,
+  skill: keyof Injury['skillPenalty'],
+): number {
+  return (char.injuries ?? [])
+    .filter(inj => inj.isActive && !isRabidCrippledLimb(char, inj))
+    .reduce((total, inj) => total + (inj.skillPenalty[skill] ?? 0), 0);
+}
+
 /** Compute the manual's injury effects from a character's active injuries. */
 export function computeInjuryEffects(
-  char: Pick<Character, 'special' | 'injuries'>,
+  char: Pick<Character, 'special' | 'injuries' | 'traits'>,
 ): InjuryEffectsSummary {
-  const injuries = (char.injuries ?? []).filter(isCrippling);
+  const injuries = getEffectiveCripplingInjuries(char);
   const blind = injuries.some((i) => i.location === 'eyes');
   const crippledArms = injuries.filter((i) => i.location === 'leftArm' || i.location === 'rightArm').length;
   const crippledLegs = injuries.filter((i) => i.location === 'leftLeg' || i.location === 'rightLeg').length;

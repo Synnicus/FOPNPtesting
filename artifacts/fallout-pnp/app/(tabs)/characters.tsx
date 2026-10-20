@@ -39,7 +39,7 @@ import { computeCustomPerkEffects, customPerkAsPerk } from '@/data/customRules';
 import { breakTheRulesPendingAfterPurchase } from '@/data/breakTheRules';
 import { TRAITS, MAX_TRAITS, getTraitById, canTakeTrait, computeTraitEffects } from '@/data/traits';
 import { PREMADE_CHARACTERS, PremadeCharacter, createCharacterFromPremade } from '@/data/premades';
-import { INJURY_LOCATION_INFO, computeInjuryEffects, getInjuryCauseText } from '@/data/injuries';
+import { INJURY_LOCATION_INFO, computeInjuryEffects, getEffectiveCripplingInjuries, getInjuryCauseText } from '@/data/injuries';
 import { clearTemporaryEffectsFromActiveCharacters } from '@/data/statusEffects';
 import { CHEMS, getChem } from '@/data/chems';
 import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBonuses } from '@/data/effects';
@@ -879,12 +879,12 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // ─── Hand slots + inventory helpers ────────────────────────────────────────
   // Which arms are crippled (from injuries list — crippled/broken arm).
   const armStatus = useMemo(() => {
-    const crippling = (char.injuries ?? []).filter(i => i.isActive && (i.severity === 'crippled' || i.severity === 'broken'));
+    const crippling = getEffectiveCripplingInjuries(char);
     return {
       left: crippling.some(i => i.location === 'leftArm'),
       right: crippling.some(i => i.location === 'rightArm'),
     };
-  }, [char.injuries]);
+  }, [char.injuries, char.traits]);
 
   // Is a weapon legal for a given hand given crippled arms?
   const weaponLegalForHand = useCallback((w: Weapon, hand: 'left' | 'right'): boolean => {

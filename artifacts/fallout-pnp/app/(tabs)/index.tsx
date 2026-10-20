@@ -19,7 +19,7 @@ import {
   baseCritChance as calcBaseCritChance, hasPerk, BodyPart, HELMET_HEAD_CRIT_REDUCTION,
   applyHelmetHeadCritReduction, criticalFailureSelfDamage, vehicleCriticalEffects,
 } from '@/data/criticals';
-import { computeInjuryEffects, createCombatInjury } from '@/data/injuries';
+import { computeInjuryEffects, computeInjurySkillPenalty, createCombatInjury } from '@/data/injuries';
 import {
   CONDITION_BOXES_MAX, clampConditionBoxes, conditionAfterCriticalFailure, conditionToHitPenalty, isWeaponJammed, conditionLabel,
 } from '@/data/condition';
@@ -1221,9 +1221,7 @@ export default function CombatScreen() {
   // final combat-facing adjustment.
   const combatSkillValues: Partial<Record<SkillType, number>> = attackActor && attackerSheet
     ? (['firstAid', 'doctor', 'science', 'repair'] as CombatSkillKey[]).reduce<Partial<Record<SkillType, number>>>((values, skill) => {
-        const injuryDelta = (attackActor.injuries ?? [])
-          .filter(injury => injury.isActive)
-          .reduce((sum, injury) => sum + (injury.skillPenalty[skill] ?? 0), 0);
+        const injuryDelta = computeInjurySkillPenalty(attackActor, skill);
         values[skill] = Math.max(0, (attackerSheet.effectiveSkills[skill] ?? 0) + injuryDelta);
         return values;
       }, {})
@@ -1233,9 +1231,7 @@ export default function CombatScreen() {
   ) : null;
   const completionHealSkillValues: Partial<Record<SkillType, number>> = completionHealActor && completionHealSheet
     ? HEAL_FALLEN_SKILLS.reduce<Partial<Record<SkillType, number>>>((values, skill) => {
-        const injuryDelta = (completionHealActor.injuries ?? [])
-          .filter(injury => injury.isActive)
-          .reduce((sum, injury) => sum + (injury.skillPenalty[skill] ?? 0), 0);
+        const injuryDelta = computeInjurySkillPenalty(completionHealActor, skill);
         values[skill] = Math.max(0, (completionHealSheet.effectiveSkills[skill] ?? 0) + injuryDelta);
         return values;
       }, {})

@@ -312,13 +312,16 @@ export function applyHealFallenOutcome<T extends CombatSkillCombatant>(
   targetId: string,
   success: boolean,
   currentRound: number,
+  restoredHp = 1,
 ): { combatants: T[]; applied: boolean } {
   const target = combatants.find(combatant => combatant.id === targetId);
-  if (!success || !target?.isKnockedOut) return { combatants: [...combatants], applied: false };
+  if (!success || !target?.isKnockedOut || !Number.isFinite(restoredHp) || restoredHp <= 0) {
+    return { combatants: [...combatants], applied: false };
+  }
   return {
     combatants: combatants.map(combatant => combatant.id === targetId ? {
       ...combatant,
-      currentHp: 1,
+      currentHp: restoredHp,
       currentAP: 0,
       position: 'prone',
       isKnockedOut: false,

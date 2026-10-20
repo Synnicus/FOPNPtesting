@@ -175,6 +175,18 @@ test('a completed successful outcome revives exactly once and AP-locks only a st
   assert.equal(applyHealFallenOutcome(success.combatants, 'fallen', true, 4).applied, false);
 });
 
+test('a repair-based revival can restore the trait-adjusted amount without changing ordinary revival', () => {
+  const unconscious: CombatSkillCombatant[] = [
+    { id: 'robot', currentHp: 0, currentAP: 4, position: 'prone', isKnockedOut: true, knockOutRoundsLeft: 2 },
+  ];
+  const repaired = applyHealFallenOutcome(unconscious, 'robot', true, 4, 0.5);
+  assert.equal(repaired.combatants[0].currentHp, 0.5);
+  assert.equal(repaired.combatants[0].isKnockedOut, false);
+
+  const ordinarilyHealed = applyHealFallenOutcome(unconscious, 'robot', true, 4);
+  assert.equal(ordinarilyHealed.combatants[0].currentHp, 1);
+});
+
 test('a zero-HP target remains unconscious when its KO countdown elapses', () => {
   assert.deepEqual(
     advanceKnockoutTimer({ currentHp: 0, isKnockedOut: true, knockOutRoundsLeft: 1 }),

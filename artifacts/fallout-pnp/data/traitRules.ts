@@ -27,3 +27,13 @@ export function applyTightNutsDamageResistance(
     ? damageResistance + Math.max(0, baseNaturalResistance)
     : damageResistance;
 }
+
+/** Tight Nuts halves HP from repairs, not ordinary healing. */
+export function applyTightNutsRepairHealing(
+  restoredHp: number,
+  raceId: string,
+  traits: readonly string[] | undefined,
+): number {
+  const hasTrait = (traits ?? []).some(trait => trait.toLowerCase().replace(/[-\s]+/g, '_') === 'tight_nuts');
+  return raceId === 'robot' && hasTrait ? restoredHp / 2 : restoredHp;
+}

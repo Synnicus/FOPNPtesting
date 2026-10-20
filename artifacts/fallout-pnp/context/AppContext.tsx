@@ -12,6 +12,8 @@ import { computeCustomWeaponModEffects } from '@/data/customRules';
 import { resolveHpChange } from '@/data/conditions';
 import { getRaceById } from '@/data/races';
 import { resolveArmorAwareSheet } from '@/data/armorEffects';
+import { computeInjurySkillPenalty } from '@/data/injuries';
+import { applyTightNutsRepairHealing } from '@/data/traitRules';
 import { addArmorWear, normalizeArmorCondition, wornArmor } from '@/data/armorCondition';
 import { applyEquipmentDamage } from '@/data/equipmentDamage';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
@@ -253,8 +255,7 @@ function effectiveCombatSkillValue(
   const sheetValue = resolveCharacterArmorSheet(
     c, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
   ).effectiveSkills[skill];
-  const injuryPenalty = (c.injuries ?? []).filter(injury => injury.isActive)
-    .reduce((total, injury) => total + (injury.skillPenalty[skill] ?? 0), 0);
+  const injuryPenalty = computeInjurySkillPenalty(c, skill);
   return Math.max(0, sheetValue + injuryPenalty);
 }
 
@@ -1189,7 +1190,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const updated = { ...actor, currentAP: actor.currentAP - plan.spentAP, combatDefenseSuppressed: plan.armorOnlyAC || actor.combatDefenseSuppressed };
       let characters = s.characters.map(c => c.id === actor.id ? updated : c);
       if (!plan.completionRoundOffset && resolution?.success) {
-        characters = applyHealFallenOutcome(characters, target.id, true, s.currentRound).combatants;
+        const restoredHp = request.skill === 'repair'
+          ? applyTightNutsRepairHealing(1, target.race, target.traits)
+          : 1;
+        characters = applyHealFallenOutcome(characters, target.id, true, s.currentRound, restoredHp).combatants;
       }
       return {
         ...s, characters,
@@ -1232,7 +1236,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ),
       );
       if (!resolution) return reject('A d100 result from 1 to 100 is required for Roll d100.');
-      const outcome = applyHealFallenOutcome(s.characters, target.id, resolution.success, s.currentRound);
+      const restoredHp = action.skill === 'repair'
+        ? applyTightNutsRepairHealing(1, target.race, target.traits)
+        : 1;
+      const outcome = applyHealFallenOutcome(s.characters, target.id, resolution.success, s.currentRound, restoredHp);
       const characters = outcome.combatants;
       return {
         ...s,
