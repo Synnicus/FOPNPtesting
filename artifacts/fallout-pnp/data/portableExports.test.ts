@@ -251,7 +251,14 @@ test('portable campaign round-trips loot and encounter ranges, weights, and map 
     name: 'Junction',
     description: 'The party approach',
     imageDataUri: 'data:image/png;base64,aGVsbG8=',
-    locations: [{ id: 'north-gate', name: 'North Gate', description: 'Road entrance', x: 0.15, y: 0.3 }],
+    imageWidth: 2400,
+    imageHeight: 1600,
+    markerIcons: [{
+      id: 'marker-custom-city',
+      name: 'Settlement',
+      imageDataUri: 'data:image/png;base64,aWNvbg==',
+    }],
+    locations: [{ id: 'north-gate', name: 'North Gate', description: 'Road entrance', iconId: 'marker-custom-city', x: 0.15, y: 0.3 }],
     party: [
       { characterId: 'character-1', x: 0.4, y: 0.6 },
       { characterId: 'character-2', x: 0.45, y: 0.65 },

@@ -1,6 +1,7 @@
 - [Fallout PnP v4 Schema](fallout-pnp-schema.md) — storage key `@fallout_pnp_v4`; tagged skills NOT baked into char.skills; tagged +20 added at combat/display time
 - [Fallout PnP Damage Formula](fallout-pnp-damage.md) — `finalDmg = max(0, (base−DT) × (1−DR/100))`; 5 damage types N/L/F/P/E; armor DT/DR stacks with Character.naturalProtection
 - [Fallout PnP Skill Points & XP](fallout-pnp-skill-points.md) — `5+2×INT`/level; tagged +20 free; tags lock while purchased offsets exist; INT/race changes reconcile the pool
+- [Fallout PnP Inventory & Ammo](fallout-pnp-inventory.md) — reserves are individual rounds; preserve PC magazines, start PC reserves at 0, and give NPCs about 10 turns by strongest legal mode
 - [Fallout PnP Combat Rounds](fallout-pnp-rounds.md) — AP replenish + tempAC clear ONLY when a combatant's own turn begins, never globally at round start
 - [Fallout PnP Effective Stats](fallout-pnp-effective-stats.md) — one layering: base → Gain-X perks (baked in derived) → chem mods at display time, uncapped; per-level HP perks use takenAtLevel, never retroactive
 - [Fallout PnP Web Quirks](fallout-pnp-web-quirks.md) — Alert.alert is a no-op on RN-web (use notify/window.confirm); AP charged on picker selection, never on open
@@ -22,7 +23,7 @@
 - [Vault Radio](fallout-pnp-vault-radio.md) — audio stays in public App Storage; station names, ordered filename slots, and song metadata travel in campaign JSON, never audio bytes.
 - [Scrollable tab interaction](fallout-pnp-scrollable-tabs.md) — keep arrows, touch swipe, and mouse-drag support on overflowing tab strips.
 - [Post-merge database push](post-merge-db-push.md) — dependency installation plus Drizzle schema inspection needs more than a 20-second setup timeout.
-- [Campaign library archives](fallout-pnp-campaign-library.md) — keep library snapshots portable and embed portraits so campaign switching cannot break saved portrait references.
+- [Campaign library archives](fallout-pnp-campaign-library.md) — embed portraits, map backgrounds, and custom map-marker icons so campaign and map exports remain portable.
 - [Node test imports](node-test-imports.md) — direct `node:test` TypeScript runs need relative paths with explicit `.ts`; app `@/` aliases and extensionless imports fail.
 - [Expo workflow restarts](expo-workflow-restarts.md) — check for an existing Metro process before restarting; duplicate Expo sessions can prompt to move off the injected port.
 - [Vehicle AC default](fallout-pnp-vehicle-ac.md) — built-in manual vehicles start at editable AC 0 when no printed model AC exists.

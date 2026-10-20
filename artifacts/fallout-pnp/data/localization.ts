@@ -24,6 +24,7 @@ import campaignToolChestUi from './locales/campaign-tool-chest.json';
 import appTourUi from './locales/app-tour.json';
 import radioStationsUi from './locales/radio-stations.json';
 import gasMaskUi from './locales/gas-mask.json';
+import automaticInventoryUi from './locales/automatic-inventory.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -523,6 +524,7 @@ const campaignToolChestTranslationData = campaignToolChestUi as {
 const appTourTranslationData = appTourUi as { keys: string[] } & Partial<Record<AppLocale, string[]>>;
 const radioStationsUiTranslations = radioStationsUi as Partial<Record<AppLocale, Record<string, string>>>;
 const gasMaskUiTranslations = gasMaskUi as Partial<Record<AppLocale, Record<string, string>>>;
+const automaticInventoryUiTranslations = automaticInventoryUi as Partial<Record<AppLocale, Record<string, string>>>;
 const campaignToolChestUiTranslations = Object.fromEntries(
   APP_LANGUAGES
     .filter(({ locale }) => locale !== 'en')
@@ -567,6 +569,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(appTourUiTranslations[locale] ?? {}),
       ...(radioStationsUiTranslations[locale] ?? {}),
       ...(gasMaskUiTranslations[locale] ?? {}),
+      ...(automaticInventoryUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();

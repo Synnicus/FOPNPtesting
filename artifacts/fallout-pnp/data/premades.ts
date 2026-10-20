@@ -23,7 +23,7 @@ export interface PremadeCharacter {
   biography: string;
   /** Primary weapon id (data/weapons.ts). */
   weaponId?: string;
-  /** Carried weapons incl. primary (max 5) — sidearms / melee / grenades. */
+  /** Carried weapon profile ids, including the primary weapon. */
   inventoryWeaponIds?: string[];
   equippedBodyArmorId?: string;
   equippedHelmetId?: string;

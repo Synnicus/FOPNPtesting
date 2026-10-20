@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
-import { Character, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRaceTag, CampaignRuleTag, CustomPerkDefinition, CustomRaceDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
+import { Character, CharacterInventoryCategory, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRaceTag, CampaignRuleTag, CustomPerkDefinition, CustomRaceDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
 import { BUILT_IN_WEAPONS, getWeaponAttackModes, getWeaponHands } from '@/data/weapons';
 import { BUILT_IN_ARMOR } from '@/data/armor';
 import { calcBaseSkills, calcMaxHP } from '@/data/derived';
@@ -16,6 +16,13 @@ import { computeInjurySkillPenalty } from '@/data/injuries';
 import { applyTightNutsRepairHealing } from '@/data/traitRules';
 import { addArmorWear, normalizeArmorCondition, wornArmor } from '@/data/armorCondition';
 import { applyEquipmentDamage } from '@/data/equipmentDamage';
+import {
+  getInventoryItemQuantity,
+  consumeInventoryItem,
+  normalizeCharacterInventory,
+  provisionNpcAmmo,
+  setInventoryItemQuantity,
+} from '@/data/inventory';
 import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
 import {
   BUILT_IN_BESTIARY,
@@ -327,13 +334,14 @@ function normalizeCharacterAmmoStates(
   allAmmo: readonly AmmoType[] = AMMO_TYPES,
   customMods: readonly CustomWeaponMod[] = [],
 ): Character {
-  const existingByWeapon = new Map((character.weaponAmmoStates ?? []).map(state => [state.weaponId, state]));
+  const inventoryNormalized = normalizeCharacterInventory(character);
+  const existingByWeapon = new Map((inventoryNormalized.weaponAmmoStates ?? []).map(state => [state.weaponId, state]));
   const weaponIds = new Set([
     ...existingByWeapon.keys(),
-    character.equippedWeaponId,
-    character.leftHandWeaponId,
-    character.rightHandWeaponId,
-    ...(character.inventoryWeaponIds ?? []),
+    inventoryNormalized.equippedWeaponId,
+    inventoryNormalized.leftHandWeaponId,
+    inventoryNormalized.rightHandWeaponId,
+    ...(inventoryNormalized.inventoryWeaponIds ?? []),
   ].filter((id): id is string => !!id));
   const weaponAmmoStates: WeaponAmmoState[] = [];
 
@@ -351,14 +359,10 @@ function normalizeCharacterAmmoStates(
       ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, allAmmo),
     });
   }
-  const inventoryWeaponIds = character.inventoryWeaponIds ?? [...new Set([
-    character.leftHandWeaponId, character.rightHandWeaponId, character.equippedWeaponId,
-  ].filter((id): id is string => !!id))].slice(0, 5);
   return {
-    ...character,
+    ...inventoryNormalized,
     ...normalizeKarmaFields(character),
     factionReputations: normalizeFactionReputations(character.factionReputations),
-    inventoryWeaponIds,
     weaponAmmoStates,
     armorConditionStates: normalizeArmorCondition(character.armorConditionStates),
   };
@@ -497,6 +501,27 @@ function hasValidCharacterRecord(value: unknown): value is Character {
     const collection = character[field];
     if (collection !== undefined && !isStringArray(collection)) return false;
   }
+  if (character.inventoryWeaponCounts !== undefined
+    && (!isRecord(character.inventoryWeaponCounts)
+      || Object.values(character.inventoryWeaponCounts).some(value =>
+        typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 1_000_000))) return false;
+  if (character.inventoryItems !== undefined
+    && (!Array.isArray(character.inventoryItems) || character.inventoryItems.some(item => {
+      if (!isRecord(item)
+        || !['armor', 'ammo', 'tool', 'consumable'].includes(String(item.category))
+        || typeof item.itemId !== 'string' || !item.itemId
+        || typeof item.quantity !== 'number' || !Number.isInteger(item.quantity)
+        || item.quantity < 1 || item.quantity > 1_000_000) return true;
+      if (item.weightPerUnit !== undefined
+        && (typeof item.weightPerUnit !== 'number' || !Number.isFinite(item.weightPerUnit) || item.weightPerUnit < 0)) return true;
+      if (item.weightPerBox !== undefined
+        && (typeof item.weightPerBox !== 'number' || !Number.isFinite(item.weightPerBox) || item.weightPerBox < 0)) return true;
+      if (item.unitsPerBox !== undefined
+        && (typeof item.unitsPerBox !== 'number' || !Number.isInteger(item.unitsPerBox) || item.unitsPerBox < 1)) return true;
+      return item.ammoWeightMode !== undefined && item.ammoWeightMode !== 'round' && item.ammoWeightMode !== 'box';
+    }))) return false;
+  if (character.npcAmmoProvisionedWeaponIds !== undefined
+    && !isStringArray(character.npcAmmoProvisionedWeaponIds)) return false;
   if (character.customRaceId !== undefined
     && (typeof character.customRaceId !== 'string' || character.customRaceId.length > 128
       || character.race !== 'customRace')) return false;
@@ -563,6 +588,9 @@ function hasValidCampaignImport(value: unknown): value is AppState {
   if (value.damageReceiptIds !== undefined && !isStringArray(value.damageReceiptIds)) return false;
   if (value.missingExplosiveBlastZoneHouseRule !== undefined
     && typeof value.missingExplosiveBlastZoneHouseRule !== 'boolean') return false;
+  if (value.bulletTrackingEnabled !== undefined && typeof value.bulletTrackingEnabled !== 'boolean') return false;
+  if (value.automaticInventoryTrackingEnabled !== undefined
+    && typeof value.automaticInventoryTrackingEnabled !== 'boolean') return false;
   if (!isValidAreaProfileRangeOverrides(value.areaProfileRangeOverrides)) return false;
   return true;
 }
@@ -754,10 +782,13 @@ function normalizePersistedState(parsed: AppState): AppState {
       const withRaceProfile = currentProfile
         ? { ...character, customRaceProfile: currentProfile }
         : character;
-      return normalizeCharacterAmmoStates({
+      const characterWithAmmoState = normalizeCharacterAmmoStates({
         ...withRaceProfile,
         ...(Array.isArray(character.raceTags) ? { raceTags: [...new Set(character.raceTags)] } : {}),
       }, allWeapons, allAmmo, normalized.customWeaponMods ?? []);
+      return normalized.automaticInventoryTrackingEnabled === true
+        ? provisionNpcAmmo(characterWithAmmoState, allWeapons, allAmmo)
+        : characterWithAmmoState;
     }),
   };
 }
@@ -782,6 +813,7 @@ interface AppContextValue extends AppState {
   hardcoreRadiationRules: boolean;
   setHardcoreRadiationRules: (enabled: boolean) => void;
   setMissingExplosiveBlastZoneHouseRule: (enabled: boolean) => void;
+  setAutomaticInventoryTrackingEnabled: (enabled: boolean) => void;
   setAreaProfileRangeOverride: (profileId: string, effectId: string, range: number) => void;
   setMutantGhoulRadiationRules: (enabled: boolean) => void;
   setGhoulRadiationHealingOption: (option: GhoulRadiationHealingOption) => void;
@@ -822,6 +854,14 @@ interface AppContextValue extends AppState {
   addEffect: (characterId: string, effect: ActiveEffect) => void;
   removeEffect: (characterId: string, effectId: string) => void;
   applyChem: (characterId: string, effect: ActiveEffect) => void;
+  useInventoryItem: (
+    characterId: string,
+    category: CharacterInventoryCategory,
+    itemId: string,
+    apCost: number,
+    effect?: ActiveEffect,
+    conditionId?: string,
+  ) => boolean;
 
   addInjury: (characterId: string, injury: Injury) => void;
   removeInjury: (characterId: string, injuryId: string) => void;
@@ -963,13 +1003,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addCharacter = useCallback((char: Character) => {
     const migratedCharacter = migrateLegacyTraitPerks(char);
-    setState(s => ({
-      ...markConditionSemanticsV2(s),
-      characters: [
-        ...s.characters,
-        normalizeCharacterAmmoStates(migratedCharacter, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo], s.customWeaponMods),
-      ],
-    }));
+    setState(s => {
+      const allWeapons = [...BUILT_IN_WEAPONS, ...s.customWeapons];
+      const allAmmo = [...AMMO_TYPES, ...s.customAmmo];
+      const normalized = normalizeCharacterAmmoStates(migratedCharacter, allWeapons, allAmmo, s.customWeaponMods);
+      return {
+        ...markConditionSemanticsV2(s),
+        characters: [
+          ...s.characters,
+          s.automaticInventoryTrackingEnabled ? provisionNpcAmmo(normalized, allWeapons, allAmmo) : normalized,
+        ],
+      };
+    });
   }, []);
 
   const updateCharacter = useCallback((char: Character) => {
@@ -995,9 +1040,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         [...BUILT_IN_WEAPONS, ...s.customWeapons],
         [...AMMO_TYPES, ...s.customAmmo],
       );
+      const characterWithNpcAmmo = s.automaticInventoryTrackingEnabled
+        ? provisionNpcAmmo(normalized, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo])
+        : normalized;
       return {
         ...s,
-        characters: s.characters.map(c => c.id === migratedCharacter.id ? normalized : c),
+        characters: s.characters.map(c => c.id === migratedCharacter.id ? characterWithNpcAmmo : c),
         initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry =>
           entry.characterId === migratedCharacter.id
             ? migratedCharacter.vehicle
@@ -1721,9 +1769,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const weapon = [...BUILT_IN_WEAPONS, ...s.customWeapons].find(w => w.id === weaponId);
       if (!weapon) return s;
       const existing = char.weaponAmmoStates.find(a => a.weaponId === weaponId);
+      const magazineSize = effectiveMagazineSize(weapon, s.customWeaponMods);
+      const currentAmmo = existing?.currentAmmo ?? magazineSize;
+      const ammoTypeId = resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]);
+      let inventoryItems = char.inventoryItems ?? [];
+      let loadedRounds = magazineSize;
+      if (s.automaticInventoryTrackingEnabled) {
+        if (!ammoTypeId) return s;
+        const reserve = getInventoryItemQuantity(inventoryItems, 'ammo', ammoTypeId);
+        const roundsNeeded = Math.max(0, magazineSize - currentAmmo);
+        const roundsToLoad = Math.min(reserve, roundsNeeded);
+        if (roundsToLoad <= 0) return s;
+        inventoryItems = setInventoryItemQuantity(inventoryItems, 'ammo', ammoTypeId, reserve - roundsToLoad);
+        loadedRounds = currentAmmo + roundsToLoad;
+      } else if (currentAmmo >= magazineSize) {
+        return s;
+      }
       const newStates = char.weaponAmmoStates.filter(a => a.weaponId !== weaponId);
-       newStates.push({ weaponId, currentAmmo: effectiveMagazineSize(weapon, s.customWeaponMods), conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId: resolveEquippedAmmoTypeId(weapon, existing?.ammoTypeId, [...AMMO_TYPES, ...s.customAmmo]) });
-      return { ...s, characters: s.characters.map(c => c.id === characterId ? { ...c, weaponAmmoStates: newStates } : c) };
+      newStates.push({ weaponId, currentAmmo: loadedRounds, conditionBoxes: clampConditionBoxes(existing?.conditionBoxes ?? 0), ammoTypeId });
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === characterId
+          ? { ...c, weaponAmmoStates: newStates, inventoryItems }
+          : c),
+      };
     });
   }, []);
 
@@ -1777,15 +1846,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (otherIsTwoHanded || leftHandWeaponId === weaponId) leftHandWeaponId = undefined;
         }
       }
-      // Keep the inventory (max 5, ids incl. equipped) in sync.
+      // Keep carried weapon profiles (including the equipped weapon) in sync.
       const inv = (char.inventoryWeaponIds ?? (char.equippedWeaponId ? [char.equippedWeaponId] : []));
-      const inventoryWeaponIds = inv.includes(weaponId) ? inv : [...inv, weaponId].slice(0, 5);
+      const inventoryWeaponIds = [...new Set(inv.includes(weaponId) ? inv : [...inv, weaponId])];
       const equippedCharacter = normalizeCharacterAmmoStates({
         ...char,
         equippedWeaponId: weaponId,
         leftHandWeaponId,
         rightHandWeaponId,
         inventoryWeaponIds,
+        inventoryWeaponCounts: {
+          ...(char.inventoryWeaponCounts ?? {}),
+          [weaponId]: Math.max(1, char.inventoryWeaponCounts?.[weaponId] ?? 1),
+        },
         }, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo], s.customWeaponMods);
       return {
         ...s,
@@ -1873,6 +1946,84 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return { ...e, currentHp, maxAP, currentAP };
       }),
     }));
+  }, []);
+
+  /**
+   * Spend AP and resolve an item use in one state transaction. With Automatic
+   * Inventory Tracking off, the action still functions but does not require or
+   * decrement inventory. Custom consumable effect notes remain descriptive.
+   */
+  const useInventoryItem = useCallback((
+    characterId: string,
+    category: CharacterInventoryCategory,
+    itemId: string,
+    apCost: number,
+    effect?: ActiveEffect,
+    conditionId?: string,
+  ): boolean => {
+    let success = false;
+    setState(s => {
+      const character = s.characters.find(c => c.id === characterId);
+      if (!character || !Number.isFinite(apCost) || apCost < 0 || character.currentAP < apCost) return s;
+
+      const inventoryItems = s.automaticInventoryTrackingEnabled
+        ? consumeInventoryItem(character.inventoryItems, category, itemId)
+        : character.inventoryItems ?? [];
+      if (s.automaticInventoryTrackingEnabled && inventoryItems === null) return s;
+      success = true;
+
+      const spentAP = character.currentAP - apCost;
+      const nextEffects = effect
+        ? [...(character.effects ?? []), effect]
+        : character.effects;
+      const nextConditions = conditionId && !(character.conditions ?? []).includes(conditionId)
+        ? [...(character.conditions ?? []), conditionId]
+        : character.conditions;
+      const withUseApplied = {
+        ...character,
+        currentHp: effect ? resolveHpChange(character, effect.hpMod ?? 0) : character.currentHp,
+        currentAP: spentAP,
+        inventoryItems: inventoryItems ?? character.inventoryItems,
+        ...(effect ? { effects: nextEffects } : {}),
+        ...(conditionId ? { conditions: nextConditions } : {}),
+      };
+      const apMod = effect?.apMod ?? 0;
+      const currentAP = apMod !== 0
+        ? Math.max(0, Math.min(charMaxAP(
+          withUseApplied, [...BUILT_IN_ARMOR, ...s.customArmor], s.hardcoreRadiationRules,
+          s.mutantGhoulRadiationRules, s.ghoulRadiationHealingOption,
+        ), spentAP + apMod))
+        : spentAP;
+      const updatedCharacter = { ...withUseApplied, currentAP };
+      const updatedInitiativeEntries = s.initiativeEntries.map(entry => {
+        if (entry.characterId !== characterId) return entry;
+        const entryHp = effect
+          ? Math.min(entry.maxHp, resolveHpChange(
+            { ...character, currentHp: entry.currentHp, maxHp: entry.maxHp },
+            effect.hpMod ?? 0,
+          ))
+          : entry.currentHp;
+        const maxAP = effect
+          ? charMaxAP(
+            { ...withUseApplied, effects: nextEffects ?? [] },
+            [...BUILT_IN_ARMOR, ...s.customArmor], s.hardcoreRadiationRules,
+            s.mutantGhoulRadiationRules, s.ghoulRadiationHealingOption,
+          )
+          : entry.maxAP;
+        return {
+          ...entry,
+          currentHp: entryHp,
+          maxAP,
+          currentAP: Math.max(0, Math.min(maxAP, entry.currentAP - apCost + apMod)),
+        };
+      });
+      return {
+        ...s,
+        characters: s.characters.map(c => c.id === characterId ? updatedCharacter : c),
+        initiativeEntries: updatedInitiativeEntries,
+      };
+    });
+    return success;
   }, []);
 
   // A jam/miss FILLS one condition box (0 pristine … 10 jammed).
@@ -2525,11 +2676,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const updatedProfile = byId.get(character.customRaceId);
           if (!updatedProfile) return character;
           const previouslyGranted = new Set(character.raceNaturalWeaponIds ?? []);
-          const inventoryBeforeGrant = (character.inventoryWeaponIds ?? [])
-            .filter(id => !previouslyGranted.has(id));
           const requestedWeapons = updatedProfile.naturalWeaponIds.filter(id => knownWeaponIds.has(id));
-          const grantedNow = requestedWeapons.filter(id => !inventoryBeforeGrant.includes(id));
-          const inventoryWeaponIds = [...new Set([...inventoryBeforeGrant, ...requestedWeapons])];
+          const inventoryWeaponCounts = { ...(character.inventoryWeaponCounts ?? {}) };
+          for (const weaponId of previouslyGranted) {
+            const remaining = Math.max(0, (inventoryWeaponCounts[weaponId] ?? 1) - 1);
+            if (remaining > 0) inventoryWeaponCounts[weaponId] = remaining;
+            else delete inventoryWeaponCounts[weaponId];
+          }
+          const grantedNow = requestedWeapons.filter(id => !inventoryWeaponCounts[id]);
+          for (const weaponId of grantedNow) inventoryWeaponCounts[weaponId] = 1;
+          const inventoryWeaponIds = [...new Set([
+            ...(character.inventoryWeaponIds ?? []).filter(id => !!inventoryWeaponCounts[id]),
+            ...requestedWeapons,
+          ])];
           const equippedWasRemoved = !!character.equippedWeaponId
             && previouslyGranted.has(character.equippedWeaponId)
             && !requestedWeapons.includes(character.equippedWeaponId);
@@ -2544,6 +2703,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             customRaceProfile: updatedProfile,
             raceNaturalWeaponIds: grantedNow,
             inventoryWeaponIds,
+            inventoryWeaponCounts,
             equippedWeaponId: equippedWasRemoved
               ? requestedWeapons[0]
               : character.equippedWeaponId ?? requestedWeapons[0],
@@ -2719,6 +2879,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({ ...s, missingExplosiveBlastZoneHouseRule: enabled }));
   }, []);
 
+  const setAutomaticInventoryTrackingEnabled = useCallback((enabled: boolean) => {
+    setState(s => {
+      const allWeapons = [...BUILT_IN_WEAPONS, ...s.customWeapons];
+      const allAmmo = [...AMMO_TYPES, ...s.customAmmo];
+      return {
+        ...s,
+        automaticInventoryTrackingEnabled: enabled,
+        characters: enabled
+          ? s.characters.map(character => provisionNpcAmmo(
+            normalizeCharacterInventory(character),
+            allWeapons,
+            allAmmo,
+          ))
+          : s.characters,
+      };
+    });
+  }, []);
+
   const saveRadioStations = useCallback((stations: RadioStation[]) => {
     setState(s => {
       const radioStations = normalizeRadioStations(stations);
@@ -2764,13 +2942,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setMutantGhoulRadiationRules, setGhoulRadiationHealingOption, setAreaProfileRangeOverride,
         hardcoreRadiationRules: state.hardcoreRadiationRules,
           setVisualTheme, setSystemSoundsEnabled, setCombatSoundsEnabled, setMusicEnabled, setMusicVolume,
-          setMissingExplosiveBlastZoneHouseRule,
+          setMissingExplosiveBlastZoneHouseRule, setAutomaticInventoryTrackingEnabled,
           saveRadioStations, selectRadioStation,
         spendAP, restoreAP, startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction, setPosition, setKnockedOut, applyAreaAttack, markAreaEffectForRemoval, removeAreaEffect, addTempAC, clearTempAC,
       spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition,
       restorePremadeWeaponCondition: restorePremadeWeaponConditionForCharacter,
       setAmmoType, equipWeapon, setActiveWeapon,
-      addEffect, removeEffect, applyChem,
+          addEffect, removeEffect, applyChem, useInventoryItem,
       addInjury, removeInjury, toggleInjury,
       startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry,
       updateInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound, setActiveEntry,

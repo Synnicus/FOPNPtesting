@@ -13,6 +13,8 @@ export interface CampaignOptions {
   musicVolume: number;
   /** Give built-in explosive ammo without manual blast zones a temporary 5m radius. */
   missingExplosiveBlastZoneHouseRule: boolean;
+  /** Track reserve rounds and consume carried items when they are used. */
+  automaticInventoryTrackingEnabled: boolean;
   mutantGhoulRadiationRules: boolean;
   ghoulRadiationHealingOption: GhoulRadiationHealingOption;
 }
@@ -24,6 +26,7 @@ export const DEFAULT_CAMPAIGN_OPTIONS: CampaignOptions = {
   musicEnabled: false,
   musicVolume: 0.5,
   missingExplosiveBlastZoneHouseRule: false,
+  automaticInventoryTrackingEnabled: false,
   mutantGhoulRadiationRules: false,
   ghoulRadiationHealingOption: 1,
 };
@@ -56,6 +59,12 @@ export function normalizeCampaignOptions(value: unknown): CampaignOptions {
     missingExplosiveBlastZoneHouseRule: typeof options.missingExplosiveBlastZoneHouseRule === 'boolean'
       ? options.missingExplosiveBlastZoneHouseRule
       : DEFAULT_CAMPAIGN_OPTIONS.missingExplosiveBlastZoneHouseRule,
+    // Migrate the former ammo-only option without changing existing campaign behavior.
+    automaticInventoryTrackingEnabled: typeof options.automaticInventoryTrackingEnabled === 'boolean'
+      ? options.automaticInventoryTrackingEnabled
+      : typeof options.bulletTrackingEnabled === 'boolean'
+        ? options.bulletTrackingEnabled
+        : DEFAULT_CAMPAIGN_OPTIONS.automaticInventoryTrackingEnabled,
     mutantGhoulRadiationRules: typeof options.mutantGhoulRadiationRules === 'boolean'
       ? options.mutantGhoulRadiationRules
       : DEFAULT_CAMPAIGN_OPTIONS.mutantGhoulRadiationRules,

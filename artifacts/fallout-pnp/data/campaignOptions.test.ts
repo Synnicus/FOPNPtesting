@@ -24,6 +24,7 @@ test('campaign options preserve explicit preferences and normalize invalid value
     musicEnabled: false,
     musicVolume: 0.35,
     missingExplosiveBlastZoneHouseRule: false,
+    automaticInventoryTrackingEnabled: false,
     mutantGhoulRadiationRules: false,
     ghoulRadiationHealingOption: 1,
   });
@@ -73,4 +74,23 @@ test('the missing explosive blast-zone house rule defaults off and only accepts 
   assert.equal(normalizeCampaignOptions({ missingExplosiveBlastZoneHouseRule: true }).missingExplosiveBlastZoneHouseRule, true);
   assert.equal(normalizeCampaignOptions({ missingExplosiveBlastZoneHouseRule: false }).missingExplosiveBlastZoneHouseRule, false);
   assert.equal(normalizeCampaignOptions({ missingExplosiveBlastZoneHouseRule: 'enabled' }).missingExplosiveBlastZoneHouseRule, false);
+});
+
+test('automatic inventory tracking defaults off and migrates the legacy ammo-only setting', () => {
+  assert.equal(normalizeCampaignOptions({}).automaticInventoryTrackingEnabled, false);
+  assert.equal(
+    normalizeCampaignOptions({ bulletTrackingEnabled: true }).automaticInventoryTrackingEnabled,
+    true,
+  );
+  assert.equal(
+    normalizeCampaignOptions({
+      bulletTrackingEnabled: true,
+      automaticInventoryTrackingEnabled: false,
+    }).automaticInventoryTrackingEnabled,
+    false,
+  );
+  assert.equal(
+    normalizeCampaignOptions({ automaticInventoryTrackingEnabled: true }).automaticInventoryTrackingEnabled,
+    true,
+  );
 });

@@ -410,9 +410,18 @@ export interface CampaignMapMarker {
   id: string;
   name: string;
   description: string;
+  /** Built-in marker icon id or an id from the map's uploaded icon repository. */
+  iconId?: string;
   /** Normalized map coordinates, from 0 to 1. */
   x: number;
   y: number;
+}
+
+export interface CampaignMapMarkerIcon {
+  id: string;
+  name: string;
+  /** Uploaded user artwork is embedded so portable campaign files remain self-contained. */
+  imageDataUri: string;
 }
 
 export interface CampaignPartyMarker {
@@ -428,6 +437,11 @@ export interface CampaignMap {
   description: string;
   /** Embedded image data makes a campaign map portable in JSON exports. */
   imageDataUri?: string;
+  /** Source image dimensions keep marker coordinates aligned with the map's aspect ratio. */
+  imageWidth?: number;
+  imageHeight?: number;
+  /** User-uploaded marker images available in this map's icon picker. */
+  markerIcons?: CampaignMapMarkerIcon[];
   locations: CampaignMapMarker[];
   party: CampaignPartyMarker[];
 }
@@ -635,6 +649,21 @@ export interface ManualDerivedStats {
   baseMaxHp?: number;
 }
 
+export type CharacterInventoryCategory = 'armor' | 'ammo' | 'tool' | 'consumable';
+
+/** A carried stack of non-weapon equipment. Ammunition quantity is in rounds. */
+export interface CharacterInventoryItem {
+  category: CharacterInventoryCategory;
+  itemId: string;
+  quantity: number;
+  /** Optional pounds per item, or pounds per round for ammunition. */
+  weightPerUnit?: number;
+  /** Ammunition can instead be weighed by box. */
+  ammoWeightMode?: 'round' | 'box';
+  weightPerBox?: number;
+  unitsPerBox?: number;
+}
+
 // ─── Character ────────────────────────────────────────────────────────────────
 export interface Character {
   id: string;
@@ -765,9 +794,15 @@ export interface Character {
   leftHandWeaponId?: string;
 
   rightHandWeaponId?: string;
-  /** Carried weapons (max 5, ids incl. equipped). Absent = derive from equipped. */
+  /** Unique carried weapon profile ids, including equipped weapons. */
 
   inventoryWeaponIds?: string[];
+  /** Physical copy count per weapon profile; omitted entries mean one copy. */
+  inventoryWeaponCounts?: Record<string, number>;
+  /** Carried armor, reserve ammunition, tools, and consumables. */
+  inventoryItems?: CharacterInventoryItem[];
+  /** Weapon profiles already provisioned with their initial NPC reserve ammo. */
+  npcAmmoProvisionedWeaponIds?: string[];
 
   equippedBodyArmorId?: string;
 

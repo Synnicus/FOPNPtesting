@@ -29,6 +29,7 @@ import CustomRulesPanel from '@/components/CustomRulesPanel';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import GasMaskIcon from '@/components/GasMaskIcon';
+import { CharacterInventoryPanel } from '@/components/CharacterInventoryPanel';
 import HPBar from '@/components/HPBar';
 import {
   calcMaxHP, calcNpcMaxHP, calcMaxAP, calcBaseAC, calcSequence, calcBaseSkills,
@@ -55,6 +56,12 @@ import { makeChemEffect, progressChemEffect, chemHasNextStage, computePerkStatBo
 import { poisonEffectName } from '@/data/poisonEffects';
 import { applyImmediateTraitSpecial, calculateHealingRate, calculateSkillPointsPerLevel as calculateRuleSkillPointsPerLevel, calculateTagSkillRules, calculatePerkCadence } from '@/data/effectiveRules';
 import { getWeaponHands, WEAPON_CATEGORY_ORDER, WEAPON_CATEGORY_LABELS } from '@/data/weapons';
+import {
+  calculateInventoryWeight,
+  getInventoryItemQuantity,
+  normalizeCharacterInventory,
+} from '@/data/inventory';
+import { BUILT_IN_TOOLS } from '@/data/tools';
 import { computeModEffects } from '@/data/mods';
 import {
   applySkillPointOperation,
@@ -368,7 +375,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const insets = useSafeAreaInsets();
   const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
   const {
-    allWeapons, allArmor, customPerks, hardcoreRadiationRules,
+    allWeapons, allArmor, allAmmo, customConsumables, customPerks, hardcoreRadiationRules,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     customRaces, campaignRaceTags, saveCustomRaces, saveCampaignRaceTags,
   } = useApp();
@@ -394,6 +401,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   const [showHelmetPick, setShowHelmetPick] = useState(false);
   const [handPick, setHandPick] = useState<null | 'left' | 'right'>(null);
   const [showInventoryPick, setShowInventoryPick] = useState(false);
+  const [inventoryNotice, setInventoryNotice] = useState('');
   const [showChemPick, setShowChemPick] = useState(false);
 
   // Perks tab: only-show-available toggle
@@ -642,29 +650,40 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
       // Reset natural protection to the new race's defaults (or undefined)
       const naturalProtection = raceRef.naturalProtection ? { ...raceRef.naturalProtection } : undefined;
       const previousRaceWeapons = new Set(prev.raceNaturalWeaponIds ?? []);
-      const inventoryBeforeRaceWeapons = (prev.inventoryWeaponIds ?? []).filter(id => !previousRaceWeapons.has(id));
-      const raceNaturalWeaponIds = selectedProfile
-        ? selectedProfile.naturalWeaponIds.filter(id => allWeapons.some(weapon => weapon.id === id))
+      const requestedRaceWeaponIds = selectedProfile
+        ? [...new Set(selectedProfile.naturalWeaponIds.filter(id => allWeapons.some(weapon => weapon.id === id)))]
         : [];
-      const inventoryWeaponIds = [...new Set([...inventoryBeforeRaceWeapons, ...raceNaturalWeaponIds])];
-      const raceWeaponRemoved = (id?: string) => !!id && previousRaceWeapons.has(id) && !raceNaturalWeaponIds.includes(id);
+      const inventoryWeaponCounts = { ...(prev.inventoryWeaponCounts ?? {}) };
+      for (const id of previousRaceWeapons) {
+        const remaining = Math.max(0, (inventoryWeaponCounts[id] ?? 1) - 1);
+        if (remaining > 0) inventoryWeaponCounts[id] = remaining;
+        else delete inventoryWeaponCounts[id];
+      }
+      const grantedRaceWeapons = requestedRaceWeaponIds.filter(id => !inventoryWeaponCounts[id]);
+      for (const id of grantedRaceWeapons) inventoryWeaponCounts[id] = 1;
+      const inventoryWeaponIds = [...new Set([
+        ...(prev.inventoryWeaponIds ?? []).filter(id => !!inventoryWeaponCounts[id]),
+        ...requestedRaceWeaponIds,
+      ])];
+      const raceWeaponRemoved = (id?: string) => !!id && previousRaceWeapons.has(id) && !requestedRaceWeaponIds.includes(id);
       return recomputeDerived({
         ...prev,
         race: newRace,
         customRaceId: selectedProfile?.id,
         customRaceProfile: selectedProfile,
         raceTags: newRace === 'customRace' ? prev.raceTags : undefined,
-        raceNaturalWeaponIds,
+        raceNaturalWeaponIds: grantedRaceWeapons,
         inventoryWeaponIds,
+        inventoryWeaponCounts,
         equippedWeaponId: raceWeaponRemoved(prev.equippedWeaponId)
-          ? raceNaturalWeaponIds[0]
-          : prev.equippedWeaponId ?? raceNaturalWeaponIds[0],
+          ? requestedRaceWeaponIds[0]
+          : prev.equippedWeaponId ?? requestedRaceWeaponIds[0],
         rightHandWeaponId: raceWeaponRemoved(prev.rightHandWeaponId)
-          ? raceNaturalWeaponIds[0]
-          : prev.rightHandWeaponId ?? raceNaturalWeaponIds[0],
+          ? requestedRaceWeaponIds[0]
+          : prev.rightHandWeaponId ?? requestedRaceWeaponIds[0],
         leftHandWeaponId: raceWeaponRemoved(prev.leftHandWeaponId)
-          ? raceNaturalWeaponIds[1]
-          : prev.leftHandWeaponId ?? raceNaturalWeaponIds[1],
+          ? requestedRaceWeaponIds[1]
+          : prev.leftHandWeaponId ?? requestedRaceWeaponIds[1],
         special, skills, unspentSkillPoints,
         radiationResistance, gasResistance, electricityResistance, naturalProtection,
       });
@@ -1012,12 +1031,14 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
   // Sync equippedWeaponId to primary (right hand, else left).
   const syncPrimaryWeapon = useCallback((c: Character): Character => {
     const primary = c.rightHandWeaponId ?? c.leftHandWeaponId;
-    // Ensure equipped weapons are always in inventory (max 5).
+    // Ensure every equipped weapon is represented by at least one carried copy.
     const inv = new Set(c.inventoryWeaponIds ?? []);
     if (c.leftHandWeaponId) inv.add(c.leftHandWeaponId);
     if (c.rightHandWeaponId) inv.add(c.rightHandWeaponId);
-    const inventoryWeaponIds = Array.from(inv).slice(0, 5);
-    return { ...c, equippedWeaponId: primary, inventoryWeaponIds };
+    const inventoryWeaponIds = Array.from(inv);
+    const inventoryWeaponCounts = { ...(c.inventoryWeaponCounts ?? {}) };
+    for (const id of inventoryWeaponIds) inventoryWeaponCounts[id] = Math.max(1, inventoryWeaponCounts[id] ?? 1);
+    return { ...c, equippedWeaponId: primary, inventoryWeaponIds, inventoryWeaponCounts };
   }, []);
 
   const equipHand = useCallback((hand: 'left' | 'right', weapon: Weapon | null) => {
@@ -1050,22 +1071,42 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
   const addToInventory = useCallback((weapon: Weapon | null) => {
     if (!weapon) return;
-    setChar(prev => {
-      const inv = prev.inventoryWeaponIds ?? [];
-      if (inv.includes(weapon.id) || inv.length >= 5) {
-        if (inv.length >= 5) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        return prev;
-      }
-      return { ...prev, inventoryWeaponIds: [...inv, weapon.id] };
+    const normalized = normalizeCharacterInventory(char);
+    const capacity = armorSheet.carryWeight + computePerkDerivedBonuses(char.perks, char.level).carryWeight;
+    const carried = calculateInventoryWeight(normalized, {
+      weapons: allWeapons,
+      armor: allArmor,
+      ammo: allAmmo,
+      tools: BUILT_IN_TOOLS,
+      consumables: customConsumables,
     });
-  }, []);
+    if (carried.totalWeight + weapon.weight > capacity) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setInventoryNotice(`Cannot carry another ${weapon.name}; capacity is ${capacity} lb.`);
+      return;
+    }
+    const count = normalized.inventoryWeaponCounts?.[weapon.id] ?? 0;
+    setChar({
+      ...normalized,
+      inventoryWeaponIds: [...new Set([...(normalized.inventoryWeaponIds ?? []), weapon.id])],
+      inventoryWeaponCounts: { ...(normalized.inventoryWeaponCounts ?? {}), [weapon.id]: count + 1 },
+    });
+    setInventoryNotice('');
+  }, [char, armorSheet.carryWeight, allWeapons, allArmor, allAmmo, customConsumables]);
 
   const removeFromInventory = useCallback((id: string) => {
     setChar(prev => {
-      // Don't allow removing an equipped weapon from inventory silently — unequip it too.
+      const counts = { ...(prev.inventoryWeaponCounts ?? {}) };
+      const currentCount = counts[id] ?? 1;
+      if (currentCount > 1) {
+        counts[id] = currentCount - 1;
+        return { ...prev, inventoryWeaponCounts: counts };
+      }
+      delete counts[id];
       const next: Character = {
         ...prev,
         inventoryWeaponIds: (prev.inventoryWeaponIds ?? []).filter(w => w !== id),
+        inventoryWeaponCounts: counts,
         leftHandWeaponId: prev.leftHandWeaponId === id ? undefined : prev.leftHandWeaponId,
         rightHandWeaponId: prev.rightHandWeaponId === id ? undefined : prev.rightHandWeaponId,
       };
@@ -1142,7 +1183,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
     onClose();
   };
 
-  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Effects', 'Karma & Reputation'];
+  const TABS = ['Basics', 'SPECIAL', 'Skills', 'Perks', 'Traits', 'Equipment', 'Inventory', 'Effects', 'Karma & Reputation'];
   const INJURY_LOCATIONS: Injury['location'][] = ['head', 'eyes', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
   return (
@@ -1908,22 +1949,24 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
 
                     {/* Carried weapons inventory */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>CARRIED WEAPONS ({(char.inventoryWeaponIds ?? []).length}/5)</Text>
-                      {(char.inventoryWeaponIds ?? []).length < 5 && (
-                        <TouchableOpacity onPress={() => setShowInventoryPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1 }}>
+                        CARRIED WEAPONS ({(char.inventoryWeaponIds ?? []).reduce((total, id) => total + (char.inventoryWeaponCounts?.[id] ?? 1), 0)})
+                      </Text>
+                      <TouchableOpacity onPress={() => setShowInventoryPick(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: colors.secondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary + '66' }}>
                           <Feather name="plus" size={12} color={colors.primary} />
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primary }}>ADD</Text>
-                        </TouchableOpacity>
-                      )}
+                      </TouchableOpacity>
                     </View>
+                    {inventoryNotice ? <Text style={{ fontSize: 10, color: colors.destructive }}>{inventoryNotice}</Text> : null}
                     {(char.inventoryWeaponIds ?? []).length > 0 && (
                       <View style={{ gap: 6 }}>
                         {(char.inventoryWeaponIds ?? []).map(wid => {
                           const iw = allWeapons.find(w => w.id === wid);
+                          const count = char.inventoryWeaponCounts?.[wid] ?? 1;
                           const equipped = char.leftHandWeaponId === wid || char.rightHandWeaponId === wid;
                           return (
                             <View key={wid} style={{ gap: 6 }}><View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 10, paddingRight: 6, paddingVertical: 5, backgroundColor: equipped ? colors.primary + '1a' : colors.secondary, borderRadius: 14, borderWidth: 1, borderColor: equipped ? colors.primary + '66' : colors.border }}>
-                              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: equipped ? colors.primary : colors.foreground }}>{iw?.name ?? wid}</Text>
+                              <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: equipped ? colors.primary : colors.foreground }}>{iw?.name ?? wid}{count > 1 ? ` × ${count}` : ''}</Text>
                               <TouchableOpacity onPress={() => removeFromInventory(wid)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                                 <Feather name="x" size={13} color={colors.mutedForeground} />
                               </TouchableOpacity>
@@ -1957,9 +2000,17 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                 testID="character-gas-mask-toggle"
                 accessibilityRole="switch"
                 accessibilityLabel={translateText('Gas mask')}
-                accessibilityHint={translateText('Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.')}
+                accessibilityHint={translateText(getInventoryItemQuantity(char.inventoryItems, 'tool', 'gas_mask') > 0
+                  ? 'Provides 100% inhaled gas resistance and 0% contact gas resistance without replacing the helmet.'
+                  : 'Add a Gas Mask to the character inventory before wearing it.')}
                 accessibilityState={{ checked: !!char.wearingGasMask }}
-                onPress={() => setChar(c => ({ ...c, wearingGasMask: !c.wearingGasMask }))}
+                onPress={() => {
+                  if (!char.wearingGasMask && getInventoryItemQuantity(char.inventoryItems, 'tool', 'gas_mask') < 1) {
+                    setInventoryNotice('Add a Gas Mask in the Inventory tab before wearing it.');
+                    return;
+                  }
+                  setChar(c => ({ ...c, wearingGasMask: !c.wearingGasMask }));
+                }}
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
                   backgroundColor: char.wearingGasMask ? colors.primary + '18' : colors.secondary,
@@ -1973,7 +2024,9 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                     Gas mask
                   </Text>
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_500Medium', color: colors.mutedForeground }}>
-                    100/0 Gas Resistance
+                    {getInventoryItemQuantity(char.inventoryItems, 'tool', 'gas_mask') > 0
+                      ? '100/0 Gas Resistance'
+                      : 'Requires a Gas Mask in inventory'}
                   </Text>
                 </View>
                 <Feather name={char.wearingGasMask ? 'check-circle' : 'circle'} size={18} color={char.wearingGasMask ? colors.primary : colors.mutedForeground} />
@@ -2108,8 +2161,21 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             </>
           )}
 
-          {/* ── EFFECTS (injuries + chem effects) ── */}
+          {/* ── INVENTORY ── */}
           {activeTab === 6 && (
+            <CharacterInventoryPanel
+              character={char}
+              setCharacter={setChar}
+              carryCapacity={armorSheet.carryWeight + computePerkDerivedBonuses(char.perks, char.level).carryWeight}
+              weapons={allWeapons}
+              armor={allArmor}
+              ammo={allAmmo}
+              customConsumables={customConsumables}
+            />
+          )}
+
+          {/* ── EFFECTS (injuries + chem effects) ── */}
+          {activeTab === 7 && (
             <>
               {(char.perks.some(perk => perk.perkId === 'fear_the_reaper')
                 || char.perks.some(perk => perk.perkId === 'divine_favor')) && (
@@ -2421,7 +2487,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
           )}
 
           {/* ── KARMA & FACTION REPUTATION ── */}
-          {activeTab === 7 && (
+          {activeTab === 8 && (
             <>
               <KarmaTracker character={char} onChange={updated => setChar(updated)} />
               <View style={{ height: 1, marginVertical: 8, backgroundColor: colors.border }} />
@@ -2552,10 +2618,10 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
             </Text>
           )}
         />
-        {/* Add Carried Weapon: full armory (minus already-carried), grouped by category */}
+        {/* Add a weapon copy. Repeated selections add another physical copy. */}
         <SelectionModal
           visible={showInventoryPick} onClose={() => setShowInventoryPick(false)} title="ADD CARRIED WEAPON"
-          items={allWeapons.filter(w => !(char.inventoryWeaponIds ?? []).includes(w.id))} keyFn={w => w.id}
+          items={allWeapons} keyFn={w => w.id}
           onSelect={w => addToInventory(w)}
           groupBy={w => w.category ?? ''}
           renderItem={w => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{w.name}</Text>}
@@ -2574,13 +2640,13 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
         <SelectionModal
           visible={showBodyPick} onClose={() => setShowBodyPick(false)} title="SELECT BODY ARMOR"
           items={allArmor.filter(a => a.slot === 'body')} keyFn={a => a.id}
-          onSelect={a => setChar(c => ({ ...c, equippedBodyArmorId: a?.id ?? undefined }))}
+          onSelect={a => setChar(c => normalizeCharacterInventory({ ...c, equippedBodyArmorId: a?.id ?? undefined }))}
           renderItem={a => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{a.name}</Text>}
         />
         <SelectionModal
           visible={showHelmetPick} onClose={() => setShowHelmetPick(false)} title="SELECT HELMET"
           items={allArmor.filter(a => a.slot === 'helmet')} keyFn={a => a.id}
-          onSelect={a => setChar(c => ({ ...c, equippedHelmetId: a?.id ?? undefined }))}
+          onSelect={a => setChar(c => normalizeCharacterInventory({ ...c, equippedHelmetId: a?.id ?? undefined }))}
           renderItem={a => <Text style={{ fontSize: 14, fontFamily: 'Inter_400Regular', color: colors.foreground }}>{a.name}</Text>}
         />
 

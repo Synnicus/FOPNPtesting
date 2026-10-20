@@ -1,0 +1,68 @@
+{
+  "fr": {
+    "Automatic Inventory Tracking": "Suivi automatique de l’inventaire",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Suivez les munitions de réserve et retirez un produit chimique, une trousse médicale ou un autre consommable de l’inventaire à chaque utilisation. Les chargeurs déjà chargés restent intacts ; les personnages joueurs commencent sans munitions de réserve, tandis que les PNJ reçoivent environ 10 tours de munitions par arme à distance.",
+    "One carried item is consumed on selection.": "Un objet transporté est consommé lors de sa sélection.",
+    "No carried item remains.": "Il ne reste aucun objet transporté."
+  },
+  "it": {
+    "Automatic Inventory Tracking": "Tracciamento automatico dell’inventario",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Tieni traccia delle munizioni di riserva e rimuovi dall’inventario un prodotto chimico, un kit medico o un altro consumabile a ogni utilizzo. I caricatori già caricati restano intatti; i personaggi giocanti iniziano senza munizioni di riserva, mentre gli NPC ricevono munizioni per circa 10 turni per arma a distanza.",
+    "One carried item is consumed on selection.": "Un oggetto trasportato viene consumato quando viene selezionato.",
+    "No carried item remains.": "Non restano oggetti trasportati."
+  },
+  "de": {
+    "Automatic Inventory Tracking": "Automatische Inventarverwaltung",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Erfasst Reserve-Munition und zieht bei jeder Verwendung ein mitgeführtes Chemo, Medkit oder anderes Verbrauchsgut ab. Bereits geladene Magazine bleiben erhalten; Spielercharaktere starten ohne Reserve-Munition, NPCs erhalten etwa Munition für 10 Runden pro Fernkampfwaffe.",
+    "One carried item is consumed on selection.": "Bei der Auswahl wird ein mitgeführter Gegenstand verbraucht.",
+    "No carried item remains.": "Es ist kein mitgeführter Gegenstand mehr vorhanden."
+  },
+  "es-ES": {
+    "Automatic Inventory Tracking": "Seguimiento automático del inventario",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Controla la munición de reserva y resta del inventario un químico, un botiquín u otro consumible cada vez que se use. Los cargadores ya cargados se mantienen; los personajes jugadores empiezan sin munición de reserva y los PNJ reciben munición para unos 10 turnos por arma a distancia.",
+    "One carried item is consumed on selection.": "Se consume un objeto del inventario al seleccionarlo.",
+    "No carried item remains.": "No quedan objetos en el inventario."
+  },
+  "es-MX": {
+    "Automatic Inventory Tracking": "Control automático del inventario",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Lleva el control de la munición de reserva y resta del inventario un químico, un botiquín u otro consumible cada vez que se use. Los cargadores actuales se conservan; los personajes jugadores empiezan sin munición de reserva y los PNJ reciben munición para unos 10 turnos por arma a distancia.",
+    "One carried item is consumed on selection.": "Se consume un objeto del inventario al seleccionarlo.",
+    "No carried item remains.": "No quedan objetos en el inventario."
+  },
+  "ja": {
+    "Automatic Inventory Tracking": "インベントリの自動管理",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "予備弾薬を記録し、薬品、医療キット、その他の消耗品を使うたびに所持数を1つ減らします。装填済みの弾倉は維持されます。PCは予備弾薬0発で開始し、NPCには遠隔武器ごとに約10ターン分の弾薬が与えられます。",
+    "One carried item is consumed on selection.": "選択すると所持品を1つ消費します。",
+    "No carried item remains.": "所持品がありません。"
+  },
+  "pl": {
+    "Automatic Inventory Tracking": "Automatyczne śledzenie ekwipunku",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Śledzi amunicję zapasową i odejmuje z ekwipunku jeden chem, apteczkę lub inny materiał eksploatacyjny po każdym użyciu. Załadowane magazynki pozostają bez zmian; postacie graczy zaczynają bez zapasowej amunicji, a NPC otrzymują jej około 10 tur na każdą broń dystansową.",
+    "One carried item is consumed on selection.": "Wybranie przedmiotu zużywa jedną sztukę z ekwipunku.",
+    "No carried item remains.": "Brak przedmiotów w ekwipunku."
+  },
+  "pt-BR": {
+    "Automatic Inventory Tracking": "Controle automático de inventário",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Controle a munição reserva e desconte do inventário um químico, kit médico ou outro consumível sempre que for usado. Os carregadores já abastecidos permanecem intactos; personagens dos jogadores começam sem munição reserva, enquanto NPCs recebem munição para cerca de 10 turnos por arma de longo alcance.",
+    "One carried item is consumed on selection.": "Um item carregado é consumido ao ser selecionado.",
+    "No carried item remains.": "Não há mais itens carregados."
+  },
+  "ru": {
+    "Automatic Inventory Tracking": "Автоматический учёт инвентаря",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "Учитывать запасные патроны и вычитать из инвентаря один химикат, аптечку или другой расходуемый предмет при каждом использовании. Уже заряженные магазины сохраняются; персонажи игроков начинают без запасных патронов, а NPC получают примерно 10 ходов боеприпасов на каждое дальнобойное оружие.",
+    "One carried item is consumed on selection.": "При выборе расходуется один предмет из инвентаря.",
+    "No carried item remains.": "В инвентаре больше нет подходящих предметов."
+  },
+  "zh-Hans": {
+    "Automatic Inventory Tracking": "自动追踪物品栏",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "追踪备用弹药，并在每次使用药剂、医疗包或其他消耗品时从携带数量中扣除一个。当前弹匣保持原样；玩家角色的备用弹药初始为 0，NPC 每件远程武器获得约 10 回合的弹药。",
+    "One carried item is consumed on selection.": "选择后会消耗一件携带物品。",
+    "No carried item remains.": "没有剩余的携带物品。"
+  },
+  "zh-Hant": {
+    "Automatic Inventory Tracking": "自動追蹤物品欄",
+    "Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon.": "追蹤備用彈藥，並在每次使用藥劑、醫療包或其他消耗品時從攜帶數量中扣除一個。現有彈匣維持已裝填狀態；玩家角色的備用彈藥初始為 0，NPC 每件遠程武器取得約 10 回合的彈藥。",
+    "One carried item is consumed on selection.": "選取後會消耗一件攜帶物品。",
+    "No carried item remains.": "沒有剩餘的攜帶物品。"
+  }
+}

@@ -30,6 +30,7 @@ import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { CatalogImageEditor } from '@/components/CatalogImageEditor';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import { MouseDraggableFlatList } from '@/components/MouseDraggableFlatList';
+import { BUILT_IN_TOOLS } from '@/data/tools';
 import CustomRulesPanel from '@/components/CustomRulesPanel';
 import { SelectableTagMenu } from '@/components/SelectableTagMenu';
 import { AREA_ATTACK_KINDS, AREA_DAMAGE_TYPES, validateCustomAreaEffects } from '@/data/customAreaEffects';
@@ -1967,7 +1968,7 @@ export default function EquipmentScreen() {
     addCustomConsumable, updateCustomConsumable, deleteCustomConsumable,
     addCustomVehicle, updateCustomVehicle, deleteCustomVehicle,
   } = useApp();
-  const [tab, setTab] = useState<'weapons' | 'traps' | 'armor' | 'ammo' | 'consumables' | 'vehicles'>('weapons');
+  const [tab, setTab] = useState<'weapons' | 'traps' | 'armor' | 'ammo' | 'consumables' | 'tools' | 'vehicles'>('weapons');
   const [showWeaponForm, setShowWeaponForm] = useState(false);
   const [initialWeaponCategory, setInitialWeaponCategory] = useState<WeaponCategory | undefined>();
   const [showArmorForm, setShowArmorForm] = useState(false);
@@ -2035,7 +2036,7 @@ export default function EquipmentScreen() {
   useEffect(() => {
     if (!manualTab) return;
 
-    if (manualTab === 'weapons' || manualTab === 'traps' || manualTab === 'armor' || manualTab === 'ammo' || manualTab === 'consumables') {
+    if (manualTab === 'weapons' || manualTab === 'traps' || manualTab === 'armor' || manualTab === 'ammo' || manualTab === 'consumables' || manualTab === 'tools') {
       const weaponTrapsLink = manualTab === 'weapons' && manualCategory === 'minesTraps';
       setTab(weaponTrapsLink ? 'traps' : manualTab);
       setSearch(typeof manualSearch === 'string' ? manualSearch : '');
@@ -2153,12 +2154,15 @@ export default function EquipmentScreen() {
   const filteredVehicles = catalogVehicles.filter(vehicle =>
     !search || `${vehicle.name} ${vehicle.description} ${vehicle.category} ${vehicle.mountedWeapons.join(' ')}`
       .toLowerCase().includes(search.toLowerCase()));
+  const filteredTools = BUILT_IN_TOOLS.filter(item =>
+    !search || item.name.toLowerCase().includes(search.toLowerCase()));
   const equipmentTabs = [
     { key: 'weapons', label: `WEAPONS (${filteredWeapons.length})` },
     { key: 'traps', label: `TRAPS (${filteredTraps.length})` },
     { key: 'armor', label: `ARMOR (${filteredArmor.length})` },
     { key: 'ammo', label: `AMMO (${filteredAmmo.length})` },
     { key: 'consumables', label: `CONSUMABLES (${filteredConsumables.length})` },
+    { key: 'tools', label: `TOOLS (${filteredTools.length})` },
     { key: 'vehicles', label: `VEHICLES (${filteredVehicles.length})` },
   ] as const;
 
@@ -2168,7 +2172,7 @@ export default function EquipmentScreen() {
       <View style={{ padding: 16, gap: 10 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>EQUIPMENT</Text>
-          <TouchableOpacity
+          {tab !== 'tools' && <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: colors.radius }}
             onPress={() => {
               if (tab === 'weapons') openNewWeapon();
@@ -2183,7 +2187,7 @@ export default function EquipmentScreen() {
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.primaryForeground, letterSpacing: 1 }}>
               {tab === 'weapons' ? 'CUSTOM WEAPON' : tab === 'traps' ? 'CUSTOM TRAP' : tab === 'armor' ? 'CUSTOM ARMOR' : tab === 'ammo' ? 'CUSTOM AMMO' : tab === 'consumables' ? 'CUSTOM CONSUMABLE' : 'CUSTOM VEHICLE'}
             </Text>
-          </TouchableOpacity>
+          </TouchableOpacity>}
         </View>
 
         {/* Search */}
@@ -2373,6 +2377,27 @@ export default function EquipmentScreen() {
                 ? () => confirmDelete(item.name, () => deleteCustomConsumable(item.id))
                 : undefined}
             />
+          )}
+        />
+      ) : tab === 'tools' ? (
+        <MouseDraggableFlatList
+          data={filteredTools}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingTop: 2, paddingBottom: insets.bottom + 80 }}
+          ListHeaderComponent={(
+            <Text style={{ marginHorizontal: 16, marginBottom: 10, fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+              Manual equipment for inventory reference and weight tracking. These entries do not automate their printed use effects.
+            </Text>
+          )}
+          renderItem={({ item }) => (
+            <View style={{ marginHorizontal: 12, marginBottom: 7, padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{item.name}</Text>
+              </View>
+                <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
+                  Manual weight: {item.weight === undefined ? 'not listed' : `${item.weight} lb`}
+                </Text>
+            </View>
           )}
         />
       ) : (

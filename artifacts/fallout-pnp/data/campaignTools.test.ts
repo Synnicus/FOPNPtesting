@@ -10,7 +10,7 @@ import {
   validCampaignMap,
   validCampaignTable,
 } from './campaignTools.ts';
-import type { CampaignTable } from '../context/types.ts';
+import type { CampaignMap, CampaignTable } from '../context/types.ts';
 
 test('normalizes campaign tables with loot defaults and preserves configurable weights', () => {
   const table = normalizeCampaignTable({
@@ -107,12 +107,26 @@ test('campaign map normalizes portable image and normalized marker coordinates',
     name: 'Junction',
     description: '',
     imageDataUri: 'data:image/png;base64,aGVsbG8=',
-    locations: [{ id: 'gate', name: 'North Gate', description: '', x: 0.25, y: 0.7 }],
+    imageWidth: 1600,
+    imageHeight: 900,
+    markerIcons: [{
+      id: 'marker-custom-vault',
+      name: 'Custom Vault',
+      imageDataUri: 'data:image/webp;base64,aGVsbG8=',
+    }],
+    locations: [{ id: 'gate', name: 'North Gate', description: '', iconId: 'vault', x: 0.25, y: 0.7 }],
     party: [{ characterId: 'character-1', x: 0.4, y: 0.6 }],
   });
   assert.equal(map?.locations[0].x, 0.25);
+  assert.equal(map?.locations[0].iconId, 'vault');
   assert.equal(map?.party[0].characterId, 'character-1');
+  assert.equal(map?.markerIcons?.[0].imageDataUri, 'data:image/webp;base64,aGVsbG8=');
+  assert.equal(map?.imageWidth, 1600);
   assert.equal(validCampaignMap(map), true);
+  assert.equal(validCampaignMap({
+    ...map!,
+    markerIcons: [{ id: 'bad', name: 'Bad', imageDataUri: 'https://example.com/icon.png' }],
+  }), false);
 });
 
 test('map JSON export includes image data, locations, and party positions', () => {
@@ -121,7 +135,12 @@ test('map JSON export includes image data, locations, and party positions', () =
     name: 'Junction & Ruins',
     description: 'A marked route',
     imageDataUri: 'data:image/png;base64,aGVsbG8=',
-    locations: [{ id: 'gate', name: 'North Gate', description: 'Main entrance', x: 0.25, y: 0.7 }],
+    markerIcons: [{
+      id: 'marker-custom-vault',
+      name: 'Custom Vault',
+      imageDataUri: 'data:image/png;base64,aWNvbg==',
+    }],
+    locations: [{ id: 'gate', name: 'North Gate', description: 'Main entrance', iconId: 'marker-custom-vault', x: 0.25, y: 0.7 }],
     party: [{ characterId: 'character-1', x: 0.4, y: 0.6 }],
   };
   const file = createCampaignMapExport(map);

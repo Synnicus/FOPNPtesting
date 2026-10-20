@@ -55,6 +55,7 @@ const radioStationsRenderedSource = [
 ].join('\n');
 const campaignToolChestRenderedSource = [
   readFileSync(new URL('../components/CampaignToolsPanel.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('../components/CampaignMapEditorModal.tsx', import.meta.url), 'utf8'),
   readFileSync(new URL("../app/(tabs)/campaign.tsx", import.meta.url), 'utf8'),
 ].join('\n');
 const factionReputationTranslations = JSON.parse(
@@ -543,4 +544,15 @@ test('radio station controls, prompts, and audio metadata labels are translated 
       }
     }
   }
+});
+
+test('radio playback uses its own toggle and station changes remain a separate action', () => {
+  assert.match(
+    radioStationsRenderedSource,
+    /<PreferenceSwitchRow\s+label="Enable Radio"\s+description="Turn radio playback on or off\."/,
+  );
+  assert.match(radioStationsRenderedSource, /onValueChange=\{setMusicEnabled\}/);
+  assert.match(radioStationsRenderedSource, /\{musicEnabled && \(\s*<>\s*<VaultRadioNowPlaying/);
+  assert.match(radioStationsRenderedSource, /testID="radio-station-change"/);
+  assert.match(radioStationsRenderedSource, /onPress=\{\(\) => setShowRadioStations\(true\)\}/);
 });

@@ -663,6 +663,8 @@ export default function CampaignOptionsModal({
     setHardcoreRadiationRules,
     missingExplosiveBlastZoneHouseRule,
     setMissingExplosiveBlastZoneHouseRule,
+    automaticInventoryTrackingEnabled,
+    setAutomaticInventoryTrackingEnabled,
     mutantGhoulRadiationRules,
     setMutantGhoulRadiationRules,
     ghoulRadiationHealingOption,
@@ -674,6 +676,7 @@ export default function CampaignOptionsModal({
     combatSoundsEnabled,
     setCombatSoundsEnabled,
     musicEnabled,
+    setMusicEnabled,
     musicVolume,
     setMusicVolume,
     restoreBuiltInBestiaryDefaults,
@@ -838,6 +841,14 @@ export default function CampaignOptionsModal({
                   value={missingExplosiveBlastZoneHouseRule}
                   onValueChange={setMissingExplosiveBlastZoneHouseRule}
                   testID="explosive-ammo-mine-radius-toggle"
+                />
+
+                <PreferenceSwitchRow
+                  label="Automatic Inventory Tracking"
+                  description="Track reserve ammo and subtract one carried chem, medical kit, or other consumable each time it is used. Existing magazines stay loaded; player characters start with 0 reserve rounds, while NPCs receive about 10 turns of ammo per ranged weapon."
+                  value={automaticInventoryTrackingEnabled}
+                  onValueChange={setAutomaticInventoryTrackingEnabled}
+                  testID="automatic-inventory-tracking-toggle"
                 />
 
                 <PreferenceSwitchRow
@@ -1023,43 +1034,46 @@ export default function CampaignOptionsModal({
               onValueChange={setCombatSoundsEnabled}
               testID="combat-sounds-toggle"
             />
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Enable Radio"
-              accessibilityHint="Opens the list of radio stations."
-              testID="radio-stations-open"
-              onPress={() => setShowRadioStations(true)}
-              style={{
-                minHeight: 64,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                padding: 14,
-                borderWidth: 1,
-                borderColor: musicEnabled ? palette.primary : palette.border,
-                borderRadius: palette.radius,
-                backgroundColor: musicEnabled ? palette.primary + '12' : palette.secondary,
-              }}
-            >
-              <Feather name="radio" size={19} color={musicEnabled ? palette.primary : palette.mutedForeground} />
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
-                  Enable Radio
-                </Text>
-                <Text style={{ fontSize: 11, lineHeight: 15, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
-                  Select a station to start playback.
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={17} color={palette.mutedForeground} />
-            </TouchableOpacity>
+            <PreferenceSwitchRow
+              label="Enable Radio"
+              description="Turn radio playback on or off."
+              value={musicEnabled}
+              onValueChange={setMusicEnabled}
+              testID="radio-toggle"
+            />
             {musicEnabled && (
-              <VaultRadioNowPlaying
-                track={currentTrack}
-                hasPlaybackError={hasPlaybackError}
-                canSkip={canSkip}
-                onPrevious={skipPrevious}
-                onNext={skipNext}
-              />
+              <>
+                <VaultRadioNowPlaying
+                  track={currentTrack}
+                  hasPlaybackError={hasPlaybackError}
+                  canSkip={canSkip}
+                  onPrevious={skipPrevious}
+                  onNext={skipNext}
+                />
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change Radio Station"
+                  testID="radio-station-change"
+                  onPress={() => setShowRadioStations(true)}
+                  style={{
+                    minHeight: 46,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 9,
+                    paddingHorizontal: 12,
+                    borderWidth: 1,
+                    borderColor: palette.border,
+                    borderRadius: palette.radius,
+                    backgroundColor: palette.secondary,
+                  }}
+                >
+                  <Feather name="radio" size={15} color={palette.primary} />
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.primary, letterSpacing: 0.5 }}>
+                    Change Radio Station
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
             <PreferenceSliderRow
               label="Radio volume"

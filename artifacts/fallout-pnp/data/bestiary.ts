@@ -461,6 +461,7 @@ export function spawnBestiaryTemplate(
     taggedSkills: [],
     unspentSkillPoints: 0,
     perks: [],
+    traits: template.id === 'glowing_one' ? ['glowing_one'] : [],
     radiationResistance: template.radiationResistance,
     gasResistance: template.gasResistance,
     gasResistanceSecondary: template.gasResistanceSecondary,

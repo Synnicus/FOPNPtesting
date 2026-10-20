@@ -1,9 +1,12 @@
 import type {
   CampaignMap,
+  CampaignMapMarkerIcon,
   CampaignTable,
 } from '@/context/types';
 
 export const MAX_CAMPAIGN_MAP_IMAGE_URI_LENGTH = 8_000_000;
+export const MAX_CAMPAIGN_MAP_MARKER_ICONS = 24;
+export const MAX_CAMPAIGN_MAP_MARKER_ICON_URI_LENGTH = 500_000;
 export const MAX_CAMPAIGN_TOOL_ITEMS = 200;
 const MAX_TABLE_QUANTITY = 200;
 
@@ -128,16 +131,23 @@ export function normalizeCampaignMap(value: unknown): CampaignMap | null {
   if (typeof map.id !== 'string' || !map.id || typeof map.name !== 'string') return null;
   const locations = Array.isArray(map.locations) ? map.locations.slice(0, MAX_CAMPAIGN_TOOL_ITEMS) : [];
   const party = Array.isArray(map.party) ? map.party.slice(0, MAX_CAMPAIGN_TOOL_ITEMS) : [];
+  const markerIcons = Array.isArray(map.markerIcons)
+    ? map.markerIcons.slice(0, MAX_CAMPAIGN_MAP_MARKER_ICONS)
+    : [];
   const imageDataUri = typeof map.imageDataUri === 'string'
     && map.imageDataUri.length <= MAX_CAMPAIGN_MAP_IMAGE_URI_LENGTH
     && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=\s]+$/i.test(map.imageDataUri)
     ? map.imageDataUri
     : undefined;
+  const imageWidth = validMapImageDimension(map.imageWidth) ? map.imageWidth : undefined;
+  const imageHeight = validMapImageDimension(map.imageHeight) ? map.imageHeight : undefined;
   return {
     id: map.id.slice(0, 128),
     name: map.name.slice(0, 120),
     description: typeof map.description === 'string' ? map.description.slice(0, 2000) : '',
     imageDataUri,
+    ...(imageWidth ? { imageWidth } : {}),
+    ...(imageHeight ? { imageHeight } : {}),
     locations: locations.flatMap(location => {
       if (!location || typeof location !== 'object') return [];
       const item = location as CampaignMap['locations'][number];
@@ -147,10 +157,26 @@ export function normalizeCampaignMap(value: unknown): CampaignMap | null {
         id: item.id.slice(0, 128),
         name: item.name.slice(0, 120),
         description: typeof item.description === 'string' ? item.description.slice(0, 2000) : '',
+        ...(typeof item.iconId === 'string' && item.iconId ? { iconId: item.iconId.slice(0, 128) } : {}),
         x: item.x,
         y: item.y,
       }];
     }),
+    ...(markerIcons.length > 0 ? {
+      markerIcons: markerIcons.flatMap(icon => {
+        if (!icon || typeof icon !== 'object') return [];
+        const item = icon as CampaignMapMarkerIcon;
+        if (typeof item.id !== 'string' || !item.id || typeof item.name !== 'string'
+          || typeof item.imageDataUri !== 'string'
+          || item.imageDataUri.length > MAX_CAMPAIGN_MAP_MARKER_ICON_URI_LENGTH
+          || !/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=\s]+$/i.test(item.imageDataUri)) return [];
+        return [{
+          id: item.id.slice(0, 128),
+          name: item.name.slice(0, 80),
+          imageDataUri: item.imageDataUri,
+        }];
+      }),
+    } : {}),
     party: party.flatMap(marker => {
       if (!marker || typeof marker !== 'object') return [];
       const item = marker as CampaignMap['party'][number];
@@ -162,6 +188,10 @@ export function normalizeCampaignMap(value: unknown): CampaignMap | null {
 
 function validCoordinate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function validMapImageDimension(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) > 0 && Number(value) <= 20_000;
 }
 
 export function validCampaignTable(value: unknown): value is CampaignTable {
@@ -191,11 +221,20 @@ export function validCampaignMap(value: unknown): value is CampaignMap {
     && (typeof raw.imageDataUri !== 'string'
       || raw.imageDataUri.length > MAX_CAMPAIGN_MAP_IMAGE_URI_LENGTH
       || !/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=\s]+$/i.test(raw.imageDataUri))) return false;
+  if ((raw.imageWidth !== undefined && !validMapImageDimension(raw.imageWidth))
+    || (raw.imageHeight !== undefined && !validMapImageDimension(raw.imageHeight))
+    || (raw.markerIcons !== undefined && !Array.isArray(raw.markerIcons))
+    || (raw.locations !== undefined && !Array.isArray(raw.locations))
+    || (raw.locations ?? []).some(location => location?.iconId !== undefined
+      && (typeof location.iconId !== 'string' || !location.iconId))) return false;
   const normalized = normalizeCampaignMap(value);
+  const rawMarkerIcons = (raw.markerIcons ?? []) as NonNullable<CampaignMap['markerIcons']>;
   return !!normalized
     && Array.isArray((value as CampaignMap).locations)
     && normalized.locations.length === (value as CampaignMap).locations.length
     && Array.isArray((value as CampaignMap).party)
     && normalized.party.length === (value as CampaignMap).party.length
+    && (normalized.markerIcons?.length ?? 0) === rawMarkerIcons.length
+    && new Set((normalized.markerIcons ?? []).map(icon => icon.id)).size === rawMarkerIcons.length
     && new Set(normalized.locations.map(location => location.id)).size === normalized.locations.length;
 }

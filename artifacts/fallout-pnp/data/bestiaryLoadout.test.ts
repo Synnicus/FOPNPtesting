@@ -81,6 +81,23 @@ test('spawned bestiary entries inherit their user-supplied catalog photo', () =>
   assert.deepEqual(character.portraitOffset, portraitOffset);
 });
 
+test('Glowing One ghouls spawn with the Glowing One trait, while other ghouls do not', () => {
+  const glowingOne = BUILT_IN_BESTIARY.find(template => template.id === 'glowing_one');
+  assert.ok(glowingOne);
+  const spawnedGlowingOne = spawnBestiaryTemplate(
+    glowingOne,
+    BUILT_IN_WEAPONS,
+    glowingOne.name,
+    'glowing-one-trait-test',
+  );
+  assert.ok(spawnedGlowingOne.traits?.includes('glowing_one'));
+
+  for (const ghoul of BUILT_IN_BESTIARY.filter(template => template.category === 'ghoul' && template.id !== 'glowing_one')) {
+    const spawned = spawnBestiaryTemplate(ghoul, BUILT_IN_WEAPONS, ghoul.name, `${ghoul.id}-trait-test`);
+    assert.ok(!spawned.traits?.includes('glowing_one'), ghoul.name);
+  }
+});
+
 test('restored bestiary categories retain unique templates alongside manual creatures', () => {
   for (const category of ['human', 'robot', 'ghoul', 'mutant']) {
     assert.ok(BUILT_IN_BESTIARY.some(t => t.category === category && !t.naturalAttacks?.length), category);

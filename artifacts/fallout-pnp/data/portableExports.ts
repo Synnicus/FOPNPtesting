@@ -640,6 +640,20 @@ function isCharacterRecord(value: unknown): value is Character {
     && positionValid
     && (value.effects === undefined || Array.isArray(value.effects))
     && (value.inventoryWeaponIds === undefined || isStringArray(value.inventoryWeaponIds))
+    && (value.inventoryWeaponCounts === undefined || (isRecord(value.inventoryWeaponCounts)
+      && Object.values(value.inventoryWeaponCounts).every(count =>
+        isFiniteNumber(count) && Number.isInteger(count) && count >= 1 && count <= 1_000_000)))
+    && (value.inventoryItems === undefined || (Array.isArray(value.inventoryItems)
+      && value.inventoryItems.every(item => isRecord(item)
+        && ['armor', 'ammo', 'tool', 'consumable'].includes(String(item.category))
+        && typeof item.itemId === 'string' && item.itemId.length > 0
+        && isFiniteNumber(item.quantity) && Number.isInteger(item.quantity)
+        && item.quantity >= 1 && item.quantity <= 1_000_000
+        && (item.weightPerUnit === undefined || (isFiniteNumber(item.weightPerUnit) && item.weightPerUnit >= 0))
+        && (item.weightPerBox === undefined || (isFiniteNumber(item.weightPerBox) && item.weightPerBox >= 0))
+        && (item.unitsPerBox === undefined || (isFiniteNumber(item.unitsPerBox) && Number.isInteger(item.unitsPerBox) && item.unitsPerBox >= 1))
+        && (item.ammoWeightMode === undefined || item.ammoWeightMode === 'round' || item.ammoWeightMode === 'box'))))
+    && (value.npcAmmoProvisionedWeaponIds === undefined || isStringArray(value.npcAmmoProvisionedWeaponIds))
     && (value.areaEffects === undefined || Array.isArray(value.areaEffects));
 }
 

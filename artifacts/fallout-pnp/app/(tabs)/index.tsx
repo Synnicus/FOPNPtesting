@@ -29,6 +29,8 @@ import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAttackModes, ge
 import { computeModEffects } from '@/data/mods';
 import { computeCustomPerkEffects, computeCustomWeaponModEffects } from '@/data/customRules';
 import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
+import { getInventoryItemQuantity } from '@/data/inventory';
+import { BUILT_IN_TOOLS } from '@/data/tools';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
 import { ALCOHOL_CONSUMABLES, CHEMS, getChem } from '@/data/chems';
 import { CHEM_AP_COST, makeChemEffect, computeEffectModifiers, effectiveSpecial, computePerkStatBonuses } from '@/data/effects';
@@ -853,9 +855,9 @@ export default function CombatScreen() {
   const combatLaserPlayer = useAudioPlayer(require('../../assets/combat-energy-laser.wav'));
   const combatBlastPlayer = useAudioPlayer(require('../../assets/combat-blast.wav'));
   const combatThrowPlayer = useAudioPlayer(require('../../assets/combat-throw.wav'));
-  const { characters, allWeapons, allArmor, allAmmo, customWeaponMods, customPerks, addCharacter, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, applyChem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
+  const { characters, allWeapons, allArmor, allAmmo, customConsumables, customWeaponMods, customPerks, addCharacter, applyDamage, applyCombatDamage, adjustRadiation, applyAreaAttack, areaAttackReceipt, markAreaEffectForRemoval, removeAreaEffect, spendAmmo, reloadWeapon, jamWeapon, setWeaponCondition, setAmmoType, equipWeapon, setActiveWeapon, useInventoryItem, addEffect, setPosition, setKnockedOut, addInjury, updateCharacter, spendAP, addTempAC,
     initiativeEntries, currentRound, combatActive, activeEntryId, pendingCombatSkillActions, combatSkillReceipt,
-    hardcoreRadiationRules, missingExplosiveBlastZoneHouseRule,
+    hardcoreRadiationRules, missingExplosiveBlastZoneHouseRule, automaticInventoryTrackingEnabled,
     mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     startCombat, endCombat, addInitiativeEntry, removeInitiativeEntry, moveInitiativeEntry, nextTurn, nextRound,
     startTimedSkillAction, resolveHealFallen, completeHealFallen, cancelCombatSkillAction,
@@ -1009,6 +1011,7 @@ export default function CombatScreen() {
   // carries its catalog profile and selected defender into that modal.
   const [areaAttackPreset, setAreaAttackPreset] = useState<AreaAttack | null>(null);
   const [showChemPicker, setShowChemPicker] = useState(false);
+  const [showInventoryItemPicker, setShowInventoryItemPicker] = useState(false);
   const [showAmmoPicker, setShowAmmoPicker] = useState(false);
   const [showWeaponPicker, setShowWeaponPicker] = useState(false);
   const [showSpecialUnarmedPicker, setShowSpecialUnarmedPicker] = useState(false);
@@ -1139,7 +1142,24 @@ export default function CombatScreen() {
     : dualWielding
       ? [leftWeapon, rightWeapon].filter((w): w is Weapon => !!w)
       : (weapon ? [weapon] : []);
-  const reloadableHeldWeapons = heldWeapons.filter(w => w.magazineSize > 0);
+  const reserveForWeapon = (heldWeapon: Weapon) => {
+    const state = attacker?.weaponAmmoStates?.find(candidate => candidate.weaponId === heldWeapon.id);
+    const reserveAmmo = resolveEquippedAmmoType(heldWeapon, state?.ammoTypeId, allAmmo);
+    return reserveAmmo
+      ? getInventoryItemQuantity(attacker?.inventoryItems, 'ammo', reserveAmmo.id)
+      : 0;
+  };
+  const magazineSizeForWeapon = (heldWeapon: Weapon) => {
+    const effects = computeModEffects(heldWeapon);
+    const customEffects = computeCustomWeaponModEffects(heldWeapon.mods, customWeaponMods, heldWeapon);
+    return Math.round(heldWeapon.magazineSize * (effects.magazineMult ?? 1) * customEffects.magazineMult);
+  };
+  const reloadableHeldWeapons = heldWeapons.filter(heldWeapon => {
+    if (heldWeapon.magazineSize <= 0) return false;
+    const magazineSize = magazineSizeForWeapon(heldWeapon);
+    const currentAmmo = attacker?.weaponAmmoStates?.find(state => state.weaponId === heldWeapon.id)?.currentAmmo ?? magazineSize;
+    return currentAmmo < magazineSize && (!automaticInventoryTrackingEnabled || reserveForWeapon(heldWeapon) > 0);
+  });
   const heldAmmoStatuses = [
     { weapon: attacker?.vehicle ? weapon : activeWeapon, role: 'PRIMARY' },
     { weapon: offhandWeapon, role: 'OFF-HAND' },
@@ -1153,21 +1173,17 @@ export default function CombatScreen() {
       const effects = computeModEffects(heldWeapon);
       const customEffects = computeCustomWeaponModEffects(heldWeapon.mods, customWeaponMods, heldWeapon);
       const magazineSize = Math.round(heldWeapon.magazineSize * (effects.magazineMult ?? 1) * customEffects.magazineMult);
+      const ammo = resolveEquippedAmmoType(heldWeapon, state?.ammoTypeId, allAmmo);
       return {
         weapon: heldWeapon,
         role,
         currentAmmo: state?.currentAmmo ?? magazineSize,
         magazineSize,
-        ammo: resolveEquippedAmmoType(heldWeapon, state?.ammoTypeId, allAmmo),
+        ammo,
+        reserveAmmo: ammo ? getInventoryItemQuantity(attacker?.inventoryItems, 'ammo', ammo.id) : 0,
       };
     });
-  const allHeldMagazinesFull = reloadableHeldWeapons.every(w => {
-    const fx = computeModEffects(w);
-    const customFx = computeCustomWeaponModEffects(w.mods, customWeaponMods, w);
-    const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1) * customFx.magazineMult);
-    const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
-    return cur >= mag;
-  });
+  const allHeldMagazinesFull = reloadableHeldWeapons.length === 0;
 
   // ── Shield mods: a held weapon with a shield buffs the wielder's AC/DT/DR ──
   const shieldFor = (c: Character | null): { ac: number; prot: Record<string, number> | null } => {
@@ -1709,10 +1725,20 @@ export default function CombatScreen() {
       return;
     }
     if (!hasAmmo) {
+      const availableReserve = loadedAmmo
+        ? getInventoryItemQuantity(attacker?.inventoryItems, 'ammo', loadedAmmo.id)
+        : 0;
+      if (automaticInventoryTrackingEnabled && availableReserve <= 0) {
+        notify('No Reserve Ammunition', 'This character has no reserve rounds of the loaded ammunition type.');
+        return;
+      }
       if (Platform.OS === 'web') { alert('Empty Magazine! Reload before firing.'); }
-      else Alert.alert('Empty Magazine', 'No ammo remaining. Reload first!', [
+      else Alert.alert('Empty Magazine', `No ammo remaining. Reload first!${automaticInventoryTrackingEnabled ? ` ${availableReserve} reserve rounds available.` : ''}`, [
         { text: 'Cancel', style: 'cancel' },
-        { text: `Reload (${reloadApCost} AP)`, onPress: () => { if (attacker && weapon && spendAP(attacker.id, reloadApCost)) reloadWeapon(attacker.id, weapon.id); else Alert.alert('Not Enough AP', `Reload needs ${reloadApCost} AP.`); } },
+        { text: `Reload (${reloadApCost} AP)`, onPress: () => {
+          if (attacker && weapon && spendAP(attacker.id, reloadApCost)) reloadWeapon(attacker.id, weapon.id);
+          else Alert.alert('Not Enough AP', `Reload needs ${reloadApCost} AP.`);
+        } },
       ]);
       return;
     }
@@ -2217,7 +2243,7 @@ export default function CombatScreen() {
     setDamageOverride('');
     resetAttackState();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [weapon?.id, activeWeapon?.id, resetAttackState]);
+  }, [weapon, activeWeapon, attacker, hasAmmo, weaponBroken, loadedAmmo, automaticInventoryTrackingEnabled, reloadApCost, spendAP, reloadWeapon, resetAttackState]);
 
   // Reload a SPECIFIC held gun (dual-wield chooser) — uses that weapon's own
   // mods for reload cost/magazine, not the active weapon's.
@@ -2228,6 +2254,8 @@ export default function CombatScreen() {
     const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1) * customFx.magazineMult);
     const state = attacker.weaponAmmoStates.find(a => a.weaponId === w.id);
     const cur = state?.currentAmmo ?? mag;
+    const ammo = resolveEquippedAmmoType(w, state?.ammoTypeId, allAmmo);
+    const reserve = ammo ? getInventoryItemQuantity(attacker.inventoryItems, 'ammo', ammo.id) : 0;
     const cost = Math.min(
       fx.reloadApOverride ?? AP_COSTS.RELOAD,
       customFx.reloadApOverride ?? AP_COSTS.RELOAD,
@@ -2238,6 +2266,10 @@ export default function CombatScreen() {
       else Alert.alert('Magazine Full', `${w.name} is already fully loaded (${cur}/${mag}).`);
       return;
     }
+    if (automaticInventoryTrackingEnabled && reserve <= 0) {
+      notify('No Reserve Ammunition', `${w.name} cannot be reloaded; no reserve rounds of its loaded ammo type remain.`);
+      return;
+    }
     if (!attackActor || !spendAP(attackActor.id, cost)) {
       if (Platform.OS === 'web') alert(`Not enough AP (need ${cost}) to reload.`);
       else Alert.alert('Not Enough AP', `Reload needs ${cost} AP; ${attackActor?.name ?? 'the gunner'} has ${attackActor?.currentAP ?? 0}.`);
@@ -2245,10 +2277,10 @@ export default function CombatScreen() {
     }
     reloadWeapon(attacker.id, w.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, attackActor, customWeaponMods, spendAP, reloadWeapon]);
+  }, [attacker, attackActor, customWeaponMods, allAmmo, automaticInventoryTrackingEnabled, spendAP, reloadWeapon]);
 
-  // Take a chem (manual: using an item costs 3 AP). Applies the chem's immediate
-  // stage as an ActiveEffect and resolves any HP heal/damage.
+  // Using a chem costs 3 AP. Inventory, AP, and immediate effect changes are
+  // committed together when Automatic Inventory Tracking is enabled.
   const handleTakeChem = useCallback((chemId: string) => {
     if (!attacker) return;
     if ((attacker.traits ?? []).includes('rabid')) {
@@ -2257,15 +2289,25 @@ export default function CombatScreen() {
     }
     const chem = getChem(chemId);
     if (!chem) return;
-    if (!spendAP(attacker.id, CHEM_AP_COST)) {
-      if (Platform.OS === 'web') alert(`Not enough AP (need ${CHEM_AP_COST}) to take a chem.`);
-      else Alert.alert('Not Enough AP', `Taking a chem needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
+    const used = useInventoryItem(
+      attacker.id,
+      'consumable',
+      chem.id,
+      CHEM_AP_COST,
+      makeChemEffect(chem, 0),
+    );
+    if (!used) {
+      if (attacker.currentAP < CHEM_AP_COST) {
+        if (Platform.OS === 'web') alert(`Not enough AP (need ${CHEM_AP_COST}) to take a chem.`);
+        else Alert.alert('Not Enough AP', `Taking a chem needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      } else {
+        notify('Nothing available.', 'No carried item remains.');
+      }
       return;
     }
-    applyChem(attacker.id, makeChemEffect(chem, 0));
     setShowChemPicker(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, spendAP, applyChem]);
+  }, [attacker, useInventoryItem]);
 
   const handleTakeAlcohol = useCallback(() => {
     if (!attacker) return;
@@ -2273,19 +2315,72 @@ export default function CombatScreen() {
       notify('Alcohol Has No Effect', `${attacker.name} has the Rabid trait; chems have no effect.`);
       return;
     }
-    if (!spendAP(attacker.id, CHEM_AP_COST)) {
-      notify('Not Enough AP', `Taking alcohol needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
+    const alcohol = ALCOHOL_CONSUMABLES[0];
+    if (!alcohol) return;
+    const used = useInventoryItem(attacker.id, 'consumable', alcohol.id, CHEM_AP_COST, undefined, alcohol.conditionId);
+    if (!used) {
+      if (attacker.currentAP < CHEM_AP_COST) {
+        notify('Not Enough AP', `Taking alcohol needs ${CHEM_AP_COST} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      } else {
+        notify('Nothing available.', 'No carried item remains.');
+      }
       return;
     }
-    updateCharacter({
-      ...attacker,
-      conditions: (attacker.conditions ?? []).includes('drunk')
-        ? (attacker.conditions ?? [])
-        : [...(attacker.conditions ?? []), 'drunk'],
-    });
     setShowChemPicker(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [attacker, spendAP, updateCharacter]);
+  }, [attacker, useInventoryItem]);
+
+  const inventoryUseOptions = attacker
+    ? [
+      ...(attacker.inventoryItems ?? [])
+        .filter(item => item.category === 'consumable'
+          && !CHEMS.some(chem => chem.id === item.itemId)
+          && !ALCOHOL_CONSUMABLES.some(alcohol => alcohol.id === item.itemId))
+        .map(item => {
+          const custom = customConsumables.find(consumable => consumable.id === item.itemId);
+          return {
+            key: `consumable:${item.itemId}`,
+            label: `${custom?.name ?? item.itemId} × ${item.quantity}`,
+            sublabel: (custom?.description || custom?.effectText || '').slice(0, 120) || undefined,
+          };
+        }),
+      ...(attacker.inventoryItems ?? [])
+        .filter(item => item.category === 'tool'
+          && (item.itemId === 'medical_kit' || item.itemId === 'doctors_bag'))
+        .map(item => {
+          const tool = BUILT_IN_TOOLS.find(profile => profile.id === item.itemId);
+          return {
+            key: `tool:${item.itemId}`,
+            label: `${tool?.name ?? item.itemId} × ${item.quantity}`,
+          };
+        }),
+    ]
+    : [];
+
+  const handleUseCarriedItem = useCallback((key: string) => {
+    if (!attacker) return;
+    const separator = key.indexOf(':');
+    if (separator < 1) return;
+    const category = key.slice(0, separator);
+    const itemId = key.slice(separator + 1);
+    if (category !== 'consumable' && category !== 'tool') return;
+    const used = useInventoryItem(
+      attacker.id,
+      category,
+      itemId,
+      AP_COSTS.USE_ITEM,
+    );
+    if (!used) {
+      if (attacker.currentAP < AP_COSTS.USE_ITEM) {
+        notify('Not Enough AP', `Grab / Use Item needs ${AP_COSTS.USE_ITEM} AP; ${attacker.name} has ${attacker.currentAP}.`);
+      } else {
+        notify('Nothing available.', '');
+      }
+      return;
+    }
+    setShowInventoryItemPicker(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [attacker, useInventoryItem]);
 
   // Set the loaded ammo type. Changing ammo is FREE (GM bookkeeping) — the AP
   // cost of loading is handled by the RELOAD action, not by picking a type.
@@ -3433,6 +3528,11 @@ export default function CombatScreen() {
                           <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: hasLoadedAmmo ? colors.primary : colors.destructive }}>
                             [{status.currentAmmo}/{status.magazineSize}]
                           </Text>
+                          {automaticInventoryTrackingEnabled && (
+                            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: status.reserveAmmo > 0 ? colors.foreground : colors.mutedForeground }}>
+                              RES {status.reserveAmmo}
+                            </Text>
+                          )}
                           <Text style={{ flex: 1, fontSize: 10, fontFamily: 'Inter_600SemiBold', color: status.ammo ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
                             {shortAmmoName(status.ammo?.name ?? 'standard')}
                           </Text>
@@ -3586,7 +3686,9 @@ export default function CombatScreen() {
                     {([
                       { key: 'take_chems', label: 'TAKE CHEMS', cost: CHEM_AP_COST, onPress: () => setShowChemPicker(true) },
                       { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => { setWeaponPickerFree(false); setShowWeaponPicker(true); } },
-                      { key: 'grab_use_item', label: 'GRAB / USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => handleGenericApAction(AP_COSTS.USE_ITEM, 'Grab / Use Item') },
+                      { key: 'grab_use_item', label: 'GRAB / USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => automaticInventoryTrackingEnabled
+                        ? setShowInventoryItemPicker(true)
+                        : handleGenericApAction(AP_COSTS.USE_ITEM, 'Grab / Use Item') },
                       { key: 'use_skill', label: 'USE SKILL', cost: AP_COSTS.USE_SKILL, costText: 'GM AP', onPress: () => { setCompletionHealActionId(null); setShowCombatSkill(true); } },
                       { key: 'lay_mine', label: 'LAY MINE', cost: AP_COSTS.LAYING_MINE, onPress: handleLayMine },
                     ] as { key: string; label: string; cost: number; costText?: string; onPress: () => void }[]).map(action => {
@@ -4733,7 +4835,8 @@ export default function CombatScreen() {
         visible={showChemPicker}
         title="TAKE CHEMS"
         subtitle={`${CHEM_AP_COST} AP — applied to ${attacker?.name ?? 'attacker'} on selection`}
-        options={[...CHEMS.map(chem => {
+        options={[...CHEMS.filter(chem => !automaticInventoryTrackingEnabled
+          || getInventoryItemQuantity(attacker?.inventoryItems, 'consumable', chem.id) > 0).map(chem => {
           const s = chem.stages[0];
           const bits: string[] = [];
           if (s) {
@@ -4751,7 +4854,8 @@ export default function CombatScreen() {
             sublabel: bits.length ? bits.join(' · ') : (s?.durationText ?? chem.description.slice(0, 80)),
             note: chem.isMultiStage ? 'Multi-stage — progress later stages from the Effects tab' : undefined,
           };
-        }), ...ALCOHOL_CONSUMABLES.map(alcohol => ({
+        }), ...ALCOHOL_CONSUMABLES.filter(alcohol => !automaticInventoryTrackingEnabled
+          || getInventoryItemQuantity(attacker?.inventoryItems, 'consumable', alcohol.id) > 0).map(alcohol => ({
           key: alcohol.id,
           label: alcohol.name,
           sublabel: alcohol.description,
@@ -4760,6 +4864,14 @@ export default function CombatScreen() {
         }))]}
         onSelect={(id) => id === 'alcohol' ? handleTakeAlcohol() : handleTakeChem(id)}
         onClose={() => setShowChemPicker(false)}
+      />
+      <OptionPickerModal
+        visible={showInventoryItemPicker}
+        title="GRAB / USE ITEM"
+        subtitle="One carried item is consumed on selection."
+        options={inventoryUseOptions}
+        onSelect={handleUseCarriedItem}
+        onClose={() => setShowInventoryItemPicker(false)}
       />
       {/* ─── Special Unarmed Attacks (manual pp. 18–19) ─── */}
       <OptionPickerModal
@@ -4873,11 +4985,13 @@ export default function CombatScreen() {
           const customFx = computeCustomWeaponModEffects(w.mods, customWeaponMods, w);
           const mag = Math.round(w.magazineSize * (fx.magazineMult ?? 1) * customFx.magazineMult);
           const cur = attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.currentAmmo ?? mag;
+          const ammoType = resolveEquippedAmmoType(w, attacker?.weaponAmmoStates.find(a => a.weaponId === w.id)?.ammoTypeId, allAmmo);
+          const reserve = ammoType ? getInventoryItemQuantity(attacker?.inventoryItems, 'ammo', ammoType.id) : 0;
           return {
             key: w.id,
-            label: `${w.name}  [${cur}/${mag}]`,
+            label: `${w.name}  [${cur}/${mag}]${automaticInventoryTrackingEnabled ? ` · RES ${reserve}` : ''}`,
             sublabel: `${Math.min(fx.reloadApOverride ?? AP_COSTS.RELOAD, customFx.reloadApOverride ?? AP_COSTS.RELOAD)} AP`,
-            disabled: cur >= mag,
+            disabled: cur >= mag || (automaticInventoryTrackingEnabled && reserve <= 0),
           };
         })}
         onSelect={(id) => { const w = reloadableHeldWeapons.find(x => x.id === id); if (w) handleReloadWeapon(w); }}

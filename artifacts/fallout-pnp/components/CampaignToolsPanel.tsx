@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Modal, Platform, ScrollView, Share, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Modal, Platform, ScrollView, Share, View } from 'react-native';
 import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Feather } from '@expo/vector-icons';
@@ -15,8 +14,9 @@ import type { CampaignMap, CampaignTable, Character } from '@/context/types';
 import { exportCampaignMap, rollEncounterTable, rollLootTable, type CampaignTableRollResult } from '@/data/campaignTools';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { translateText } from '@/data/localization';
+import CampaignMapEditorModal from '@/components/CampaignMapEditorModal';
 
-type ToolTab = 'loot' | 'encounters' | 'maps';
+type ToolTab = 'home' | 'loot' | 'encounters' | 'maps';
 
 const id = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -51,31 +51,20 @@ export default function CampaignToolsPanel({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const modalTopInset = Math.max(insets.top, Platform.OS === 'web' ? 67 : 56);
-  const [expanded, setExpanded] = useState<Record<ToolTab, boolean>>({
-    loot: false,
-    encounters: false,
-    maps: false,
-  });
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
   const [editingTableId, setEditingTableId] = useState<string | null>(null);
   const [lastRolls, setLastRolls] = useState<Record<string, { kind: ToolTab; results: CampaignTableRollResult[] }>>({});
-  const [selectedMapId, setSelectedMapId] = useState<string | null>(campaignMaps[0]?.id ?? null);
-  const [activeMapId, setActiveMapId] = useState<string | null>(null);
-  const [editingMapId, setEditingMapId] = useState<string | null>(null);
-  const [placementMode, setPlacementMode] = useState<'location' | 'party'>('location');
-  const [locationName, setLocationName] = useState('');
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
-  const [mapSize, setMapSize] = useState({ width: 1, height: 1 });
-  const selectedMap = campaignMaps.find(map => map.id === selectedMapId) ?? campaignMaps[0] ?? null;
-  const activeCharacters = characters.filter(character => !character.inStorage);
+  const [screen, setScreen] = useState<ToolTab>('home');
+  const [mapEditorId, setMapEditorId] = useState<string | null>(null);
+  const [newMapDraft, setNewMapDraft] = useState<CampaignMap | null>(null);
 
   useEffect(() => {
     if (!visible) return;
-    setExpanded({ loot: false, encounters: false, maps: false });
     setActiveTableId(null);
     setEditingTableId(null);
-    setActiveMapId(null);
-    setEditingMapId(null);
+    setMapEditorId(null);
+    setNewMapDraft(null);
+    setScreen('home');
   }, [visible]);
 
   const tablesFor = (kind: 'loot' | 'encounters') => kind === 'loot' ? lootTables : encounterTables;
@@ -103,9 +92,9 @@ export default function CampaignToolsPanel({
       encounterTables: kind === 'encounters' ? [...encounterTables, created] : encounterTables,
       campaignMaps,
     });
-    setExpanded(current => ({ ...current, [kind]: true }));
     setActiveTableId(created.id);
     setEditingTableId(created.id);
+    setScreen(kind);
   };
 
   const deleteTable = (tableId: string, kind: 'loot' | 'encounters') => {
@@ -125,55 +114,9 @@ export default function CampaignToolsPanel({
 
   const addMap = () => {
     const created: CampaignMap = { id: id(), name: 'New Map', description: '', locations: [], party: [] };
-    onChange({ lootTables, encounterTables, campaignMaps: [...campaignMaps, created] });
-    setSelectedMapId(created.id);
-    setActiveMapId(created.id);
-    setEditingMapId(created.id);
-    setExpanded(current => ({ ...current, maps: true }));
-  };
-
-  const updateMap = (changed: CampaignMap) => {
-    onChange({ lootTables, encounterTables, campaignMaps: campaignMaps.map(map => map.id === changed.id ? changed : map) });
-    setSelectedMapId(changed.id);
-  };
-
-  const pickMapImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      base64: true,
-      quality: 0.65,
-    });
-    const asset = result.canceled ? null : result.assets[0];
-    if (!asset?.base64 || !selectedMap) return;
-    const mime = ['image/png', 'image/webp'].includes(asset.mimeType ?? '')
-      ? asset.mimeType!
-      : 'image/jpeg';
-    updateMap({ ...selectedMap, imageDataUri: `data:${mime};base64,${asset.base64}` });
-  };
-
-  const placeMarker = (event: { nativeEvent: { locationX: number; locationY: number } }) => {
-    if (!selectedMap) return;
-    const x = Math.max(0, Math.min(1, event.nativeEvent.locationX / mapSize.width));
-    const y = Math.max(0, Math.min(1, event.nativeEvent.locationY / mapSize.height));
-    if (placementMode === 'location') {
-      const name = locationName.trim();
-      if (!name) return;
-      updateMap({
-        ...selectedMap,
-        locations: [...selectedMap.locations, { id: id(), name, description: '', x, y }],
-      });
-      setLocationName('');
-      return;
-    }
-    if (!selectedCharacterId) return;
-    updateMap({
-      ...selectedMap,
-      party: [
-        ...selectedMap.party.filter(marker => marker.characterId !== selectedCharacterId),
-        { characterId: selectedCharacterId, x, y },
-      ],
-    });
+    setNewMapDraft(created);
+    setMapEditorId(created.id);
+    setScreen('maps');
   };
 
   const downloadMap = async (map: CampaignMap) => {
@@ -507,265 +450,161 @@ export default function CampaignToolsPanel({
     title: string,
     perkTip: string,
   ) => {
-    const isExpanded = expanded[kind];
     const tables = tablesFor(kind);
     return (
-      <View style={panelStyle} testID={`campaign-tool-section-${kind}`}>
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityState={{ expanded: isExpanded }}
-          onPress={() => setExpanded(current => ({ ...current, [kind]: !current[kind] }))}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 1.2 }}>
-              {title}
-            </Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, marginTop: 3 }}>
-              {tables.length} {tables.length === 1 ? 'table' : 'tables'}
-            </Text>
-          </View>
-          <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} />
+      <TouchableOpacity
+        key={kind}
+        accessibilityRole="button"
+        onPress={() => setScreen(kind)}
+        style={[panelStyle, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}
+        testID={`campaign-tool-section-${kind}`}
+      >
+        <View style={{
+          width: 42, height: 42, borderRadius: 9, backgroundColor: colors.secondary,
+          borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Feather name={kind === 'loot' ? 'package' : 'shuffle'} size={19} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 1 }}>
+            {title}
+          </Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
+            {tables.length} {tables.length === 1 ? 'table' : 'tables'}
+          </Text>
+          <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 9 }}>
+            {perkTip}
+          </Text>
+        </View>
+        <Feather name="chevron-right" size={17} color={colors.primary} />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderTableWorkspace = (
+    kind: 'loot' | 'encounters',
+    perkTip: string,
+  ) => {
+    const tables = tablesFor(kind);
+    return (
+      <View style={{ gap: 10 }} testID={`campaign-tool-workspace-${kind}`}>
+        <View style={panelStyle}>
+          <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 15 }}>
+            {perkTip} These are GM prompts; apply relevant perk effects when appropriate.
+          </Text>
+        </View>
+        <TouchableOpacity accessibilityRole="button" onPress={() => addTable(kind)} style={buttonStyle}>
+          <Feather name="plus" size={15} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>
+            {kind === 'loot' ? 'ADD LOOT TABLE' : 'ADD ENCOUNTER TABLE'}
+          </Text>
         </TouchableOpacity>
-        {isExpanded ? (
-          <View style={{ gap: 9 }}>
-            <Text style={{ color: colors.mutedForeground, fontSize: 10, lineHeight: 15 }}>
-              {perkTip} These are GM prompts; apply relevant perk effects when appropriate.
+        {tables.map(table => renderTable(table, kind))}
+        {tables.length === 0 ? (
+          <View style={[panelStyle, { alignItems: 'center', paddingVertical: 24 }]}>
+            <Feather name={kind === 'loot' ? 'package' : 'shuffle'} size={24} color={colors.mutedForeground} />
+            <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, textAlign: 'center' }}>
+              No tables yet. Add one to start building this campaign tool.
             </Text>
-            <TouchableOpacity accessibilityRole="button" onPress={() => addTable(kind)} style={buttonStyle}>
-              <Feather name="plus" size={15} color={colors.primary} />
-              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>
-                {kind === 'loot' ? 'ADD LOOT TABLE' : 'ADD ENCOUNTER TABLE'}
-              </Text>
-            </TouchableOpacity>
-            {tables.map(table => renderTable(table, kind))}
-            {tables.length === 0 ? (
-              <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11 }}>
-                No tables yet. Add one to start building this campaign tool.
-              </Text>
-            ) : null}
           </View>
         ) : null}
       </View>
     );
   };
 
-  const renderMapEditor = () => {
-    if (!selectedMap || editingMapId !== selectedMap.id) return null;
-    const map = selectedMap;
-    return (
+  const deleteMap = (map: CampaignMap) => {
+    confirmDestructive(
+      `Delete ${map.name || translateText('this map')}?`,
+      'The map image and markers will be removed from the campaign.',
+      () => {
+        onChange({
+          lootTables,
+          encounterTables,
+          campaignMaps: campaignMaps.filter(item => item.id !== map.id),
+        });
+        if (mapEditorId === map.id) setMapEditorId(null);
+      },
+    );
+  };
+
+  const renderMapsWorkspace = () => (
+    <View style={{ gap: 10 }} testID="campaign-tool-workspace-maps">
       <View style={panelStyle}>
-        <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1 }}>
-          MAP DETAILS
+        <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 15 }}>
+          Upload custom maps, place location and party markers, and export each built map as a JSON file. Bonus Move and Team Player are GM reminders for distance and party movement.
         </Text>
-        <TextInput
-          accessibilityLabel="Map name"
-          value={map.name}
-          onChangeText={name => updateMap({ ...map, name })}
-          placeholder="Map name"
-          style={inputStyle}
-        />
-        <TextInput
-          accessibilityLabel="Map description"
-          value={map.description}
-          onChangeText={description => updateMap({ ...map, description })}
-          placeholder="Map notes"
-          style={inputStyle}
-        />
-        <View style={{ flexDirection: 'row', gap: 7 }}>
-          <TouchableOpacity accessibilityRole="button" onPress={pickMapImage} style={[buttonStyle, { flex: 1 }]}>
-            <Feather name="image" size={15} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>
-              {map.imageDataUri ? 'CHANGE MAP IMAGE' : 'UPLOAD MAP IMAGE'}
-            </Text>
-          </TouchableOpacity>
-          {map.imageDataUri ? (
+      </View>
+      <TouchableOpacity accessibilityRole="button" onPress={addMap} style={buttonStyle}>
+        <Feather name="plus" size={15} color={colors.primary} />
+        <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>ADD MAP</Text>
+      </TouchableOpacity>
+      {campaignMaps.map(map => (
+        <View key={map.id} style={panelStyle}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{
+              width: 38, height: 38, borderWidth: 1, borderColor: colors.border, borderRadius: 8,
+              backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Feather name="map" size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>
+                {map.name || 'Untitled map'}
+              </Text>
+              <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 10 }}>
+                {map.description || translateText('{0} locations · {1} party markers')
+                  .replace('{0}', String(map.locations.length))
+                  .replace('{1}', String(map.party.length))}
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
             <TouchableOpacity
               accessibilityRole="button"
-              accessibilityLabel="Remove map image"
-              onPress={() => updateMap({ ...map, imageDataUri: undefined })}
+              onPress={() => setMapEditorId(map.id)}
+              style={[buttonStyle, { flex: 1 }]}
+            >
+              <Feather name="edit-2" size={14} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>EDIT MAP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" onPress={() => void downloadMap(map)} style={buttonStyle}>
+              <Feather name="download" size={14} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>JSON</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${map.name}`}
+              onPress={() => deleteMap(map)}
               style={buttonStyle}
             >
               <Feather name="trash-2" size={14} color={colors.destructive} />
             </TouchableOpacity>
-          ) : null}
-        </View>
-        <View
-          onLayout={event => setMapSize({
-            width: Math.max(1, event.nativeEvent.layout.width),
-            height: Math.max(1, event.nativeEvent.layout.height),
-          })}
-          style={{
-            width: '100%',
-            height: 230,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 7,
-            overflow: 'hidden',
-            backgroundColor: colors.secondary,
-          }}
-        >
-          {map.imageDataUri ? (
-            <Image source={{ uri: map.imageDataUri }} resizeMode="stretch" style={{ width: '100%', height: '100%' }} />
-          ) : (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
-              <Feather name="map" size={28} color={colors.mutedForeground} />
-              <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 8, textAlign: 'center' }}>
-                Upload a custom map image to place markers.
-              </Text>
-            </View>
-          )}
-          {map.imageDataUri ? (
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Place a map marker"
-              onPress={placeMarker}
-              style={{ position: 'absolute', inset: 0 }}
-            >
-              {map.locations.map(location => (
-                <View
-                  key={location.id}
-                  pointerEvents="none"
-                  style={{
-                    position: 'absolute',
-                    left: `${location.x * 100}%`,
-                    top: `${location.y * 100}%`,
-                    backgroundColor: colors.warning,
-                    borderRadius: 8,
-                    paddingHorizontal: 4,
-                    paddingVertical: 2,
-                    transform: [{ translateX: -5 }, { translateY: -5 }],
-                  }}
-                >
-                  <Text style={{ color: colors.warningForeground, fontSize: 8, fontFamily: 'Inter_700Bold' }}>
-                    {location.name.slice(0, 16)}
-                  </Text>
-                </View>
-              ))}
-              {map.party.map(marker => {
-                const character = characters.find(item => item.id === marker.characterId);
-                return (
-                  <View
-                    key={marker.characterId}
-                    pointerEvents="none"
-                    style={{
-                      position: 'absolute',
-                      left: `${marker.x * 100}%`,
-                      top: `${marker.y * 100}%`,
-                      backgroundColor: colors.primary,
-                      borderRadius: 10,
-                      paddingHorizontal: 5,
-                      paddingVertical: 3,
-                      transform: [{ translateX: -5 }, { translateY: -5 }],
-                    }}
-                  >
-                    <Text style={{ color: colors.primaryForeground, fontSize: 8, fontFamily: 'Inter_700Bold' }}>
-                      {(character?.name ?? 'PC').slice(0, 12)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </TouchableOpacity>
-          ) : null}
-        </View>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <TouchableOpacity
-            accessibilityRole="button"
-            onPress={() => setPlacementMode('location')}
-            style={[buttonStyle, { flex: 1, backgroundColor: placementMode === 'location' ? colors.primary + '22' : colors.secondary }]}
-          >
-            <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 9 }}>PLACE LOCATION</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            accessibilityRole="button"
-            onPress={() => setPlacementMode('party')}
-            style={[buttonStyle, { flex: 1, backgroundColor: placementMode === 'party' ? colors.primary + '22' : colors.secondary }]}
-          >
-            <Text style={{ color: colors.foreground, fontFamily: 'Inter_700Bold', fontSize: 9 }}>PLACE PARTY</Text>
-          </TouchableOpacity>
-        </View>
-        {placementMode === 'location' ? (
-          <TextInput
-            accessibilityLabel="New location name"
-            value={locationName}
-            onChangeText={setLocationName}
-            placeholder="Location name, then tap map"
-            style={inputStyle}
-          />
-        ) : (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-            {activeCharacters.map(character => (
-              <TouchableOpacity
-                key={character.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: selectedCharacterId === character.id }}
-                onPress={() => setSelectedCharacterId(character.id)}
-                style={{ ...buttonStyle, backgroundColor: selectedCharacterId === character.id ? colors.primary : colors.secondary }}
-              >
-                <Text style={{ color: selectedCharacterId === character.id ? colors.primaryForeground : colors.foreground, fontSize: 9 }}>
-                  {character.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            {activeCharacters.length === 0 ? (
-              <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
-                Add an active character to place the party.
-              </Text>
-            ) : null}
           </View>
-        )}
-        {map.locations.map(location => (
-          <View key={location.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <TextInput
-              accessibilityLabel={`Description for ${location.name}`}
-              value={location.description}
-              onChangeText={description => updateMap({
-                ...map,
-                locations: map.locations.map(item => item.id === location.id ? { ...item, description } : item),
-              })}
-              placeholder={`${location.name} notes`}
-              style={[inputStyle, { flex: 1 }]}
-            />
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${location.name}`}
-              onPress={() => updateMap({
-                ...map,
-                locations: map.locations.filter(item => item.id !== location.id),
-              })}
-              style={buttonStyle}
-            >
-              <Feather name="x" size={14} color={colors.destructive} />
-            </TouchableOpacity>
-          </View>
-        ))}
-        {map.party.map(marker => {
-          const character = characters.find(item => item.id === marker.characterId);
-          return (
-            <View key={marker.characterId} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ flex: 1, color: colors.foreground, fontSize: 10 }}>
-                {character?.name ?? translateText('Unknown character')} — party marker
-              </Text>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${character?.name ?? translateText('party')} marker`}
-                onPress={() => updateMap({
-                  ...map,
-                  party: map.party.filter(item => item.characterId !== marker.characterId),
-                })}
-                style={buttonStyle}
-              >
-                <Feather name="x" size={14} color={colors.destructive} />
-              </TouchableOpacity>
-            </View>
-          );
-        })}
-      </View>
-    );
-  };
+        </View>
+      ))}
+      {campaignMaps.length === 0 ? (
+        <View style={[panelStyle, { alignItems: 'center', paddingVertical: 24 }]}>
+          <Feather name="map" size={24} color={colors.mutedForeground} />
+          <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, textAlign: 'center' }}>
+            No maps yet. Add one to upload a map and mark locations or party positions.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const mapBeingEdited = (newMapDraft?.id === mapEditorId ? newMapDraft : null)
+    ?? campaignMaps.find(map => map.id === mapEditorId)
+    ?? null;
 
   return (
-    <Modal visible={visible} transparent={false} animationType="slide" onRequestClose={onClose}>
+    <>
+    <Modal
+      visible={visible}
+      transparent={false}
+      animationType="slide"
+      onRequestClose={() => screen === 'home' ? onClose() : setScreen('home')}
+    >
       <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: modalTopInset }} testID="campaign-tools-panel">
         <View style={{
           flexDirection: 'row',
@@ -777,13 +616,25 @@ export default function CampaignToolsPanel({
           borderBottomColor: colors.border,
           backgroundColor: colors.card,
         }}>
+          {screen !== 'home' ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={() => setScreen('home')}
+              style={{ padding: 7, marginRight: 6 }}
+            >
+              <Feather name="arrow-left" size={19} color={colors.primary} />
+            </TouchableOpacity>
+          ) : null}
           <View style={{ flex: 1 }}>
             <Text accessibilityRole="header" style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 17, letterSpacing: 1.5 }}>
-              CAMPAIGN TOOL CHEST
+              {screen === 'home' ? 'CAMPAIGN TOOL CHEST' : screen === 'loot' ? 'LOOT TABLES' : screen === 'encounters' ? 'ENCOUNTER TABLES' : 'MAPS'}
             </Text>
-            <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 3 }}>
-              Campaign tables and maps save automatically.
-            </Text>
+            {screen !== 'maps' ? (
+              <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 3 }}>
+                Open a category to manage its assets. Open an individual table to roll on it or edit its rules.
+              </Text>
+            ) : null}
           </View>
           <TouchableOpacity
             accessibilityRole="button"
@@ -795,122 +646,81 @@ export default function CampaignToolsPanel({
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 28, gap: 10 }}>
-          <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 16 }}>
-            Open a category to manage its assets. Open an individual table to roll on it or edit its rules.
-          </Text>
-          {renderTableSection(
-            'loot',
-            'LOOT TABLES',
-            'Perks to consider: Fortune Finder, Scrounger, Treasure Hunter, Explorer.',
-          )}
-          {renderTableSection(
-            'encounters',
-            'ENCOUNTER TABLES',
-            'Perks to consider: Cautious Nature, Explorer, Mysterious Stranger, Ranger, Scout, Animal Friend.',
-          )}
-          <View style={panelStyle} testID="campaign-tool-section-maps">
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityState={{ expanded: expanded.maps }}
-              onPress={() => setExpanded(current => ({ ...current, maps: !current.maps }))}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 1.2 }}>
-                  MAPS
-                </Text>
-                <Text style={{ color: colors.mutedForeground, fontSize: 10, marginTop: 3 }}>
-                  {campaignMaps.length} {campaignMaps.length === 1 ? 'map' : 'maps'}
-                </Text>
-              </View>
-              <Feather name={expanded.maps ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} />
-            </TouchableOpacity>
-            {expanded.maps ? (
-              <View style={{ gap: 9 }}>
-                <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 15 }}>
-                  Upload custom maps, place location and party markers, and export each built map as a JSON file. Bonus Move and Team Player are GM reminders for distance and party movement.
-                </Text>
-                <TouchableOpacity accessibilityRole="button" onPress={addMap} style={buttonStyle}>
-                  <Feather name="plus" size={15} color={colors.primary} />
-                  <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>ADD MAP</Text>
-                </TouchableOpacity>
-                {campaignMaps.map(map => (
-                  <View key={map.id} style={panelStyle}>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: activeMapId === map.id }}
-                      onPress={() => {
-                        const nextActive = activeMapId === map.id ? null : map.id;
-                        setActiveMapId(nextActive);
-                        setEditingMapId(null);
-                        if (nextActive) setSelectedMapId(map.id);
-                      }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}
-                    >
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text style={{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>
-                          {map.name || 'Untitled map'}
-                        </Text>
-                        <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 10 }}>
-                          {map.description || `${map.locations.length} locations · ${map.party.length} party markers`}
-                        </Text>
-                      </View>
-                      <Feather name={activeMapId === map.id ? 'chevron-up' : 'chevron-down'} size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                    {activeMapId === map.id ? (
-                      <>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                          <TouchableOpacity
-                            accessibilityRole="button"
-                            onPress={() => {
-                              setSelectedMapId(map.id);
-                              setEditingMapId(editingMapId === map.id ? null : map.id);
-                            }}
-                            style={[buttonStyle, { flex: 1 }]}
-                          >
-                            <Feather name="edit-2" size={14} color={colors.primary} />
-                            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>
-                              {editingMapId === map.id ? 'CLOSE EDITOR' : 'EDIT MAP'}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity accessibilityRole="button" onPress={() => void downloadMap(map)} style={buttonStyle}>
-                            <Feather name="download" size={14} color={colors.primary} />
-                            <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 10 }}>JSON</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            accessibilityRole="button"
-                            accessibilityLabel={`Delete ${map.name}`}
-                            onPress={() => confirmDestructive(
-                              `Delete ${translateText(map.name || 'this map')}?`,
-                              'The map image and markers will be removed from the campaign.',
-                              () => {
-                                const next = campaignMaps.filter(item => item.id !== map.id);
-                                onChange({ lootTables, encounterTables, campaignMaps: next });
-                                setSelectedMapId(next[0]?.id ?? null);
-                                setActiveMapId(null);
-                                setEditingMapId(null);
-                              },
-                            )}
-                            style={buttonStyle}
-                          >
-                            <Feather name="trash-2" size={14} color={colors.destructive} />
-                          </TouchableOpacity>
-                        </View>
-                        {editingMapId === map.id ? renderMapEditor() : null}
-                      </>
-                    ) : null}
+          {screen === 'home' ? (
+            <>
+              <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 16 }}>
+                Open a category to manage its assets. Open an individual table to roll on it or edit its rules.
+              </Text>
+              {renderTableSection(
+                'loot',
+                'LOOT TABLES',
+                'Perks to consider: Fortune Finder, Scrounger, Treasure Hunter, Explorer.',
+              )}
+              {renderTableSection(
+                'encounters',
+                'ENCOUNTER TABLES',
+                'Perks to consider: Cautious Nature, Explorer, Mysterious Stranger, Ranger, Scout, Animal Friend.',
+              )}
+              {([
+                { kind: 'maps' as const, title: 'MAPS', count: campaignMaps.length, icon: 'map' as const },
+              ]).map(item => (
+                <TouchableOpacity
+                  key={item.kind}
+                  accessibilityRole="button"
+                  onPress={() => setScreen(item.kind)}
+                  style={[panelStyle, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}
+                >
+                  <View style={{
+                    width: 42, height: 42, borderRadius: 9, backgroundColor: colors.secondary,
+                    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Feather name={item.icon} size={19} color={colors.primary} />
                   </View>
-                ))}
-                {campaignMaps.length === 0 ? (
-                  <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11 }}>
-                    No maps yet. Add one to upload a map and mark locations or party positions.
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 1 }}>
+                      {item.title}
+                    </Text>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
+                      {item.count} {item.kind === 'maps'
+                        ? item.count === 1 ? 'map' : 'maps'
+                        : item.count === 1 ? 'table' : 'tables'}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={17} color={colors.primary} />
+                </TouchableOpacity>
+              ))}
+            </>
+          ) : screen === 'loot' ? (
+            renderTableWorkspace('loot', 'Perks to consider: Fortune Finder, Scrounger, Treasure Hunter, Explorer.')
+          ) : screen === 'encounters' ? (
+            renderTableWorkspace('encounters', 'Perks to consider: Cautious Nature, Explorer, Mysterious Stranger, Ranger, Scout, Animal Friend.')
+          ) : renderMapsWorkspace()}
         </ScrollView>
       </View>
     </Modal>
+    {visible && mapBeingEdited ? (
+      <CampaignMapEditorModal
+        visible
+        map={mapBeingEdited}
+        characters={characters}
+        onClose={() => {
+          setMapEditorId(null);
+          if (newMapDraft && !campaignMaps.some(item => item.id === newMapDraft.id)) setNewMapDraft(null);
+        }}
+        onSave={savedMap => {
+          const exists = campaignMaps.some(item => item.id === savedMap.id);
+          onChange({
+            lootTables,
+            encounterTables,
+            campaignMaps: exists
+              ? campaignMaps.map(item => item.id === savedMap.id ? savedMap : item)
+              : [...campaignMaps, savedMap],
+          });
+          if (newMapDraft?.id === savedMap.id) setNewMapDraft(savedMap);
+        }}
+        onExport={map => void downloadMap(map)}
+      />
+    ) : null}
+    </>
   );
 }
