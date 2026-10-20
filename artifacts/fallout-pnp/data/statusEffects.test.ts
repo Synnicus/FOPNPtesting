@@ -5,6 +5,7 @@ import {
   clearTemporaryCharacterEffects,
   clearTemporaryEffectsFromActiveCharacters,
 } from './statusEffects.ts';
+import { createCombatInjury, getInjuryCauseText } from './injuries.ts';
 
 function makeCharacter(overrides: Record<string, unknown> = {}): Character {
   return {
@@ -65,12 +66,20 @@ test('clears temporary statuses while preserving injuries and persistent charact
 });
 
 test('healing injuries deactivates them without deleting their history', () => {
-  const character = makeCharacter();
+  const attributedInjury = createCombatInjury(
+    'broken-arm',
+    { location: 'leftArm', description: 'Broken left arm' },
+    'Raider',
+    '10mm Pistol',
+  );
+  const character = makeCharacter({ injuries: [attributedInjury] });
   const cleared = clearTemporaryCharacterEffects(character, true);
 
   assert.equal(cleared.injuries.length, 1);
   assert.equal(cleared.injuries[0].isActive, false);
   assert.equal(cleared.injuries[0].description, 'Broken left arm');
+  assert.equal(cleared.injuries[0].source, 'Raider with 10mm Pistol');
+  assert.equal(getInjuryCauseText(cleared.injuries[0].source), 'Caused by: Raider with 10mm Pistol');
   assert.equal(character.injuries[0].isActive, true);
 });
 
@@ -96,7 +105,13 @@ test('cleared statuses and active injuries persist through a campaign save/reloa
 });
 
 test('healed injuries remain inactive after a campaign save/reload round trip', () => {
-  const active = makeCharacter();
+  const attributedInjury = createCombatInjury(
+    'broken-arm',
+    { location: 'leftArm', description: 'Broken left arm' },
+    'Raider',
+    '10mm Pistol',
+  );
+  const active = makeCharacter({ injuries: [attributedInjury] });
   const stored = makeCharacter({ id: 'stored-character', inStorage: true });
   const storedBeforeCleanup = JSON.parse(JSON.stringify(stored));
 
@@ -112,5 +127,7 @@ test('healed injuries remain inactive after a campaign save/reload round trip', 
   assert.deepEqual(reloadedActive.areaEffects, []);
   assert.equal(reloadedActive.injuries[0].isActive, false);
   assert.equal(reloadedActive.injuries[0].description, 'Broken left arm');
+  assert.equal(reloadedActive.injuries[0].source, 'Raider with 10mm Pistol');
+  assert.equal(getInjuryCauseText(reloadedActive.injuries[0].source), 'Caused by: Raider with 10mm Pistol');
   assert.deepEqual(reloadedStored, storedBeforeCleanup);
 });
