@@ -1,0 +1,88 @@
+name: Fallout PnP validation
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/fallout-pnp/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+      - ".github/workflows/fallout-pnp-validation.yml"
+  push:
+    paths:
+      - "artifacts/fallout-pnp/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+      - ".github/workflows/fallout-pnp-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fallout-pnp-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Fallout PnP type, rules, and Expo SDK checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Fallout PnP validation
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @workspace/fallout-pnp run validate 2>&1 | tee "$RUNNER_TEMP/fallout-pnp-validation.log"
+          result=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$result" -eq 0 ]; then
+            echo "Fallout PnP validation passed."
+            exit 0
+          fi
+
+          log="$RUNNER_TEMP/fallout-pnp-validation.log"
+          expo_log="$(sed -n '/check:expo-compat/,$p' "$log")"
+          if [ -n "$expo_log" ] && printf '%s\n' "$expo_log" | grep -Eiq 'ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|network|fetch failed|socket hang up|timed out|registry.*(error|unavailable)|service unavailable|proxy error|HTTP (502|503|504)'; then
+            category="Network or Expo service access failure"
+            guidance="The Expo metadata or package service could not be reached. Restore service/network access and rerun validation; this is not an SDK compatibility finding."
+          elif [ -n "$expo_log" ] && printf '%s\n' "$expo_log" | grep -Eiq 'should be updated for best compatibility|expected version|incompatible|unsupported.*version|version.*(mismatch|incompatible)|packages.*not compatible|check that packages match versions required by installed Expo SDK'; then
+            category="Expo SDK compatibility finding"
+            guidance="Expo reported a package version that does not match the installed SDK. Review the reported package versions; this check does not install or upgrade dependencies."
+          else
+            category="Fallout PnP validation failure"
+            guidance="Review the validation output above for a type, rules-test, or other check failure."
+          fi
+
+          echo "::error title=$category::$guidance"
+          {
+            echo "## $category"
+            echo
+            echo "$guidance"
+            echo
+            echo "The complete validation output is in the failed step log."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$result"
