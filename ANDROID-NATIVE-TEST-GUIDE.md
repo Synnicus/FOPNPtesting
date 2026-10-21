@@ -19,7 +19,10 @@ added to the app or this repository.
    regressions** to finish. A green check means the native tests passed. A red
    X means something failed; open the job to see the step and error.
 
-A clean Android build can take 20 minutes or more. Keep the run page open or
+The first Android run can take 20 minutes or more while it builds the app and
+creates an emulator snapshot. Later runs reuse cached Gradle outputs and the
+emulator snapshot, so they should start much faster. GitHub may evict old
+caches, in which case a run may need to rebuild them. Keep the run page open or
 come back to it later; you do not need to keep the Replit project open.
 
 ## What runs automatically

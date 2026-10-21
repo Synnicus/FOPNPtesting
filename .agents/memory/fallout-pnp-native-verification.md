@@ -38,3 +38,15 @@ GitHub pull-request runs use the workflow definition from the base branch until 
 **Why:** A PR can contain a corrected workflow yet still run the older base-branch workflow, and the default SDK setup currently fails before the emulator starts.
 
 **How to apply:** To verify a new native workflow before merge, use a feature-branch push trigger or another supported branch-specific dispatch. Keep the normal pull-request and main-branch triggers for future changes.
+
+The Android emulator runner executes its `script:` input with `/bin/sh`, not Bash. Bash-only options such as `set -o pipefail` fail before any test commands run.
+
+**Why:** The emulator action's shell is independent of the workflow runner's default shell, so a valid Bash command can stop the job immediately after the emulator boots.
+
+**How to apply:** Keep emulator `script:` commands POSIX-compatible (`set -eu`) or explicitly invoke a Bash script with `bash`; do not assume `pipefail` is available.
+
+On hosted GitHub runners, enable KVM before starting the Android emulator and cache the AVD directory if repeated native tests should boot quickly. For a snapshot cache, warm the AVD without `-no-snapshot`, then run tests with `-no-snapshot-save` and `force-avd-creation: false`.
+
+**Why:** Without KVM the emulator can spend many minutes waiting for boot or time out, and fresh hosted runners otherwise recreate the same AVD on each run.
+
+**How to apply:** Follow the Android emulator runner's KVM and AVD-cache setup in `.github/workflows/fallout-pnp-android-native.yml`; keep cache keys tied to the image API level, target, architecture, and device profile.
