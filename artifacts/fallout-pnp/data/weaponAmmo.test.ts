@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
+import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, getCustomAmmoReferenceUsage, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
 import { BUILT_IN_WEAPONS, formatWeaponAP, formatWeaponCapacity, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
@@ -8,6 +8,20 @@ const weaponById = (id: string) => {
   assert.ok(weapon, `missing built-in weapon ${id}`);
   return weapon;
 };
+
+test('custom ammo reference usage counts compatible weapons and saved character selections', () => {
+  const usage = getCustomAmmoReferenceUsage('custom-round', [
+    { compatibleAmmo: ['custom-round'] },
+    { compatibleAmmo: ['built-in-round'] },
+    { compatibleAmmo: ['custom-round', 'built-in-round'] },
+  ], [
+    { weaponAmmoStates: [{ weaponId: 'rifle', currentAmmo: 4, conditionBoxes: 0, ammoTypeId: 'custom-round' }] },
+    { weaponAmmoStates: [{ weaponId: 'pistol', currentAmmo: 2, conditionBoxes: 0, ammoTypeId: 'built-in-round' }] },
+  ]);
+
+  assert.deepEqual(usage, { weaponCount: 2, savedSelectionCount: 1 });
+  assert.deepEqual(getCustomAmmoReferenceUsage('unused-round', [], []), { weaponCount: 0, savedSelectionCount: 0 });
+});
 
 test('powered unarmed and melee weapons carry and consume their compatible ammunition', () => {
   const expected = [

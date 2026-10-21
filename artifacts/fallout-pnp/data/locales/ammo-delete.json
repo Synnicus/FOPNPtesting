@@ -1,0 +1,35 @@
+{
+  "fr": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "La suppression de cette munition la retirera de toutes les armes personnalisées qui la déclarent compatible et réinitialisera les sélections de munitions enregistrées des personnages qui l’utilisent. Continuer ?"
+  },
+  "it": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "L’eliminazione di questa munizione la rimuoverà da tutte le armi personalizzate che la indicano come compatibile e azzererà le selezioni di munizioni salvate dei personaggi che la usano. Continuare?"
+  },
+  "de": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "Beim Löschen dieser Munition wird sie aus allen benutzerdefinierten Waffen entfernt, die sie als kompatibel aufführen, und gespeicherte Munitionsauswahlen von Charakteren werden zurückgesetzt. Fortfahren?"
+  },
+  "es-ES": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "Al eliminar esta munición, se quitará de las armas personalizadas que la indiquen como compatible y se restablecerán las selecciones guardadas de los personajes que la usen. ¿Continuar?"
+  },
+  "es-MX": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "Al eliminar esta munición, se quitará de las armas personalizadas que la indiquen como compatible y se restablecerán las selecciones guardadas de los personajes que la usen. ¿Continuar?"
+  },
+  "ja": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "この弾薬を削除すると、互換性ありとして登録しているカスタム武器から削除され、使用中のキャラクターの保存済み弾薬選択がリセットされます。続行しますか？"
+  },
+  "pl": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "Usunięcie tej amunicji usunie ją z broni niestandardowych, które ją obsługują, i zresetuje zapisane wybory amunicji postaci, które jej używają. Kontynuować?"
+  },
+  "pt-BR": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "Excluir esta munição vai removê-la das armas personalizadas que a listam como compatível e redefinir as seleções salvas de munição dos personagens que a usam. Continuar?"
+  },
+  "ru": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "При удалении этот боеприпас будет удалён из пользовательского оружия, где он указан как совместимый, а сохранённый выбор боеприпасов персонажей, использующих его, будет сброшен. Продолжить?"
+  },
+  "zh-Hans": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "删除此弹药后，它会从将其列为兼容弹药的自定义武器中移除，并重置角色已保存的相关弹药选择。继续吗？"
+  },
+  "zh-Hant": {
+    "Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?": "刪除此彈藥後，它會從將其列為相容彈藥的自訂武器中移除，並重設角色已儲存的相關彈藥選擇。要繼續嗎？"
+  }
+}

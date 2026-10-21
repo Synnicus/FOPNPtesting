@@ -20,7 +20,7 @@ import {
 import { ScrollableTabStrip } from '@/components/ScrollableTabStrip';
 import { BUILT_IN_WEAPONS, WEAPON_CATEGORIES, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER, DAMAGE_TYPES, formatWeaponDamage, formatWeaponAP, formatWeaponCapacity, getWeaponAttackModes, getWeaponHands, weaponCategorySupportsAmmo } from '@/data/weapons';
 import { WEAPON_MOD_DEFS, computeModEffects, WeaponModDef, ModAppliesTo } from '@/data/mods';
-import { AMMO_TYPES, getAmmoReferenceEffects, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoReferenceEffects, getCustomAmmoReferenceUsage, validateCustomAmmo, type AmmoDamageComponent, type AmmoType, type AmmoComponentType } from '@/data/ammo';
 import { ALCOHOL_CONSUMABLES, CHEMS } from '@/data/chems';
 import { CONSUMABLE_CATEGORIES, validateCustomConsumable } from '@/data/consumables';
 import { BUILT_IN_ARMOR } from '@/data/armor';
@@ -1960,6 +1960,7 @@ export default function EquipmentScreen() {
   const insets = useSafeAreaInsets();
   const {
     customWeapons, customArmor, customAmmo, allAmmo, customConsumables, customVehicles, allVehicles,
+    characters,
     vehicleCatalogPortraits, vehicleCatalogPortraitSettings, setVehicleCatalogPortrait,
     addCharacter,
     addCustomWeapon, updateCustomWeapon, deleteCustomWeapon,
@@ -2133,6 +2134,24 @@ export default function EquipmentScreen() {
 
   const allWeapons = [...BUILT_IN_WEAPONS, ...customWeapons];
   const allArmor = [...BUILT_IN_ARMOR, ...customArmor];
+  const confirmDeleteAmmo = (ammo: AmmoType) => {
+    const usage = getCustomAmmoReferenceUsage(ammo.id, allWeapons, characters);
+    if (usage.weaponCount === 0 && usage.savedSelectionCount === 0) {
+      deleteCustomAmmo(ammo.id);
+      return;
+    }
+
+    const message = 'Deleting this round will remove it from any custom weapons that list it as compatible and reset any saved character ammo selections that use it. Continue?';
+    const onDelete = () => deleteCustomAmmo(ammo.id);
+    if (Platform.OS === 'web') {
+      if (localizedConfirm('Delete', message)) onDelete();
+      return;
+    }
+    Alert.alert('Delete', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: onDelete },
+    ]);
+  };
 
   const filteredWeapons = allWeapons.filter(w =>
     w.category !== 'minesTraps' &&
@@ -2354,7 +2373,7 @@ export default function EquipmentScreen() {
               ammo={item}
               onCopy={() => openCopyAmmo(item)}
               onEdit={item.isCustom ? () => openEditAmmo(item) : undefined}
-              onDelete={item.isCustom ? () => confirmDelete(item.name, () => deleteCustomAmmo(item.id)) : undefined}
+              onDelete={item.isCustom ? () => confirmDeleteAmmo(item) : undefined}
             />
           )}
         />

@@ -40,6 +40,7 @@ import patternsPtBR from './locales/patterns-pt-BR.json';
 import patternsRu from './locales/patterns-ru.json';
 import patternsZhHans from './locales/patterns-zh-Hans.json';
 import patternsZhHant from './locales/patterns-zh-Hant.json';
+import ammoDeleteUi from './locales/ammo-delete.json';
 
 export const APP_LANGUAGES = [
   { locale: 'en', label: 'English' },
@@ -529,6 +530,8 @@ const appTourTranslationData = appTourUi as { keys: string[] } & Partial<Record<
 const radioStationsUiTranslations = radioStationsUi as Partial<Record<AppLocale, Record<string, string>>>;
 const gasMaskUiTranslations = gasMaskUi as Partial<Record<AppLocale, Record<string, string>>>;
 const automaticInventoryUiTranslations = automaticInventoryUi as Partial<Record<AppLocale, Record<string, string>>>;
+
+const ammoDeleteUiTranslations = ammoDeleteUi as Partial<Record<AppLocale, Record<string, string>>>;
 const inventoryLibraryUiTranslations = inventoryLibraryUi as Partial<Record<AppLocale, Record<string, string>>>;
 const mapEditorTranslationData = mapEditorUi as { keys: string[] } & Record<string, string[]>;
 const mapEditorUiTranslations = Object.fromEntries(
@@ -593,6 +596,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...Object.fromEntries(combatVisualizerExtraUi.keys.map((key, index) => [
         key, (combatVisualizerExtraUi as { keys: string[] } & Record<string, string[]>)[locale]?.[index] ?? key,
       ])),
+      ...(ammoDeleteUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();

@@ -1,5 +1,5 @@
 import type { PoisonSpec } from './mods.ts';
-import type { AreaRangeUnit, CustomAreaEffect, DamageType, Weapon } from '../context/types.ts';
+import type { AreaRangeUnit, Character, CustomAreaEffect, DamageType, Weapon } from '../context/types.ts';
 import { validateCustomAreaEffects } from './customAreaEffects.ts';
 
 export type AmmoComponentType = DamageType | 'concussion' | 'radiation';
@@ -69,6 +69,20 @@ export interface AmmoAccuracyModifier {
   chanceToHitAdjustment: number;
   targetACModifier: number;
   adjustmentText: string;
+}
+
+export function getCustomAmmoReferenceUsage(
+  ammoId: string,
+  weapons: readonly Pick<Weapon, 'compatibleAmmo'>[],
+  characters: readonly Pick<Character, 'weaponAmmoStates'>[],
+): { weaponCount: number; savedSelectionCount: number } {
+  return {
+    weaponCount: weapons.filter(weapon => weapon.compatibleAmmo?.includes(ammoId)).length,
+    savedSelectionCount: characters.reduce(
+      (count, character) => count + character.weaponAmmoStates.filter(state => state.ammoTypeId === ammoId).length,
+      0,
+    ),
+  };
 }
 
 /** Convert the manual's target-AC modifier into its separately explained CtH effect. */
