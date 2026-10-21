@@ -17,6 +17,7 @@
     "test:native:radiation": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Radiation regression $(date +%s)\" e2e/radiation-native.yaml",
     "test:native:hardcore-radiation": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Hardcore radiation regression $(date +%s)\" e2e/hardcore-radiation-native.yaml",
     "test:native:manual-catalog": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Manual catalog regression $(date +%s)\" e2e/manual-catalog-native.yaml",
+    "test:native:campaign-options": "set -e; TEST_RUN_ID=\"$(date +%s)\"; LEGACY_CAMPAIGN_JSON=\"$(node e2e/create-legacy-campaign-fixture.mjs \"Legacy options compatibility $TEST_RUN_ID\")\"; maestro test -e APP_ID=com.pnpcalculator.app -e \"LEGACY_CAMPAIGN_JSON=$LEGACY_CAMPAIGN_JSON\" e2e/campaign-options-native.yaml",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

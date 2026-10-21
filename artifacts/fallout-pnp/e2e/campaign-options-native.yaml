@@ -1,0 +1,141 @@
+# Run against an installed, launchable Android or iOS build. This replaces the
+# active campaign with a small legacy fixture, so use a disposable campaign.
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn: "Campaign"
+- scrollUntilVisible:
+    element: "PASTE JSON INSTEAD"
+    direction: DOWN
+- tapOn: "PASTE JSON INSTEAD"
+- tapOn:
+    id: campaign-import-json-input
+- inputText: ${LEGACY_CAMPAIGN_JSON}
+- hideKeyboard
+- tapOn:
+    id: campaign-import-json-submit
+- waitForAnimationToEnd
+
+# Importing an older campaign without these options must use compatibility
+# defaults before testing independent changes to the two audio controls.
+- tapOn:
+    id: campaign-options-button
+- scrollUntilVisible:
+    element:
+      id: theme-option-western
+      checked: true
+    direction: UP
+- assertVisible:
+    id: theme-option-western
+    checked: true
+- scrollUntilVisible:
+    element:
+      id: system-sounds-toggle
+      checked: true
+    direction: DOWN
+- assertVisible:
+    id: system-sounds-toggle
+    checked: true
+- scrollUntilVisible:
+    element:
+      id: radio-toggle
+      checked: false
+    direction: DOWN
+- assertVisible:
+    id: radio-toggle
+    checked: false
+
+# Change the theme and each audio preference independently.
+- scrollUntilVisible:
+    element:
+      id: theme-option-eastern
+    direction: UP
+- tapOn:
+    id: theme-option-eastern
+- scrollUntilVisible:
+    element:
+      id: system-sounds-toggle
+    direction: DOWN
+- tapOn:
+    id: system-sounds-toggle
+- scrollUntilVisible:
+    element:
+      id: radio-toggle
+    direction: DOWN
+- tapOn:
+    id: radio-toggle
+- waitForAnimationToEnd
+- tapOn: "Close campaign options"
+- waitForAnimationToEnd
+
+# A full stop and relaunch must restore all three campaign preferences.
+- stopApp
+- launchApp
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- scrollUntilVisible:
+    element:
+      id: theme-option-eastern
+      checked: true
+    direction: UP
+- assertVisible:
+    id: theme-option-eastern
+    checked: true
+- scrollUntilVisible:
+    element:
+      id: system-sounds-toggle
+      checked: false
+    direction: DOWN
+- assertVisible:
+    id: system-sounds-toggle
+    checked: false
+- scrollUntilVisible:
+    element:
+      id: radio-toggle
+      checked: true
+    direction: DOWN
+- assertVisible:
+    id: radio-toggle
+    checked: true
+- tapOn: "Close campaign options"
+
+# Re-importing the older campaign must restore its Western compatibility theme
+# and the defaults for its audio options.
+- scrollUntilVisible:
+    element: "PASTE JSON INSTEAD"
+    direction: DOWN
+- tapOn: "PASTE JSON INSTEAD"
+- tapOn:
+    id: campaign-import-json-input
+- inputText: ${LEGACY_CAMPAIGN_JSON}
+- hideKeyboard
+- tapOn:
+    id: campaign-import-json-submit
+- waitForAnimationToEnd
+- tapOn:
+    id: campaign-options-button
+- scrollUntilVisible:
+    element:
+      id: theme-option-western
+      checked: true
+    direction: UP
+- assertVisible:
+    id: theme-option-western
+    checked: true
+- scrollUntilVisible:
+    element:
+      id: system-sounds-toggle
+      checked: true
+    direction: DOWN
+- assertVisible:
+    id: system-sounds-toggle
+    checked: true
+- scrollUntilVisible:
+    element:
+      id: radio-toggle
+      checked: false
+    direction: DOWN
+- assertVisible:
+    id: radio-toggle
+    checked: false
