@@ -128,18 +128,15 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             set -eu
-            export APP_ID=com.pnpcalculator.app
             adb install artifacts/fallout-pnp/android/app/build/outputs/apk/release/app-release.apk
-            adb shell pm clear "$APP_ID"
-            export MAESTRO_VERSION=2.11.0
+            adb shell pm clear com.pnpcalculator.app
             curl -fsSL "https://get.maestro.mobile.dev" -o /tmp/maestro-install.sh
-            bash /tmp/maestro-install.sh
-            export PATH="$HOME/.maestro/bin:$PATH"
-            maestro --version
-            pnpm --filter @workspace/fallout-pnp run test:native:radiation
-            pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-options
-            pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-equipment-combat
-            pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
+            MAESTRO_VERSION=2.11.0 bash /tmp/maestro-install.sh
+            "$HOME/.maestro/bin/maestro" --version
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:radiation
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-options
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-equipment-combat
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
             {
               echo "## Android native radiation regressions"
               echo

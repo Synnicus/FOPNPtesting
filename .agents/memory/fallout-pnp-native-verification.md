@@ -50,3 +50,9 @@ On hosted GitHub runners, enable KVM before starting the Android emulator and ca
 **Why:** Without KVM the emulator can spend many minutes waiting for boot or time out, and fresh hosted runners otherwise recreate the same AVD on each run.
 
 **How to apply:** Follow the Android emulator runner's KVM and AVD-cache setup in `.github/workflows/fallout-pnp-android-native.yml`; keep cache keys tied to the image API level, target, architecture, and device profile.
+
+The Android emulator runner executes each non-empty `script:` line in a separate `/bin/sh -c` process. Shell exports and `cd` therefore do not carry into following lines.
+
+**Why:** The action logs showed each line launched as a fresh shell; exporting the app ID on one line left it empty when the next line tried to clear app data.
+
+**How to apply:** Use inline environment assignments for commands that need variables, explicit executable paths for installed tools, and repeat `PATH=...` on every command whose child process needs the tool.
