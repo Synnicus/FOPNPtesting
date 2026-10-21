@@ -53,8 +53,8 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- assertVisible: "Effective radiation resistance is 100%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 100%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "0 / 1000"
@@ -65,7 +65,7 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "0 / 1000"
@@ -117,8 +117,8 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- assertVisible: "Effective radiation resistance is 0%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 0%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "10 / 1000"
@@ -129,7 +129,7 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "20 / 1000"
@@ -181,7 +181,7 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "2 / 1000"
@@ -192,7 +192,7 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "3 / 1000"
@@ -244,7 +244,7 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "3 / 1000"
@@ -255,7 +255,7 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "6 / 1000"
@@ -285,8 +285,8 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- assertVisible: "Effective radiation resistance is 100%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 100%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "0 / 1000"
@@ -312,8 +312,8 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- assertVisible: "Effective radiation resistance is 100%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 100%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "0 / 1000"
@@ -340,8 +340,8 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- assertVisible: "Effective radiation resistance is 20%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 20%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "80 / 1000"
@@ -365,8 +365,8 @@ appId: ${APP_ID}
 - hideKeyboard
 - tapOn:
     id: character-radiation-add
-- assertVisible: "Effective radiation resistance is 0%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 0%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "1000 / 1000"

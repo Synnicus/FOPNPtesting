@@ -66,8 +66,8 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- assertVisible: "Effective radiation resistance is 20%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 20%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "80 / 1000"
@@ -105,8 +105,8 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- assertVisible: "Effective radiation resistance is 50%."
-- tapOn: "YES"
+- assertVisible: "Effective cumulative resistance is 50%."
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "50 / 1000"

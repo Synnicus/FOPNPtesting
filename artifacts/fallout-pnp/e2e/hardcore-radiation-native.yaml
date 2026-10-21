@@ -22,7 +22,7 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- tapOn: "NO"
+- tapOn: "ADD FULL AMOUNT"
 - assertVisible:
     id: character-radiation-meter
     text: "150 / 1000"
