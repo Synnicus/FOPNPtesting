@@ -37,7 +37,7 @@ export default function TokenPanel(props: {
       <Label>{title}</Label>
       <Row>
         <Btn compact label="NONE" active={!cur} onPress={() => props.assignCrew(token.characterId, role, undefined)} />
-        {crewPool.map(p => <Btn key={p.id} compact label={p.name} active={cur === p.id} onPress={() => props.assignCrew(token.characterId, role, p.id)} />)}
+        {crewPool.map(p => <Btn key={p.id} compact portrait={p} label={p.name} active={cur === p.id} onPress={() => props.assignCrew(token.characterId, role, p.id)} />)}
       </Row>
     </View>
   );

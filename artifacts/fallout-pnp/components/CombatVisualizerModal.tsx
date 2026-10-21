@@ -22,6 +22,7 @@ import { VehicleFormModal } from './VehicleFormModal';
 import { assignCrewExclusive } from './tactical/crew';
 import { tr } from './tactical/i18n';
 import { translateText } from '@/data/localization';
+import CombatantPortrait from './tactical/CombatantPortrait';
 
 type Tab = 'token' | 'drive' | 'blast' | 'spawn' | 'settings' | null;
 export interface CombatVisualizerModalProps {
@@ -138,25 +139,35 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
           </View>
           <View style={{ flexDirection: 'row', gap: 6 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Btn compact icon="crosshair" a11y="Attacker" label={nameOf(p.attackerId)} active={pick === 'attacker'} onPress={() => setPick(pick === 'attacker' ? null : 'attacker')} />
+              <Btn compact portrait={chars.find(ch => ch.id === p.attackerId)} icon="crosshair" a11y={tr('Select attacker: {0}', nameOf(p.attackerId))} label={nameOf(p.attackerId)} active={pick === 'attacker'} onPress={() => setPick(pick === 'attacker' ? null : 'attacker')} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Btn compact icon="target" a11y="Target" label={nameOf(p.defenderId)} active={pick === 'defender'} onPress={() => setPick(pick === 'defender' ? null : 'defender')} />
+              <Btn compact portrait={chars.find(ch => ch.id === p.defenderId)} icon="target" a11y={tr('Select target: {0}', nameOf(p.defenderId))} label={nameOf(p.defenderId)} active={pick === 'defender'} onPress={() => setPick(pick === 'defender' ? null : 'defender')} />
             </View>
           </View>
+        </View>
+        <View style={{ paddingHorizontal: 10, paddingTop: 7, gap: 2, borderBottomWidth: 1, borderBottomColor: c.border }}>
+          <Text style={{ color: c.primary, fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>{tr('INITIATIVE TRACKER')}</Text>
+          <Text style={{ color: c.mutedForeground, fontSize: 10 }}>{tr('Combatants appear in turn order here; the active combatant is highlighted.')}</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: c.border }} contentContainerStyle={{ gap: 6, padding: 6, alignItems: 'center' }}>
           {app.initiativeEntries.map(e => {
             const t = e.characterId ? boardTokenFor(e.characterId, board, chars) : undefined;
+            const actor = chars.find(ch => ch.id === e.characterId);
             return (
-              <Touch key={e.id} onPress={() => { if (t) { setSelectedId(t.characterId); setTab('token'); } }}
-                style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, borderWidth: e.isActive ? 2 : 1, borderColor: e.isActive ? c.primary : c.border, backgroundColor: e.isActive ? c.secondary : c.card, opacity: e.hasActed ? 0.6 : 1 }}>
-                <Text style={{ color: c.text, fontSize: 11, fontWeight: '800' }} numberOfLines={1}>{`${e.initiative} ${e.name}`}</Text>
-                <Text style={{ color: c.mutedForeground, fontSize: 9 }}>{tr(t ? 'HP {0}/{1} AP {2}/{3}' : 'HP {0}/{1} AP {2}/{3} off board', e.currentHp, e.maxHp, e.currentAP, e.maxAP)}</Text>
+              <Touch key={e.id} accessibilityRole="button" accessibilityLabel={tr('Initiative {0}: {1}, HP {2} of {3}, AP {4} of {5}{6}', e.initiative, e.name, e.currentHp, e.maxHp, e.currentAP, e.maxAP, e.isActive ? `, ${tr('active turn')}` : '')}
+                onPress={() => { if (t) { setSelectedId(t.characterId); setTab('token'); } }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 144, maxWidth: 220, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, borderWidth: e.isActive ? 2 : 1, borderColor: e.isActive ? c.primary : c.border, backgroundColor: e.isActive ? c.secondary : c.card, opacity: e.hasActed ? 0.6 : 1 }}>
+                <CombatantPortrait character={actor} size={28} active={e.isActive} />
+                <View style={{ minWidth: 0, flexShrink: 1 }}>
+                  <Text style={{ color: c.text, fontSize: 11, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>{`${e.initiative} ${e.name}`}</Text>
+                  <Text style={{ color: c.mutedForeground, fontSize: 9 }} numberOfLines={1}>{tr(t ? 'HP {0}/{1} AP {2}/{3}' : 'HP {0}/{1} AP {2}/{3} off board', e.currentHp, e.maxHp, e.currentAP, e.maxAP)}</Text>
+                  {e.isActive ? <Text style={{ color: c.primary, fontSize: 8, fontWeight: '900' }}>{tr('ACTIVE TURN')}</Text> : null}
+                </View>
               </Touch>
             );
           })}
-          {!app.initiativeEntries.length ? <Text style={{ color: c.mutedForeground, fontSize: 11 }}>No initiative order yet. Start combat in the tracker.</Text> : null}
+          {!app.initiativeEntries.length ? <Text style={{ color: c.mutedForeground, fontSize: 11 }}>{tr("No initiative order yet. Open the calculator's Initiative / Round Tracker to start combat.")}</Text> : null}
           <Btn compact icon="skip-forward" label="NEXT TURN" onPress={app.nextTurn} disabled={!app.initiativeEntries.length} />
         </ScrollView>
 

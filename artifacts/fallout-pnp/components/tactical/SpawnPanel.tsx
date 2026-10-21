@@ -60,7 +60,7 @@ export default function SpawnPanel(props: {
           <Note>Choose a pilot, create one, or place the vehicle with no pilot for GM placement.</Note>
           <Row>
             <Btn icon="user-x" label="UNASSIGNED / GM PLACEMENT" onPress={() => crewPilot(undefined)} />
-            {crewCandidates.map(p => <Btn key={p.id} compact label={p.name} onPress={() => crewPilot(p.id)} />)}
+           {crewCandidates.map(p => <Btn key={p.id} compact portrait={p} label={p.name} onPress={() => crewPilot(p.id)} />)}
           </Row>
         </Section>
       ) : null}
@@ -74,15 +74,16 @@ export default function SpawnPanel(props: {
         </Row>
         {err ? <Note tone="error">{err}</Note> : null}
       </Section>
-      <Section title="ADD EXISTING TO BOARD">
-        {people.length ? <Row>{people.map(p => <Btn key={p.id} compact icon="plus" label={p.name} onPress={() => addToken(p.id, false)} />)}</Row>
+       <Section title="ADD EXISTING TO BOARD">
+         <Note>Tap a character or vehicle below to add its icon at the map center. Drag it to a starting hex; drag empty map space to pan.</Note>
+         {people.length ? <Row>{people.map(p => <Btn key={p.id} compact portrait={p} icon="plus" label={p.name} onPress={() => addToken(p.id, false)} />)}</Row>
           : <Note>Every active character is already on the board.</Note>}
         {devices.length ? <Label>Placed mines and traps appear in the list above.</Label> : null}
       </Section>
       <Section title="VEHICLE LIBRARY">
         <TextInput value={q} onChangeText={setQ} placeholder="Search vehicles" accessibilityLabel="Search vehicles"
           style={{ color: c.text, borderWidth: 1, borderColor: c.border, borderRadius: 7, padding: 8, backgroundColor: c.background }} />
-        <Row>{vehs.map(v => <Btn key={v.id} compact icon="truck" label={v.name} onPress={() => spawn(v)} />)}</Row>
+         <Row>{vehs.map(v => <Btn key={v.id} compact portraitImageUri={v.portrait} portraitVehicle icon="truck" label={v.name} onPress={() => spawn(v)} />)}</Row>
         {!vehs.length ? <Text style={{ color: c.mutedForeground }}>No vehicles match.</Text> : null}
       </Section>
     </View>

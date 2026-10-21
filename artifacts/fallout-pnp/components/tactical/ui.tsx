@@ -7,19 +7,24 @@ import {
   LocalizedTouchableOpacity as Touch,
 } from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
+import type { Character } from '@/context/types';
+import CombatantPortrait from './CombatantPortrait';
 
 export type FeatherName = React.ComponentProps<typeof Feather>['name'];
 
-export function Btn({ label, onPress, icon, active, danger, disabled, compact, testID, a11y }: {
+export function Btn({ label, onPress, icon, active, danger, disabled, compact, testID, a11y, portrait, portraitImageUri, portraitVehicle }: {
   label?: string; onPress: () => void; icon?: FeatherName; active?: boolean; danger?: boolean;
   disabled?: boolean; compact?: boolean; testID?: string; a11y?: string;
+  portrait?: Character | null;
+  portraitImageUri?: string;
+  portraitVehicle?: boolean;
 }) {
   const c = useColors();
   const tint = danger ? c.destructive : active ? c.primaryForeground : c.primary;
   return (
     <Touch
       testID={testID}
-      accessibilityLabel={label || a11y}
+      accessibilityLabel={a11y || label}
       disabled={disabled}
       onPress={onPress}
       style={{
@@ -30,8 +35,9 @@ export function Btn({ label, onPress, icon, active, danger, disabled, compact, t
         backgroundColor: active ? c.primary : c.card,
       }}
     >
+      {portrait || portraitImageUri || portraitVehicle ? <CombatantPortrait character={portrait} imageUri={portraitImageUri} vehicle={portraitVehicle} size={compact ? 22 : 26} active={active} /> : null}
       {icon ? <Feather name={icon} size={14} color={tint} /> : null}
-      {label ? <Text style={{ color: tint, fontSize: 10, fontWeight: '800', letterSpacing: 0.6 }}>{label}</Text> : null}
+      {label ? <Text numberOfLines={1} style={{ color: tint, fontSize: 10, fontWeight: '800', letterSpacing: 0.6, flexShrink: 1, minWidth: 0 }}>{label}</Text> : null}
     </Touch>
   );
 }
