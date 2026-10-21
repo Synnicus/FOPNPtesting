@@ -6,6 +6,28 @@ const DR = (normal: number, laser: number, fire: number, plasma: number, explosi
   normal, laser, fire, plasma, explosion,
 });
 
+export const DEFAULT_VEHICLE_BOARD_FOOTPRINTS: Record<VehicleCategory, { width: number; length: number }> = {
+  car: { width: 2, length: 3 },
+  truck: { width: 3, length: 5 },
+  motorcycle: { width: 1, length: 2 },
+  boat: { width: 2, length: 4 },
+  aircraft: { width: 4, length: 5 },
+  apc: { width: 3, length: 4 },
+  tank: { width: 3, length: 4 },
+  trailer: { width: 3, length: 5 },
+  artillery: { width: 3, length: 4 },
+};
+
+export function vehicleBoardFootprint(
+  vehicle: Pick<VehicleProfile, 'category' | 'boardHexWidth' | 'boardHexLength'>,
+) {
+  const fallback = DEFAULT_VEHICLE_BOARD_FOOTPRINTS[vehicle.category];
+  return {
+    width: Math.max(1, Math.min(12, Math.round(vehicle.boardHexWidth ?? fallback.width))),
+    length: Math.max(1, Math.min(12, Math.round(vehicle.boardHexLength ?? fallback.length))),
+  };
+}
+
 const MOUNT_WEAPON_IDS: Record<string, string> = {
   'ags-17 grenade launcher': 'ags_17_grenade_launcher',
   'm2hb': 'm2hb',
@@ -86,6 +108,7 @@ function vehicle(
     brakingKphPerRound: values.brake, turningRadiusMeters: values.turn,
     rangeKm: values.range, passengers: values.passengers,
     carryingWeightLb: values.cargo, fuelCharges: values.fuel, armorClass: 0,
+    ...vehicleBoardFootprint({ category }),
     damageResistance: DR(...values.armor),
     systems: values.systems, mountedWeapons: values.weapons ?? [],
     weaponSlots: vehicleWeaponSlotsFromNames(values.weapons ?? []),

@@ -9,7 +9,7 @@ import {
 } from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
 import { Character, VehicleCategory, VehicleProfile, VehicleSystem, VehicleSystemKind, Weapon } from '@/context/types';
-import { vehicleWeaponSlotsFromNames, VEHICLE_CATEGORIES, VEHICLE_ENHANCEMENTS } from '@/data/vehicles';
+import { DEFAULT_VEHICLE_BOARD_FOOTPRINTS, vehicleBoardFootprint, vehicleWeaponSlotsFromNames, VEHICLE_CATEGORIES, VEHICLE_ENHANCEMENTS } from '@/data/vehicles';
 import { BUILT_IN_VEHICLE_WEAPONS } from '@/data/vehicleWeapons';
 
 const DAMAGE_TYPES = [
@@ -72,6 +72,7 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
     }
     const copy: VehicleProfile = {
       ...initial,
+      ...vehicleBoardFootprint(initial),
       damageResistance: { ...initial.damageResistance },
       systems: initial.systems.map(system => ({ ...system })),
       mountedWeapons: [...initial.mountedWeapons],
@@ -93,6 +94,8 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
       fuelCharges: numberText(copy.fuelCharges),
       armorClass: String(copy.armorClass),
       terrainPilotModifier: String(copy.terrainPilotModifier),
+      boardHexWidth: String(copy.boardHexWidth),
+      boardHexLength: String(copy.boardHexLength),
       ...Object.fromEntries(DAMAGE_TYPES.map(type => [`dr_${type.id}`, String(copy.damageResistance[type.id])])),
     });
     setPassengers(copy.passengers);
@@ -188,6 +191,8 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
       fuelCharges: optionalNumber('fuelCharges'),
       armorClass: Math.max(0, numericValue('armorClass') ?? 0),
       terrainPilotModifier: numericValue('terrainPilotModifier') ?? 0,
+      boardHexWidth: Math.max(1, Math.min(12, Math.floor(numericValue('boardHexWidth') ?? 1))),
+      boardHexLength: Math.max(1, Math.min(12, Math.floor(numericValue('boardHexLength') ?? 1))),
       passengers: passengers.trim(),
       carryingWeightLb: cargo.trim(),
       damageResistance: dr,
@@ -272,10 +277,23 @@ export function VehicleFormModal({ visible, initial, onClose, onSave, title = 'V
                 <TextInput value={draft.name} onChangeText={value => setDraft(current => current ? { ...current, name: value } : current)} placeholder="Vehicle name" placeholderTextColor={colors.mutedForeground} style={textInputStyle(colors)} />
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                   {(Object.keys(VEHICLE_CATEGORIES) as VehicleCategory[]).map(category => (
-                    <TouchableOpacity key={category} onPress={() => setDraft(current => current ? { ...current, category } : current)} style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6, backgroundColor: draft.category === category ? colors.primary : colors.secondary, borderWidth: 1, borderColor: draft.category === category ? colors.primary : colors.border }}>
+                    <TouchableOpacity key={category} onPress={() => {
+                      const footprint = DEFAULT_VEHICLE_BOARD_FOOTPRINTS[category];
+                      setDraft(current => current ? { ...current, category, boardHexWidth: footprint.width, boardHexLength: footprint.length } : current);
+                      setNumeric(current => ({ ...current, boardHexWidth: String(footprint.width), boardHexLength: String(footprint.length) }));
+                    }} style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 6, backgroundColor: draft.category === category ? colors.primary : colors.secondary, borderWidth: 1, borderColor: draft.category === category ? colors.primary : colors.border }}>
                       <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: draft.category === category ? colors.primaryForeground : colors.mutedForeground }}>{VEHICLE_CATEGORIES[category]}</Text>
                     </TouchableOpacity>
                   ))}
+                </View>
+
+                {sectionTitle('TACTICAL FOOTPRINT · HEXES')}
+                <Text style={{ color: colors.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular' }}>
+                  Set how many hexes the vehicle occupies on the combat map.
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {numberField('boardHexWidth', 'Width · hexes')}
+                  {numberField('boardHexLength', 'Length · hexes')}
                 </View>
                 <TextInput
                   value={draft.description}

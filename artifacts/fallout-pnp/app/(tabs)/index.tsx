@@ -13,6 +13,7 @@ import CharacterAvatar from '@/components/CharacterAvatar';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import HPBar from '@/components/HPBar';
 import CombatVisualizerModal from '@/components/CombatVisualizerModal';
+import type { CombatHudWeaponSlot } from '@/components/tactical/CombatHudDock';
 import { boardTokenFor, tokenDistance, burstCorridor, footprint } from '@/data/tacticalBoard';
 import { tr } from '@/components/tactical/i18n';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -1399,6 +1400,9 @@ export default function CombatScreen() {
   const empAttack = !!weapon?.emp || !!loadedAmmo?.emp;
   const vehicleSystemSelectionValid = !vehicleTargeting
     || (!!selectedVehicleSystem && (!empAttack || isVehicleSystemElectronic(selectedVehicleSystem)));
+  useEffect(() => {
+    if (vehicleTargeting) setShowModifiers(true);
+  }, [defender?.id, vehicleTargeting]);
   const explosiveVehicleAttack = !!weapon && (
     empAttack
     || weapon.damageType === 'explosion'
@@ -1584,8 +1588,9 @@ export default function CombatScreen() {
       : isAimed
         ? (vehicleTargeting || !!weaponAttackModes?.targeted)
         : !!weaponAttackModes?.single);
-  const canRoll = !!(attacker && !attacker.combatDevice && defender && weapon
-    && (!attacker.vehicle || vehicleGunner) && selectedAttackModeAvailable && vehicleSystemSelectionValid);
+  const canConfigureAttack = !!(attacker && !attacker.combatDevice && defender && weapon
+    && (!attacker.vehicle || vehicleGunner) && selectedAttackModeAvailable);
+  const canRoll = canConfigureAttack && vehicleSystemSelectionValid;
   const attackResolved = rollTotal !== null || physicalHitConfirmed || manualCritFailConfirmed;
 
   // ─── AP cost (per-weapon apSingle/apTargeted/apBurst; fallback AP_COSTS) ───────
@@ -2941,6 +2946,295 @@ export default function CombatScreen() {
     setDefenderId(next); setSelectedVehicleSystemSelection(null);
   };
 
+  const apActionsPopup = attacker && !attacker.vehicle ? (
+    <View style={{ gap: 8 }}>
+      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
+        {attacker.name} · Position: {(attacker.position ?? 'standing').toUpperCase()} · AP {Math.min(attacker.currentAP, attackerSheet?.maxAP ?? attacker.maxAP)}/{attackerSheet?.maxAP ?? attacker.maxAP}
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        {(() => {
+          const pos = attacker.position ?? 'standing';
+          const moveCost = pos === 'standing' ? AP_COSTS.WALK_1 : pos === 'crouching' ? AP_COSTS.CROUCH_1 : AP_COSTS.PRONE_1;
+          return (
+            <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => handleApAction(moveCost)}>
+              <Feather name="move" size={14} color={colors.primary} />
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primary }}>MOVE 1 HEX ({moveCost} AP)</Text>
+            </TouchableOpacity>
+          );
+        })()}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        {(attacker.position ?? 'standing') === 'standing' && (
+          <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'crouching')}>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CROUCH ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+          </TouchableOpacity>
+        )}
+        {(attacker.position ?? 'standing') === 'crouching' && (
+          <>
+            <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'standing')}>
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>STAND ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'prone')}>
+              <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>PRONE ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {(attacker.position ?? 'standing') === 'prone' && (
+          <TouchableOpacity style={{ flexGrow: 1, paddingVertical: 9, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border }} onPress={() => handleApAction(AP_COSTS.CHANGE_POSITION, 'crouching')}>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CROUCH ({AP_COSTS.CHANGE_POSITION} AP)</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, marginTop: 2 }}>ACTIONS</Text>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        {([
+          { key: 'take_chems', label: 'TAKE CHEMS', cost: CHEM_AP_COST, onPress: () => setShowChemPicker(true) },
+          { key: 'equip', label: 'EQUIP/SWITCH', cost: AP_COSTS.EQUIP_WEAPON, onPress: () => { setWeaponPickerFree(false); setShowWeaponPicker(true); } },
+          { key: 'grab_use_item', label: 'GRAB / USE ITEM', cost: AP_COSTS.USE_ITEM, onPress: () => automaticInventoryTrackingEnabled
+            ? setShowInventoryItemPicker(true)
+            : handleGenericApAction(AP_COSTS.USE_ITEM, 'Grab / Use Item') },
+          { key: 'use_skill', label: 'USE SKILL', cost: AP_COSTS.USE_SKILL, costText: 'GM AP', onPress: () => { setCompletionHealActionId(null); setShowCombatSkill(true); } },
+          { key: 'lay_mine', label: 'LAY MINE', cost: AP_COSTS.LAYING_MINE, onPress: handleLayMine },
+        ] as { key: string; label: string; cost: number; costText?: string; onPress: () => void }[]).map(action => {
+          const disabled = action.key === 'use_skill' ? attacker.currentAP < 1 : attacker.currentAP < action.cost;
+          return (
+            <TouchableOpacity key={action.key} disabled={disabled} style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, opacity: disabled ? 0.4 : 1 }} onPress={action.onPress}>
+              <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>{action.label}</Text>
+              <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{action.costText ?? `${action.cost} AP`}</Text>
+            </TouchableOpacity>
+          );
+        })}
+        <TouchableOpacity disabled={attacker.currentAP < 1} style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.border, opacity: attacker.currentAP < 1 ? 0.4 : 1 }} onPress={handleSetupTripod}>
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>SET UP TRIPOD</Text>
+          <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>ALL AP</Text>
+        </TouchableOpacity>
+        <TouchableOpacity disabled={attacker.currentAP < 1} style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: '#4a8c3f', opacity: attacker.currentAP < 1 ? 0.4 : 1 }} onPress={handleDefend}>
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: '#4a8c3f' }}>DEFEND</Text>
+          <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>→ +AC</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, fontStyle: 'italic' }}>
+        Set Up Tripod spends ALL remaining AP this round (success or fail). Defend forfeits remaining AP, converting it to temporary AC.
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        <TouchableOpacity style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.mutedForeground }} onPress={() => { setWeaponPickerFree(true); setShowWeaponPicker(true); }}>
+          <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>SET WEAPON</Text>
+          <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>FREE</Text>
+        </TouchableOpacity>
+        {compatibleAmmo.length > 0 && (
+          <TouchableOpacity style={{ minWidth: '30%', flexGrow: 1, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.mutedForeground }} onPress={() => setShowAmmoPicker(true)}>
+            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground }}>CHANGE AMMO</Text>
+            <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>FREE</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  ) : <Text style={{ color: colors.mutedForeground }}>Select a player character to view movement and actions.</Text>;
+
+  const attackRollPopup = canRoll && !usesAreaAttackProfile && (!isBurst || burstMode === 'complex') ? (
+    <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
+      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>PERCENTILE ROLL (d10 × 10 + d10)</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <DieFace face={tensFace} rolling={rolling} label="× 10" highlight />
+          {tensFace !== null && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>= {digitVal(tensFace) * 10}</Text>}
+        </View>
+        <Text style={{ fontSize: 22, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>+</Text>
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <DieFace face={unitsFace} rolling={rolling} label="units" />
+          {unitsFace !== null && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>= {digitVal(unitsFace)}</Text>}
+        </View>
+        {rollTotal !== null && (
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground }}>=</Text>
+            <Text style={{ fontSize: 42, fontFamily: 'Inter_700Bold', color: colors.primary, lineHeight: 48 }}>{String(rollTotal).padStart(2, '0')}</Text>
+          </View>
+        )}
+      </View>
+      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: (canRoll && !attackBlocked) ? colors.primary : colors.secondary, opacity: (canRoll && !attackBlocked) ? 1 : 0.5 }} onPress={rollDice} disabled={!canRoll || attackBlocked}>
+        <Feather name="crosshair" size={16} color={canRoll ? colors.primaryForeground : colors.mutedForeground} />
+        <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>ROLL FOR ATTACK</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }} onPress={confirmPhysicalHit} disabled={!canRoll || attackBlocked || isBurst}>
+        <Feather name="check-circle" size={16} color={physicalHitConfirmed ? '#4a8c3f' : colors.primary} />
+        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? '#4a8c3f' : colors.primary }}>{physicalHitConfirmed ? 'PHYSICAL HIT CONFIRMED' : 'CONFIRM PHYSICAL HIT'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }} onPress={() => confirmManualCritical('hit')} disabled={!canRoll || attackBlocked || isBurst}>
+        <Feather name="zap" size={16} color={primaryIsCrit ? '#4a8c3f' : colors.primary} />
+        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: primaryIsCrit ? '#4a8c3f' : colors.primary }}>{primaryIsCrit ? 'CRITICAL HIT CONFIRMED' : 'CONFIRM CRITICAL HIT'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: isCritFail ? colors.destructive : colors.border, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }} onPress={() => confirmManualCritical('fail')} disabled={!canRoll || attackBlocked || isBurst}>
+        <Feather name="alert-triangle" size={16} color={colors.destructive} />
+        <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.destructive }}>{isCritFail ? 'CRITICAL FAIL CONFIRMED' : 'CONFIRM CRITICAL FAIL'}</Text>
+      </TouchableOpacity>
+      <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
+        {isBurst ? 'Manual outcome confirmation is available for single attacks only.' : 'Use these after a physical percentile roll. Each records one attack and consumes this weapon’s ammo.'}
+      </Text>
+      {attackResolved && <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>Press ROLL FOR ATTACK again to make another attack (costs {effectiveAPCost} AP — spend it above).</Text>}
+    </View>
+  ) : null;
+
+  const attackTargetPopup = weaponCanTarget && (canTarget || defender?.vehicle) ? (
+    <View style={{ gap: 7, padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
+      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>{defender?.vehicle ? 'VEHICLE SYSTEM TARGET' : 'TARGETED SHOT'}</Text>
+      {defender?.vehicle ? (
+        <>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>Every attack at a vehicle must target a named system. Moving vehicles still impose −10%.{empAttack ? ' EMP only affects electronic systems.' : ''}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {(defenderVehiclePerformance?.systems ?? defender.vehicle.systems).filter(system => !empAttack || isVehicleSystemElectronic(system)).map(system => {
+              const selected = selectedVehicleSystem?.id === system.id;
+              return (
+                <TouchableOpacity key={system.id} testID={`visualizer-vehicle-target-${system.id}`} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setSelectedVehicleSystemSelection({ defenderId: defender.id, systemId: system.id })} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: selected ? colors.primary : colors.secondary, borderWidth: 1, borderColor: selected ? colors.primary : colors.border }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: selected ? colors.primaryForeground : colors.foreground }}>{system.name}</Text>
+                  <Text style={{ fontSize: 9, color: selected ? colors.primaryForeground + 'cc' : colors.mutedForeground }}>{system.currentHp}/{system.maxHp} HP</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {TARGETED_OPTIONS.map((opt, i) => {
+            const penalty = isRanged ? opt.ranged : opt.melee;
+            const critBonus = opt.bodyPart ? TARGETED_CRIT_BONUS[opt.bodyPart] : 0;
+            return (
+              <TouchableOpacity key={opt.key} accessibilityRole="radio" accessibilityState={{ selected: targetedIdx === i }} onPress={() => setTargetedIdx(i)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: targetedIdx === i ? colors.primary : colors.secondary, borderWidth: 1, borderColor: targetedIdx === i ? colors.primary : colors.border }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: targetedIdx === i ? colors.primaryForeground : colors.foreground }}>{opt.label}</Text>
+                {penalty !== 0 && <Text style={{ fontSize: 10, color: targetedIdx === i ? colors.primaryForeground + 'cc' : colors.destructive }}>−{penalty}%</Text>}
+                {critBonus > 0 && <Text style={{ fontSize: 10, color: targetedIdx === i ? colors.primaryForeground + 'cc' : colors.primary }}>+{critBonus}% crit</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  ) : null;
+
+  const applyStreamlinedBurstDamage = () => {
+    if (attackApplied.current || !weapon || !defender) return;
+    attackApplied.current = true;
+    const burstProt = combinedProtectionFor(weapon.damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
+    const protection = resolveDamageProtection({
+      baseDT: burstProt.dt,
+      baseDR: burstProt.dr,
+      ammoIgnoresDT: loadedAmmo?.ignoresDT,
+      ammoDRModifier: loadedAmmo?.drMod,
+      ignoredDT: perkBonuses.ignoreDT,
+      defenderDRModifier: defenderPerkDef.dr + (defenderEffectMods?.drMod ?? 0)
+        + empShieldingResistance(defender, loadedAmmo, empAttack),
+      damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
+    });
+    const raceMeleeBonus = isMelee && attacker
+      ? (getCharacterRaceDefinition(attacker)?.bonusMeleeDamage ?? 0)
+      : 0;
+    const hthPerkBonus = isMelee ? 2 * (attacker?.perks.find(p => p.perkId === 'bonus_hth_damage')?.rank ?? 0) : 0;
+    const traitMeleeBonus = isMelee && attacker ? (computeTraitEffects(attacker).meleeDamageBonus ?? 0) : 0;
+    const meleeDmgBonus = isMelee
+      ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
+      : 0;
+    const damageProfile = getWeaponAmmoDamageProfile(weapon, loadedAmmo, doubleShotActive ? 2 : 1);
+    const poisonResults: PoisonResistanceResult[] = [];
+    const componentBreakdown: string[] = [];
+    let radiationExposure = 0;
+    let damagingHits = 0;
+    const perHit = Array.from({ length: streamlinedHits }, (_, hitIndex) => {
+      const rolls = Array.from({ length: damageProfile.weaponDiceCount }, () => rollDie(damageProfile.weaponDie));
+      const ammoRolls = damageProfile.ammoDiceCount > 0
+        ? Array.from({ length: damageProfile.ammoDiceCount }, () => rollDie(damageProfile.ammoDie)) : [];
+      const raw = rolls.reduce((a, b) => a + b, 0) + ammoRolls.reduce((a, b) => a + b, 0)
+        + damageProfile.ammoBonus + damageProfile.weaponBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
+      let physicalDamage = applyProtection(raw, protection.effectiveDT, protection.effectiveDR);
+      if (loadedAmmo?.components?.length) {
+        const componentResult = resolveAmmoDamageComponents({
+          components: scaleAmmoDamageComponents(loadedAmmo.components, doubleShotActive ? 2 : 1),
+          rollDie,
+          radiationResistance: defenderSheet?.radiationResistance ?? 0,
+          resolveProtection: damageType => {
+            const typed = combinedProtectionFor(damageType, bodyArmor as any, helmet as any, defenderNatural, defenderShield.prot);
+            const typedPerks = computeDefensivePerkBonuses(defender, damageType, getPerkById);
+            const resolved = resolveDamageProtection({
+              baseDT: typed.dt,
+              baseDR: tightNutsAdjustedDR(typed.dr, damageType, defender, defenderNatural),
+              ammoIgnoresDT: loadedAmmo.ignoresDT,
+              ammoDRModifier: loadedAmmo.drMod,
+              ignoredDT: perkBonuses.ignoreDT,
+              defenderDRModifier: typedPerks.dr + (defenderEffectMods?.drMod ?? 0)
+                + empShieldingResistance(defender, loadedAmmo, empAttack),
+              damageResistanceCap: defender?.manualDerivedStats ? 100 : 90,
+            });
+            return { damageThreshold: resolved.effectiveDT, damageResistance: resolved.effectiveDR };
+          },
+        });
+        physicalDamage += componentResult.totalHpDamage;
+        radiationExposure += componentResult.totalRadiation;
+        componentResult.components.forEach(component => {
+          componentBreakdown.push(
+            `Hit ${hitIndex + 1} · ${component.component.label}: ${component.rawDamage} ${component.component.type === 'radiation'
+              ? `radiation; ${defenderSheet?.radiationResistance ?? 0}% resistance → ${component.finalRadiation ?? 0} applied`
+              : `${component.component.type} → ${component.finalHp ?? 0} HP`}`,
+          );
+        });
+      }
+      const hitPoisonResults = attackPoisons.map(poison =>
+        resolvePoisonResistance(poison, defenderSheet?.poisonResistance ?? 0, Math.floor(Math.random() * 100) + 1));
+      poisonResults.push(...hitPoisonResults);
+      if (physicalDamage > 0) damagingHits += 1;
+      return physicalDamage + hitPoisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
+    });
+    const totalBurstDmg = perHit.reduce((a, b) => a + b, 0);
+    const poisonBonusDamage = poisonResults.reduce((sum, result) => sum + result.bonusDamage, 0);
+    setStreamlinedDmgResult({ perHit, total: totalBurstDmg, protection, poisonResults, poisonBonusDamage, componentBreakdown, radiationExposure });
+    if (totalBurstDmg > 0) applyCombatDamage(
+      attackReceipt.current, defender.id, totalBurstDmg, damagingHits, undefined,
+      selectedVehicleSystem?.id, attacker?.id, empAttack, explosiveVehicleAttack,
+    );
+    if (radiationExposure > 0 && !defender.vehicle) adjustRadiation(defender.id, radiationExposure);
+    if (!defender.vehicle) applyPoisonExposure(poisonResults);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const streamlinedBurstPopup = canRoll && !usesAreaAttackProfile && isBurst && burstMode === 'streamlined' ? (
+    <View style={{ gap: 10, padding: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
+      <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.2 }}>BURST · {burstShots} SHOTS · HIT ON {streamlinedHitThreshold} OR LESS</Text>
+      {streamlinedDice.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
+          {streamlinedDice.map((die, index) => <DieFace key={index} face={die === 0 ? 10 : die} rolling={false} label={`Die ${index + 1}`} hit={die > 0 && die <= streamlinedHitThreshold} />)}
+        </View>
+      )}
+      {streamlinedRolled && <Text style={{ textAlign: 'center', color: colors.foreground, fontSize: 13, fontFamily: 'Inter_700Bold' }}>{streamlinedHits} hits · {streamlinedMisses} misses</Text>}
+      <TouchableOpacity disabled={!canRoll || !!attackBlocked} onPress={rollStreamlined} style={{ paddingVertical: 12, alignItems: 'center', borderRadius: colors.radius, backgroundColor: canRoll && !attackBlocked ? colors.primary : colors.secondary, opacity: canRoll && !attackBlocked ? 1 : 0.5 }}>
+        <Text style={{ color: canRoll && !attackBlocked ? colors.primaryForeground : colors.mutedForeground, fontSize: 13, fontFamily: 'Inter_700Bold' }}>ROLL BURST</Text>
+      </TouchableOpacity>
+      {streamlinedRolled && streamlinedHits > 0 && !streamlinedDmgResult && (
+        <TouchableOpacity onPress={applyStreamlinedBurstDamage} style={{ paddingVertical: 12, alignItems: 'center', borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.secondary }}>
+          <Text style={{ color: colors.primary, fontSize: 12, fontFamily: 'Inter_700Bold' }}>ROLL & APPLY {streamlinedHits} HIT DAMAGE</Text>
+        </TouchableOpacity>
+      )}
+      {streamlinedDmgResult && <Text style={{ color: colors.destructive, textAlign: 'center', fontSize: 14, fontFamily: 'Inter_700Bold' }}>{streamlinedDmgResult.total} total damage applied</Text>}
+    </View>
+  ) : null;
+
+  const attackPopup = (
+    <View style={{ gap: 10 }}>
+      <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+        {attacker?.name ?? 'No attacker'} → {defender?.name ?? 'Select a defender'}{weapon ? ` · ${compactWeaponCombatLabel(weapon)}` : ''}
+      </Text>
+      {attackBlocked && <Text style={{ color: colors.destructive, fontSize: 11 }}>{attackBlocked}</Text>}
+      {!apSpent && canRoll && !usesAreaAttackProfile && (
+        <TouchableOpacity disabled={!attackerHasAP || !!attackBlocked} onPress={handleSpendAP} style={{ paddingVertical: 10, borderRadius: colors.radius, backgroundColor: attackerHasAP && !attackBlocked ? colors.primary : colors.secondary, opacity: attackerHasAP && !attackBlocked ? 1 : 0.5 }}>
+          <Text style={{ textAlign: 'center', color: attackerHasAP && !attackBlocked ? colors.primaryForeground : colors.mutedForeground, fontSize: 12, fontFamily: 'Inter_700Bold' }}>SPEND {effectiveAPCost} AP</Text>
+        </TouchableOpacity>
+      )}
+      {attackTargetPopup}
+      {usesAreaAttackProfile ? (
+        <TouchableOpacity onPress={openWeaponAreaAttack} disabled={!weaponAreaAttack} style={{ paddingVertical: 12, borderRadius: colors.radius, alignItems: 'center', backgroundColor: colors.destructive, opacity: weaponAreaAttack ? 1 : 0.45 }}>
+          <Text style={{ color: '#fff', fontSize: 12, fontFamily: 'Inter_700Bold' }}>OPEN BLAST ZONE ASSIGNMENT</Text>
+        </TouchableOpacity>
+      ) : isBurst && burstMode === 'streamlined' ? streamlinedBurstPopup : attackRollPopup}
+      {!canRoll && <Text style={{ color: colors.mutedForeground, textAlign: 'center', fontSize: 11 }}>Select an attacker, a defender, and a usable weapon first.</Text>}
+    </View>
+  );
+
   const combatPanel = (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' && !showBoard ? 67 : 0 }}>
       <ScrollView ref={combatScrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
@@ -3503,7 +3797,7 @@ export default function CombatScreen() {
           {defender && <HPBar current={defender.currentHp} max={defender.maxHp} height={6} showText />}
 
           {/* Special Unarmed Attack selector (manual pp. 18–19). */}
-          {canRoll && canUseSpecialUnarmed && attacker && (
+          {canConfigureAttack && canUseSpecialUnarmed && attacker && (
             <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: specialUnarmedAttack ? colors.primary : colors.border, padding: 10, gap: 4 }}>
               <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>SPECIAL UNARMED ATTACK</Text>
               <TouchableOpacity
@@ -3532,7 +3826,7 @@ export default function CombatScreen() {
 
           {/* A local attack choice keeps the persistent active hand separate from
               the weapon whose rules drive this attack. */}
-          {canRoll && dualWielding && activeWeapon && offhandWeapon && (
+          {canConfigureAttack && dualWielding && activeWeapon && offhandWeapon && (
             <View style={{ gap: 6 }}>
               <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>ATTACK WITH</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -3553,7 +3847,7 @@ export default function CombatScreen() {
             </View>
           )}
 
-          {canRoll && naturalAttackWeapons.length > 1 && (
+          {canConfigureAttack && naturalAttackWeapons.length > 1 && (
             <View style={{ gap: 6 }}>
               <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1.5 }}>NATURAL ATTACK</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -3576,18 +3870,23 @@ export default function CombatScreen() {
           )}
 
           {/* Attack AP controls; the active weapon name removes dual-wield ambiguity. */}
-          {canRoll && !usesAreaAttackProfile && (
+          {canConfigureAttack && !usesAreaAttackProfile && (
             <View style={{ gap: 8 }}>
+              {vehicleTargeting && !vehicleSystemSelectionValid && (
+                <Text style={{ fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.destructive, textAlign: 'center' }}>
+                  Select a vehicle system in Modifiers before spending AP or rolling.
+                </Text>
+              )}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {!apSpent && (
                   <TouchableOpacity
-                    disabled={!attackerHasAP || attackBlocked}
+                    disabled={!canRoll || !attackerHasAP || attackBlocked}
                     accessibilityRole="button"
                     accessibilityLabel={`Spend ${effectiveAPCost} AP with ${weapon?.name ?? 'weapon'}`}
-                    style={{ width: '100%', maxWidth: '100%', minWidth: 0, flexBasis: '100%', flexGrow: 0, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: attackerHasAP && !attackBlocked ? colors.primary : colors.secondary, borderWidth: 1, borderColor: attackerHasAP ? colors.primary : colors.destructive, opacity: attackBlocked ? 0.45 : 1 }}
+                    style={{ width: '100%', maxWidth: '100%', minWidth: 0, flexBasis: '100%', flexGrow: 0, paddingHorizontal: 12, paddingVertical: 10, borderRadius: colors.radius, backgroundColor: attackerHasAP && !attackBlocked && canRoll ? colors.primary : colors.secondary, borderWidth: 1, borderColor: attackerHasAP ? colors.primary : colors.destructive, opacity: attackBlocked || !canRoll ? 0.45 : 1 }}
                     onPress={handleSpendAP}
                   >
-                    <Text numberOfLines={2} ellipsizeMode="tail" style={{ width: '100%', minWidth: 0, flexShrink: 1, textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: attackerHasAP && !attackBlocked ? colors.primaryForeground : colors.mutedForeground }}>
+                        <Text numberOfLines={2} ellipsizeMode="tail" style={{ width: '100%', minWidth: 0, flexShrink: 1, textAlign: 'center', fontSize: 12, fontFamily: 'Inter_700Bold', color: attackerHasAP && !attackBlocked && canRoll ? colors.primaryForeground : colors.mutedForeground }}>
                       <Text>SPEND</Text> {effectiveAPCost} <Text>AP</Text> — <Text style={{ textTransform: 'uppercase' }}>{weapon ? compactWeaponCombatLabel(weapon) : ''}</Text>
                     </Text>
                     {!!specialUnarmedAttack && (
@@ -3854,7 +4153,7 @@ export default function CombatScreen() {
         </View>
 
         {/* ─── Burst / Double-Shot Mode ─── */}
-        {canRoll && !usesAreaAttackProfile && weapon && !specialUnarmedAttack && (canBurst || weapon.isDoubleShot) && (
+        {canConfigureAttack && !usesAreaAttackProfile && weapon && !specialUnarmedAttack && (canBurst || weapon.isDoubleShot) && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>FIRE MODE</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -3918,7 +4217,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Chance to Hit ─── */}
-        {canRoll && (
+        {canConfigureAttack && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>CHANCE TO HIT</Text>
 
@@ -4013,7 +4312,7 @@ export default function CombatScreen() {
         )}
 
         {/* ─── Modifiers ─── */}
-        {canRoll && (
+        {canConfigureAttack && (
           <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
             <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} onPress={() => setShowModifiers(v => !v)}>
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>MODIFIERS</Text>
@@ -4208,74 +4507,7 @@ export default function CombatScreen() {
           </View>
         )}
 
-        {/* ─── Dice Roll (Complex burst / Single) ─── */}
-        {canRoll && !usesAreaAttackProfile && (!isBurst || burstMode === 'complex' || !isBurst) && (
-          <View style={{ backgroundColor: colors.card, borderRadius: colors.radius, padding: 14, borderWidth: 1, borderColor: colors.border, gap: 10 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 2 }}>PERCENTILE ROLL (d10 × 10 + d10)</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-              <View style={{ alignItems: 'center', gap: 4 }}>
-                <DieFace face={tensFace} rolling={rolling} label="× 10" highlight />
-                {tensFace !== null && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>= {digitVal(tensFace) * 10}</Text>}
-              </View>
-              <Text style={{ fontSize: 22, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>+</Text>
-              <View style={{ alignItems: 'center', gap: 4 }}>
-                <DieFace face={unitsFace} rolling={rolling} label="units" />
-                {unitsFace !== null && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>= {digitVal(unitsFace)}</Text>}
-              </View>
-              {rollTotal !== null && (
-                <View style={{ alignItems: 'center' }}>
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>=</Text>
-                  <Text style={{ fontSize: 42, fontFamily: 'Inter_700Bold', color: colors.primary, lineHeight: 48 }}>{String(rollTotal).padStart(2, '0')}</Text>
-                </View>
-              )}
-            </View>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 12, gap: 8, backgroundColor: (canRoll && !attackBlocked) ? colors.primary : colors.secondary, opacity: (canRoll && !attackBlocked) ? 1 : 0.5 }} onPress={rollDice} disabled={!canRoll || attackBlocked}>
-              <Feather name="crosshair" size={16} color={canRoll ? colors.primaryForeground : colors.mutedForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: canRoll ? colors.primaryForeground : colors.mutedForeground }}>ROLL FOR ATTACK</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: physicalHitConfirmed ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
-              onPress={confirmPhysicalHit}
-              disabled={!canRoll || attackBlocked || isBurst}
-            >
-              <Feather name="check-circle" size={16} color={physicalHitConfirmed ? '#4a8c3f' : colors.primary} />
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: physicalHitConfirmed ? '#4a8c3f' : colors.primary }}>
-                {physicalHitConfirmed ? 'PHYSICAL HIT CONFIRMED' : 'CONFIRM PHYSICAL HIT'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: primaryIsCrit ? '#4a8c3f' : colors.primary, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
-              onPress={() => confirmManualCritical('hit')}
-              disabled={!canRoll || attackBlocked || isBurst}
-            >
-              <Feather name="zap" size={16} color={primaryIsCrit ? '#4a8c3f' : colors.primary} />
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: primaryIsCrit ? '#4a8c3f' : colors.primary }}>
-                {primaryIsCrit ? 'CRITICAL HIT CONFIRMED' : 'CONFIRM CRITICAL HIT'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: colors.radius, paddingVertical: 11, gap: 8, backgroundColor: colors.secondary, borderWidth: 1, borderColor: isCritFail ? colors.destructive : colors.border, opacity: (!canRoll || attackBlocked || isBurst) ? 0.5 : 1 }}
-              onPress={() => confirmManualCritical('fail')}
-              disabled={!canRoll || attackBlocked || isBurst}
-            >
-              <Feather name="alert-triangle" size={16} color={colors.destructive} />
-              <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1, color: colors.destructive }}>
-                {isCritFail ? 'CRITICAL FAIL CONFIRMED' : 'CONFIRM CRITICAL FAIL'}
-              </Text>
-            </TouchableOpacity>
-            <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
-              {isBurst
-                ? 'Manual outcome confirmation is available for single attacks only.'
-                : 'Use these after a physical percentile roll. Each records one attack and consumes this weapon’s ammo.'}
-            </Text>
-            {attackResolved && (
-              <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
-                Press ROLL FOR ATTACK again to make another attack (costs {effectiveAPCost} AP — spend it above).
-              </Text>
-            )}
-            {!canRoll && <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>Select an attacker with a weapon and a defender first.</Text>}
-          </View>
-        )}
+        {attackRollPopup}
 
         {/* ─── Streamlined Burst Dice ─── */}
         {canRoll && !usesAreaAttackProfile && isBurst && burstMode === 'streamlined' && (
@@ -5138,6 +5370,67 @@ export default function CombatScreen() {
       />
     </View>
   );
+  const combatHudWeapons: CombatHudWeaponSlot[] = (() => {
+    const equippedSlots = attacker?.vehicle
+      ? vehicleWeapons.map((slotWeapon, index) => ({ slotWeapon, hand: tr('Mount {0}', index + 1) }))
+      : dualWielding
+        ? [
+            { slotWeapon: leftWeapon!, hand: tr('Left hand') },
+            { slotWeapon: rightWeapon!, hand: tr('Right hand') },
+          ]
+        : leftWeapon
+          ? [{ slotWeapon: leftWeapon, hand: tr('Left hand') }]
+          : rightWeapon
+            ? [{ slotWeapon: rightWeapon, hand: tr('Right hand') }]
+            : activeWeapon
+              ? [{ slotWeapon: activeWeapon, hand: tr('Weapon') }]
+              : [];
+
+    return equippedSlots.map(({ slotWeapon, hand }) => {
+      const modes = getWeaponAttackModes(slotWeapon);
+      const isSelectedAttackWeapon = slotWeapon.id === weapon?.id;
+      const profileSingle = slotWeapon.apSingle ?? AP_COSTS.ATTACK_SINGLE;
+      const profileAimed = slotWeapon.apTargeted ?? AP_COSTS.ATTACK_AIMED;
+      const profileBurst = slotWeapon.apBurst ?? AP_COSTS.ATTACK_BURST;
+      const selectedDiscount = traitAPDelta - perkBonuses.apDiscount - customModEffects.apDiscount;
+      const profileDouble = AP_COSTS.ATTACK_DOUBLE_SHOT;
+      const cost = (profile: number, mode: 'single' | 'aimed' | 'burst' | 'double') => {
+        const base = isSelectedAttackWeapon
+          ? mode === 'single' ? wSingle
+            : mode === 'aimed' ? wTargeted ?? profile
+              : mode === 'burst' ? wBurst ?? profile
+                : profileDouble
+          : profile;
+        const burstDiscount = mode === 'burst' && isSelectedAttackWeapon ? perkBonuses.burstApDiscount : 0;
+        return Math.max(1, base + (isSelectedAttackWeapon ? selectedDiscount - burstDiscount : 0));
+      };
+      return {
+        id: slotWeapon.id,
+        hand,
+        name: compactWeaponCombatLabel(slotWeapon, 14),
+        modes: [
+          ...(modes.single ? [{ key: 'S' as const, name: 'Single' as const, ap: cost(profileSingle, 'single') }] : []),
+          ...(modes.targeted && !(isSelectedAttackWeapon && fastShotApplies)
+            ? [{ key: 'A' as const, name: 'Targeted' as const, ap: cost(profileAimed, 'aimed') }]
+            : []),
+          ...(modes.burst ? [{ key: 'B' as const, name: 'Burst' as const, ap: cost(profileBurst, 'burst') }] : []),
+          ...(slotWeapon.isDoubleShot ? [{ key: 'D' as const, name: 'Double' as const, ap: cost(profileDouble, 'double') }] : []),
+        ],
+      };
+    });
+  })();
+  const combatHudFireMode: CombatHudWeaponSlot['modes'][number]['key'] = isBurst
+    ? 'B'
+    : doubleShotActive
+      ? 'D'
+      : isAimed && !vehicleTargeting
+        ? 'A'
+        : 'S';
+  const hudShotCount = streamlinedRolled ? streamlinedDice.length : shotResults.length;
+  const hudHitCount = streamlinedRolled ? streamlinedHits : shotResults.filter(shot => shot.hit).length;
+  const combatHudLogText = attackResolved && attacker && defender && hudShotCount > 0
+    ? tr('Attack: {0} vs {1}: {2}/{3} hits.', attacker.name, defender.name, hudHitCount, hudShotCount)
+    : undefined;
   return <>
     {!showBoard && combatPanel}
     {showBoard && <CombatVisualizerModal
@@ -5148,6 +5441,34 @@ export default function CombatScreen() {
       onAttackerChange={id => { setAttackerId(id); setUseBoardRange(true); }}
       onDefenderChange={id => { setDefenderId(id); setSelectedVehicleSystemSelection(null); setUseBoardRange(true); }}
       combatPanel={combatPanel}
+      combatHudWeapons={combatHudWeapons}
+      selectedAttackWeaponId={weapon?.id ?? null}
+      selectedFireMode={combatHudFireMode}
+      combatLogText={combatHudLogText}
+      onAttackWeaponSelect={selectAttackWeapon}
+      onFireModeSelect={mode => {
+        if (mode === 'S') {
+          setIsBurst(false);
+          setDoubleShotActive(false);
+          setTargetedIdx(0);
+        } else if (mode === 'A') {
+          setIsBurst(false);
+          setDoubleShotActive(false);
+          if (!vehicleTargeting) setTargetedIdx(current => Math.max(1, current));
+        } else if (mode === 'B') {
+          setIsBurst(true);
+          setDoubleShotActive(false);
+          setTargetedIdx(0);
+          setBurstMode('streamlined');
+        } else {
+          setIsBurst(false);
+          setDoubleShotActive(true);
+          setTargetedIdx(0);
+        }
+        resetAttackState();
+      }}
+      actionsPopup={apActionsPopup}
+      attackPopup={attackPopup}
       isBurst={isBurst}
       burstRangeCells={Math.ceil((effectiveRange + statRange) / app.tacticalBoard.metersPerCell)}
       areaProfiles={[...getBuiltInAreaDamageProfiles(missingExplosiveBlastZoneHouseRule), ...createCustomAmmoAreaDamageProfiles(allAmmo), ...createCustomWeaponAreaDamageProfiles(allWeapons)]}

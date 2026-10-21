@@ -47,8 +47,19 @@ test('device placement waits for the GM to confirm the Traps check', () => {
 test('legacy custom mines/traps keep their normal custom-dice path', () => {
   assert.match(source, /const isMineTrap = weapon\?\.category === 'minesTraps' \|\| \(!!weaponAreaAttack && !isVehicleCannonAreaAttack\)/);
   assert.match(source, /const usesAreaAttackProfile = !!weaponAreaAttack && !isVehicleCannonAreaAttack/);
-  assert.match(source, /\{canRoll && !usesAreaAttackProfile && \(/);
+  assert.match(source, /\{canConfigureAttack && !usesAreaAttackProfile && \(/);
   assert.doesNotMatch(source, /missing a catalog area profile yet/);
+});
+
+test('vehicle target systems and modifiers appear before rolling is unlocked', () => {
+  assert.match(source, /const canConfigureAttack = !!\(/);
+  assert.match(source, /const canRoll = canConfigureAttack && vehicleSystemSelectionValid/);
+  assert.match(source, /\{canConfigureAttack && \(\s*<View[\s\S]*?CHANCE TO HIT/);
+  assert.match(source, /\{canConfigureAttack && \(\s*<View[\s\S]*?MODIFIERS/);
+  assert.match(source, /VEHICLE SYSTEM TARGET/);
+  assert.match(source, /defenderVehiclePerformance\?\.systems \?\? defender\.vehicle\.systems/);
+  assert.match(source, /testID=\{`vehicle-target-system-\$\{system\.id\}`\}/);
+  assert.match(source, /Select a vehicle system in Modifiers before spending AP or rolling/);
 });
 
 test('vehicle cannon hits resolve blast zones instead of applying a second direct damage roll', () => {

@@ -604,6 +604,9 @@ export interface VehicleProfile {
   portrait?: string;
   portraitFit?: PortraitFitMode;
   portraitOffset?: PortraitOffset;
+  /** Default board footprint, measured in tactical grid cells. */
+  boardHexWidth?: number;
+  boardHexLength?: number;
   topSpeedKph: number | null;
   accelerationKphPerRound: number | null;
   brakingKphPerRound: number | null;

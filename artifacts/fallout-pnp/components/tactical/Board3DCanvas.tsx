@@ -35,6 +35,7 @@ interface Props {
   selectedObstacleId?: string | null;
   centerRef: React.MutableRefObject<BoardCell>;
   panMode: boolean;
+  cameraControlsEnabled: boolean;
   dragEnabled: boolean;
   onTap: (cell: BoardCell, hit: BoardHit | null) => void;
   onDrop: (characterId: string, cell: BoardCell) => void;
@@ -141,7 +142,7 @@ function addBoardGrid(parent: THREE.Group, board: TacticalBoard, color: string) 
   } else {
     const rowHeight = Math.sqrt(3) / 2, radius = 1 / Math.sqrt(3);
     for (let row = 0; row < board.rows; row++) for (let column = 0; column < board.columns; column++) {
-      const cx = column, cz = row * rowHeight;
+      const cx = column + row / 2, cz = row * rowHeight;
       for (let edge = 0; edge < 3; edge++) {
         const a = (60 * edge - 30) * Math.PI / 180;
         const b = (60 * (edge + 1) - 30) * Math.PI / 180;
@@ -159,13 +160,92 @@ function addBoardGrid(parent: THREE.Group, board: TacticalBoard, color: string) 
   parent.add(gridLines);
 }
 
-function makeFallbackStandee(parent: THREE.Group, character: Character | undefined, tint: THREE.Color, vehicle: boolean) {
-  const material = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.82, metalness: vehicle ? 0.2 : 0 });
-  if (vehicle) {
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.38, 0.84), material);
-    base.position.y = 0.22; parent.add(base);
-    const turret = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.34), material);
-    turret.position.y = 0.48; parent.add(turret);
+function makeVehicleSideSilhouette(parent: THREE.Group, character: Character | undefined, tint: THREE.Color, token: BoardToken) {
+  const category = character?.vehicle?.category ?? 'car';
+  const body = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.9, metalness: 0.05 });
+  const detail = new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(0.68), roughness: 1 });
+  const wheels = new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(0.38), roughness: 1 });
+  const silhouette = new THREE.Group();
+  const box = (width: number, height: number, length: number, y: number, z: number, material = body) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, length), material);
+    mesh.position.set(0, y, z);
+    silhouette.add(mesh);
+  };
+  const wheel = (x: number, z: number, radius = 0.16) => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.16, 10), wheels);
+    mesh.rotation.z = Math.PI / 2;
+    mesh.position.set(x, radius, z);
+    silhouette.add(mesh);
+  };
+  const roadWheels = (count = 2, radius = 0.16) => {
+    for (const x of [-0.42, 0.42]) {
+      for (let i = 0; i < count; i++) {
+        const z = count === 1 ? 0 : -0.5 + (i / (count - 1));
+        wheel(x, z, radius);
+      }
+    }
+  };
+
+  if (category === 'motorcycle') {
+    wheel(0, -0.52, 0.24); wheel(0, 0.52, 0.24);
+    box(0.12, 0.12, 0.7, 0.36, 0);
+    box(0.36, 0.12, 0.25, 0.62, -0.08, detail);
+    box(0.42, 0.08, 0.08, 0.68, 0.42, detail);
+  } else if (category === 'aircraft') {
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 1.65, 8), body);
+    fuselage.rotation.x = Math.PI / 2;
+    fuselage.position.y = 0.42;
+    silhouette.add(fuselage);
+    box(1.8, 0.09, 0.42, 0.36, 0.08);
+    box(0.72, 0.08, 0.26, 0.38, -0.6, detail);
+    box(0.72, 0.08, 0.2, 0.38, 0.66, detail);
+    box(0.12, 0.36, 0.1, 0.62, 0.03, detail);
+  } else if (category === 'boat') {
+    const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.5, 1.6, 6), body);
+    hull.rotation.x = Math.PI / 2;
+    hull.position.y = 0.22;
+    silhouette.add(hull);
+    box(0.68, 0.22, 0.58, 0.46, -0.08, detail);
+    box(0.42, 0.38, 0.4, 0.72, -0.05);
+  } else if (category === 'tank' || category === 'apc' || category === 'artillery') {
+    box(0.92, 0.3, 1.52, 0.35, 0);
+    box(0.18, 0.25, 1.42, 0.25, 0, wheels);
+    // Tracks sit just outside the chassis to keep the vehicle silhouette visible at small sizes.
+    for (const x of [-0.52, 0.52]) {
+      const track = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.32, 1.55), wheels);
+      track.position.set(x, 0.22, 0);
+      silhouette.add(track);
+    }
+    if (category === 'tank') {
+      box(0.58, 0.3, 0.66, 0.62, -0.02, detail);
+      box(0.09, 0.1, 0.72, 0.68, 0.57, body);
+    } else if (category === 'artillery') {
+      box(0.6, 0.18, 0.6, 0.57, -0.1, detail);
+      box(0.1, 0.12, 1.05, 0.75, 0.42, body);
+    } else {
+      box(0.72, 0.42, 0.98, 0.68, 0, detail);
+    }
+  } else if (category === 'trailer') {
+    box(0.86, 0.68, 1.35, 0.63, -0.02);
+    box(0.22, 0.08, 0.3, 0.26, 0.78, detail);
+    roadWheels(2, 0.18);
+  } else {
+    const truck = category === 'truck';
+    box(truck ? 0.94 : 0.84, 0.28, truck ? 1.7 : 1.35, 0.34, 0);
+    box(truck ? 0.76 : 0.62, 0.42, truck ? 0.62 : 0.68, 0.64, truck ? 0.45 : 0.05, detail);
+    if (truck) box(0.8, 0.42, 0.82, 0.63, -0.45);
+    roadWheels(truck ? 3 : 2);
+  }
+
+  // The silhouette expands to the vehicle's saved grid footprint.
+  silhouette.scale.set(Math.max(0.6, token.width * 0.82), 1, Math.max(0.6, token.length * 0.72));
+  parent.add(silhouette);
+}
+
+function makeFallbackStandee(parent: THREE.Group, character: Character | undefined, tint: THREE.Color, token: BoardToken) {
+  const material = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.82, metalness: character?.vehicle ? 0.2 : 0 });
+  if (character?.vehicle) {
+    makeVehicleSideSilhouette(parent, character, tint, token);
     return;
   }
   const race = (character?.race ?? '').toLowerCase();
@@ -252,10 +332,9 @@ function appendScene(runtime: Runtime, props: Props, color: ReturnType<typeof us
   runtime.interactive.length = 0;
   const { board, characters } = props;
   const maxR = Math.max(board.rows, board.columns);
-  const width = board.columns;
-  const height = board.grid === 'hex' ? board.rows * Math.sqrt(3) / 2 : board.rows;
-  const centerX = (width - 1) / 2;
-  const centerZ = (height - 1) / 2;
+  const rowStep = board.grid === 'hex' ? Math.sqrt(3) / 2 : 1;
+  const width = board.columns + (board.grid === 'hex' ? Math.max(0, board.rows - 1) / 2 : 0);
+  const height = board.grid === 'hex' ? (board.rows - 1) * rowStep + 1 : board.rows;
   runtime.scene.background = colorHex(color.background);
   runtime.scene.fog = new THREE.Fog(color.background, maxR * 0.4, maxR * 2.8);
 
@@ -267,7 +346,9 @@ function appendScene(runtime: Runtime, props: Props, color: ReturnType<typeof us
   runtime.floor.geometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
   runtime.floor.position.set(floorPositionX, 0, floorPositionZ);
   const floorMaterial = runtime.floor.material as THREE.MeshStandardMaterial;
-  floorMaterial.color.set(color.card);
+  // Keep uploaded map colors intact; tinting the texture by the dark UI card
+  // color makes custom terrain nearly invisible in the 3D view.
+  floorMaterial.color.set(0xffffff);
   floorMaterial.map?.dispose(); floorMaterial.map = null;
   const backgroundUri = board.backgroundDataUri ?? DEFAULT_TERRAIN;
   addTexture(runtime, backgroundUri, generation, texture => {
@@ -338,7 +419,7 @@ function appendScene(runtime: Runtime, props: Props, color: ReturnType<typeof us
     tokenGroup.add(hit);
 
     if (token.modelDataUri && token.modelFormat) {
-      const fallback = () => makeFallbackStandee(tokenGroup, character, colorHex(color.primary), isVehicle);
+      const fallback = () => makeFallbackStandee(tokenGroup, character, colorHex(color.primary), token);
       installModel(tokenGroup, token, generation, runtime, colorHex(color.primary), fallback);
     } else {
       const imageUri = token.imageDataUri ?? (isVehicle ? undefined : character.portrait);
@@ -367,7 +448,7 @@ function appendScene(runtime: Runtime, props: Props, color: ReturnType<typeof us
             tokenGroup.add(image);
           }
         });
-      } else makeFallbackStandee(tokenGroup, character, colorHex(color.primary), isVehicle);
+      } else makeFallbackStandee(tokenGroup, character, colorHex(color.primary), token);
     }
     if (attacker || defender) {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 6, 40),
@@ -605,6 +686,7 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
       const touches = event.nativeEvent.touches ?? [];
       const start = state.start;
       if (touches.length >= 2 && state.startDistance > 0) {
+        if (!propsRef.current.cameraControlsEnabled) { state.moved = true; return; }
         const distance = Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
         const midpoint = { x: (touches[0].pageX + touches[1].pageX) / 2, y: (touches[0].pageY + touches[1].pageY) / 2 };
         poseRef.current.distance = Math.max(2.5, Math.min(350, start.distance * state.startDistance / Math.max(1, distance)));
@@ -616,6 +698,7 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
       if (Math.abs(gesture.dx) + Math.abs(gesture.dy) > 6) state.moved = true;
       if (!state.moved) return;
       if (state.hit?.kind === 'token' && propsRef.current.dragEnabled) return;
+      if (!propsRef.current.cameraControlsEnabled) return;
       if (propsRef.current.panMode) panPose(poseRef.current, start, gesture.dx, gesture.dy, runtime.size.height);
       else {
         poseRef.current.theta = start.theta - gesture.dx * 0.008;
@@ -646,6 +729,7 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
         {...responder.panHandlers}
         {...(Platform.OS === 'web' ? ({
           onWheel: (event: { deltaY: number }) => {
+            if (!propsRef.current.cameraControlsEnabled) return;
             poseRef.current.distance = Math.max(2.5, Math.min(350, poseRef.current.distance * (event.deltaY < 0 ? 0.88 : 1.14)));
           },
         } as object) : null)}

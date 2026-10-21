@@ -8,7 +8,7 @@ export type PickResult = { uri: string; name: string } | { error: string } | nul
 
 export function boardAssetTotal(board: TacticalBoard): number {
   return (board.backgroundDataUri?.length ?? 0)
-    + board.tokens.reduce((n, t) => n + (t.imageDataUri?.length ?? 0) + (t.modelDataUri?.length ?? 0), 0)
+    + board.tokens.reduce((n, t) => n + (t.imageDataUri?.length ?? 0) + (t.mapIconDataUri?.length ?? 0) + (t.modelDataUri?.length ?? 0), 0)
     + board.obstacles.reduce((n, t) => n + (t.imageDataUri?.length ?? 0), 0);
 }
 

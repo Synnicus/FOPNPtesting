@@ -30,6 +30,7 @@ import mapEditorUi from './locales/map-editor.json';
 import combatVisualizerUi from './locales/combat-visualizer.json';
 import combatVisualizerExtraUi from './locales/combat-visualizer-extra.json';
 import combatVisualizer3dUi from './locales/combat-visualizer-3d.json';
+import combatVisualizerHudUi from './locales/combat-visualizer-hud.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -614,6 +615,7 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...Object.fromEntries(combatVisualizer3dUi.keys.map((key, index) => [
         key, (combatVisualizer3dUi as { keys: string[] } & Record<string, string[]>)[locale]?.[index] ?? key,
       ])),
+      ...((combatVisualizerHudUi as Partial<Record<AppLocale, Record<string, string>>>)[locale] ?? {}),
       ...(ammoDeleteUiTranslations[locale] ?? {}),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;

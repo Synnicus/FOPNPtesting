@@ -4,7 +4,7 @@ import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/compon
 import { useColors } from '@/hooks/useColors';
 import type { Character, VehicleProfile } from '@/context/types';
 import { makeBoardToken, type BoardCell, type TacticalBoard } from '@/data/tacticalBoard';
-import { spawnVehicleCharacter } from '@/data/vehicles';
+import { spawnVehicleCharacter, vehicleBoardFootprint } from '@/data/vehicles';
 import { PREMADE_CHARACTERS, createCharacterFromPremade } from '@/data/premades';
 import { Btn, Label, Note, NumInput, Row, Section } from './ui';
 import { tr } from './i18n';
@@ -26,13 +26,14 @@ export default function SpawnPanel(props: {
   const [pPortrait, setPPortrait] = useState<string | undefined>();
   const [err, setErr] = useState('');
   const onBoard = new Set(props.board.tokens.map(t => t.characterId));
-  const addToken = (id: string, vehicle: boolean) => {
-    props.update(b => ({ ...b, tokens: [...b.tokens, makeBoardToken(id, props.spawnCell, vehicle)] }));
+  const addToken = (id: string, vehicle: boolean, profile?: VehicleProfile) => {
+    const footprint = profile ? vehicleBoardFootprint(profile) : undefined;
+    props.update(b => ({ ...b, tokens: [...b.tokens, makeBoardToken(id, props.spawnCell, vehicle, footprint)] }));
     props.onSelect(id);
   };
   const spawn = (v: VehicleProfile) => {
     const ch = spawnVehicleCharacter(v, newId('veh'));
-    props.addCharacter(ch); addToken(ch.id, true); setPending(ch);
+    props.addCharacter(ch); addToken(ch.id, true, v); setPending(ch);
   };
   const crewPilot = (pilotId?: string) => {
     if (pending && pilotId) {

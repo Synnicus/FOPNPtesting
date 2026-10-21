@@ -21,6 +21,8 @@ export interface BoardToken extends BoardCell {
   length: number;
   facing: number;
   imageDataUri?: string;
+  /** Vehicle-only top-down map icon; separate from its side-view standee. */
+  mapIconDataUri?: string;
   imageScale?: number;
   imageOffsetX?: number;
   imageOffsetY?: number;
@@ -101,6 +103,7 @@ export function isTacticalBoard(value: unknown): value is TacticalBoard {
     && Number.isInteger(t.width) && Number.isInteger(t.length) && finite(t.facing, -3600, 3600)
     && (t.imageDataUri === undefined || isBoardImage(t.imageDataUri));
   if (!b.tokens.every(t => t && shape(t) && typeof t.characterId === 'string' && t.characterId.length > 0
+    && (t.mapIconDataUri === undefined || isBoardImage(t.mapIconDataUri))
     && (t.modelDataUri === undefined || isBoardModel(t.modelDataUri, t.modelFormat))
     && (t.modelFormat === undefined || t.modelFormat === 'glb' || t.modelFormat === 'stl')
     && (t.modelName === undefined || (typeof t.modelName === 'string' && t.modelName.length <= 60))
@@ -122,10 +125,21 @@ export function isTacticalBoard(value: unknown): value is TacticalBoard {
   if (!b.obstacles.every(o => o && shape(o) && isBoardImage(o.imageDataUri) && typeof o.id === 'string' && typeof o.name === 'string')) return false;
   if (new Set(b.tokens.map(t => t.characterId)).size !== b.tokens.length || new Set(b.obstacles.map(o => o.id)).size !== b.obstacles.length) return false;
   return (b.backgroundDataUri?.length ?? 0) + [...b.tokens, ...b.obstacles].reduce((n, t) =>
-    n + (t.imageDataUri?.length ?? 0) + ('modelDataUri' in t ? t.modelDataUri?.length ?? 0 : 0), 0) <= MAX_BOARD_TOTAL_ASSETS;
+    n + (t.imageDataUri?.length ?? 0) + ('mapIconDataUri' in t ? t.mapIconDataUri?.length ?? 0 : 0)
+      + ('modelDataUri' in t ? t.modelDataUri?.length ?? 0 : 0), 0) <= MAX_BOARD_TOTAL_ASSETS;
 }
-export function makeBoardToken(characterId: string, cell: BoardCell, vehicle = false): BoardToken {
-  return { characterId, q: cell.q, r: cell.r, width: vehicle ? 2 : 1, length: vehicle ? 3 : 1, facing: 0, speedKph: 0 };
+export function makeBoardToken(
+  characterId: string,
+  cell: BoardCell,
+  vehicle = false,
+  vehicleFootprint?: { width: number; length: number },
+): BoardToken {
+  return {
+    characterId, q: cell.q, r: cell.r,
+    width: vehicle ? Math.max(1, Math.floor(vehicleFootprint?.width ?? 2)) : 1,
+    length: vehicle ? Math.max(1, Math.floor(vehicleFootprint?.length ?? 3)) : 1,
+    facing: 0, speedKph: 0,
+  };
 }
 /** Hex size is center-to-center spacing across a hex; default one meter. */
 export function cellPoint(c: BoardCell, grid: BoardGrid, size = 1): { x: number; y: number } {

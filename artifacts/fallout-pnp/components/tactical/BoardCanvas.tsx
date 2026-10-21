@@ -4,6 +4,7 @@ import Svg, { ClipPath, Defs, G, Circle, Path, Polygon, Rect, Text as SvgText, I
 import { useColors } from '@/hooks/useColors';
 import { visibleTokens } from './crew';
 import { raceIconPath } from './raceIcons';
+import { vehicleTopDownSilhouette } from '@/data/vehicleSilhouettes';
 import type { Character } from '@/context/types';
 import {
   cellPoint, footprint, pointCell,
@@ -34,6 +35,7 @@ interface Props {
   burstTargetIds?: string[];
   selectedObstacleId?: string | null;
   dragEnabled: boolean;
+  cameraControlsEnabled: boolean;
   centerRef: React.MutableRefObject<BoardCell>;
   onTap: (cell: BoardCell, hit: BoardHit | null) => void;
   onDrop: (characterId: string, cell: BoardCell) => void;
@@ -124,6 +126,7 @@ const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(pr
     onPanResponderMove: (e, gs) => {
       const touches = e.nativeEvent.touches;
       if (touches && touches.length >= 2) {
+        if (!propsRef.current.cameraControlsEnabled) { g.moved = true; return; }
         const d = Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
         if (!g.pinch) g.pinch = { d, z: viewRef.current.z };
         g.moved = true;
@@ -134,7 +137,7 @@ const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(pr
       if (Math.abs(gs.dx) + Math.abs(gs.dy) > 7) g.moved = true;
       if (!g.moved || g.pinch) return;
       if (g.hit?.kind === 'token' && propsRef.current.dragEnabled) setDrag({ id: g.hit.id, cell: toCell(g.sx + gs.dx, g.sy + gs.dy) });
-      else setView({ ...g.start, x: g.start.x + gs.dx, y: g.start.y + gs.dy });
+      else if (propsRef.current.cameraControlsEnabled) setView({ ...g.start, x: g.start.x + gs.dx, y: g.start.y + gs.dy });
     },
     onPanResponderRelease: (_e, gs) => {
       const p = propsRef.current;
@@ -223,8 +226,12 @@ const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(pr
     const role = props.attackerId === t.characterId ? c.destructive : props.defenderId === t.characterId ? c.text : null;
     const burst = props.burstTargetIds?.includes(t.characterId);
     const r = CELL * 0.44;
-    const uri = t.imageDataUri ?? (veh ? undefined : ch?.portrait);
+    const uri = veh ? (t.mapIconDataUri ?? t.imageDataUri) : (t.imageDataUri ?? ch?.portrait);
     const sc = t.imageScale ?? 1;
+    const iconW = Math.max(16, t.width * CELL - 6);
+    const iconH = Math.max(16, t.length * (board.grid === 'hex' ? CELL * Math.sqrt(3) / 2 : CELL) - 6);
+    const tokenR = veh ? Math.max(iconW, iconH) / 2 : r;
+    const vehiclePaths = veh ? vehicleTopDownSilhouette(ch?.vehicle?.category) : null;
     const hpPct = ch ? Math.max(0, Math.min(1, ch.currentHp / Math.max(1, ch.maxHp))) : 1;
     const act = props.activeId === t.characterId;
     const hue = c.secondary;
@@ -240,9 +247,16 @@ const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(pr
           </G>
         ) : veh ? (
           <G transform={`translate(${p.x} ${p.y}) rotate(${t.facing})`}>
-            <Rect x={(-Math.floor(t.width / 2) - 0.5) * CELL + 3} y={(-Math.floor(t.length / 2) - 0.5) * CELL + 3}
-              width={t.width * CELL - 6} height={t.length * CELL - 6} rx={6} fill={c.card} stroke={c.primary} strokeWidth={2} />
-            <Path d={`M0 ${-t.length * CELL / 2 + 4}l6 8h-12z`} fill={c.primary} />
+            {uri ? (
+              <SvgImage href={uri} x={-iconW / 2} y={-iconH / 2} width={iconW} height={iconH} preserveAspectRatio="xMidYMid meet" />
+            ) : vehiclePaths ? (
+              <G transform={`translate(${-iconW / 2} ${-iconH / 2}) scale(${iconW / 100} ${iconH / 80})`}>
+                <Path d={vehiclePaths.body} fill={c.primary} stroke={c.background} strokeWidth={2.5} strokeLinejoin="round" />
+                {vehiclePaths.detail.map((path, index) => (
+                  <Path key={index} d={path} fill="none" stroke={c.background} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                ))}
+              </G>
+            ) : null}
           </G>
         ) : (
           <G>
@@ -259,10 +273,10 @@ const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(pr
             <Circle cx={p.x} cy={p.y} r={r} fill="none" stroke={sel ? c.primary : c.background} strokeWidth={2} />
           </G>
         )}
-        {role || burst ? <Circle cx={p.x} cy={p.y} r={r + 4} fill="none" stroke={role ?? c.primary} strokeWidth={2} strokeDasharray={burst ? '3 3' : undefined} /> : null}
-        <Rect x={p.x - r} y={p.y + r + 2} width={2 * r} height={3} fill={c.border} />
-        <Rect x={p.x - r} y={p.y + r + 2} width={2 * r * hpPct} height={3} fill={hpPct > 0.5 ? c.primary : c.destructive} />
-        <SvgText x={p.x} y={p.y + r + 14} fontSize={8} fontWeight="bold" fill={c.text} stroke={c.background} strokeWidth={2.5} strokeLinejoin="round" textAnchor="middle">
+        {role || burst ? <Circle cx={p.x} cy={p.y} r={tokenR + 4} fill="none" stroke={role ?? c.primary} strokeWidth={2} strokeDasharray={burst ? '3 3' : undefined} /> : null}
+        <Rect x={p.x - tokenR} y={p.y + tokenR + 2} width={2 * tokenR} height={3} fill={c.border} />
+        <Rect x={p.x - tokenR} y={p.y + tokenR + 2} width={2 * tokenR * hpPct} height={3} fill={hpPct > 0.5 ? c.primary : c.destructive} />
+        <SvgText x={p.x} y={p.y + tokenR + 14} fontSize={8} fontWeight="bold" fill={c.text} stroke={c.background} strokeWidth={2.5} strokeLinejoin="round" textAnchor="middle">
           {(ch?.name ?? '?').slice(0, 14)}
         </SvgText>
         {crew.map((m, i) => {
@@ -284,10 +298,13 @@ const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(pr
 
   const onLayout = (e: LayoutChangeEvent) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
   const webWheel = Platform.OS === 'web' ? {
-    onWheel: (e: { deltaY: number }) => setView(v => {
+    onWheel: (e: { deltaY: number }) => {
+      if (!propsRef.current.cameraControlsEnabled) return;
+      setView(v => {
       const s = sizeRef.current; const z = Math.min(6, Math.max(0.15, v.z * (e.deltaY < 0 ? 1.12 : 0.89))); const k = z / v.z;
       return { z, x: s.w / 2 - (s.w / 2 - v.x) * k, y: s.h / 2 - (s.h / 2 - v.y) * k };
-    }),
+      });
+    },
   } : {};
 
   return (

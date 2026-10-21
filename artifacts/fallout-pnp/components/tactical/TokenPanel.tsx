@@ -21,7 +21,7 @@ export default function TokenPanel(props: {
   patch: (id: string, p: Partial<BoardToken>) => void;
   move: (id: string, cell: BoardCell) => void;
   remove: (id: string) => void;
-  setAttacker: (id: string) => void; setDefender: (id: string) => void; openCalculator: () => void;
+  setAttacker: (id: string) => void; setDefender: (id: string) => void; openAttack: () => void;
   assignCrew: (vehicleId: string, role: 'pilotCharacterId' | 'gunnerCharacterId', id: string | undefined) => void;
 }) {
   const c = useColors();
@@ -49,6 +49,11 @@ export default function TokenPanel(props: {
     if (!r) return;
     if ('error' in r) setMsg(r.error); else { setMsg(''); props.patch(token.characterId, { imageDataUri: r.uri }); }
   };
+  const pickMapIcon = async () => {
+    const r = await pickBoardImage(board, token.mapIconDataUri?.length ?? 0);
+    if (!r) return;
+    if ('error' in r) setMsg(r.error); else { setMsg(''); props.patch(token.characterId, { mapIconDataUri: r.uri }); }
+  };
   const pickModel = async () => {
     const result = await pickBoardModel();
     if (!result) return;
@@ -74,7 +79,7 @@ export default function TokenPanel(props: {
         <Row>
           <Btn icon="crosshair" label="ATTACKER" active={props.attackerId === props.actorId} onPress={() => props.setAttacker(props.actorId)} />
           <Btn icon="target" label="TARGET" active={props.defenderId === props.actorId} onPress={() => props.setDefender(props.actorId)} />
-          <Btn icon="shield" label="OPEN CALCULATOR" onPress={props.openCalculator} />
+          <Btn icon="crosshair" label="OPEN ATTACK" onPress={props.openAttack} />
         </Row>
       </Section>
       {crew ? null : <><Section title={props.gm ? 'GM PLACEMENT (FREE)' : 'MOVE (RULES-BASED)'}>
@@ -121,12 +126,21 @@ export default function TokenPanel(props: {
         <Note>{token.modelDataUri
           ? tr('{0} is a board-only model. It is included in campaign JSON; the 2D fallback displays the image standee.', token.modelName ?? token.modelFormat?.toUpperCase() ?? '3D model')
           : veh
-            ? 'Skins live only on the board. Transparent PNG and GIF are supported.'
+            ? 'Vehicle standees are separate from the vehicle catalog photo. Transparent PNG and GIF are supported.'
             : 'Board framing never changes the character-sheet portrait.'}</Note>
         {token.modelDataUri ? <Note>{tr('GLB material colors are kept; embedded textures are omitted. Limit: 1.5 MB and 25,000 triangles.')}</Note> : null}
         {msg ? <Note tone="error">{msg}</Note> : null}
       </Section>
       </>}
+      {veh && !crew ? (
+        <Section title="VEHICLE 2D MAP ICON">
+          <Note>The default top-down silhouette follows the vehicle type and UI theme. Upload here to customize only the 2D map icon; the side-view standee and 3D model remain separate.</Note>
+          <Row>
+            <Btn icon="image" label={token.mapIconDataUri ? 'REPLACE MAP ICON' : 'UPLOAD MAP ICON'} onPress={() => void pickMapIcon()} />
+            {token.mapIconDataUri ? <Btn icon="trash-2" danger label="CLEAR" onPress={() => props.patch(token.characterId, { mapIconDataUri: undefined })} /> : null}
+          </Row>
+        </Section>
+      ) : null}
       {veh && !crew ? <Section title="CREW">{crewRow('pilotCharacterId', pilotId, 'PILOT')}{crewRow('gunnerCharacterId', gunnerId, 'GUNNER')}</Section> : null}
       {crew ? null : <Btn icon="trash-2" danger label="REMOVE FROM BOARD" onPress={() => props.remove(token.characterId)} />}
     </View>
