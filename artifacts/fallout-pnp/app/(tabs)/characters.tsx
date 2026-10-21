@@ -1617,7 +1617,7 @@ function CharacterFormModal({ character, onSave, onClose, visible }: {
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setSPECIAL(k, val - 1)}><Feather name="minus" size={16} color={colors.foreground} /></TouchableOpacity>
-                        <Text style={{ fontSize: 26, fontFamily: 'Inter_700Bold', color: armorSheet.effectiveSpecial[k] >= 8 ? colors.primary : colors.foreground, width: 40, textAlign: 'center' }}>{armorSheet.effectiveSpecial[k]}</Text>
+                        <Text testID={`character-special-${k}-effective`} style={{ fontSize: 26, fontFamily: 'Inter_700Bold', color: armorSheet.effectiveSpecial[k] >= 8 ? colors.primary : colors.foreground, width: 40, textAlign: 'center' }}>{armorSheet.effectiveSpecial[k]}</Text>
                         <TouchableOpacity style={{ width: 34, height: 34, borderRadius: 6, borderWidth: 1, borderColor: specialRemaining <= 0 ? colors.mutedForeground : colors.border, alignItems: 'center', justifyContent: 'center', opacity: specialRemaining <= 0 ? 0.4 : 1 }} onPress={() => setSPECIAL(k, val + 1)} disabled={specialRemaining <= 0}><Feather name="plus" size={16} color={colors.foreground} /></TouchableOpacity>
                       </View>
                     </View>

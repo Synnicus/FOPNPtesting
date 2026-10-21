@@ -1,0 +1,148 @@
+# Run against an installed Android or iOS build. The CI workflow installs a
+# clean release APK before running this flow, so each run uses real AsyncStorage.
+appId: ${APP_ID}
+---
+- launchApp
+- tapOn: "Characters"
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: ${TEST_NAME}
+- hideKeyboard
+
+# Give the character 150 radiation so the optional rule reduces STR by one.
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "150"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- tapOn: "NO"
+- assertVisible:
+    id: character-radiation-meter
+    text: "150 / 1000"
+- tapOn:
+    id: character-save
+- assertVisible: ${TEST_NAME}
+
+# Enable the campaign option. The warning requires explicit confirmation.
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: hardcore-radiation-toggle
+    direction: DOWN
+- tapOn:
+    id: hardcore-radiation-toggle
+- tapOn:
+    id: hardcore-radiation-confirm-enable
+- tapOn:
+    id: hardcore-radiation-preview
+- assertVisible:
+    id: hardcore-radiation-current-status
+    text: "Optional campaign-wide SPECIAL penalties · Currently enabled"
+- tapOn:
+    id: hardcore-radiation-preview-close
+- tapOn: "Close campaign options"
+- waitForAnimationToEnd
+
+# Force-stop and relaunch the installed app, then verify the persisted option
+# still changes effective STR while leaving the character's saved value intact.
+- stopApp
+- launchApp
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: hardcore-radiation-preview
+    direction: DOWN
+- tapOn:
+    id: hardcore-radiation-preview
+- assertVisible:
+    id: hardcore-radiation-current-status
+    text: "Optional campaign-wide SPECIAL penalties · Currently enabled"
+- tapOn:
+    id: hardcore-radiation-preview-close
+- tapOn: "Close campaign options"
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: DOWN
+- tapOn: ${TEST_NAME}
+- tapOn: "SPECIAL"
+- assertVisible:
+    id: character-special-strength-effective
+    text: "4"
+- tapOn:
+    id: character-editor-close
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: hardcore-radiation-toggle
+    direction: DOWN
+
+# Disable the option, close the settings, and allow the normal state save to run.
+- tapOn:
+    id: hardcore-radiation-toggle
+- tapOn:
+    id: hardcore-radiation-preview
+- assertVisible:
+    id: hardcore-radiation-current-status
+    text: "Optional campaign-wide SPECIAL penalties · Currently disabled"
+- tapOn:
+    id: hardcore-radiation-preview-close
+- tapOn: "Close campaign options"
+- waitForAnimationToEnd
+
+# A second cold restart must restore the disabled setting. Radiation remains
+# 150, but effective STR returns to the saved SPECIAL value of 5.
+- stopApp
+- launchApp
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: hardcore-radiation-preview
+    direction: DOWN
+- tapOn:
+    id: hardcore-radiation-preview
+- assertVisible:
+    id: hardcore-radiation-current-status
+    text: "Optional campaign-wide SPECIAL penalties · Currently disabled"
+- tapOn:
+    id: hardcore-radiation-preview-close
+- tapOn: "Close campaign options"
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: DOWN
+- tapOn: ${TEST_NAME}
+- scrollUntilVisible:
+    element:
+      id: character-radiation-meter
+    direction: DOWN
+- assertVisible:
+    id: character-radiation-meter
+    text: "150 / 1000"
+- tapOn: "SPECIAL"
+- assertVisible:
+    id: character-special-strength-effective
+    text: "5"

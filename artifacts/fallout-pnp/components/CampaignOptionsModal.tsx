@@ -585,6 +585,7 @@ function HardcoreRadiationPreviewModal({
             </View>
             <Text
               accessibilityLabel={`Optional campaign-wide SPECIAL penalties. Currently ${enabled ? 'enabled' : 'disabled'}.`}
+              testID="hardcore-radiation-current-status"
               style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}
             >
               Optional campaign-wide SPECIAL penalties · {enabled ? 'Currently enabled' : 'Currently disabled'}

@@ -1,0 +1,102 @@
+name: Fallout PnP Android native regression
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/fallout-pnp/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+      - ".github/workflows/fallout-pnp-android-native.yml"
+  push:
+    paths:
+      - "artifacts/fallout-pnp/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+      - ".github/workflows/fallout-pnp-android-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fallout-pnp-android-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hardcore-radiation-restart:
+    name: Hardcore radiation survives native restart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Fallout PnP validation
+        run: pnpm --filter @workspace/fallout-pnp run validate
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build platform
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Generate the Android project
+        working-directory: artifacts/fallout-pnp
+        env:
+          CI: "1"
+          EXPO_PUBLIC_DOMAIN: localhost
+          EXPO_PUBLIC_REPL_ID: ci
+        run: pnpm exec expo prebuild --platform android --clean --no-install
+
+      - name: Build an installable Android app
+        working-directory: artifacts/fallout-pnp/android
+        env:
+          EXPO_PUBLIC_DOMAIN: localhost
+          EXPO_PUBLIC_REPL_ID: ci
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Run the native regression on Android
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            set -euo pipefail
+            export APP_ID=com.pnpcalculator.app
+            adb install artifacts/fallout-pnp/android/app/build/outputs/apk/release/app-release.apk
+            adb shell pm clear "$APP_ID"
+            export MAESTRO_VERSION=2.11.0
+            curl -Ls "https://get.maestro.mobile.dev" | bash
+            export PATH="$HOME/.maestro/bin:$PATH"
+            maestro --version
+            pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
