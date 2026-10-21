@@ -15,6 +15,12 @@ Replit workspaces without `/dev/kvm` are not a reliable place to boot Android lo
 
 **How to apply:** Keep local SDKs, AVDs, and generated Android projects in ignored scratch paths. Use the existing hosted Android emulator workflow as the standard native test environment when KVM or a physical device is unavailable.
 
+When Expo compatibility checks require a just-published patch, pnpm's default 24-hour minimum release age can block installing that compatible version. Do not bypass the release-age protection or substitute an incompatible latest major.
+
+**Why:** The Expo SDK may update its expected patch before pnpm considers that release old enough to install, temporarily leaving `expo install --check` failing on an otherwise valid lockfile.
+
+**How to apply:** Keep the compatible Expo package range and lockfile unchanged until pnpm allows the version, then update and rerun validation. Report the temporary validation blocker rather than weakening the release-age guard.
+
 Provider-level reload tests with in-memory AsyncStorage can verify migration wiring, context state, and save-back, but are not evidence that native storage survives closing the app.
 
 **Why:** A real React provider exercises the JavaScript reload path, while substituting storage still bypasses the device's disk and application lifecycle.
