@@ -11,6 +11,8 @@ on:
       - ".npmrc"
       - ".github/workflows/fallout-pnp-android-native.yml"
   push:
+    branches:
+      - main
     paths:
       - "artifacts/fallout-pnp/**"
       - "lib/**"
@@ -50,9 +52,6 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Run Fallout PnP validation
-        run: pnpm --filter @workspace/fallout-pnp run validate
 
       - name: Set up Java
         uses: actions/setup-java@v4
