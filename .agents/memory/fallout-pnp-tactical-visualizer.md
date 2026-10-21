@@ -15,11 +15,11 @@ The optional 3D board is a second renderer of the same tactical state, available
 
 **How to apply:** Do not fork combat or movement state for 3D. Keep model uploads bounded and portable with campaign data, and leave the 2D board available.
 
-Vehicle paths are declared on the driver's own initiative turn, with no driving AP cost. After Pilot checks, all vehicles move together at round end; vehicles do not gain extra initiative turns.
+Vehicle paths can be declared on the driver's character turn or the vehicle's own turn, with no driving AP cost. Every vehicle gets a separate initiative entry after all characters; vehicle entries follow their assigned driver's initiative, with unassigned vehicles last. Ending a vehicle turn resolves only that vehicle's checked path. A moving vehicle without a path or a pending Pilot check blocks turn advancement. Vehicle entries have 0 AP and do not tick character statuses or temporary AC.
 
-**Why:** The user confirmed round-end timing from the original manual.
+**Why:** The user selected separate vehicle initiative entries at the end of the tracker, ordered by driver initiative, superseding the earlier round-end movement choice.
 
-**How to apply:** Shared calculator round advancement must not bypass unresolved board driving checks. Crew retain their own initiative turns.
+**How to apply:** Keep character AP/status timing unchanged. Do not advance the round while any vehicle entry remains unacted, and preserve this ordering when syncing or loading active combat state.
 
 Burst fire uses the manual drawing's first single hex followed by a fixed three-hex-wide corridor, not an ever-widening cone. Target the nearest combatant first and reroll only missed rounds against subsequent targets without charging ammunition or AP again.
 

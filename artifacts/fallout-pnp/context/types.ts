@@ -913,6 +913,10 @@ export interface BestiaryTemplate {
 export interface InitiativeEntry {
   id: string;
   characterId?: string;
+  /** Vehicle initiative slots are resolved after all character turns. */
+  turnKind?: 'vehicle';
+  /** Vehicles are ordered by the initiative value of their assigned driver. */
+  driverInitiative?: number;
   name: string;
   initiative: number;
   sequence: number;

@@ -39,13 +39,14 @@ interface CombatHudDockProps {
   onAttack: () => void;
   onOpenActions: () => void;
   onEndTurn: () => void;
+  endTurnLabel?: string;
   canEndTurn: boolean;
 }
 
 export default function CombatHudDock({
   attacker, active, currentAP, maxAP, weaponSlots, selectedWeaponId,
   selectedFireMode, logEntries, compact, bottomInset, onSelectWeapon, onSelectFireMode,
-  targeting, canAttack, onTarget, onAttack, onOpenActions, onEndTurn, canEndTurn,
+  targeting, canAttack, onTarget, onAttack, onOpenActions, onEndTurn, endTurnLabel = 'END TURN', canEndTurn,
 }: CombatHudDockProps) {
   const colors = useColors();
   const ap = Math.max(0, currentAP);
@@ -284,7 +285,7 @@ export default function CombatHudDock({
         <TouchableOpacity
           testID="combat-hud-end-turn"
           accessibilityRole="button"
-          accessibilityLabel={tr('End turn')}
+          accessibilityLabel={tr(endTurnLabel === 'END VEHICLE TURN' ? 'End vehicle turn' : 'End turn')}
           accessibilityState={{ disabled: !canEndTurn }}
           disabled={!canEndTurn}
           onPress={onEndTurn}
@@ -304,7 +305,7 @@ export default function CombatHudDock({
         >
           <Feather name="skip-forward" size={compact ? 12 : 14} color={colors.primary} />
           <Text style={{ color: colors.primary, fontSize: compact ? 6 : 8, fontWeight: '900', letterSpacing: 0.3 }}>
-            {tr('END TURN')}
+            {tr(endTurnLabel)}
           </Text>
         </TouchableOpacity>
         </View>

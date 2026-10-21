@@ -116,7 +116,8 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
   const dTok = p.defenderId ? boardTokenFor(p.defenderId, board, chars) : undefined;
   const nameOf = (id: string | null) => chars.find(x => x.id === id)?.name ?? translateText('None');
   const hudAttacker = chars.find(x => x.id === p.attackerId) ?? null;
-  const activeId = app.initiativeEntries.find(e => e.isActive)?.characterId ?? null;
+  const activeTurnEntry = app.initiativeEntries.find(e => e.isActive);
+  const activeId = activeTurnEntry?.characterId ?? null;
   const hudInitiativeEntry = app.initiativeEntries.find(e => e.characterId === hudAttacker?.id);
   const hudCurrentAP = hudInitiativeEntry?.currentAP ?? hudAttacker?.currentAP ?? 0;
   const hudMaxAP = hudInitiativeEntry?.maxAP ?? hudAttacker?.maxAP ?? 0;
@@ -198,7 +199,6 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
     } else if (hit?.kind === 'obstacle') { setObstacleId(hit.id); setTab('settings'); }
     else { setSelectedId(null); setObstacleId(null); }
   };
-  const resolveDriving = () => { try { app.resolveTacticalDriving(); setNotice(''); } catch (e) { setNotice(e instanceof Error ? e.message : 'Round-end movement rejected.'); } };
   const openTab = (t: Tab) => { setTab(tab === t ? null : t); setPathCells(null); };
   const beginTargetSelection = () => {
     if (pendingPlacement) return;
@@ -295,15 +295,34 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
           {app.initiativeEntries.map(e => {
             const t = e.characterId ? boardTokenFor(e.characterId, board, chars) : undefined;
             const actor = chars.find(ch => ch.id === e.characterId);
+            const driver = actor?.vehicleCrew?.pilotCharacterId
+              ? chars.find(ch => ch.id === actor.vehicleCrew?.pilotCharacterId)
+              : null;
             return (
-              <Touch key={e.id} accessibilityRole="button" accessibilityLabel={tr('Initiative {0}: {1}, HP {2} of {3}, AP {4} of {5}{6}', e.initiative, e.name, e.currentHp, e.maxHp, e.currentAP, e.maxAP, e.isActive ? `, ${tr('active turn')}` : '')}
+              <Touch key={e.id} accessibilityRole="button" accessibilityLabel={tr(
+                e.turnKind === 'vehicle'
+                  ? 'Vehicle turn {0}: {1}, driver {2}, HP {3} of {4}{5}'
+                  : 'Initiative {0}: {1}, HP {2} of {3}, AP {4} of {5}{6}',
+                e.turnKind === 'vehicle' ? e.driverInitiative ?? -1 : e.initiative,
+                e.name,
+                ...(e.turnKind === 'vehicle'
+                  ? [driver?.name ?? tr('unassigned'), e.currentHp, e.maxHp, e.isActive ? `, ${tr('active turn')}` : '']
+                  : [e.currentHp, e.maxHp, e.currentAP, e.maxAP, e.isActive ? `, ${tr('active turn')}` : '']),
+              )}
                 onPress={() => { if (t) { setSelectedId(t.characterId); setTab('token'); } }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 144, maxWidth: 220, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, borderWidth: e.isActive ? 2 : 1, borderColor: e.isActive ? c.primary : c.border, backgroundColor: e.isActive ? c.secondary : c.card, opacity: e.hasActed ? 0.6 : 1 }}>
                 <CombatantPortrait character={actor} size={28} active={e.isActive} />
                 <View style={{ minWidth: 0, flexShrink: 1 }}>
-                  <Text style={{ color: c.text, fontSize: 11, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>{`${e.initiative} ${e.name}`}</Text>
-                  <Text style={{ color: c.mutedForeground, fontSize: 9 }} numberOfLines={1}>{tr(t ? 'HP {0}/{1} AP {2}/{3}' : 'HP {0}/{1} AP {2}/{3} off board', e.currentHp, e.maxHp, e.currentAP, e.maxAP)}</Text>
-                  {e.isActive ? <Text style={{ color: c.primary, fontSize: 8, fontWeight: '900' }}>{tr('ACTIVE TURN')}</Text> : null}
+                  <Text style={{ color: c.text, fontSize: 11, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
+                    {e.turnKind === 'vehicle' ? `VEHICLE · ${e.name}` : `${e.initiative} ${e.name}`}
+                  </Text>
+                  <Text style={{ color: c.mutedForeground, fontSize: 9 }} numberOfLines={1}>
+                    {e.turnKind === 'vehicle'
+                      ? `Driver ${driver?.name ?? 'unassigned'} · Init ${e.driverInitiative ?? -1} · HP ${e.currentHp}/${e.maxHp}`
+                      : tr(t ? 'HP {0}/{1} AP {2}/{3}' : 'HP {0}/{1} AP {2}/{3} off board', e.currentHp, e.maxHp, e.currentAP, e.maxAP)}
+                  </Text>
+                  {e.turnKind === 'vehicle' && e.isActive ? <Text style={{ color: c.primary, fontSize: 8, fontWeight: '900' }}>{tr('VEHICLE TURN')}</Text> : null}
+                  {e.turnKind !== 'vehicle' && e.isActive ? <Text style={{ color: c.primary, fontSize: 8, fontWeight: '900' }}>{tr('ACTIVE TURN')}</Text> : null}
                 </View>
               </Touch>
             );
@@ -339,10 +358,6 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
               a11y={tr(threeD ? 'Switch to 2D board' : 'Switch to 3D board')}
               label={narrow ? '' : tr(threeD ? '2D' : '3D')}
               onPress={() => { setThreeD(!threeD); setCameraPan(false); }} />
-            {threeD ? <Btn compact icon={cameraPan ? 'move' : 'rotate-cw'} active={cameraPan}
-              a11y={tr(cameraPan ? 'Orbit camera' : 'Pan camera')}
-              label={narrow ? '' : tr(cameraPan ? 'PAN' : 'ORBIT')}
-              onPress={() => setCameraPan(!cameraPan)} /> : null}
             {tools.map(x => <Btn key={x.t} compact icon={x.icon}
               a11y={x.t === 'place' ? tr('PLACE COMBATANT') : tr(x.label)}
               active={tab === x.t} onPress={() => openTab(x.t)} label="" />)}
@@ -351,8 +366,14 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
             <Btn compact icon="maximize" onPress={() => canvas.current?.fit()} label="" />
             <Btn compact icon="unlock" active={gm} onPress={() => setGm(!gm)} label="" />
           </View>
-          <View pointerEvents="none" style={{ position: 'absolute', left: 8, top: 8, gap: 4, maxWidth: '70%' }}>
-            {threeD ? <Note>{tr('Drag to orbit; use PAN for single-drag movement. Use two fingers or the mouse wheel to zoom.')}</Note> : null}
+          {threeD ? (
+            <View style={{ position: 'absolute', left: 8, top: 8, gap: 6 }}>
+              <Btn compact icon="move" active={cameraPan} a11y={tr('Pan camera')} label={tr('PAN')} onPress={() => setCameraPan(true)} />
+              <Btn compact icon="rotate-cw" active={!cameraPan} a11y={tr('Orbit camera')} label={tr('ORBIT')} onPress={() => setCameraPan(false)} />
+            </View>
+          ) : null}
+          <View pointerEvents="none" style={{ position: 'absolute', left: 8, top: threeD ? 100 : 8, gap: 4, maxWidth: '70%' }}>
+            {threeD ? <Note>{tr('Drag to pan or orbit using the selected mode. Pinch or use the zoom buttons to zoom.')}</Note> : null}
             {pick ? <Note tone="warn">{pick === 'attacker' ? 'Tap a token to set the attacker.' : 'Tap a token to set the target.'}</Note> : null}
             {gm ? <Note tone="warn">GM free placement is on: drags ignore AP and rules.</Note> : null}
             {burst ? <Note tone={nearest && nearest.characterId !== dTok?.characterId ? 'warn' : 'info'}>
@@ -395,7 +416,7 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
                   openAttack={() => setPopup('attack')} assignCrew={assignCrew} /> : null}
                {tab === 'token' && chars.find(ch => ch.id === selectedId)?.vehicle ? <Btn icon="edit" label="EDIT VEHICLE / WEAPONS" onPress={() => setEditVehicleId(selectedId)} /> : null}
               {tab === 'drive' ? <DrivingPanel board={board} characters={chars} token={sel && isVehicle(sel.characterId) ? sel : undefined} round={app.currentRound}
-                onPreview={setPathCells} update={update} resolve={resolveDriving} error={app.tacticalError}
+                 onPreview={setPathCells} update={update} error={app.tacticalError}
                 combatActive={app.initiativeEntries.length > 0} activeActorId={activeId} gm={gm}
                 effectivePilot={ch => effectivePilotSkill(ch, { allArmor: app.allArmor, hardcoreRadiationRules: app.hardcoreRadiationRules, mutantGhoulRadiationRules: app.mutantGhoulRadiationRules, ghoulRadiationHealingOption: app.ghoulRadiationHealingOption })} /> : null}
               {tab === 'blast' ? (
@@ -465,6 +486,7 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
             onAttack={() => setPopup('attack')}
             onOpenActions={() => setPopup('actions')}
             onEndTurn={() => { app.nextTurn(); recordHudLog(tr('Turn advanced.')); }}
+            endTurnLabel={activeTurnEntry?.turnKind === 'vehicle' ? 'END VEHICLE TURN' : 'END TURN'}
             canEndTurn={app.initiativeEntries.length > 0}
           />
         ) : null}

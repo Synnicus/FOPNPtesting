@@ -16,6 +16,7 @@ import type { BoardCanvasHandle, BoardHit, BoardRing } from './BoardCanvas';
 import { localTextureUri } from './modelAssetPicker';
 import { decodeModelDataUri, sanitizedGlbArrayBuffer, validateModelBytes } from './modelFormat';
 import { tr } from './i18n';
+import { clampCameraPhi, fitCameraDistance, pinchCameraDistance } from './cameraMath';
 
 const CELL = 1;
 const DEFAULT_TERRAIN = require('../../assets/images/combat-desert.jpg');
@@ -544,7 +545,8 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
   const layoutRef = useRef({ width: 0, height: 0 });
   const gestureRef = useRef({
     sx: 0, sy: 0, start: { theta: 0.65, phi: 0.78, distance: 18, x: 5, z: 5 } as CameraPose,
-    moved: false, startDistance: 0, startMid: null as null | { x: number; y: number }, hit: null as BoardHit | null,
+    moved: false, startDistance: 0, startMid: null as null | { x: number; y: number }, pinchActive: false, touchCount: 0,
+    hit: null as BoardHit | null,
   });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
@@ -553,15 +555,25 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
 
   const focusBoard = (fullBoard: boolean) => {
     const { board } = propsRef.current;
-    const first = board.tokens[0] ?? { q: (board.columns - 1) / 2, r: (board.rows - 1) / 2 };
-    const point = cellPoint(first, board.grid, CELL);
+    const focus = fullBoard
+      ? { q: (board.columns - 1) / 2, r: (board.rows - 1) / 2 }
+      : board.tokens[0] ?? { q: (board.columns - 1) / 2, r: (board.rows - 1) / 2 };
+    const point = cellPoint(focus, board.grid, CELL);
     const pose = poseRef.current;
     pose.x = point.x; pose.z = point.y;
-    pose.distance = fullBoard ? Math.max(board.columns, board.rows) * 1.35 : (board.tokens.length ? 18 : Math.max(board.columns, board.rows) * 0.62);
+    if (fullBoard) {
+      pose.theta = 0;
+      pose.phi = Math.PI / 2;
+      pose.distance = fitCameraDistance(
+        layoutRef.current.width, layoutRef.current.height, board.columns, board.rows, board.grid,
+      );
+    } else {
+      pose.distance = board.tokens.length ? 18 : Math.max(board.columns, board.rows) * 0.62;
+    }
   };
   useImperativeHandle(ref, () => ({
     fit: () => { focusBoard(true); },
-    zoomBy: factor => { poseRef.current.distance = Math.max(2.5, Math.min(350, poseRef.current.distance / factor)); },
+    zoomBy: factor => { poseRef.current.distance = Math.max(2.5, Math.min(1000, poseRef.current.distance / factor)); },
   }));
 
   buildRef.current = runtime => appendScene(runtime, propsRef.current, colorsRef.current);
@@ -672,6 +684,8 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
       state.sy = event.nativeEvent.locationY ?? 0;
       state.start = { ...pose };
       state.moved = false;
+      state.pinchActive = touches.length >= 2;
+      state.touchCount = touches.length;
       const runtime = runtimeRef.current;
       state.hit = runtime ? pickAt(runtime, state.sx, state.sy, propsRef.current.board).hit : null;
       state.startDistance = touches.length >= 2 ? Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY) : 0;
@@ -685,16 +699,30 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
       if (!runtime) return;
       const touches = event.nativeEvent.touches ?? [];
       const start = state.start;
-      if (touches.length >= 2 && state.startDistance > 0) {
+      if (touches.length >= 2) {
         if (!propsRef.current.cameraControlsEnabled) { state.moved = true; return; }
         const distance = Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
         const midpoint = { x: (touches[0].pageX + touches[1].pageX) / 2, y: (touches[0].pageY + touches[1].pageY) / 2 };
-        poseRef.current.distance = Math.max(2.5, Math.min(350, start.distance * state.startDistance / Math.max(1, distance)));
-        panPose(poseRef.current, start, midpoint.x - (state.startMid?.x ?? midpoint.x),
-          midpoint.y - (state.startMid?.y ?? midpoint.y), runtime.size.height);
+        if (state.startDistance <= 0 || state.touchCount < 2) {
+          state.start = { ...poseRef.current };
+          state.startDistance = distance;
+          state.startMid = midpoint;
+          state.pinchActive = true;
+          state.touchCount = touches.length;
+          state.moved = true;
+          return;
+        }
+        poseRef.current.distance = pinchCameraDistance(start.distance, state.startDistance, distance);
+        if (propsRef.current.panMode) {
+          panPose(poseRef.current, start, midpoint.x - (state.startMid?.x ?? midpoint.x),
+            midpoint.y - (state.startMid?.y ?? midpoint.y), runtime.size.height);
+        }
+        state.pinchActive = true;
+        state.touchCount = touches.length;
         state.moved = true;
         return;
       }
+      if (state.pinchActive) { state.touchCount = touches.length; state.moved = true; return; }
       if (Math.abs(gesture.dx) + Math.abs(gesture.dy) > 6) state.moved = true;
       if (!state.moved) return;
       if (state.hit?.kind === 'token' && propsRef.current.dragEnabled) return;
@@ -702,7 +730,7 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
       if (propsRef.current.panMode) panPose(poseRef.current, start, gesture.dx, gesture.dy, runtime.size.height);
       else {
         poseRef.current.theta = start.theta - gesture.dx * 0.008;
-        poseRef.current.phi = Math.max(0.12, Math.min(1.47, start.phi + gesture.dy * 0.006));
+        poseRef.current.phi = clampCameraPhi(start.phi + gesture.dy * 0.006);
       }
     },
     onPanResponderRelease: (event, gesture) => {
@@ -715,9 +743,15 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
         const { cell } = pickAt(runtime, state.sx + gesture.dx, state.sy + gesture.dy, propsRef.current.board);
         propsRef.current.onDrop(state.hit.id, cell);
       }
-      state.moved = false; state.startDistance = 0; state.startMid = null; state.hit = null;
+      state.moved = false; state.startDistance = 0; state.startMid = null; state.pinchActive = false; state.touchCount = 0; state.hit = null;
     },
-    onPanResponderTerminate: () => { gestureRef.current.moved = false; },
+    onPanResponderTerminate: () => {
+      gestureRef.current.moved = false;
+      gestureRef.current.startDistance = 0;
+      gestureRef.current.startMid = null;
+      gestureRef.current.pinchActive = false;
+      gestureRef.current.touchCount = 0;
+    },
   })).current;
 
   return (
@@ -725,12 +759,12 @@ const Board3DCanvas = forwardRef<BoardCanvasHandle, Props>(function Board3DCanva
       <GLView onContextCreate={onContextCreate} style={{ flex: 1 }} />
       <View
         testID="tactical-3d-board-input"
-        accessibilityLabel={tr('3D tactical board. Drag to {0}; two fingers or the mouse wheel pan and zoom.', props.panMode ? tr('Pan camera') : tr('Orbit camera'))}
+        accessibilityLabel={tr('3D tactical board. Drag to {0}; pinch or use the mouse wheel to zoom.', props.panMode ? tr('Pan camera') : tr('Orbit camera'))}
         {...responder.panHandlers}
         {...(Platform.OS === 'web' ? ({
           onWheel: (event: { deltaY: number }) => {
             if (!propsRef.current.cameraControlsEnabled) return;
-            poseRef.current.distance = Math.max(2.5, Math.min(350, poseRef.current.distance * (event.deltaY < 0 ? 0.88 : 1.14)));
+            poseRef.current.distance = Math.max(2.5, Math.min(1000, poseRef.current.distance * (event.deltaY < 0 ? 0.88 : 1.14)));
           },
         } as object) : null)}
         style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'transparent', touchAction: 'none' } as object}

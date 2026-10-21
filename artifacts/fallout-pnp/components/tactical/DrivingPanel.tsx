@@ -12,7 +12,7 @@ export default function DrivingPanel(props: {
   board: TacticalBoard; characters: readonly Character[]; token: BoardToken | undefined; round: number;
   onPreview: (cells: BoardCell[] | null) => void;
   update: (fn: (b: TacticalBoard) => TacticalBoard) => void;
-  resolve: () => void; error: string | null; effectivePilot: (c: Character) => number;
+  error: string | null; effectivePilot: (c: Character) => number;
   combatActive: boolean; activeActorId: string | null; gm: boolean;
 }) {
   const c = useColors();
@@ -32,7 +32,8 @@ export default function DrivingPanel(props: {
   let sheetError: string | null = null;
   try { sheetPilot = pilot ? props.effectivePilot(pilot) : 0; } catch (e) { sheetError = e instanceof Error ? e.message : 'Pilot sheet could not be resolved.'; }
   const skill = sheetPilot + gmBonus;
-  const turnBlocked = props.combatActive && !props.gm && (!pilot || props.activeActorId !== pilot.id);
+  const turnBlocked = props.combatActive && !props.gm
+    && props.activeActorId !== pilot?.id && props.activeActorId !== token?.characterId;
   useEffect(() => { setSpeed(token?.speedKph ?? 0); setGmBonus(0); setCrashRolls(null); }, [pilot?.id, token?.characterId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const plan = useMemo(() => {
@@ -64,7 +65,7 @@ export default function DrivingPanel(props: {
     <View style={{ gap: 8 }}>
       <Section title={tr('DRIVING: {0}', veh.name)}>
         <Note>{pilot ? tr('Pilot: {0}. Effective Pilot {1} from the character sheet (armor, perks, race, conditions, radiation), total {2} with GM bonus.', pilot.name, sheetPilot, skill) : 'No pilot assigned. Assign a pilot in the token tab; without one the Pilot value is 0 plus any GM bonus.'}</Note>
-        <Note>Driving costs no AP. Paths are queued, Pilot checks resolved, then every vehicle moves together at round end.</Note>
+        <Note>Driving costs no AP. Queue the path on the pilot’s character turn or this vehicle’s turn, then complete its Pilot check. Ending the vehicle turn resolves only this vehicle’s movement.</Note>
         {moved ? <Note tone="warn">This vehicle already moved this round.</Note> : null}
         <Row>
           <NumInput label="SPEED KPH" value={speed} onChange={setSpeed} />
@@ -82,7 +83,7 @@ export default function DrivingPanel(props: {
           {PILOT_TERRAINS.map((t, i) => <Btn key={t.label} compact active={terrain === i} label={`${translateText(t.label)} (${t.modifier >= 0 ? '+' : ''}${t.modifier})`} onPress={() => setTerrain(i)} />)}
         </Row>
         {sheetError ? <Note tone="error">{tr('Pilot skill could not be resolved: {0}', sheetError)}</Note> : null}
-        {turnBlocked ? <Note tone="warn">Paths can be queued only on the pilot's own turn. GM placement overrides this.</Note> : null}
+        {turnBlocked ? <Note tone="warn">Queue this path on the pilot’s character turn or this vehicle’s initiative turn. GM placement overrides this.</Note> : null}
         {plan.error ? <Note tone="error">{plan.error}</Note> : plan.path ? (
           <Note>{tr('Preview: {0} cells, final facing {1} degrees. Pilot target {2} or lower on d100.', plan.path.cells.length, plan.path.facing, target ?? 0)}</Note>
         ) : null}
@@ -124,13 +125,15 @@ export default function DrivingPanel(props: {
         </Section>
       ) : null}
       <Section title="GM ADJUDICATION">
-        <Note>If the vehicle cannot drive (disabled engine, controls or wheels), the GM can force a stop. The vehicle halts at its current position with speed 0, any queued path is cleared, and it counts as having moved this round so round end is not blocked. Resolve occupant and vehicle consequences by hand.</Note>
+        <Note>If the vehicle cannot drive (disabled engine, controls or wheels), the GM can force a stop. The vehicle halts at its current position with speed 0, any queued path is cleared, and its current turn counts as resolved. Resolve occupant and vehicle consequences by hand.</Note>
         <Btn icon="octagon" danger label="FORCED STOP AND CLEAR PATH" disabled={moved} onPress={forceStop} />
       </Section>
-      <Section title="ROUND END">
+      <Section title="VEHICLE TURN">
+        <Note>Vehicle entries follow all character turns and are ordered by driver initiative. The tracker’s End Turn applies this vehicle’s checked path; other vehicles wait for their own turns.</Note>
         <Note>{tr('{0} vehicle path(s) queued for round {1}.', pendingCount, round)}</Note>
+        {token.speedKph > 0 && !queued && !moved ? <Note tone="warn">This vehicle is moving. Queue a path and complete its Pilot check before ending its turn.</Note> : null}
+        {queued?.check === 'pending' ? <Note tone="warn">Complete the Pilot check before ending this vehicle’s turn.</Note> : null}
         {props.error ? <Note tone="error">{props.error}</Note> : null}
-        <Btn icon="play" label="RESOLVE ALL VEHICLE MOVEMENT" disabled={!pendingCount} onPress={props.resolve} />
       </Section>
     </View>
   );

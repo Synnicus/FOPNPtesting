@@ -108,6 +108,7 @@ import {
   type AreaResolution,
 } from '@/data/areaEffects';
 import { Character, Injury, Weapon, InitiativeEntry, DAMAGE_TYPE_LABELS, DAMAGE_TYPE_NAMES, NaturalProtection, EMPTY_NATURAL_PROTECTION, DamageType, PositionType, SkillType } from '@/context/types';
+import { createVehicleInitiativeEntry } from '@/data/initiativeSync';
 import { HEAL_FALLEN_AP_COST, HEAL_FALLEN_SKILLS, armorOnlyArmorClass, getHealFallenAPCost, getHealFallenSkillOptions, type CombatSkillResolutionMethod, type HealFallenSkill, type TimedCombatSkillAction } from '@/data/combatSkills';
 
 function resolveCombatSheet(
@@ -1054,6 +1055,9 @@ export default function CombatScreen() {
   // Non-storage characters — used for pickers and initiative setup
   const activeCharacters = characters.filter(c => !c.inStorage);
   const initiativeSetupCharacters = activeCharacters.filter(c => !c.vehicle && !c.combatDevice && c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
+  const initiativeSetupVehicles = activeCharacters.filter(c => c.vehicle && c.currentHp > 0 && !excludedInitiativeIds.includes(c.id));
+  const initiativeSetupCount = initiativeSetupCharacters.length + initiativeSetupVehicles.length;
+  const activeInitiativeEntry = initiativeEntries.find(entry => entry.id === activeEntryId);
 
   // Derived values
   const attacker = characters.find(c => c.id === attackerId) ?? null;
@@ -3287,7 +3291,7 @@ export default function CombatScreen() {
                   <>
                     <TouchableOpacity style={{ paddingHorizontal: 10, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.primary, flexDirection: 'row', gap: 5, alignItems: 'center' }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); nextTurn(); }}>
                       <Feather name="chevrons-right" size={14} color={colors.primaryForeground} />
-                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>END TURN</Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.primaryForeground }}>{activeInitiativeEntry?.turnKind === 'vehicle' ? 'END VEHICLE TURN' : 'END TURN'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={{ paddingHorizontal: 10, paddingVertical: 8, borderRadius: colors.radius, backgroundColor: colors.secondary, borderWidth: 1, borderColor: colors.destructive + '88' }} onPress={() => { endCombat(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); }}>
                       <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.destructive }}>END</Text>
@@ -3353,7 +3357,12 @@ export default function CombatScreen() {
               <View style={{ backgroundColor: colors.secondary, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 10 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 1, textAlign: 'center' }}>SET INITIATIVE ROLLS</Text>
                 <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>{'Sequence = PER×2.\nRoll 1d10 and add Sequence for initiative.'}</Text>
-                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: colors.primary }} onPress={() => {
+                {initiativeSetupVehicles.length > 0 && (
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.primary, textAlign: 'center' }}>
+                    VEHICLES TAKE TURNS AFTER CHARACTERS, ORDERED BY DRIVER INITIATIVE.
+                  </Text>
+                )}
+                <TouchableOpacity disabled={initiativeSetupCharacters.length === 0} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: colors.radius, backgroundColor: initiativeSetupCharacters.length > 0 ? colors.primary : colors.border, opacity: initiativeSetupCharacters.length > 0 ? 1 : 0.5 }} onPress={() => {
                   const rolls: Record<string, number> = {};
                   initiativeSetupCharacters.forEach(c => {
                     const seq = resolveCombatSheet(
@@ -3395,19 +3404,44 @@ export default function CombatScreen() {
                   </View>
                   );
                 })}
-                {initiativeSetupCharacters.length === 0 && (
+                {initiativeSetupVehicles.map(vehicle => {
+                  const driverId = vehicle.vehicleCrew?.pilotCharacterId;
+                  const driver = driverId ? activeCharacters.find(c => c.id === driverId) : undefined;
+                  const driverInSetup = !!driverId && initiativeSetupCharacters.some(c => c.id === driverId);
+                  return (
+                    <View key={vehicle.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 8, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.primary + '66', backgroundColor: colors.primary + '0a' }}>
+                      <CharacterAvatar portrait={vehicle.portrait} name={vehicle.name} size={32} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} numberOfLines={1}>{vehicle.name}</Text>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground }} numberOfLines={1}>
+                          VEHICLE TURN · DRIVER {driver?.name ?? 'UNASSIGNED'}{driverInSetup && driverId ? ` · INIT ${initRolls[driverId] ?? 10}` : ' · NO DRIVER INITIATIVE'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        testID={`remove-initiative-${vehicle.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${vehicle.name} from initiative`}
+                        style={{ width: 30, height: 30, borderRadius: 4, borderWidth: 1, borderColor: colors.destructive, alignItems: 'center', justifyContent: 'center' }}
+                        onPress={() => setExcludedInitiativeIds(prev => prev.includes(vehicle.id) ? prev : [...prev, vehicle.id])}
+                      >
+                        <Feather name="x" size={15} color={colors.destructive} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+                {initiativeSetupCount === 0 && (
                   <Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, textAlign: 'center' }}>
                     {activeCharacters.some(c => c.currentHp > 0)
-                      ? 'All living characters were removed. Cancel and reopen setup to restore them.'
-                      : 'No living characters are available for initiative.'}
+                      ? 'All living combatants were removed. Cancel and reopen setup to restore them.'
+                      : 'No living characters or vehicles are available for initiative.'}
                   </Text>
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TouchableOpacity style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }} onPress={() => setShowInitSetup(false)}>
                     <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>CANCEL</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity disabled={initiativeSetupCharacters.length === 0} style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: initiativeSetupCharacters.length > 0 ? '#4a8c3f' : colors.border, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
-                    const entries: InitiativeEntry[] = initiativeSetupCharacters.map(c => {
+                  <TouchableOpacity disabled={initiativeSetupCount === 0} style={{ flex: 2, paddingVertical: 10, alignItems: 'center', borderRadius: colors.radius, backgroundColor: initiativeSetupCount > 0 ? '#4a8c3f' : colors.border, flexDirection: 'row', justifyContent: 'center', gap: 6 }} onPress={() => {
+                    const characterEntries: InitiativeEntry[] = initiativeSetupCharacters.map(c => {
                       // temp AC is turn-specific and starts separately at zero.
                       const sheet = resolveCombatSheet(
                         c, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -3429,19 +3463,34 @@ export default function CombatScreen() {
                       hasActed: false,
                     });
                     });
+                    const vehicleEntries = initiativeSetupVehicles.map(vehicle => {
+                      const driverEntry = characterEntries.find(entry => entry.characterId === vehicle.vehicleCrew?.pilotCharacterId);
+                      return createVehicleInitiativeEntry(vehicle, driverEntry);
+                    });
+                    const entries = [...characterEntries, ...vehicleEntries];
                     if (entries.length > 0) { startCombat(entries); setShowInitSetup(false); setInitRolls({}); setExcludedInitiativeIds([]); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
                   }}>
-                    <Feather name="play" size={14} color={initiativeSetupCharacters.length > 0 ? '#fff' : colors.mutedForeground} />
-                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: initiativeSetupCharacters.length > 0 ? '#fff' : colors.mutedForeground }}>BEGIN COMBAT</Text>
+                    <Feather name="play" size={14} color={initiativeSetupCount > 0 ? '#fff' : colors.mutedForeground} />
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: initiativeSetupCount > 0 ? '#fff' : colors.mutedForeground }}>BEGIN COMBAT</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
 
             {/* Active combatants */}
+            {combatActive && app.tacticalError && (
+              <Text style={{ padding: 8, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.destructive, color: colors.destructive, fontSize: 11, textAlign: 'center' }}>
+                {app.tacticalError}
+              </Text>
+            )}
             {combatActive && initiativeEntries.map((entry, idx) => {
               const isActive = entry.id === activeEntryId;
               const entryChar = characters.find(c => c.id === entry.characterId);
+              const vehicleDriver = entryChar?.vehicleCrew?.pilotCharacterId
+                ? characters.find(c => c.id === entryChar.vehicleCrew?.pilotCharacterId)
+                : null;
+              const canMoveUp = entry.turnKind !== 'vehicle' && idx > 0 && initiativeEntries[idx - 1]?.turnKind !== 'vehicle';
+              const canMoveDown = entry.turnKind !== 'vehicle' && idx < initiativeEntries.length - 1 && initiativeEntries[idx + 1]?.turnKind !== 'vehicle';
               return (
                 <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: colors.radius, borderWidth: 1, borderColor: isActive ? '#4a8c3f' : colors.border, backgroundColor: isActive ? '#4a8c3f11' : colors.secondary, gap: 8 }}>
                   {isActive && <Feather name="chevron-right" size={14} color="#4a8c3f" />}
@@ -3449,8 +3498,11 @@ export default function CombatScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontFamily: isActive ? 'Inter_700Bold' : 'Inter_500Medium', color: isActive ? '#4a8c3f' : colors.foreground }} numberOfLines={1}>{entry.name}</Text>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>
-                      Init {entry.initiative} · HP {entry.currentHp}/{entry.maxHp} · AP {entry.currentAP}/{entry.maxAP}{entry.tempAC > 0 ? ` · +${entry.tempAC}AC` : ''}
+                      {entry.turnKind === 'vehicle'
+                        ? `VEHICLE TURN · Driver ${vehicleDriver?.name ?? 'unassigned'} · Init ${entry.driverInitiative ?? -1} · HP ${entry.currentHp}/${entry.maxHp}`
+                        : `Init ${entry.initiative} · HP ${entry.currentHp}/${entry.maxHp} · AP ${entry.currentAP}/${entry.maxAP}${entry.tempAC > 0 ? ` · +${entry.tempAC}AC` : ''}`}
                     </Text>
+                    {entry.turnKind === 'vehicle' && <Text style={{ fontSize: 9, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>MOVEMENT RESOLVES ON THIS TURN</Text>}
                     {entryChar?.isKnockedOut && (
                       <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
                         Unconscious for {entryChar.knockOutRoundsLeft} rounds · Prone
@@ -3509,10 +3561,10 @@ export default function CombatScreen() {
                   </View>
                   {entry.hasActed && <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: colors.mutedForeground }}>DONE</Text>}
                   <View style={{ flexDirection: 'column', gap: 2 }}>
-                    <TouchableOpacity onPress={() => moveInitiativeEntry(entry.id, 'up')} disabled={idx === 0} style={{ padding: 2, opacity: idx === 0 ? 0.3 : 1 }}>
+                    <TouchableOpacity onPress={() => moveInitiativeEntry(entry.id, 'up')} disabled={!canMoveUp} style={{ padding: 2, opacity: canMoveUp ? 1 : 0.3 }}>
                       <Feather name="chevron-up" size={16} color={colors.mutedForeground} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => moveInitiativeEntry(entry.id, 'down')} disabled={idx === initiativeEntries.length - 1} style={{ padding: 2, opacity: idx === initiativeEntries.length - 1 ? 0.3 : 1 }}>
+                    <TouchableOpacity onPress={() => moveInitiativeEntry(entry.id, 'down')} disabled={!canMoveDown} style={{ padding: 2, opacity: canMoveDown ? 1 : 0.3 }}>
                       <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
                     </TouchableOpacity>
                   </View>
@@ -5027,6 +5079,14 @@ export default function CombatScreen() {
       <CharacterPickerModal visible={showAddCombatantPicker} onClose={() => setShowAddCombatantPicker(false)} onSelect={(id) => {
         const c = characters.find(ch => ch.id === id);
         if (!c) return;
+        if (c.vehicle) {
+          const driverEntry = c.vehicleCrew?.pilotCharacterId
+            ? initiativeEntries.find(entry => entry.characterId === c.vehicleCrew?.pilotCharacterId && entry.turnKind !== 'vehicle')
+            : undefined;
+          addInitiativeEntry(createVehicleInitiativeEntry(c, driverEntry, `init-${c.id}-${genId()}`));
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          return;
+        }
         // Snapshot resolved permanent armor AC; temp AC remains its own entry field.
         const sheet = resolveCombatSheet(
           c, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
@@ -5048,7 +5108,7 @@ export default function CombatScreen() {
           hasActed: false,
         });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !c.vehicle && !c.combatDevice && !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
+      }} title="ADD COMBATANT" characters={activeCharacters.filter(c => !c.combatDevice && !initiativeEntries.some(e => e.characterId === c.id))} allWeapons={allWeapons} allArmor={allArmor} hardcoreRadiationRules={hardcoreRadiationRules} mutantGhoulRadiationRules={mutantGhoulRadiationRules} ghoulRadiationHealingOption={ghoulRadiationHealingOption} />
       <LightPickerModal visible={showLightPicker} value={lightPenalty} onChange={setLightPenalty} onClose={() => setShowLightPicker(false)} />
       <Modal
         visible={showGlowingAuraModal}

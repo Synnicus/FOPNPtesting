@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   boardTokenFor, burstCorridor, cellDistance, cellPoint, createTacticalBoard, footprint,
   isBoardImage, isTacticalBoard, makeBoardToken, planDriving, planWalking, pointCell,
-  resolveDrivingRound, tokenDistance,
+  resolveDrivingVehicleTurn, tokenDistance,
 } from './tacticalBoard.ts';
 import { BUILT_IN_VEHICLES, spawnVehicleCharacter } from './vehicles.ts';
 import { createCampaignBundle, parseCampaignFile, restoreCampaignPortraits } from './portableExports.ts';
@@ -104,27 +104,34 @@ test('disabled propulsion permits GM coasting but never acceleration; broken con
   const controlsOut = { ...vehicle, systems: vehicle.systems.map(s => s.kind === 'controls' ? { ...s, currentHp: 0 } : s) };
   assert.throws(() => planDriving(vt, controlsOut, { ...input, maneuver: 'left' }, board), /no steering/);
 });
-test('round end waits for all checks, moves successful vehicles together, and is idempotent', () => {
+test('vehicle initiative turns wait for that vehicle’s check and move vehicles sequentially', () => {
   const vt = makeBoardToken('v', token, true);
+  const vt2 = makeBoardToken('v2', { q: 5, r: 2 }, true);
   const path = planDriving(vt, vehicle, input, board);
-  const waiting = { ...board, tokens: [{ ...vt, path }] };
-  assert.throws(() => resolveDrivingRound(waiting, 1), /every queued/);
+  const path2 = planDriving(vt2, vehicle, input, board);
+  const waiting = { ...board, tokens: [{ ...vt, path }, { ...vt2, path: path2 }] };
+  assert.throws(() => resolveDrivingVehicleTurn(waiting, 'v', 1), /Pilot check/);
   const checked = { ...board, tokens: [
     { ...vt, path: { ...path, check: 'success' as const } },
-    { ...makeBoardToken('v2', { q: 5, r: 2 }, true), path: { ...path, check: 'failure' as const } },
+    { ...vt2, path: { ...path2, check: 'failure' as const } },
   ] };
-  const done = resolveDrivingRound(checked, 1);
+  const firstTurn = resolveDrivingVehicleTurn(checked, 'v', 1);
+  assert.equal(firstTurn.tokens[0].q, 27);
+  assert.equal(firstTurn.tokens[0].speedKph, 10);
+  assert.equal(firstTurn.tokens[1].q, vt2.q);
+  assert.ok(firstTurn.tokens[1].path);
+  const done = resolveDrivingVehicleTurn(firstTurn, 'v2', 1);
   assert.equal(done.tokens[0].q, 27); assert.equal(done.tokens[0].speedKph, 10);
   assert.equal(done.tokens[1].q, 5); assert.equal(done.tokens[1].speedKph, 0);
-  assert.deepEqual(resolveDrivingRound(done, 1), done);
+  assert.deepEqual(resolveDrivingVehicleTurn(done, 'v2', 1), done);
 });
 test('moving vehicles cannot skip a new round’s path, and damage invalidates unsafe plans', () => {
   const vc = spawnVehicleCharacter(vehicle, 'v');
   const vt = { ...makeBoardToken(vc.id, token, true), speedKph: 10 };
-  assert.throws(() => resolveDrivingRound({ ...board, tokens: [vt] }, 2, [vc]), /Every moving vehicle/);
+  assert.throws(() => resolveDrivingVehicleTurn({ ...board, tokens: [vt] }, vc.id, 2, [vc]), /needs a queued path/);
   const path = planDriving({ ...vt, speedKph: 0 }, vehicle, input, board);
   const damaged = { ...vc, vehicle: { ...vehicle, topSpeedKph: 0 } };
-  assert.throws(() => resolveDrivingRound({ ...board, tokens: [{ ...vt, path: { ...path, check: 'success' } }] }, 1, [damaged]), /condition changed/);
+  assert.throws(() => resolveDrivingVehicleTurn({ ...board, tokens: [{ ...vt, path: { ...path, check: 'success' } }] }, vc.id, 1, [damaged]), /condition changed/);
 });
 test('board assets accept transparent PNG and animated GIF but reject unsafe or oversized content', () => {
   assert.ok(isBoardImage(png)); assert.ok(isBoardImage(gif));

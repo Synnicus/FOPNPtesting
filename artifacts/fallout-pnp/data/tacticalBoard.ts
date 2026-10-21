@@ -275,26 +275,53 @@ export function planDriving(token: BoardToken, vehicle: VehicleProfile, input: D
   }
   return { round: input.round, speedKph: input.speedKph, maneuver: input.maneuver, cells, facing: token.facing + (turning ? direction * 90 : 0), check: 'pending', target: Math.max(0, Math.min(200, target)), driverAttackPenalty };
 }
-/** One explicit round-end transaction; no AP cost and no extra vehicle initiative. */
-export function resolveDrivingRound(board: TacticalBoard, round: number, characters?: readonly Character[]): TacticalBoard {
-  const paths = board.tokens.filter(t => t.path?.round === round && t.lastMovedRound !== round);
-  if (characters && board.tokens.some(t => t.speedKph > 0 && t.lastMovedRound !== round
-    && !t.path && characters.some(c => c.id === t.characterId && !c.inStorage && c.vehicle))) throw new Error('Every moving vehicle needs a path and Pilot check for this round.');
-  if (paths.some(t => t.path?.check === 'pending')) throw new Error('Resolve every queued Pilot check before moving vehicles.');
-  return { ...board, tokens: board.tokens.map(t => {
-    if (t.path?.round !== round || t.lastMovedRound === round) return t;
-    const vehicle = characters?.find(c => c.id === t.characterId && !c.inStorage)?.vehicle;
-    if (characters && !vehicle) return { ...t, path: undefined, speedKph: 0 };
-    if (vehicle) {
-      const performance = resolveVehiclePerformance(vehicle);
-      const disabled = (kind: string) => performance.systems.some(s => s.kind === kind && vehicleSystemStatus(s) !== 'operational');
-      const speedLimit = disabled('engine') ? t.speedKph : performance.topSpeedKph ?? Infinity;
-      if (disabled('tread') || speedLimit < t.path.speedKph || ((disabled('engine') || disabled('drive')) && t.path.speedKph > t.speedKph)
-        || (disabled('controls') && (t.path.maneuver !== 'straight' || t.path.speedKph !== t.speedKph))) throw new Error('Vehicle condition changed. Replan its movement using its current speed limit or adjudicate a forced stop.');
+/** Resolve only the active vehicle's queued move on its initiative turn. */
+export function resolveDrivingVehicleTurn(
+  board: TacticalBoard,
+  characterId: string,
+  round: number,
+  characters?: readonly Character[],
+): TacticalBoard {
+  const token = board.tokens.find(t => t.characterId === characterId);
+  if (!token || token.lastMovedRound === round) return board;
+  const character = characters?.find(c => c.id === characterId && !c.inStorage);
+  const vehicle = character?.vehicle;
+  const path = token.path?.round === round ? token.path : undefined;
+  if (characters && !vehicle) {
+    return {
+      ...board,
+      tokens: board.tokens.map(t => t.characterId === characterId
+        ? { ...t, path: undefined, speedKph: 0, lastMovedRound: round }
+        : t),
+    };
+  }
+  if (!path) {
+    if (vehicle && token.speedKph > 0) {
+      throw new Error('This moving vehicle needs a queued path and completed Pilot check before ending its turn.');
     }
-    const end = t.path.cells.at(-1)!;
-    return t.path.check === 'success'
-      ? { ...t, ...end, facing: t.path.facing, speedKph: t.path.speedKph, lastMovedRound: round, path: undefined }
-      : { ...t, speedKph: 0, lastMovedRound: round, path: undefined };
-  }) };
+    return {
+      ...board,
+      tokens: board.tokens.map(t => t.characterId === characterId
+        ? { ...t, path: undefined, lastMovedRound: round }
+        : t),
+    };
+  }
+  if (path.check === 'pending') throw new Error('Resolve this vehicle’s Pilot check before ending its turn.');
+  if (vehicle) {
+    const performance = resolveVehiclePerformance(vehicle);
+    const disabled = (kind: string) => performance.systems.some(s => s.kind === kind && vehicleSystemStatus(s) !== 'operational');
+    const speedLimit = disabled('engine') ? token.speedKph : performance.topSpeedKph ?? Infinity;
+    if (disabled('tread') || speedLimit < path.speedKph || ((disabled('engine') || disabled('drive')) && path.speedKph > token.speedKph)
+      || (disabled('controls') && (path.maneuver !== 'straight' || path.speedKph !== token.speedKph))) {
+      throw new Error('Vehicle condition changed. Replan its movement using its current speed limit or adjudicate a forced stop.');
+    }
+  }
+  const end = path.cells.at(-1);
+  if (!end) throw new Error('This vehicle path has no destination.');
+  return {
+    ...board,
+    tokens: board.tokens.map(t => t.characterId !== characterId ? t : path.check === 'success'
+      ? { ...t, ...end, facing: path.facing, speedKph: path.speedKph, lastMovedRound: round, path: undefined }
+      : { ...t, speedKph: 0, lastMovedRound: round, path: undefined }),
+  };
 }

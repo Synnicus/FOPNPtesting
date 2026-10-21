@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createTacticalBoard, isTacticalBoard, planWalking, boardTokenFor, footprint, makeBoardToken,
-  resolveDrivingRound, type TacticalBoard, type BoardCell,
+  resolveDrivingVehicleTurn, type TacticalBoard, type BoardCell,
 } from '@/data/tacticalBoard';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
@@ -27,7 +27,10 @@ import {
   provisionNpcAmmo,
   setInventoryItemQuantity,
 } from '@/data/inventory';
-import { sortInitiativeEntries, syncInitiativeEntrySheet } from '@/data/initiativeSync';
+import {
+  createVehicleInitiativeEntry, sortInitiativeEntries, syncInitiativeEntrySheet,
+  syncVehicleInitiativeEntries,
+} from '@/data/initiativeSync';
 import {
   BUILT_IN_BESTIARY,
   normalizeCustomTemplateArmorClass,
@@ -294,9 +297,21 @@ function syncCombatSkillInitiative(
   mutantGhoulRadiationRules = false,
   ghoulRadiationHealingOption: GhoulRadiationHealingOption = 1,
 ): InitiativeEntry[] {
-  return entries.map(entry => {
+  return syncVehicleInitiativeEntries(entries.map(entry => {
     const character = entry.characterId ? characters.find(candidate => candidate.id === entry.characterId) : undefined;
     if (!character) return entry;
+    if (entry.turnKind === 'vehicle') {
+      return {
+        ...entry,
+        currentAP: 0,
+        maxAP: 0,
+        currentHp: character.currentHp,
+        maxHp: character.maxHp,
+        armorClass: character.vehicle?.armorClass ?? character.armorClass,
+        tempAC: 0,
+        position: character.position,
+      };
+    }
     const sheet = resolveCharacterArmorSheet(
       character, allArmor, false, hardcoreRadiationRules, mutantGhoulRadiationRules, ghoulRadiationHealingOption,
     );
@@ -310,7 +325,7 @@ function syncCombatSkillInitiative(
       tempAC: character.tempAC,
       position: character.position,
     };
-  });
+  }), characters);
 }
 
 /** Remove actions whose actor or target disappeared, then release any affected
@@ -614,20 +629,48 @@ function reconcileInitiativeCharacters(parsed: AppState): AppState {
         ? { ...effect, persistent: true, roundsLeft: undefined, removeAfterTick: false }
         : effect),
   }));
+  let initiativeEntries = (parsed.initiativeEntries ?? []).map(entry => {
+    const character = characters.find(c => c.id === entry.characterId);
+    if (!character) return entry;
+    return {
+      ...entry,
+      currentHp: character.currentHp,
+      maxHp: character.maxHp,
+      position: character.position,
+      currentAP: entry.turnKind === 'vehicle' || character.isKnockedOut || isRevivedAPRestricted(character, currentRound)
+        ? 0
+        : entry.currentAP,
+    };
+  });
+  let migratedVehicleEntries: InitiativeEntry[] = [];
+  if (parsed.combatActive) {
+    const trackedVehicleIds = new Set(
+      initiativeEntries.filter(entry => entry.turnKind === 'vehicle').map(entry => entry.characterId),
+    );
+    migratedVehicleEntries = characters
+      .filter(character => character.vehicle && !character.inStorage && character.currentHp > 0 && !trackedVehicleIds.has(character.id))
+      .map(vehicle => {
+        const driverEntry = vehicle.vehicleCrew?.pilotCharacterId
+          ? initiativeEntries.find(entry => entry.characterId === vehicle.vehicleCrew?.pilotCharacterId && entry.turnKind !== 'vehicle')
+          : undefined;
+        return createVehicleInitiativeEntry(vehicle, driverEntry);
+      });
+    initiativeEntries = [...initiativeEntries, ...migratedVehicleEntries];
+  }
+  initiativeEntries = syncVehicleInitiativeEntries(initiativeEntries, characters);
+  const shouldSelectFirstMigratedEntry = migratedVehicleEntries.length > 0
+    && (!parsed.activeEntryId || !initiativeEntries.some(entry => entry.id === parsed.activeEntryId));
+  const activeEntryId = shouldSelectFirstMigratedEntry
+    ? initiativeEntries[0]?.id ?? null
+    : parsed.activeEntryId;
+  if (shouldSelectFirstMigratedEntry) {
+    initiativeEntries = initiativeEntries.map(entry => ({ ...entry, isActive: entry.id === activeEntryId }));
+  }
   return {
     ...parsed,
     characters,
-    initiativeEntries: (parsed.initiativeEntries ?? []).map(entry => {
-      const character = characters.find(c => c.id === entry.characterId);
-      if (!character) return entry;
-      return {
-        ...entry,
-        currentHp: character.currentHp,
-        maxHp: character.maxHp,
-        position: character.position,
-        currentAP: character.isKnockedOut || isRevivedAPRestricted(character, currentRound) ? 0 : entry.currentAP,
-      };
-    }),
+    initiativeEntries,
+    activeEntryId,
   };
 }
 
@@ -806,7 +849,6 @@ function normalizePersistedState(parsed: AppState): AppState {
 interface AppContextValue extends AppState {
   updateTacticalBoard: (update: (board: TacticalBoard) => TacticalBoard) => void;
   moveTacticalToken: (characterId: string, cell: BoardCell, gm: boolean) => void;
-  resolveTacticalDriving: () => void;
   recordTacticalAttack: (actorId: string) => void;
   loaded: boolean;
   allWeapons: Weapon[];
@@ -1024,18 +1066,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       initiativeEntries: current.initiativeEntries.map(e => e.characterId === characterId ? { ...e, currentAP: Math.max(0, e.currentAP - movement.cost) } : e),
     }));
   }, [setState]);
-  const resolveTacticalDriving = useCallback(() => {
-    const s = latestState.current;
-    if (s.combatActive && s.initiativeEntries.some(e => !e.hasActed && e.id !== s.activeEntryId)) throw new Error('Vehicles move together at the end of the round. Finish the preceding initiative turns first.');
-    const tacticalBoard = resolveDrivingRound(s.tacticalBoard, s.currentRound, s.characters);
-    setState(current => ({
-      ...current, tacticalBoard, tacticalError: null,
-      characters: current.characters.map(c => {
-        const token = tacticalBoard.tokens.find(t => t.characterId === c.id);
-        return c.vehicle && token ? { ...c, vehicle: { ...c.vehicle, inMotion: token.speedKph > 0 } } : c;
-      }),
-    }));
-  }, [setState]);
   const [loaded, setLoaded] = useState(false);
   const skipNextPersistRef = useRef<string | null>(null);
 
@@ -1082,12 +1112,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const allWeapons = [...BUILT_IN_WEAPONS, ...s.customWeapons];
       const allAmmo = [...AMMO_TYPES, ...s.customAmmo];
       const normalized = normalizeCharacterAmmoStates(migratedCharacter, allWeapons, allAmmo, s.customWeaponMods);
+      const addedCharacter = s.automaticInventoryTrackingEnabled
+        ? provisionNpcAmmo(normalized, allWeapons, allAmmo)
+        : normalized;
+      const driverEntry = addedCharacter.vehicleCrew?.pilotCharacterId
+        ? s.initiativeEntries.find(entry => entry.characterId === addedCharacter.vehicleCrew?.pilotCharacterId && entry.turnKind !== 'vehicle')
+        : undefined;
+      const initiativeEntries = s.combatActive && addedCharacter.vehicle
+        ? syncVehicleInitiativeEntries([
+            ...s.initiativeEntries,
+            createVehicleInitiativeEntry(addedCharacter, driverEntry),
+          ], [...s.characters, addedCharacter])
+        : s.initiativeEntries;
       return {
         ...markConditionSemanticsV2(s),
-        characters: [
-          ...s.characters,
-          s.automaticInventoryTrackingEnabled ? provisionNpcAmmo(normalized, allWeapons, allAmmo) : normalized,
-        ],
+        characters: [...s.characters, addedCharacter],
+        initiativeEntries,
       };
     });
   }, []);
@@ -1118,10 +1158,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const characterWithNpcAmmo = s.automaticInventoryTrackingEnabled
         ? provisionNpcAmmo(normalized, [...BUILT_IN_WEAPONS, ...s.customWeapons], [...AMMO_TYPES, ...s.customAmmo])
         : normalized;
-      return {
-        ...s,
-        characters: s.characters.map(c => c.id === migratedCharacter.id ? characterWithNpcAmmo : c),
-        initiativeEntries: sortInitiativeEntries(s.initiativeEntries.map(entry =>
+      const updatedCharacters = s.characters.map(c => c.id === migratedCharacter.id ? characterWithNpcAmmo : c);
+      const updatedInitiativeEntries = syncVehicleInitiativeEntries(
+        s.initiativeEntries.map(entry =>
           entry.characterId === migratedCharacter.id
             ? migratedCharacter.vehicle
               ? {
@@ -1134,7 +1173,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 }
               : syncInitiativeEntrySheet(entry, sheet)
             : entry
-        )),
+        ),
+        updatedCharacters,
+      );
+      return {
+        ...s,
+        characters: updatedCharacters,
+        initiativeEntries: updatedInitiativeEntries,
       };
     });
   }, []);
@@ -2188,7 +2233,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Initiative / Rounds ─────────────────────────────────────────────────────
 
   const startCombat = useCallback((entries: InitiativeEntry[]) => {
-    const sorted = sortInitiativeEntries(entries);
+    const sorted = syncVehicleInitiativeEntries(entries, latestState.current.characters);
     setState(s => ({
       ...s,
       initiativeEntries: sorted.map((e, i) => ({ ...e, isActive: i === 0, hasActed: false })),
@@ -2227,7 +2272,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addInitiativeEntry = useCallback((entry: InitiativeEntry) => {
     setState(s => {
-      const entries = sortInitiativeEntries([...s.initiativeEntries, entry]);
+      const entries = syncVehicleInitiativeEntries([...s.initiativeEntries, entry], s.characters);
       return { ...s, initiativeEntries: entries };
     });
   }, []);
@@ -2255,7 +2300,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateInitiativeEntry = useCallback((entry: InitiativeEntry) => {
     setState(s => ({
       ...s,
-      initiativeEntries: s.initiativeEntries.map(e => e.id === entry.id ? entry : e),
+      initiativeEntries: syncVehicleInitiativeEntries(
+        s.initiativeEntries.map(e => e.id === entry.id ? entry : e),
+        s.characters,
+      ),
     }));
   }, []);
 
@@ -2266,21 +2314,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const nextTurn = useCallback(() => {
     setState(s => {
       if (s.initiativeEntries.length === 0) return s;
-      if (s.initiativeEntries.every(e => e.hasActed || e.id === s.activeEntryId)) {
+      const activeIdx = s.initiativeEntries.findIndex(e => e.id === s.activeEntryId);
+      const currentActive = s.initiativeEntries[activeIdx];
+      if (currentActive?.turnKind === 'vehicle' && currentActive.characterId) {
         try {
-          const tacticalBoard = resolveDrivingRound(s.tacticalBoard, s.currentRound, s.characters);
+          const tacticalBoard = resolveDrivingVehicleTurn(
+            s.tacticalBoard, currentActive.characterId, s.currentRound, s.characters,
+          );
           s = { ...s, tacticalBoard, tacticalError: null, characters: s.characters.map(c => {
             const token = tacticalBoard.tokens.find(t => t.characterId === c.id);
             return c.vehicle && token ? { ...c, vehicle: { ...c.vehicle, inMotion: token.speedKph > 0 } } : c;
           }) };
         } catch (error) { return { ...s, tacticalError: (error as Error).message }; }
       }
-      const activeIdx = s.initiativeEntries.findIndex(e => e.id === s.activeEntryId);
-      const currentActive = s.initiativeEntries[activeIdx];
-      const activeDefenseSuppressed = !!s.characters.find(c => c.id === currentActive?.characterId)?.combatDefenseSuppressed;
+      const activeDefenseSuppressed = currentActive?.turnKind !== 'vehicle'
+        && !!s.characters.find(c => c.id === currentActive?.characterId)?.combatDefenseSuppressed;
       // Convert unspent AP to tempAC for the current entry
       let entries = s.initiativeEntries.map(e => {
         if (e.id === currentActive?.id) {
+          if (e.turnKind === 'vehicle') return { ...e, hasActed: true, tempAC: 0, currentAP: 0 };
           return { ...e, hasActed: true, tempAC: activeDefenseSuppressed ? 0 : e.tempAC + e.currentAP, currentAP: 0 };
         }
         return e;
@@ -2289,6 +2341,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // knocked out, consume one KO turn NOW (their skipped turn is over).
       let chars = s.characters.map(c => {
         if (c.id === currentActive?.characterId) {
+          if (currentActive?.turnKind === 'vehicle') return c;
           return statusTick({
             ...c,
             tempAC: c.combatDefenseSuppressed ? 0 : c.tempAC + c.currentAP,
@@ -2306,7 +2359,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // tempAC (from unspent AP) until their own turn comes around again.
       if (entries.every(e => e.hasActed)) {
         const round = s.currentRound + 1;
-        const firstChar0 = entries[0]?.characterId;
+        const firstEntry = entries[0];
+        const firstChar0 = firstEntry?.turnKind === 'vehicle' ? undefined : firstEntry?.characterId;
         const advancement = firstChar0
           ? advanceCombatSkillTurn(chars, s.pendingCombatSkillActions, firstChar0, round)
           : { combatants: chars, pendingActions: s.pendingCombatSkillActions, completed: [] };
@@ -2317,7 +2371,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ...e, hasActed: false, isActive: i === 0,
           // Only the new active combatant replenishes AP and loses tempAC
           ...(i === 0 ? {
-            currentAP: firstKO || isRevivedAPRestricted(chars.find(c => c.id === firstChar0) ?? { revivedNoAPUntilRound: -1 }, round) ? 0 : e.maxAP,
+            currentAP: e.turnKind === 'vehicle' || firstKO || isRevivedAPRestricted(chars.find(c => c.id === firstChar0) ?? { revivedNoAPUntilRound: -1 }, round) ? 0 : e.maxAP,
             tempAC: 0,
           } : {}),
         }));
@@ -2360,8 +2414,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       // Turn start: KO'd combatants get no AP (they can't act this turn) —
       // mirrored on both the initiative entry and the character.
-      const nextCharacterId = entries[nextIdx]?.characterId;
-      const advancement = nextCharacterId
+      const nextEntry = entries[nextIdx];
+      const nextCharacterId = nextEntry?.characterId;
+      const advancement = nextCharacterId && nextEntry?.turnKind !== 'vehicle'
         ? advanceCombatSkillTurn(chars, s.pendingCombatSkillActions, nextCharacterId, s.currentRound)
         : { combatants: chars, pendingActions: s.pendingCombatSkillActions, completed: [] };
       chars = advancement.combatants as Character[];
@@ -2372,11 +2427,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isActive: i === nextIdx,
         ...(i === nextIdx ? {
           tempAC: 0,
-          currentAP: nextKO || isRevivedAPRestricted(nextCharacter ?? { revivedNoAPUntilRound: -1 }, s.currentRound) ? 0 : e.maxAP,
+          currentAP: e.turnKind === 'vehicle' || nextKO || isRevivedAPRestricted(nextCharacter ?? { revivedNoAPUntilRound: -1 }, s.currentRound) ? 0 : e.maxAP,
         } : {}),
       }));
       const nextActive = entries[nextIdx];
-      if (nextActive?.characterId) {
+      if (nextActive?.characterId && nextActive.turnKind !== 'vehicle') {
         chars = chars.map(c => c.id === nextActive.characterId ? {
           ...c,
           currentAP: c.isKnockedOut || isRevivedAPRestricted(c, s.currentRound) ? 0 : charMaxAP(
@@ -2410,20 +2465,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const nextRound = useCallback(() => {
     setState(s => {
-      try {
-        const tacticalBoard = resolveDrivingRound(s.tacticalBoard, s.currentRound, s.characters);
-        s = { ...s, tacticalBoard, tacticalError: null, characters: s.characters.map(c => {
-          const token = tacticalBoard.tokens.find(t => t.characterId === c.id);
-          return c.vehicle && token ? { ...c, vehicle: { ...c.vehicle, inMotion: token.speedKph > 0 } } : c;
-        }) };
-      } catch (error) { return { ...s, tacticalError: (error as Error).message }; }
       if (s.initiativeEntries.length === 0) return s;
-      const firstChar = s.initiativeEntries[0]?.characterId;
+      if (s.initiativeEntries.some(entry => entry.turnKind === 'vehicle' && !entry.hasActed)) {
+        return { ...s, tacticalError: 'End each vehicle turn in driver-initiative order before advancing the round.' };
+      }
+      const firstEntry = s.initiativeEntries[0];
+      const firstChar = firstEntry?.turnKind === 'vehicle' ? undefined : firstEntry?.characterId;
       const round = s.currentRound + 1;
       // Skipping ahead completes every unacted turn so timed status counters
       // cannot be bypassed by ending the round early.
       const skippedCharacterIds = new Set(
-        s.initiativeEntries.filter(entry => !entry.hasActed).map(entry => entry.characterId),
+        s.initiativeEntries.filter(entry => !entry.hasActed && entry.turnKind !== 'vehicle').map(entry => entry.characterId),
       );
       let chars = s.characters.map(c => {
         let out = skippedCharacterIds.has(c.id)
@@ -2464,7 +2516,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const entries = s.initiativeEntries.map((e, i) => ({
         ...e, hasActed: false, isActive: i === 0,
         ...(i === 0 ? {
-          currentAP: firstKO || isRevivedAPRestricted(firstCharacter ?? { revivedNoAPUntilRound: -1 }, round) ? 0 : e.maxAP,
+          currentAP: e.turnKind === 'vehicle' || firstKO || isRevivedAPRestricted(firstCharacter ?? { revivedNoAPUntilRound: -1 }, round) ? 0 : e.maxAP,
           tempAC: 0,
         } : {}),
       })).map(e => {
@@ -2497,8 +2549,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => {
       const idx = s.initiativeEntries.findIndex(e => e.id === id);
       if (idx < 0) return s;
+      if (s.initiativeEntries[idx].turnKind === 'vehicle') return s;
       const swap = direction === 'up' ? idx - 1 : idx + 1;
       if (swap < 0 || swap >= s.initiativeEntries.length) return s;
+      if (s.initiativeEntries[swap].turnKind === 'vehicle') return s;
       const entries = [...s.initiativeEntries];
       [entries[idx], entries[swap]] = [entries[swap], entries[idx]];
       return { ...s, initiativeEntries: entries };
@@ -3067,7 +3121,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
        saveBuiltInBestiaryOverride, removeBuiltInBestiaryTemplate, restoreBuiltInBestiaryDefaults,
       setBestiaryPortrait, setVehicleCatalogPortrait,
       exportCampaign, importCampaign, saveCampaignTools, saveCustomRules, saveCustomRaces, saveCampaignRaceTags,
-      updateTacticalBoard, moveTacticalToken, resolveTacticalDriving,
+      updateTacticalBoard, moveTacticalToken,
       recordTacticalAttack,
     }}>
       {children}
