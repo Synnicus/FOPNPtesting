@@ -592,6 +592,78 @@ test('AppProvider campaign storage lifecycle', async (t) => {
       }
     });
 
+    await t.test('reload repairs legacy NPC armor after its custom template is deleted', async () => {
+      const orphanNpc: Character = {
+        ...legacyNpc,
+        id: 'orphan-custom-npc',
+        bestiaryTemplateId: 'deleted-custom-template',
+        manualDerivedStats: {
+          armorClass: 36,
+          maxAP: 9,
+          sequence: 17,
+          criticalChance: 11,
+          baseMaxHp: 83,
+        },
+      };
+      assert.equal(orphanNpc.usesDerivedArmorClass, undefined, 'legacy NPC has no AC policy');
+      assert.equal(
+        BUILT_IN_BESTIARY.some(template => template.id === orphanNpc.bestiaryTemplateId),
+        false,
+        'deleted template identity is not a built-in',
+      );
+      assert.equal(sheet(orphanNpc).armorClass, 67, 'legacy armor is double-counted before reload');
+      const orphanRaw = JSON.stringify({
+        ...fixture,
+        characters: [orphanNpc],
+        customBestiaryTemplates: [],
+      });
+      storage.clear();
+      storage.set(STORAGE_KEY, orphanRaw);
+      campaign = undefined;
+      const assertRepaired = (
+        state: Pick<ReturnType<typeof useApp>, 'characters' | 'customBestiaryTemplates'>,
+        stage: string,
+      ) => {
+        assert.deepEqual(state.customBestiaryTemplates, [], `${stage}: deleted template stays absent`);
+        assert.equal(state.characters.length, 1, stage);
+        const npc = state.characters[0];
+        assert.equal(npc.id, orphanNpc.id, stage);
+        assert.equal(npc.bestiaryTemplateId, orphanNpc.bestiaryTemplateId, `${stage}: provenance retained`);
+        assert.equal(npc.usesDerivedArmorClass, true, `${stage}: orphan NPC policy repaired`);
+        assert.equal(npc.equippedBodyArmorId, 'greater_banding', `${stage}: body armor retained`);
+        assert.equal(npc.equippedHelmetId, 'metal_helmet', `${stage}: helmet retained`);
+        for (const key of ['equippedWeaponId', 'rightHandWeaponId', 'leftHandWeaponId', 'inventoryWeaponIds'] as const) {
+          assert.deepEqual(npc[key], orphanNpc[key], `${stage}: ${key} retained`);
+        }
+        assert.deepEqual(npc.manualDerivedStats, orphanNpc.manualDerivedStats, `${stage}: manual stats retained`);
+        const resolved = sheet(npc);
+        assert.equal(resolved.armorClass, 36, `${stage}: armor counted only once`);
+        assert.equal(resolved.armorClassBreakdown.agility, 5, stage);
+        assert.equal(resolved.armorClassBreakdown.bodyArmor, 25, stage);
+        assert.equal(resolved.armorClassBreakdown.helmet, 6, stage);
+        assert.equal(resolved.armorClassBreakdown.manual, 0, stage);
+        assert.equal(resolved.maxAP, 9, `${stage}: manual AP still applied`);
+        assert.equal(resolved.sequence, 17, `${stage}: manual Sequence still applied`);
+        assert.equal(resolved.criticalChance, 11, `${stage}: manual critical chance still applied`);
+      };
+      try {
+        for (const stage of ['legacy orphan load', 'repaired orphan save reload']) {
+          const readsBefore = reads.length;
+          const writesBefore = writes.length;
+          assertRepaired(await mount(), stage);
+          assert.deepEqual(reads.slice(readsBefore), [STORAGE_KEY], `${stage}: provider reads saved campaign`);
+          assert.deepEqual(writes.slice(writesBefore), [STORAGE_KEY], `${stage}: provider saves normalized campaign`);
+          assertRepaired(JSON.parse(storage.get(STORAGE_KEY)!), `${stage}: saved state`);
+          await act(async () => renderer!.unmount());
+          renderer = undefined;
+          campaign = undefined;
+        }
+      } finally {
+        if (renderer) await act(async () => renderer!.unmount());
+        renderer = undefined;
+      }
+    });
+
     await t.test('importCampaign repairs legacy custom armor and saves the imported repair', async () => {
       storage.clear();
       campaign = undefined;
