@@ -15,6 +15,12 @@ Replit workspaces without `/dev/kvm` are not a reliable place to boot Android lo
 
 **How to apply:** Keep local SDKs, AVDs, and generated Android projects in ignored scratch paths. Use the existing hosted Android emulator workflow as the standard native test environment when KVM or a physical device is unavailable.
 
+A GitHub repository linked in the user's primary Replit Git pane may not be configured as a remote in an isolated task-fork checkout. The Git pane can show `origin/main` while the task checkout has only Replit-internal remotes.
+
+**Why:** Task work happens in a forked copy; the user's Git link and write authorization are not necessarily inherited by that checkout.
+
+**How to apply:** Check the task checkout's remotes separately, but do not tell the user their main Replit Git link is broken when their Git pane shows the repository. Use only write access available to the task checkout, or explain the handoff needed; public visibility grants read access, not write access.
+
 When Expo compatibility checks require a just-published patch, pnpm's default 24-hour minimum release age can block installing that compatible version. Do not bypass the release-age protection or substitute an incompatible latest major.
 
 **Why:** The Expo SDK may update its expected patch before pnpm considers that release old enough to install, temporarily leaving `expo install --check` failing on an otherwise valid lockfile.
