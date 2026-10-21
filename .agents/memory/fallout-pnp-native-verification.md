@@ -32,3 +32,9 @@ Provider-level reload tests with in-memory AsyncStorage can verify migration wir
 **Why:** A real React provider exercises the JavaScript reload path, while substituting storage still bypasses the device's disk and application lifecycle.
 
 **How to apply:** Use provider tests for focused migration regressions; keep native restart verification separate and describe the storage substitute explicitly when reporting results.
+
+GitHub pull-request runs use the workflow definition from the base branch until the PR is merged. The v3 Android SDK setup action also defaults to installing the retired `tools` package, so specify only `platform-tools` and install required platform/build tools separately.
+
+**Why:** A PR can contain a corrected workflow yet still run the older base-branch workflow, and the default SDK setup currently fails before the emulator starts.
+
+**How to apply:** To verify a new native workflow before merge, use a feature-branch push trigger or another supported branch-specific dispatch. Keep the normal pull-request and main-branch triggers for future changes.
