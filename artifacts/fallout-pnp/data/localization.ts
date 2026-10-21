@@ -27,6 +27,8 @@ import gasMaskUi from './locales/gas-mask.json';
 import automaticInventoryUi from './locales/automatic-inventory.json';
 import inventoryLibraryUi from './locales/inventory-library-ui.json';
 import mapEditorUi from './locales/map-editor.json';
+import combatVisualizerUi from './locales/combat-visualizer.json';
+import combatVisualizerExtraUi from './locales/combat-visualizer-extra.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -534,6 +536,12 @@ const mapEditorUiTranslations = Object.fromEntries(
     locale, Object.fromEntries(mapEditorTranslationData.keys.map((key, index) => [key, mapEditorTranslationData[locale][index]])),
   ]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;
+const combatVisualizerTranslationData = combatVisualizerUi as { keys: string[] } & Record<string, string[]>;
+const combatVisualizerUiTranslations = Object.fromEntries(
+  APP_LANGUAGES.filter(({ locale }) => locale !== 'en').map(({ locale }) => [
+    locale, Object.fromEntries(combatVisualizerTranslationData.keys.map((key, index) => [key, combatVisualizerTranslationData[locale][index]])),
+  ]),
+) as Partial<Record<AppLocale, Record<string, string>>>;
 const campaignToolChestUiTranslations = Object.fromEntries(
   APP_LANGUAGES
     .filter(({ locale }) => locale !== 'en')
@@ -581,6 +589,10 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(automaticInventoryUiTranslations[locale] ?? {}),
       ...(inventoryLibraryUiTranslations[locale] ?? {}),
       ...(mapEditorUiTranslations[locale] ?? {}),
+      ...(combatVisualizerUiTranslations[locale] ?? {}),
+      ...Object.fromEntries(combatVisualizerExtraUi.keys.map((key, index) => [
+        key, (combatVisualizerExtraUi as { keys: string[] } & Record<string, string[]>)[locale]?.[index] ?? key,
+      ])),
     }]),
 ) as Partial<Record<AppLocale, Record<string, string>>>;
 const patternCache = new Map<AppLocale, Array<{ regex: RegExp; placeholderOrder: number[]; translated: string }>>();

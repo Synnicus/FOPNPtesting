@@ -33,3 +33,4 @@
 - [Catalog photo portability](fallout-pnp-catalog-images.md) — catalog images are user-supplied campaign data; embed validated image data in portable state so spawned entries survive campaign transfer.
 - [Expo web font loading](fallout-pnp-expo-web-font-fallback.md) — a pending font hook can leave the browser preview blank even when Metro is healthy; don't gate web rendering on fonts.
 - [Custom consumable mechanics](fallout-pnp-custom-consumables.md) — effect notes stay descriptive and GM-adjudicated until the user defines automated rules.
+- [Tactical visualizer rules](fallout-pnp-tactical-visualizer.md) — 2D-first; visual-only obstacles, round-end vehicles and a fixed three-hex-wide burst corridor.

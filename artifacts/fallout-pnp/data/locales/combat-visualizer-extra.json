@@ -1,0 +1,21 @@
+{
+  "keys": [
+    "EDIT VEHICLE / WEAPONS",
+    "RESOLVE MISSES AT NEXT TARGET",
+    "FINISH BURST FOLLOW-UP",
+    "{0} already-fired rounds at this target. Do not spend AP or ammunition again.",
+    "Burst misses continue down the same three-hex-wide corridor, nearest target first.",
+    "Board changes save automatically with this campaign."
+  ],
+  "fr": ["MODIFIER VÉHICULE / ARMES", "RÉSOUDRE LES TIRS RATÉS SUR LA CIBLE SUIVANTE", "TERMINER LE SUIVI DE RAFALE", "{0} projectiles déjà tirés vers cette cible. Ne dépensez plus de PA ni de munitions.", "Les tirs ratés suivent le même couloir de trois hexagones, en commençant par la cible la plus proche.", "Les modifications du plateau sont enregistrées automatiquement avec cette campagne."],
+  "it": ["MODIFICA VEICOLO / ARMI", "RISOLVI I COLPI MANCATI SUL PROSSIMO BERSAGLIO", "TERMINA LA RAFFICA", "{0} proiettili già sparati verso questo bersaglio. Non spendere altri PA o munizioni.", "I colpi mancati proseguono nello stesso corridoio largo tre esagoni, dal bersaglio più vicino.", "Le modifiche alla mappa tattica si salvano automaticamente con questa campagna."],
+  "de": ["FAHRZEUG / WAFFEN BEARBEITEN", "FEHLSCHÜSSE AM NÄCHSTEN ZIEL ABHANDELN", "FEUERSTOSS ABSCHLIESSEN", "{0} bereits abgefeuerte Geschosse auf dieses Ziel. Keine weiteren AP oder Munition ausgeben.", "Fehlschüsse folgen demselben drei Hexfelder breiten Korridor, zuerst zum nächsten Ziel.", "Änderungen am Spielfeld werden automatisch mit dieser Kampagne gespeichert."],
+  "es-ES": ["EDITAR VEHÍCULO / ARMAS", "RESOLVER FALLOS CONTRA EL SIGUIENTE OBJETIVO", "FINALIZAR SEGUIMIENTO DE RÁFAGA", "{0} proyectiles ya disparados contra este objetivo. No gastes más PA ni munición.", "Los disparos fallidos siguen por el mismo pasillo de tres hexágonos de ancho, empezando por el objetivo más cercano.", "Los cambios del tablero se guardan automáticamente con esta campaña."],
+  "es-MX": ["EDITAR VEHÍCULO / ARMAS", "RESOLVER FALLOS CONTRA EL SIGUIENTE OBJETIVO", "FINALIZAR SEGUIMIENTO DE RÁFAGA", "{0} proyectiles ya disparados contra este objetivo. No gastes más PA ni munición.", "Los disparos fallidos siguen por el mismo pasillo de tres hexágonos de ancho, empezando por el objetivo más cercano.", "Los cambios del tablero se guardan automáticamente con esta campaña."],
+  "ja": ["車両／武器を編集", "次の目標で外れ弾を処理", "バーストの追加処理を終了", "この目標への発射済み弾数：{0}。APや弾薬を再び消費しません。", "外れ弾は幅3ヘクスの同じ射線を進み、最も近い目標から処理します。", "ボードの変更はこのキャンペーンに自動保存されます。"],
+  "pl": ["EDYTUJ POJAZD / BROŃ", "ROZPATRZ PUDŁA WOBEC NASTĘPNEGO CELU", "ZAKOŃCZ ROZPATRYWANIE SERII", "{0} już wystrzelonych pocisków na ten cel. Nie wydawaj ponownie PA ani amunicji.", "Pudła lecą tym samym korytarzem o szerokości trzech heksów, od najbliższego celu.", "Zmiany planszy zapisują się automatycznie z tą kampanią."],
+  "pt-BR": ["EDITAR VEÍCULO / ARMAS", "RESOLVER ERROS NO PRÓXIMO ALVO", "ENCERRAR SEQUÊNCIA DA RAJADA", "{0} projéteis já disparados neste alvo. Não gaste PA ou munição novamente.", "Os tiros que erraram continuam pelo mesmo corredor de três hexágonos de largura, começando pelo alvo mais próximo.", "As alterações do tabuleiro são salvas automaticamente com esta campanha."],
+  "ru": ["ИЗМЕНИТЬ МАШИНУ / ОРУЖИЕ", "ПРОВЕРИТЬ ПРОМАХИ ПО СЛЕДУЮЩЕЙ ЦЕЛИ", "ЗАВЕРШИТЬ ОБРАБОТКУ ОЧЕРЕДИ", "{0} уже выпущенных пуль по этой цели. Не тратьте ОД и боеприпасы повторно.", "Промахи продолжают полёт по тому же коридору шириной три гекса, начиная с ближайшей цели.", "Изменения поля автоматически сохраняются в этой кампании."],
+  "zh-Hans": ["编辑载具／武器", "对下一目标结算未命中弹丸", "结束连射后续结算", "对此目标结算已发射的 {0} 发弹丸。不会再次消耗行动点或弹药。", "未命中的弹丸沿同一条宽三格的六角走廊继续飞行，先结算最近目标。", "战术地图更改会随此战役自动保存。"],
+  "zh-Hant": ["編輯載具／武器", "對下一目標結算未命中彈丸", "結束連射後續結算", "對此目標結算已發射的 {0} 發彈丸。不會再次消耗行動點或彈藥。", "未命中的彈丸沿同一條寬三格的六角走廊繼續飛行，先結算最近目標。", "戰術地圖變更會隨此戰役自動儲存。"]
+}

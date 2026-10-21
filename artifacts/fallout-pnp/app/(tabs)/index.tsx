@@ -12,6 +12,9 @@ import { useApp } from '@/context/AppContext';
 import CharacterAvatar from '@/components/CharacterAvatar';
 import { PortraitCardBackground } from '@/components/PortraitCardBackground';
 import HPBar from '@/components/HPBar';
+import CombatVisualizerModal from '@/components/CombatVisualizerModal';
+import { boardTokenFor, tokenDistance, burstCorridor, footprint } from '@/data/tacticalBoard';
+import { tr } from '@/components/tactical/i18n';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import {
   TARGETED_CRIT_BONUS, TARGETED_CRIT_EFFECTS, CRITICAL_HIT_TABLE, CritTableEntry,
@@ -955,7 +958,15 @@ export default function CombatScreen() {
   const [doubleShotActive, setDoubleShotActive] = useState(false);
 
   // Modifiers
-  const [rangeMod, setRangeMod] = useState(0);
+  const [manualRangeMod, setRangeMod] = useState(0);
+  const [showBoard, setShowBoard] = useState(false);
+  const [useBoardRange, setUseBoardRange] = useState(false);
+  const boardAttackBlockRef = useRef<string | null>(null);
+  const [burstFollowup, setBurstFollowup] = useState<{
+    attackerId: string; weaponId: string; targetId: string; remaining: number;
+    queued: string[]; aim: { q: number; r: number }; used: boolean;
+  } | null>(null);
+  const followupUsedRef = useRef(false);
   const [lightPenalty, setLightPenalty] = useState(0);
   const [coverPenalty, setCoverPenalty] = useState(0);
   const [weaponBonus, setWeaponBonus] = useState(0);
@@ -1351,6 +1362,34 @@ export default function CombatScreen() {
 
   // Effective weapon range: base rangeNormal + mod range bonuses
   const effectiveRange = weapon ? weapon.rangeNormal + modBonuses.range + customAttackPerkEffects.range : 0;
+  const boardSource = attacker ? boardTokenFor(attacker.id, app.tacticalBoard, characters) : undefined;
+  const boardTarget = defender ? boardTokenFor(defender.id, app.tacticalBoard, characters) : undefined;
+  const boardDistance = useBoardRange && boardSource && boardTarget
+    ? tokenDistance(boardSource, boardTarget, app.tacticalBoard) : null;
+  const perceptionRange = Math.max(1, 2 * (attackerInjury?.blind ? 1 : attackerEffSpecial?.perception ?? 5) - 1);
+  const statRange = weapon?.skill === 'throwing'
+    ? Math.min(perceptionRange, Math.max(1, 2 * (attackerEffSpecial?.strength ?? 5) - 1)) : perceptionRange;
+  const rangeMod = boardDistance !== null && !isMeleeOrUnarmed
+    ? -3 * Math.max(0, Math.ceil(boardDistance - Math.max(0, effectiveRange - (doubleShotActive ? 3 : 0)) - statRange))
+    : manualRangeMod;
+  const boardCorridor = boardSource && boardTarget && isBurst && useBoardRange
+    ? burstCorridor(boardSource, burstFollowup?.aim ?? boardTarget, app.tacticalBoard.grid, Math.ceil((effectiveRange + statRange) / app.tacticalBoard.metersPerCell)) : [];
+  const nearerBurstTargets = boardDistance !== null && isBurst && boardSource
+    ? characters.filter(c => {
+        if (c.id === attackerId || c.id === defenderId || c.inStorage || c.currentHp <= 0 || c.combatDevice) return false;
+        const token = boardTokenFor(c.id, app.tacticalBoard, characters);
+        return token && token.characterId !== boardSource.characterId && tokenDistance(boardSource, token, app.tacticalBoard) < boardDistance
+          && footprint(token, app.tacticalBoard.grid).some(cell => boardCorridor.some(p => cell.q === p.q && cell.r === p.r));
+      }) : [];
+  const boardAttackBlock = useBoardRange && (!boardSource || !boardTarget)
+    ? 'Place both combatants on the board or turn off board distance.'
+    : boardDistance !== null && isMeleeOrUnarmed && boardDistance > Math.max(1, effectiveRange)
+      ? 'Target is outside melee reach. Move closer before attacking.'
+      : !burstFollowup && nearerBurstTargets.length ? `Burst fire must target the nearest combatant in its corridor: ${nearerBurstTargets.sort((a, b) => tokenDistance(boardSource!, boardTokenFor(a.id, app.tacticalBoard, characters)!, app.tacticalBoard) - tokenDistance(boardSource!, boardTokenFor(b.id, app.tacticalBoard, characters)!, app.tacticalBoard))[0].name}.` : null;
+  boardAttackBlockRef.current = boardAttackBlock;
+  const occupiedVehicle = attackActor && characters.find(c => !c.inStorage && c.vehicle?.inMotion
+    && (c.vehicleCrew?.pilotCharacterId === attackActor.id || c.vehicleCrew?.gunnerCharacterId === attackActor.id));
+  const crewAttackPenalty = occupiedVehicle ? (occupiedVehicle.vehicleCrew?.pilotCharacterId === attackActor?.id ? -25 : -10) : 0;
 
   // ─── Loaded ammo type (data/ammo.ts) ───────────────────────────────────────
   const ammoTypeId = (attacker && weapon)
@@ -1456,6 +1495,7 @@ export default function CombatScreen() {
     Math.max(1, Math.min(99,
       baseSkill
       + rangeMod
+      + crewAttackPenalty
       - effectiveLightPenalty
       - defenderACAffectsHit
       - coverPenalty
@@ -1485,7 +1525,7 @@ export default function CombatScreen() {
     if (weaponCanBurst && weapon) setBurstShots(count => Math.max(3, Math.min(weapon.burstLimit, count)));
     else setBurstShots(3);
   }, [weapon?.id, weapon?.burstLimit, weaponCanBurst, weaponCanTarget, forceTargetedMode, fastShotApplies]);
-  const effectiveBurstShots = doubleShotActive ? 1 : (isBurst && weaponCanBurst ? burstShots : 1);
+  const effectiveBurstShots = burstFollowup?.remaining ?? (doubleShotActive ? 1 : (isBurst && weaponCanBurst ? burstShots : 1));
   const burstPenalties = Array.from({ length: effectiveBurstShots }, (_, i) => i === 0 ? 0 : -i * 10);
   const shotChances = burstPenalties.map(p => computeCtH(p));
 
@@ -1569,12 +1609,17 @@ export default function CombatScreen() {
           ? (vehicleTargeting ? (wTargeted ?? wSingle) : (wTargeted as number))
           : wSingle;
   const traitAPDelta = (traitEffects.attackAPPenalty ?? 0) - (fastShotApplies ? (traitEffects.attackAPDiscount ?? 0) : 0);
-  const effectiveAPCost = Math.max(
+  const effectiveAPCost = burstFollowup ? 0 : Math.max(
     1,
     baseAPCost + traitAPDelta - perkBonuses.apDiscount - customModEffects.apDiscount
       - (isBurst ? perkBonuses.burstApDiscount : 0),
   );
   const attackerHasAP = (attackActor?.currentAP ?? 0) >= effectiveAPCost;
+  useEffect(() => {
+    if (burstFollowup && (attackerId !== burstFollowup.attackerId || weapon?.id !== burstFollowup.weaponId || defenderId !== burstFollowup.targetId || !isBurst)) {
+      setBurstFollowup(null); followupUsedRef.current = false;
+    }
+  }, [attackerId, defenderId, weapon?.id, isBurst, burstFollowup]);
 
   // Weapon-usability warnings from injuries (manual):
   //  • Both arms crippled → cannot use any weapon.
@@ -1719,12 +1764,14 @@ export default function CombatScreen() {
   }, [attackerId, defenderId]);
 
   const rollDice = useCallback(() => {
+    if (boardAttackBlockRef.current) { notify('Board targeting', boardAttackBlockRef.current); return; }
+    if (burstFollowup && followupUsedRef.current) { notify('Burst follow-up', 'These rounds have already been resolved against this target. Continue to the next target or finish the burst.'); return; }
     if (weaponBroken) {
       if (Platform.OS === 'web') { alert('Weapon jammed/broken! Repair before firing.'); }
       else Alert.alert('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
       return;
     }
-    if (!hasAmmo) {
+    if (!burstFollowup && !hasAmmo) {
       const availableReserve = loadedAmmo
         ? getInventoryItemQuantity(attacker?.inventoryItems, 'ammo', loadedAmmo.id)
         : 0;
@@ -1742,7 +1789,11 @@ export default function CombatScreen() {
       ]);
       return;
     }
-    const skillIsTagged = !!attacker && !!weapon && (
+    if (!burstFollowup && isBurst && weapon && weapon.magazineSize > 0 && currentAmmo < effectiveBurstShots) {
+      notify('Not Enough Ammo', `Burst needs ${effectiveBurstShots} rounds; only ${currentAmmo} loaded.`); return;
+    }
+    if (burstFollowup) { followupUsedRef.current = true; setBurstFollowup({ ...burstFollowup, used: true }); }
+    const skillIsTagged = !burstFollowup && !!attacker && !!weapon && (
       attacker.taggedSkills.includes(weapon.skill)
       || attacker.perks.some(perk => perk.bonusTaggedSkill === weapon.skill)
     );
@@ -1765,7 +1816,8 @@ export default function CombatScreen() {
       }
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    playCombatAttackSounds(
+    if (!burstFollowup && attackActor) app.recordTacticalAttack(attackActor.id);
+    if (!burstFollowup) playCombatAttackSounds(
       getCombatAttackSoundFamily(weapon, isMeleeOrUnarmed),
       getCombatAttackSoundShotCount({ isBurst: isBurst && weaponCanBurst, burstShots, doubleShotActive }),
     );
@@ -1783,8 +1835,8 @@ export default function CombatScreen() {
     const roll = percentileRoll(t, u);
 
     // Spend ammo
-    if (attacker && weapon && weapon.magazineSize > 0) {
-      spendAmmo(attacker.id, weapon.id, 1);
+    if (!burstFollowup && attacker && weapon && weapon.magazineSize > 0) {
+      spendAmmo(attacker.id, weapon.id, isBurst ? effectiveBurstShots : 1);
     }
 
     // ─── Manual critical check ──────────────────────────────────────────────────
@@ -1825,7 +1877,7 @@ export default function CombatScreen() {
     setTimeout(() => setRolling(false), 350);
   }, [weaponBroken, hasAmmo, attacker, weapon, shotChances, totalCritChance, isAimed, targetedBodyPart,
       luckPerkApplies, attackerLuck, spendAmmo, spendAP, reloadWeapon, playCombatAttackSounds,
-      isMeleeOrUnarmed, isBurst, weaponCanBurst, burstShots, doubleShotActive, characters]);
+      isMeleeOrUnarmed, isBurst, weaponCanBurst, burstShots, doubleShotActive, characters, burstFollowup, effectiveBurstShots, currentAmmo]);
 
   const resolveDivineFavorChoice = useCallback((useFavor: boolean) => {
     const pending = divineFavorRoll;
@@ -1880,6 +1932,7 @@ export default function CombatScreen() {
     luckPerkApplies, attackerLuck, isAimed, targetedBodyPart]);
 
   const confirmPhysicalHit = useCallback(() => {
+    if (boardAttackBlockRef.current) { notify('Board targeting', boardAttackBlockRef.current); return; }
     if (isBurst) return;
     if (weaponBroken) {
       notify('Weapon Broken', 'This weapon is jammed/broken and cannot attack until repaired.');
@@ -1889,6 +1942,7 @@ export default function CombatScreen() {
       notify('Empty Magazine', 'No ammo remaining. Reload first!');
       return;
     }
+    if (attackActor) app.recordTacticalAttack(attackActor.id);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setTensFace(null);
     setUnitsFace(null);
@@ -1915,6 +1969,7 @@ export default function CombatScreen() {
   }, [isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
 
   const confirmManualCritical = useCallback((outcome: 'hit' | 'fail') => {
+    if (boardAttackBlockRef.current) { notify('Board targeting', boardAttackBlockRef.current); return; }
     if (isBurst) return;
     if (weaponBroken) {
       notify('Weapon Broken', 'This weapon is jammed/broken and cannot attack until repaired.');
@@ -1924,6 +1979,7 @@ export default function CombatScreen() {
       notify('Empty Magazine', 'No ammo remaining. Reload first!');
       return;
     }
+    if (attackActor) app.recordTacticalAttack(attackActor.id);
     const confirmsHit = outcome === 'hit';
     beginAttack();
     Haptics.notificationAsync(
@@ -1956,34 +2012,38 @@ export default function CombatScreen() {
   }, [isBurst, weaponBroken, hasAmmo, attacker, weapon, spendAmmo]);
 
   const rollStreamlined = useCallback(() => {
+    if (boardAttackBlockRef.current) { notify('Board targeting', boardAttackBlockRef.current); return; }
+    if (burstFollowup && followupUsedRef.current) { notify('Burst follow-up', 'These rounds have already been resolved against this target. Continue to the next target or finish the burst.'); return; }
     if (weaponBroken) {
       notify('Weapon Broken', 'This weapon is jammed/broken and cannot fire until repaired.');
       return;
     }
-    if (!hasAmmo) {
+    if (!burstFollowup && !hasAmmo) {
       notify('Empty Magazine', 'No ammo remaining. Reload first!');
       return;
     }
-    if (weapon && weapon.magazineSize > 0 && currentAmmo < burstShots) {
+    if (!burstFollowup && weapon && weapon.magazineSize > 0 && currentAmmo < effectiveBurstShots) {
       notify('Not Enough Ammo', `Burst needs ${burstShots} rounds; only ${currentAmmo} loaded. Reload or reduce the burst.`);
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    playCombatAttackSounds(
+    if (!burstFollowup && attackActor) app.recordTacticalAttack(attackActor.id);
+    if (burstFollowup) { followupUsedRef.current = true; setBurstFollowup({ ...burstFollowup, used: true }); }
+    if (!burstFollowup) playCombatAttackSounds(
       getCombatAttackSoundFamily(weapon, isMeleeOrUnarmed),
       getCombatAttackSoundShotCount({ isBurst: true, burstShots, doubleShotActive: false }),
     );
-    const dice = Array.from({ length: burstShots }, () => Math.floor(Math.random() * 10));
+    const dice = Array.from({ length: effectiveBurstShots }, () => Math.floor(Math.random() * 10));
     beginAttack();
     setStreamlinedDice(dice);
     setStreamlinedRolled(true);
     setStreamlinedDmgResult(null);
     setShotDamages(null); setDamageApplied(false); setApSpent(false);
-    if (attacker && weapon && weapon.magazineSize > 0) {
-      spendAmmo(attacker.id, weapon.id, burstShots);
+    if (!burstFollowup && attacker && weapon && weapon.magazineSize > 0) {
+      spendAmmo(attacker.id, weapon.id, effectiveBurstShots);
     }
   }, [weaponBroken, hasAmmo, attacker, weapon, burstShots, spendAmmo, currentAmmo,
-    playCombatAttackSounds, isMeleeOrUnarmed]);
+    playCombatAttackSounds, isMeleeOrUnarmed, burstFollowup, effectiveBurstShots]);
 
   const calculateDamage = useCallback(() => {
     if (!weapon || shotResults.length === 0) return;
@@ -2762,7 +2822,7 @@ export default function CombatScreen() {
   // A knocked-out attacker cannot act at all.
   const attackerKO = !!attacker?.isKnockedOut;
   const specialTechniqueUnavailable = !!specialUnarmedAttack && specialUnarmedEligibility?.eligible === false;
-  const attackBlocked = critFailPending || cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked || attackerKO || specialTechniqueUnavailable;
+  const attackBlocked = critFailPending || cannotUseWeapons || twoHandedBlocked || proneMeleeBlocked || attackerKO || specialTechniqueUnavailable || !!boardAttackBlock;
 
   // Apply a critical-failure entry to the attacker. Random rolls and manual
   // row selections share this guarded path so effects and condition apply once.
@@ -2858,10 +2918,46 @@ export default function CombatScreen() {
   // Streamlined burst hit results
   const streamlinedHits = streamlinedDice.filter(d => d <= streamlinedHitThreshold && d > 0).length;
   const streamlinedMisses = streamlinedDice.length - streamlinedHits;
+  const continueBurstAt = (requestedId?: string) => {
+    if (!isBurst || !attacker || !weapon || !defender || !boardSource || !boardTarget) return;
+    if (burstFollowup && !burstFollowup.used) { notify('Burst follow-up', 'Resolve the pending missed rounds before moving to another target.'); return; }
+    const streamlined = burstMode === 'streamlined';
+    if (streamlined ? !streamlinedRolled : !attackResolved) { notify('Burst follow-up', 'Roll the original burst first.'); return; }
+    const hits = streamlined ? streamlinedHits : shotResults.filter(s => s.hit).length;
+    const misses = streamlined ? streamlinedMisses : shotResults.filter(s => !s.hit).length;
+    if (hits > 0 && (streamlined ? !streamlinedDmgResult : !damageApplied)) { notify('Burst follow-up', 'Apply the current target’s hit damage before resolving missed rounds at the next target.'); return; }
+    if (misses === 0 || isCritFail) { notify('Burst follow-up', 'No unresolved missed rounds remain.'); return; }
+    const order = burstFollowup?.queued ?? app.tacticalBoard.tokens
+      .filter(t => t.characterId !== boardSource.characterId && t.characterId !== boardTarget.characterId
+        && characters.some(c => c.id === t.characterId && !c.inStorage && c.currentHp > 0 && !c.combatDevice)
+        && tokenDistance(boardSource, t, app.tacticalBoard) >= tokenDistance(boardSource, boardTarget, app.tacticalBoard)
+        && footprint(t, app.tacticalBoard.grid).some(cell => boardCorridor.some(p => p.q === cell.q && p.r === cell.r)))
+      .sort((a, b) => tokenDistance(boardSource, a, app.tacticalBoard) - tokenDistance(boardSource, b, app.tacticalBoard)).map(t => t.characterId);
+    const next = order.find(id => characters.some(c => c.id === id && !c.inStorage && c.currentHp > 0));
+    if (!next) { notify('Burst follow-up', 'No further combatants lie in the burst corridor. The remaining rounds miss.'); return; }
+    if (requestedId && requestedId !== next) { notify('Burst follow-up', `Resolve the next nearest target first: ${characters.find(c => c.id === next)?.name}.`); return; }
+    followupUsedRef.current = false;
+    setBurstFollowup({ attackerId: attacker.id, weaponId: weapon.id, targetId: next, remaining: misses, queued: order.slice(order.indexOf(next) + 1), aim: burstFollowup?.aim ?? { q: boardTarget.q, r: boardTarget.r }, used: false });
+    setDefenderId(next); setSelectedVehicleSystemSelection(null);
+  };
 
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' ? 67 : 0 }}>
+  const combatPanel = (
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'web' && !showBoard ? 67 : 0 }}>
       <ScrollView ref={combatScrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 100, gap: 12 }} showsVerticalScrollIndicator={false}>
+        {!!app.tacticalError && <Text style={{ color: colors.destructive }}>{app.tacticalError}</Text>}
+        {!!boardAttackBlock && <Text style={{ color: colors.destructive }}>{boardAttackBlock}</Text>}
+        {useBoardRange && isBurst && (
+          <View style={{ padding: 10, gap: 8, borderWidth: 1, borderColor: colors.primary, borderRadius: colors.radius }}>
+            <Text style={{ color: colors.primary }}>{burstFollowup ? tr('{0} already-fired rounds at this target. Do not spend AP or ammunition again.', burstFollowup.remaining) : 'Burst misses continue down the same three-hex-wide corridor, nearest target first.'}</Text>
+            <TouchableOpacity onPress={() => continueBurstAt()} style={{ padding: 10, backgroundColor: colors.secondary, borderRadius: colors.radius }}><Text style={{ color: colors.primary, textAlign: 'center' }}>RESOLVE MISSES AT NEXT TARGET</Text></TouchableOpacity>
+            {!!burstFollowup && <TouchableOpacity onPress={() => { setBurstFollowup(null); followupUsedRef.current = false; resetAttackState(); }} style={{ padding: 10 }}><Text style={{ color: colors.foreground, textAlign: 'center' }}>FINISH BURST FOLLOW-UP</Text></TouchableOpacity>}
+          </View>
+        )}
+        {useBoardRange && (
+          <TouchableOpacity accessibilityRole="button" onPress={() => setUseBoardRange(false)} style={{ padding: 10, borderWidth: 1, borderColor: colors.primary, borderRadius: colors.radius }}>
+            <Text style={{ color: colors.primary }}>Board distance: {boardDistance === null ? 'place both combatants' : `${boardDistance} m, nearest occupied cells`}. Tap to use manual range.</Text>
+          </TouchableOpacity>
+        )}
         {attacker?.traits?.includes('glowing_one') && (
           <TouchableOpacity
             accessibilityRole="button"
@@ -2875,7 +2971,10 @@ export default function CombatScreen() {
           </TouchableOpacity>
         )}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 22, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 2 }}>COMBAT CALCULATOR</Text>
+          <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.primary, letterSpacing: 1 }}>COMBAT CALCULATOR</Text>
+          {!showBoard && <TouchableOpacity testID="open-combat-visualizer" accessibilityLabel="Open combat visualizer" onPress={() => { setUseBoardRange(true); setShowBoard(true); }} style={{ padding: 10, marginHorizontal: 6, borderWidth: 1, borderColor: colors.primary, borderRadius: colors.radius }}>
+            <Feather name="image" size={20} color={colors.primary} />
+          </TouchableOpacity>}
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={combatActive ? `Round ${currentRound} tracker` : 'Initiative and round tracker'}
@@ -3864,6 +3963,7 @@ export default function CombatScreen() {
                 : <FormulaLine label="Armor Class" value={`−${defenderAC}%`} color={colors.destructive} />}
               {defender?.tempAC && defender.tempAC > 0 ? <FormulaLine label="  (temp AC)" value={`+${defender.tempAC} from unspent AP`} color={colors.mutedForeground} /> : null}
               {vehicleMotionPenalty !== 0 && <FormulaLine label="Vehicle is Moving?" value={`${vehicleMotionPenalty}%`} color={colors.destructive} />}
+              {crewAttackPenalty !== 0 && <FormulaLine label="Attacking from a moving vehicle" value={`${crewAttackPenalty}%`} color={colors.destructive} />}
               {coverPenalty !== 0 && <FormulaLine label="Cover penalty" value={`−${coverPenalty}%`} color={colors.destructive} />}
               {weaponBonus !== 0 && <FormulaLine label="Manual to-hit adjust" value={`${weaponBonus >= 0 ? '+' : ''}${weaponBonus}%`} color={weaponBonus > 0 ? '#4a8c3f' : colors.destructive} />}
               {modBonuses.toHit !== 0 && <FormulaLine label="Weapon mods (auto)" value={`${modBonuses.toHit >= 0 ? '+' : ''}${modBonuses.toHit}%`} color={modBonuses.toHit > 0 ? '#4a8c3f' : colors.destructive} />}
@@ -3923,7 +4023,7 @@ export default function CombatScreen() {
               <View style={{ gap: 12 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>RANGE</Text><Text style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>+1% per sq close · −3% per sq far</Text></View>
-                  <Stepper value={rangeMod} step={3} min={-99} max={99} onChange={setRangeMod} />
+                  <Stepper value={rangeMod} step={3} min={-99} max={99} onChange={v => { setUseBoardRange(false); setRangeMod(v); }} />
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}><Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.foreground, letterSpacing: 1 }}>LIGHT</Text><Text numberOfLines={1} style={{ fontSize: 11, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>{LIGHT_OPTIONS.find(o => o.value === lightPenalty)?.label ?? '—'}</Text></View>
@@ -4683,7 +4783,7 @@ export default function CombatScreen() {
       />
       <AreaAttackModal
         visible={showAreaAttack}
-        combatants={initiativeEntries.flatMap(entry => {
+        combatants={areaAttackPreset?.targetZones ? activeCharacters.filter(c => c.currentHp > 0 && !c.combatDevice) : initiativeEntries.flatMap(entry => {
           const c = characters.find(character => character.id === entry.characterId);
           return c && c.currentHp > 0 && !c.combatDevice ? [c] : [];
         }).concat(
@@ -4693,7 +4793,7 @@ export default function CombatScreen() {
             : [],
         )}
         initialAttack={areaAttackPreset ?? undefined}
-        initialDefenderId={areaAttackPreset ? defender?.id : undefined}
+        initialDefenderId={areaAttackPreset?.targetZones ? undefined : areaAttackPreset ? defender?.id : undefined}
         sourceWeaponName={areaAttackPreset ? weapon?.name : undefined}
         profiles={[
           ...getBuiltInAreaDamageProfiles(missingExplosiveBlastZoneHouseRule),
@@ -5037,6 +5137,30 @@ export default function CombatScreen() {
       />
     </View>
   );
+  return <>
+    {!showBoard && combatPanel}
+    {showBoard && <CombatVisualizerModal
+      visible={showBoard}
+      onClose={() => setShowBoard(false)}
+      attackerId={attackerId}
+      defenderId={defenderId}
+      onAttackerChange={id => { setAttackerId(id); setUseBoardRange(true); }}
+      onDefenderChange={id => { setDefenderId(id); setSelectedVehicleSystemSelection(null); setUseBoardRange(true); }}
+      combatPanel={combatPanel}
+      isBurst={isBurst}
+      burstRangeCells={Math.ceil((effectiveRange + statRange) / app.tacticalBoard.metersPerCell)}
+      areaProfiles={[...getBuiltInAreaDamageProfiles(missingExplosiveBlastZoneHouseRule), ...createCustomAmmoAreaDamageProfiles(allAmmo), ...createCustomWeaponAreaDamageProfiles(allWeapons)]}
+      onResolveStray={id => continueBurstAt(id)}
+      burstAim={burstFollowup?.aim}
+      burstFollowupActive={!!burstFollowup}
+      onAreaAttack={(profileId, assignments) => {
+        const profile = [...getBuiltInAreaDamageProfiles(missingExplosiveBlastZoneHouseRule), ...createCustomAmmoAreaDamageProfiles(allAmmo), ...createCustomWeaponAreaDamageProfiles(allWeapons)].find(p => p.id === profileId);
+        if (!profile) return;
+        setAreaAttackPreset({ kind: profile.effects[0].kind, rawDamage: 0, profileId, targetZones: assignments, emp: profile.emp, nonBiologicalOnly: profile.nonBiologicalOnly });
+        setShowAreaAttack(true);
+      }}
+    />}
+  </>;
 }
 function MineTrapPlacementModal({ visible, deviceName, effectiveTraps, apCost, onOutcome, onClose }: {
   visible: boolean;
@@ -5152,7 +5276,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
       setKind(initialAttack.kind);
       setRawDamage(initialAttack.rawDamage);
       setProfileDamageRolled(null);
-      setTargets(initialDefenderId ? [initialDefenderId] : []);
+      setTargets(initialAttack.targetZones ? Object.keys(initialAttack.targetZones) : initialDefenderId ? [initialDefenderId] : []);
       setCatalogProfileId(initialAttack.profileId ?? null);
       const initialProfile = initialAttack.profileId
         ? profiles.find(profile => profile.id === initialAttack.profileId)
@@ -5163,7 +5287,7 @@ function AreaAttackModal({ visible, combatants, onClose, onApply, receipt, initi
       const firstZone = initialProfile
         ? buildAreaDamageZones(initialProfile, rangeOverrides, {}).at(0)?.id
         : undefined;
-      setTargetZones(initialDefenderId && firstZone ? { [initialDefenderId]: firstZone } : {});
+      setTargetZones(initialAttack.targetZones ?? (initialDefenderId && firstZone ? { [initialDefenderId]: firstZone } : {}));
       setProfileRangeInputs(initialProfile
         ? Object.fromEntries(initialProfile.effects.map(effect => {
             const effectId = effect.id ?? 'main';

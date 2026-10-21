@@ -1,3 +1,4 @@
+import { isTacticalBoard, type TacticalBoard } from './tacticalBoard.ts';
 import type {
   Armor,
   BestiaryTemplate,
@@ -52,6 +53,7 @@ const SUPPORTED_PORTRAIT_MIME_TYPES = new Set([
 ]);
 
 export interface CampaignStateSnapshot {
+  tacticalBoard?: TacticalBoard;
   campaignName?: string;
   radioStations?: RadioStation[];
   activeRadioStationId?: string | null;
@@ -432,6 +434,7 @@ export function createVehicleBundle(
 function isCampaignState(value: unknown): value is CampaignStateSnapshot {
   if (!isRecord(value)) return false;
   return Array.isArray(value.characters)
+    && (value.tacticalBoard === undefined || isTacticalBoard(value.tacticalBoard))
     && Array.isArray(value.customWeapons ?? [])
     && Array.isArray(value.customArmor ?? [])
     && isCustomAmmoCatalog(value.customAmmo)
@@ -754,6 +757,7 @@ function isCatalogPortraitSettingsMap(value: unknown): boolean {
 
 function isCompletePortableCampaignState(value: unknown): value is CampaignStateSnapshot {
   if (!isRecord(value)
+    || (value.tacticalBoard !== undefined && !isTacticalBoard(value.tacticalBoard))
     || !Array.isArray(value.characters)
     || !Array.isArray(value.customWeapons)
     || !Array.isArray(value.customArmor)

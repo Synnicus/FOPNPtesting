@@ -1,5 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  createTacticalBoard, isTacticalBoard, planWalking, boardTokenFor, footprint, makeBoardToken,
+  resolveDrivingRound, type TacticalBoard, type BoardCell,
+} from '@/data/tacticalBoard';
 import { Platform } from 'react-native';
 import { Directory, Paths } from 'expo-file-system';
 import { Character, CharacterInventoryCategory, CharacterPerk, InitiativeEntry, Injury, PositionType, SPECIALStats, Weapon, Armor, WeaponAmmoState, ActiveEffect, BestiaryTemplate, VehicleProfile, CampaignMap, CampaignTable, CampaignRaceTag, CampaignRuleTag, CustomPerkDefinition, CustomRaceDefinition, CustomWeaponMod, CustomConsumable, CatalogPortraitSelection, CatalogPortraitSettings, EMPTY_NATURAL_PROTECTION } from '@/context/types';
@@ -372,6 +376,8 @@ function normalizeCharacterAmmoStates(
 const STORAGE_KEY = '@fallout_pnp_v4';
 
 interface AppState extends CampaignOptions {
+  tacticalBoard: TacticalBoard;
+  tacticalError: string | null;
   campaignName: string;
   radioStations: RadioStation[];
   activeRadioStationId: string;
@@ -543,6 +549,7 @@ function hasValidCharacterRecord(value: unknown): value is Character {
 }
 
 function hasValidCampaignImport(value: unknown): value is AppState {
+  if (isRecord(value) && value.tacticalBoard !== undefined && !isTacticalBoard(value.tacticalBoard)) return false;
   if (!isRecord(value) || !Array.isArray(value.characters)
     || !value.characters.every(hasValidCharacterRecord)) return false;
   for (const field of CAMPAIGN_COLLECTIONS) {
@@ -736,6 +743,9 @@ function normalizePersistedState(parsed: AppState): AppState {
     typeof tag?.id === 'string' && !!tag.id && typeof tag.label === 'string' && !!tag.label.trim());
   return {
     ...currentState,
+    tacticalBoard: isTacticalBoard(normalized.tacticalBoard) ? normalized.tacticalBoard : createTacticalBoard(),
+    tacticalError: normalized.tacticalBoard !== undefined && !isTacticalBoard(normalized.tacticalBoard)
+      ? 'The saved tactical board is invalid. Other campaign data has been preserved.' : null,
     campaignName: typeof normalized.campaignName === 'string' && normalized.campaignName.trim()
       ? normalized.campaignName.trim().slice(0, 80)
       : 'My Campaign',
@@ -794,6 +804,10 @@ function normalizePersistedState(parsed: AppState): AppState {
 }
 
 interface AppContextValue extends AppState {
+  updateTacticalBoard: (update: (board: TacticalBoard) => TacticalBoard) => void;
+  moveTacticalToken: (characterId: string, cell: BoardCell, gm: boolean) => void;
+  resolveTacticalDriving: () => void;
+  recordTacticalAttack: (actorId: string) => void;
   loaded: boolean;
   allWeapons: Weapon[];
   allArmor: Armor[];
@@ -920,6 +934,8 @@ interface AppContextValue extends AppState {
 const AppContext = createContext<AppContextValue | null>(null);
 
 const defaultState: AppState = markConditionSemanticsV2({
+  tacticalBoard: createTacticalBoard(),
+  tacticalError: null,
   campaignName: 'My Campaign',
   radioStations: DEFAULT_RADIO_STATIONS.map(station => ({
     ...station,
@@ -971,6 +987,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     latestState.current = next;
     commitState(next);
   }, []);
+  const updateTacticalBoard = useCallback((update: (board: TacticalBoard) => TacticalBoard) => {
+    const board = update(latestState.current.tacticalBoard);
+    const previous = latestState.current.tacticalBoard;
+    if ((board.grid !== previous.grid || board.metersPerCell !== previous.metersPerCell)
+      && previous.tokens.some(t => t.path)) throw new Error('Cancel queued driving paths before changing the grid or its scale.');
+    if (!isTacticalBoard(board)) throw new Error('Invalid board settings or image budget exceeded (4.5 MB per image, 13.5 MB total).');
+    setState(s => ({ ...s, tacticalBoard: board, tacticalError: null }));
+  }, [setState]);
+  const recordTacticalAttack = useCallback((actorId: string) => {
+    setState(s => ({ ...s, tacticalBoard: { ...s.tacticalBoard, tokens: s.tacticalBoard.tokens.map(t => {
+      if (!s.characters.some(c => c.id === t.characterId && c.vehicleCrew?.pilotCharacterId === actorId)) return t;
+      const path = t.path;
+      if (!path || path.round !== s.currentRound || path.driverAttackPenalty) return { ...t, driverAttackedRound: s.currentRound };
+      const target = Math.max(0, path.target - 20);
+      return { ...t, driverAttackedRound: s.currentRound, path: { ...path, driverAttackPenalty: true, target,
+        check: path.roll !== undefined ? (path.roll <= target ? 'success' : 'failure') : 'pending' } };
+    }) } }));
+  }, [setState]);
+  const moveTacticalToken = useCallback((characterId: string, cell: BoardCell, gm: boolean) => {
+    const s = latestState.current;
+    const token = s.tacticalBoard.tokens.find(t => t.characterId === characterId);
+    const character = s.characters.find(c => c.id === characterId && !c.inStorage);
+    if (!token || !character || boardTokenFor(characterId, s.tacticalBoard, s.characters)?.characterId !== characterId) throw new Error('Disembark this crew member before moving them independently.');
+    if (!gm && (!s.combatActive || !s.initiativeEntries.some(e => e.id === s.activeEntryId && e.characterId === characterId))) throw new Error('Rules-based movement requires this character’s active turn.');
+    const destination = { ...token, ...cell };
+    if (!gm && s.tacticalBoard.tokens.some(other => other.characterId !== characterId
+      && s.characters.some(c => c.id === other.characterId && !c.inStorage && c.currentHp > 0)
+      && footprint(other, s.tacticalBoard.grid).some(c => footprint(destination, s.tacticalBoard.grid).some(d => c.q === d.q && c.r === d.r)))) throw new Error('Another living combatant occupies that destination.');
+    const movement = gm ? { cost: 0, token: destination } : planWalking(character, token, cell, s.tacticalBoard, `${s.currentRound}:${s.activeEntryId}`);
+    const tacticalBoard = { ...s.tacticalBoard, tokens: s.tacticalBoard.tokens.map(t => t.characterId === characterId ? movement.token : t) };
+    if (!isTacticalBoard(tacticalBoard)) throw new Error('Position is outside the supported board coordinates.');
+    setState(current => ({
+      ...current, tacticalBoard, tacticalError: null,
+      characters: current.characters.map(c => c.id === characterId ? { ...c, currentAP: c.currentAP - movement.cost } : c),
+      initiativeEntries: current.initiativeEntries.map(e => e.characterId === characterId ? { ...e, currentAP: Math.max(0, e.currentAP - movement.cost) } : e),
+    }));
+  }, [setState]);
+  const resolveTacticalDriving = useCallback(() => {
+    const s = latestState.current;
+    if (s.combatActive && s.initiativeEntries.some(e => !e.hasActed && e.id !== s.activeEntryId)) throw new Error('Vehicles move together at the end of the round. Finish the preceding initiative turns first.');
+    const tacticalBoard = resolveDrivingRound(s.tacticalBoard, s.currentRound, s.characters);
+    setState(current => ({
+      ...current, tacticalBoard, tacticalError: null,
+      characters: current.characters.map(c => {
+        const token = tacticalBoard.tokens.find(t => t.characterId === c.id);
+        return c.vehicle && token ? { ...c, vehicle: { ...c.vehicle, inMotion: token.speedKph > 0 } } : c;
+      }),
+    }));
+  }, [setState]);
   const [loaded, setLoaded] = useState(false);
   const skipNextPersistRef = useRef<string | null>(null);
 
@@ -1091,6 +1156,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           s.hardcoreRadiationRules,
         ),
         pendingCombatSkillActions: canceled.pendingActions,
+        tacticalBoard: { ...s.tacticalBoard, tokens: (() => {
+          const removed = s.characters.find(c => c.id === id);
+          const anchor = s.tacticalBoard.tokens.find(t => t.characterId === id);
+          const tokens = s.tacticalBoard.tokens.filter(t => t.characterId !== id);
+          if (removed?.vehicle && anchor) {
+            for (const crewId of [removed.vehicleCrew?.pilotCharacterId, removed.vehicleCrew?.gunnerCharacterId]) {
+              if (crewId && canceled.characters.some(c => c.id === crewId) && !tokens.some(t => t.characterId === crewId)) tokens.push(makeBoardToken(crewId, anchor));
+            }
+          }
+          return tokens;
+        })() },
       };
     });
   }, []);
@@ -2116,6 +2192,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(s => ({
       ...s,
       initiativeEntries: sorted.map((e, i) => ({ ...e, isActive: i === 0, hasActed: false })),
+      tacticalBoard: { ...s.tacticalBoard, tokens: s.tacticalBoard.tokens.map(t => ({ ...t, path: undefined, lastMovedRound: undefined, movementTurn: undefined, movedMeters: 0, driverAttackedRound: undefined })) },
+      tacticalError: null,
       currentRound: 1,
       combatActive: true,
       activeEntryId: sorted[0]?.id ?? null,
@@ -2188,6 +2266,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const nextTurn = useCallback(() => {
     setState(s => {
       if (s.initiativeEntries.length === 0) return s;
+      if (s.initiativeEntries.every(e => e.hasActed || e.id === s.activeEntryId)) {
+        try {
+          const tacticalBoard = resolveDrivingRound(s.tacticalBoard, s.currentRound, s.characters);
+          s = { ...s, tacticalBoard, tacticalError: null, characters: s.characters.map(c => {
+            const token = tacticalBoard.tokens.find(t => t.characterId === c.id);
+            return c.vehicle && token ? { ...c, vehicle: { ...c.vehicle, inMotion: token.speedKph > 0 } } : c;
+          }) };
+        } catch (error) { return { ...s, tacticalError: (error as Error).message }; }
+      }
       const activeIdx = s.initiativeEntries.findIndex(e => e.id === s.activeEntryId);
       const currentActive = s.initiativeEntries[activeIdx];
       const activeDefenseSuppressed = !!s.characters.find(c => c.id === currentActive?.characterId)?.combatDefenseSuppressed;
@@ -2323,6 +2410,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const nextRound = useCallback(() => {
     setState(s => {
+      try {
+        const tacticalBoard = resolveDrivingRound(s.tacticalBoard, s.currentRound, s.characters);
+        s = { ...s, tacticalBoard, tacticalError: null, characters: s.characters.map(c => {
+          const token = tacticalBoard.tokens.find(t => t.characterId === c.id);
+          return c.vehicle && token ? { ...c, vehicle: { ...c.vehicle, inMotion: token.speedKph > 0 } } : c;
+        }) };
+      } catch (error) { return { ...s, tacticalError: (error as Error).message }; }
       if (s.initiativeEntries.length === 0) return s;
       const firstChar = s.initiativeEntries[0]?.characterId;
       const round = s.currentRound + 1;
@@ -2970,6 +3064,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
        saveBuiltInBestiaryOverride, removeBuiltInBestiaryTemplate, restoreBuiltInBestiaryDefaults,
       setBestiaryPortrait, setVehicleCatalogPortrait,
       exportCampaign, importCampaign, saveCampaignTools, saveCustomRules, saveCustomRaces, saveCampaignRaceTags,
+      updateTacticalBoard, moveTacticalToken, resolveTacticalDriving,
+      recordTacticalAttack,
     }}>
       {children}
     </AppContext.Provider>
