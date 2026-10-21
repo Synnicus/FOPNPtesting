@@ -2,6 +2,8 @@
 
 Use a connected Android device/emulator or iOS simulator with a **launchable native build** of this app installed. Run the app's Metro server if using a development build. These tests cannot run in a browser or in a Node test runner. Android uses application ID `com.pnpcalculator.app`; iOS uses bundle ID `com.pnpcalculator.app`.
 
+For project verification, native Maestro flows run in `.github/workflows/fallout-pnp-android-native.yml`: it builds and installs a release APK on an Android emulator, then runs the native radiation regressions. Treat the workflow result as the device-level result; rule tests and web previews are not substitutes. Extend this workflow when adding a Fallout PnP native UI regression so checks can run even when a developer workspace has no local device or simulator.
+
 From the repository root:
 
 ```sh
@@ -10,7 +12,7 @@ pnpm --filter @workspace/fallout-pnp run test:native:radiation
 
 For iOS, use the same command with a booted iOS simulator. This flow creates one test character in the **current campaign** and does not delete existing characters or clear app data. Use a disposable campaign/device if that matters. A unique `TEST_NAME` ensures it reopens the character it just created even when other characters exist.
 
-The test asserts NO adds the full 100, YES adds 80 at 20% resistance, subtraction bypasses the prompt and clamps at zero, and 90 radiation remains after a cold app restart (including AsyncStorage reload). A failure must fail the native test command; a successful source-level test alone does not count as a native pass.
+The test asserts NO adds the full 100, YES adds 80 at 20% resistance, subtraction bypasses the prompt and clamps at zero, and 90 radiation remains after a cold app restart (including AsyncStorage reload). A failure must fail the native test command; a successful source-level test alone does not count as a native pass. The Android CI job clears only its disposable emulator app data before running the flow.
 
 # Native Hardcore radiation persistence regression
 

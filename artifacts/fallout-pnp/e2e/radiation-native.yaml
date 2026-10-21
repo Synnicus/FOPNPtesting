@@ -4,7 +4,7 @@ appId: ${APP_ID}
 ---
 - launchApp
 - tapOn: "Characters"
-- tapOn: "NEW"
+- tapOn: "NEW CHARACTER"
 - tapOn:
     id: character-name-input
 - inputText: ${TEST_NAME}
@@ -36,8 +36,8 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- assertVisible: "Effective radiation resistance is 20%."
-- tapOn: "NO"
+- assertVisible: "Effective cumulative resistance is 20%."
+- tapOn: "ADD FULL AMOUNT"
 - assertVisible:
     id: character-radiation-meter
     text: "100 / 1000"
@@ -48,7 +48,7 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- tapOn: "YES"
+- tapOn: "APPLY RESISTANCE"
 - assertVisible:
     id: character-radiation-meter
     text: "180 / 1000"
@@ -79,7 +79,7 @@ appId: ${APP_ID}
 - tapOn:
     id: character-radiation-add
 - assertVisible: "Apply Radiation Resistance?"
-- tapOn: "NO"
+- tapOn: "ADD FULL AMOUNT"
 - assertVisible:
     id: character-radiation-meter
     text: "90 / 1000"

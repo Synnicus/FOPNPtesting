@@ -1,0 +1,375 @@
+# Run against an installed Android or iOS build. The native workflow clears
+# app data before this flow so the optional rule starts disabled.
+appId: ${APP_ID}
+---
+- launchApp
+
+# Enable the campaign rule and select Option 1.
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: mutant-ghoul-radiation-toggle
+    direction: DOWN
+- tapOn:
+    id: mutant-ghoul-radiation-toggle
+- scrollUntilVisible:
+    element:
+      id: ghoul-radiation-option-1
+    direction: DOWN
+- tapOn:
+    id: ghoul-radiation-option-1
+- tapOn: "Close campaign options"
+
+# Option 1: two separate radiation gains are fully resisted and do not heal.
+- tapOn: "Characters"
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Option 1"
+- hideKeyboard
+- tapOn: "Ghoul"
+- scrollUntilVisible:
+    element:
+      id: character-hp-decrease
+    direction: DOWN
+- repeat:
+    times: 28
+    commands:
+      - tapOn:
+          id: character-hp-decrease
+- assertVisible: "2 / 30"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "20"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- assertVisible: "Effective cumulative resistance is 100%."
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- assertVisible: "2 / 30"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "20"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- assertVisible: "2 / 30"
+- tapOn:
+    id: character-save
+- assertVisible: "${TEST_NAME} Option 1"
+- stopApp
+- launchApp
+
+# Option 2: each 10-rad gain heals 1 HP independently.
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: ghoul-radiation-option-2
+    direction: DOWN
+- tapOn:
+    id: ghoul-radiation-option-2
+- tapOn: "Close campaign options"
+- tapOn: "Characters"
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Option 2"
+- hideKeyboard
+- tapOn: "Ghoul"
+- scrollUntilVisible:
+    element:
+      id: character-hp-decrease
+    direction: DOWN
+- repeat:
+    times: 28
+    commands:
+      - tapOn:
+          id: character-hp-decrease
+- assertVisible: "2 / 30"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "10"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- assertVisible: "Effective cumulative resistance is 0%."
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "10 / 1000"
+- assertVisible: "3 / 30"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "10"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "20 / 1000"
+- assertVisible: "4 / 30"
+- tapOn:
+    id: character-save
+- assertVisible: "${TEST_NAME} Option 2"
+- stopApp
+- launchApp
+
+# Option 3: 2 rads and then 1 rad exercise the saved remainder.
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: ghoul-radiation-option-3
+    direction: DOWN
+- tapOn:
+    id: ghoul-radiation-option-3
+- tapOn: "Close campaign options"
+- tapOn: "Characters"
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Option 3"
+- hideKeyboard
+- tapOn: "Ghoul"
+- scrollUntilVisible:
+    element:
+      id: character-hp-decrease
+    direction: DOWN
+- repeat:
+    times: 28
+    commands:
+      - tapOn:
+          id: character-hp-decrease
+- assertVisible: "2 / 30"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "2"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "2 / 1000"
+- assertVisible: "2 / 30"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "1"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "3 / 1000"
+- assertVisible: "3 / 30"
+- tapOn:
+    id: character-save
+- assertVisible: "${TEST_NAME} Option 3"
+- stopApp
+- launchApp
+
+# Option 4: each absorbed rad heals immediately.
+- tapOn: "Campaign"
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: ghoul-radiation-option-4
+    direction: DOWN
+- tapOn:
+    id: ghoul-radiation-option-4
+- tapOn: "Close campaign options"
+- tapOn: "Characters"
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Option 4"
+- hideKeyboard
+- tapOn: "Ghoul"
+- scrollUntilVisible:
+    element:
+      id: character-hp-decrease
+    direction: DOWN
+- repeat:
+    times: 28
+    commands:
+      - tapOn:
+          id: character-hp-decrease
+- assertVisible: "2 / 30"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "3"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "3 / 1000"
+- assertVisible: "5 / 30"
+- tapOn:
+    id: character-radiation-amount
+- inputText: "3"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "6 / 1000"
+- assertVisible: "8 / 30"
+- tapOn:
+    id: character-save
+- assertVisible: "${TEST_NAME} Option 4"
+
+# The optional rule also makes Super Mutants and Deathclaws immune, without
+# changing a Half-Mutant's normal 20% resistance.
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Super Mutant"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Super Mutant"
+    direction: RIGHT
+- tapOn: "Super Mutant"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Effective cumulative resistance is 100%."
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Deathclaw"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Deathclaw"
+    direction: RIGHT
+- tapOn: "Deathclaw"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Effective cumulative resistance is 100%."
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- assertVisible: "30 / 30"
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Half-Mutant"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Half-Mutant"
+    direction: RIGHT
+- tapOn: "Half-Mutant"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Effective cumulative resistance is 20%."
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "80 / 1000"
+- assertVisible: "30 / 30"
+- tapOn:
+    id: character-save
+
+# The total radiation meter remains capped at exactly 1000.
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} Meter Cap"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "2000"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Effective cumulative resistance is 0%."
+- tapOn: "APPLY RESISTANCE"
+- assertVisible:
+    id: character-radiation-meter
+    text: "1000 / 1000"
+- assertVisible: "30 / 30"
+- tapOn:
+    id: character-save

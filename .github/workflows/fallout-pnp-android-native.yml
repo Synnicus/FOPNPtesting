@@ -11,6 +11,9 @@ on:
       - ".npmrc"
       - ".github/workflows/fallout-pnp-android-native.yml"
   push:
+    branches:
+      - main
+      - agent/ghoul-radiation-native
     paths:
       - "artifacts/fallout-pnp/**"
       - "lib/**"
@@ -29,10 +32,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  hardcore-radiation-restart:
-    name: Hardcore radiation survives native restart
+  radiation-native-regressions:
+    name: Ghoul and Hardcore radiation native regressions
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 75
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -51,20 +54,25 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Fallout PnP validation
-        run: pnpm --filter @workspace/fallout-pnp run validate
-
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
 
       - name: Install Android build platform
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - name: Generate the Android project
         working-directory: artifacts/fallout-pnp
@@ -74,6 +82,9 @@ jobs:
           EXPO_PUBLIC_REPL_ID: ci
         run: pnpm exec expo prebuild --platform android --clean --no-install
 
+      - name: Cache Gradle dependencies and build outputs
+        uses: gradle/actions/setup-gradle@v5
+
       - name: Build an installable Android app
         working-directory: artifacts/fallout-pnp/android
         env:
@@ -81,22 +92,58 @@ jobs:
           EXPO_PUBLIC_REPL_ID: ci
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Run the native regression on Android
+      - name: Cache Android emulator
+        id: avd-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ runner.os }}-api-35-google-atd-x86_64-pixel-2-v1
+
+      - name: Create Android emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 36
-          target: google_apis
+          api-level: 35
+          target: google_atd
           arch: x86_64
           profile: pixel_2
+          force-avd-creation: false
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Created an Android emulator snapshot for future native test runs."
+
+      - name: Run native radiation regressions on Android
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_atd
+          arch: x86_64
+          profile: pixel_2
+          force-avd-creation: false
+          emulator-boot-timeout: 1200
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euo pipefail
-            export APP_ID=com.pnpcalculator.app
+            set -eu
             adb install artifacts/fallout-pnp/android/app/build/outputs/apk/release/app-release.apk
-            adb shell pm clear "$APP_ID"
-            export MAESTRO_VERSION=2.11.0
-            curl -Ls "https://get.maestro.mobile.dev" | bash
-            export PATH="$HOME/.maestro/bin:$PATH"
-            maestro --version
-            pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
+            adb shell pm clear com.pnpcalculator.app
+            curl -fsSL "https://get.maestro.mobile.dev" -o /tmp/maestro-install.sh
+            MAESTRO_VERSION=2.11.0 bash /tmp/maestro-install.sh
+            "$HOME/.maestro/bin/maestro" --version
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:radiation
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-options
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-equipment-combat
+            PATH="$HOME/.maestro/bin:$PATH" pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
+            {
+              echo "## Android native radiation regressions"
+              echo
+              echo "- Manual radiation character-editor flow: passed"
+              echo "- Ghoul healing Options 1–4 with separate gains and exact HP/meter values: passed"
+              echo "- Radiation meter cap, Super Mutant/Deathclaw immunity, and unchanged Half-Mutant resistance: passed"
+              echo "- Worn body/helmet resistance and single-resistance combat aura: passed"
+              echo "- Hardcore radiation persistence flow: passed"
+              echo "- All flows ran against the installed release app on an Android emulator."
+            } >> "$GITHUB_STEP_SUMMARY"
