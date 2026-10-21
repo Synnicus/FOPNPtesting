@@ -4,7 +4,6 @@ import {
   Modal,
   PanResponder,
   Platform,
-  Pressable,
   ScrollView,
   View,
 } from 'react-native';
@@ -18,7 +17,10 @@ import {
 } from '@/components/LocalizedText';
 import { useColors } from '@/hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { CampaignMap, CampaignMapMarker, CampaignMapMarkerIcon, Character } from '@/context/types';
+import type { CampaignMap, CampaignMapMarker, CampaignMapMarkerIcon } from '@/context/types';
+import DraggableMapMarker from '@/components/DraggableMapMarker';
+import CaveIcon from '@/components/CaveIcon';
+import { mapViewportCenter } from '@/data/mapPlacement';
 import {
   MAX_CAMPAIGN_MAP_IMAGE_URI_LENGTH,
   MAX_CAMPAIGN_MAP_MARKER_ICON_URI_LENGTH,
@@ -27,16 +29,17 @@ import {
 } from '@/data/campaignTools';
 import { translateText } from '@/data/localization';
 
-type MapTool = 'pan' | 'location' | 'party';
+type MapTool = 'pan' | 'location' | 'edit';
 type FeatherName = React.ComponentProps<typeof Feather>['name'];
 
-const BUILT_IN_MARKERS: { id: string; name: string; icon: FeatherName }[] = [
+const BUILT_IN_MARKERS: { id: string; name: string; icon: FeatherName | 'cave' }[] = [
   { id: 'city', name: 'CITY', icon: 'map-pin' },
   { id: 'town', name: 'TOWN', icon: 'home' },
   { id: 'camp', name: 'CAMP', icon: 'flag' },
   { id: 'vault', name: 'VAULT', icon: 'settings' },
-  { id: 'cave', name: 'CAVE', icon: 'moon' },
+  { id: 'cave', name: 'CAVE', icon: 'cave' },
   { id: 'bridge', name: 'BRIDGE', icon: 'git-merge' },
+  { id: 'party', name: 'Party', icon: 'user' },
 ];
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -52,14 +55,12 @@ function imageDataUri(asset: ImagePicker.ImagePickerAsset): string | null {
 export default function CampaignMapEditorModal({
   visible,
   map,
-  characters,
   onClose,
   onSave,
   onExport,
 }: {
   visible: boolean;
   map: CampaignMap;
-  characters: Character[];
   onClose: () => void;
   onSave: (map: CampaignMap) => void;
   onExport: (map: CampaignMap) => void;
@@ -69,10 +70,8 @@ export default function CampaignMapEditorModal({
   const [draft, setDraft] = useState<CampaignMap>(() => cloneMap(map));
   const [tool, setTool] = useState<MapTool>('pan');
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+  const [pendingLocation, setPendingLocation] = useState<CampaignMapMarker | null>(null);
   const [selectedIconId, setSelectedIconId] = useState('city');
-  const [locationName, setLocationName] = useState('');
-  const [locationDescription, setLocationDescription] = useState('');
   const [notice, setNotice] = useState('');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -80,7 +79,9 @@ export default function CampaignMapEditorModal({
   const [detectedImageSize, setDetectedImageSize] = useState<{ width: number; height: number } | null>(null);
   const panRef = useRef(pan);
   const panStartRef = useRef(pan);
-  const draggedRef = useRef(false);
+  const centerNewMarkerRef = useRef(false);
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   panRef.current = pan;
 
   useEffect(() => {
@@ -88,10 +89,9 @@ export default function CampaignMapEditorModal({
     setDraft(cloneMap(map));
     setTool('pan');
     setSelectedLocationId(null);
-    setSelectedCharacterId(null);
+    setPendingLocation(null);
+    centerNewMarkerRef.current = false;
     setSelectedIconId('city');
-    setLocationName('');
-    setLocationDescription('');
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setDetectedImageSize(null);
@@ -112,7 +112,6 @@ export default function CampaignMapEditorModal({
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(map);
   const customIcons = draft.markerIcons ?? [];
-  const activeCharacters = characters.filter(character => !character.inStorage);
   const selectedLocation = draft.locations.find(location => location.id === selectedLocationId) ?? null;
   const hasMapImage = !!draft.imageDataUri;
   const imageAspect = draft.imageWidth && draft.imageHeight
@@ -128,19 +127,15 @@ export default function CampaignMapEditorModal({
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4,
+    onMoveShouldSetPanResponder: (_event, gesture) =>
+      toolRef.current === 'pan' && (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4),
     onPanResponderGrant: () => {
       panStartRef.current = panRef.current;
-      draggedRef.current = true;
     },
     onPanResponderMove: (_event, gesture) => {
-      setPan({ x: panStartRef.current.x + gesture.dx, y: panStartRef.current.y + gesture.dy });
-    },
-    onPanResponderRelease: () => {
-      setTimeout(() => { draggedRef.current = false; }, 120);
-    },
-    onPanResponderTerminate: () => {
-      draggedRef.current = false;
+      if (toolRef.current === 'pan') {
+        setPan({ x: panStartRef.current.x + gesture.dx, y: panStartRef.current.y + gesture.dy });
+      }
     },
   })).current;
 
@@ -150,6 +145,10 @@ export default function CampaignMapEditorModal({
   };
 
   const saveMap = (): CampaignMap | null => {
+    if (pendingLocation) {
+      setNotice('Confirm or cancel placement before saving.');
+      return null;
+    }
     const normalized = normalizeCampaignMap(draft);
     if (!normalized) {
       setNotice('Map could not be saved.');
@@ -162,6 +161,10 @@ export default function CampaignMapEditorModal({
   };
 
   const requestClose = () => {
+    if (pendingLocation) {
+      setNotice('Confirm or cancel placement before saving.');
+      return;
+    }
     if (!dirty) {
       onClose();
       return;
@@ -218,7 +221,7 @@ export default function CampaignMapEditorModal({
       };
       updateDraft({ markerIcons: [...customIcons, icon] });
       setSelectedIconId(icon.id);
-      setTool('location');
+      setPendingLocation(current => current ? { ...current, iconId: icon.id } : current);
       return;
     }
     if (uri.length > MAX_CAMPAIGN_MAP_IMAGE_URI_LENGTH) {
@@ -236,70 +239,29 @@ export default function CampaignMapEditorModal({
 
   const selectIcon = (iconId: string) => {
     setSelectedIconId(iconId);
-    if (selectedLocation) {
-      updateDraft({
-        locations: draft.locations.map(location => location.id === selectedLocation.id
-          ? { ...location, iconId }
-          : location),
-      });
-    }
+    setPendingLocation(current => current ? { ...current, iconId } : current);
   };
 
-  const placeAt = (event: { nativeEvent: { locationX: number; locationY: number } }) => {
-    if (draggedRef.current) {
-      draggedRef.current = false;
+  const confirmPlacement = () => {
+    if (!pendingLocation) return;
+    if (!pendingLocation.name.trim()) {
+      setNotice('Enter a location name before placing it.');
       return;
     }
-    if (!hasMapImage || tool === 'pan') return;
-    const { locationX, locationY } = event.nativeEvent;
-    const left = (viewport.width - artboard.width * zoom) / 2 + pan.x;
-    const top = (viewport.height - artboard.height * zoom) / 2 + pan.y;
-    const x = (locationX - left) / (artboard.width * zoom);
-    const y = (locationY - top) / (artboard.height * zoom);
-    if (x < 0 || x > 1 || y < 0 || y > 1) return;
-    if (tool === 'location') {
-      const name = locationName.trim();
-      if (!name) {
-        setNotice('Enter a location name before placing it.');
-        return;
-      }
-      if (draft.locations.length >= 200) {
-        setNotice('This map has reached its location limit.');
-        return;
-      }
-      const location: CampaignMapMarker = {
-        id: makeId('location'),
-        name,
-        description: locationDescription.trim(),
-        iconId: selectedIconId,
-        x,
-        y,
-      };
-      updateDraft({ locations: [...draft.locations, location] });
-      setSelectedLocationId(location.id);
-      setLocationName('');
-      setLocationDescription('');
-    } else if (tool === 'party') {
-      if (!selectedCharacterId) {
-        setNotice('Select a character before placing the party marker.');
-        return;
-      }
-      updateDraft({
-        party: [
-          ...draft.party.filter(marker => marker.characterId !== selectedCharacterId),
-          { characterId: selectedCharacterId, x, y },
-        ],
-      });
-    }
+    const location = { ...pendingLocation, name: pendingLocation.name.trim(), description: pendingLocation.description.trim() };
+    updateDraft({
+      locations: selectedLocationId
+        ? draft.locations.map(item => item.id === selectedLocationId ? location : item)
+        : [...draft.locations, location],
+    });
+    setPendingLocation(null);
+    setSelectedLocationId(null);
+    setTool('edit');
   };
 
   const updateLocation = (patch: Partial<CampaignMapMarker>) => {
-    if (!selectedLocation) return;
-    updateDraft({
-      locations: draft.locations.map(location => location.id === selectedLocation.id
-        ? { ...location, ...patch }
-        : location),
-    });
+    setPendingLocation(current => current ? { ...current, ...patch } : current);
+    setNotice('');
   };
 
   const removeLocation = () => {
@@ -308,6 +270,7 @@ export default function CampaignMapEditorModal({
       if (window.confirm(`${translateText('Remove location?')}\n\n${translateText('This location marker will be removed from the map.')}`)) {
         updateDraft({ locations: draft.locations.filter(location => location.id !== selectedLocation.id) });
         setSelectedLocationId(null);
+        setPendingLocation(null);
       }
       return;
     }
@@ -319,14 +282,10 @@ export default function CampaignMapEditorModal({
         onPress: () => {
           updateDraft({ locations: draft.locations.filter(location => location.id !== selectedLocation.id) });
           setSelectedLocationId(null);
+          setPendingLocation(null);
         },
       },
     ]);
-  };
-
-  const removePartyMarker = (characterId: string) => {
-    updateDraft({ party: draft.party.filter(marker => marker.characterId !== characterId) });
-    if (selectedCharacterId === characterId) setSelectedCharacterId(null);
   };
 
   const renderIcon = (iconId: string, size: number, color: string) => {
@@ -335,6 +294,7 @@ export default function CampaignMapEditorModal({
       return <Image source={{ uri: custom.imageDataUri }} style={{ width: size, height: size, borderRadius: 4 }} />;
     }
     const icon = BUILT_IN_MARKERS.find(item => item.id === iconId) ?? BUILT_IN_MARKERS[0];
+    if (icon.icon === 'cave') return <CaveIcon size={size} color={color} />;
     return <Feather name={icon.icon} size={size} color={color} />;
   };
 
@@ -357,7 +317,7 @@ export default function CampaignMapEditorModal({
                 backgroundColor: active ? colors.secondary : colors.card,
               }}
             >
-              <Feather name={marker.icon} size={18} color={active ? colors.primary : colors.text} />
+              {renderIcon(marker.id, 18, active ? colors.primary : colors.text)}
               <Text style={{ color: active ? colors.primary : colors.text, fontSize: 9 }}>{marker.name}</Text>
             </TouchableOpacity>
           );
@@ -405,8 +365,24 @@ export default function CampaignMapEditorModal({
         key={nextTool}
         accessibilityLabel={label}
         onPress={() => {
+          if (pendingLocation) {
+            setNotice('Confirm or cancel placement before changing tools.');
+            return;
+          }
+          if (nextTool === 'location') {
+            if (draft.locations.length >= 200) {
+              setNotice('This map has reached its location limit.');
+              return;
+            }
+            setPendingLocation({
+              id: makeId('location'), name: '', description: '', iconId: selectedIconId,
+              ...mapViewportCenter(artboard, zoom, pan),
+            });
+            centerNewMarkerRef.current = true;
+          }
           setTool(nextTool);
           setSelectedLocationId(null);
+          setNotice('');
         }}
         style={{
           flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -462,7 +438,10 @@ export default function CampaignMapEditorModal({
           />
           <TouchableOpacity
             accessibilityLabel="JSON"
-            onPress={() => onExport(draft)}
+            onPress={() => {
+              if (pendingLocation) setNotice('Confirm or cancel placement before saving.');
+              else onExport(draft);
+            }}
             style={{ padding: 9, borderRadius: 7, borderWidth: 1, borderColor: colors.border }}
           >
             <Feather name="download" size={16} color={colors.primary} />
@@ -503,6 +482,9 @@ export default function CampaignMapEditorModal({
               accessibilityLabel="Remove map image"
               onPress={() => {
                 updateDraft({ imageDataUri: undefined, imageWidth: undefined, imageHeight: undefined });
+                setPendingLocation(null);
+                setSelectedLocationId(null);
+                setTool('pan');
                 setZoom(1);
                 setPan({ x: 0, y: 0 });
               }}
@@ -514,7 +496,6 @@ export default function CampaignMapEditorModal({
         </View>
 
         <View
-          {...panResponder.panHandlers}
           onLayout={event => {
             const { width, height } = event.nativeEvent.layout;
             if (width !== viewport.width || height !== viewport.height) setViewport({ width, height });
@@ -524,9 +505,10 @@ export default function CampaignMapEditorModal({
             ...(Platform.OS === 'web' ? { touchAction: 'none' } as object : {}),
           }}
         >
-          <Pressable
-            onPress={placeAt}
-            accessibilityLabel="Place a map marker"
+          <View
+            {...panResponder.panHandlers}
+            accessibilityLabel="Map background"
+            testID="map-pan-surface"
             style={{ position: 'absolute', inset: 0 }}
           />
           {hasMapImage && viewport.width > 0 && viewport.height > 0 && (
@@ -545,60 +527,31 @@ export default function CampaignMapEditorModal({
                   style={{ width: '100%', height: '100%' }}
                 />
               </View>
-              {draft.locations.map(location => {
-                const active = selectedLocationId === location.id;
+              {[...draft.locations.filter(location => location.id !== pendingLocation?.id), ...(pendingLocation ? [pendingLocation] : [])].map(location => {
+                const active = pendingLocation?.id === location.id;
                 return (
-                  <TouchableOpacity
+                  <DraggableMapMarker
                     key={location.id}
-                    onPress={event => {
-                      event.stopPropagation();
+                    marker={location}
+                    artboard={artboard}
+                    zoom={zoom}
+                    editable={active}
+                    onMove={point => updateLocation(point)}
+                    onPress={() => {
+                      if (active) return;
+                      if (pendingLocation) {
+                        setNotice('Confirm or cancel placement before changing tools.');
+                        return;
+                      }
                       setSelectedLocationId(location.id);
-                      setSelectedIconId(location.iconId ?? 'city');
-                      setLocationName(location.name);
-                      setLocationDescription(location.description);
-                      setTool('location');
-                    }}
-                    style={{
-                      position: 'absolute', left: location.x * artboard.width, top: location.y * artboard.height,
-                      width: 30, height: 38, alignItems: 'center', justifyContent: 'center',
-                      marginLeft: -15, marginTop: -34,
+                      if (tool === 'edit') {
+                        setPendingLocation({ ...location });
+                        setSelectedIconId(location.iconId ?? 'city');
+                      }
                     }}
                   >
-                    <View style={{
-                      width: 28, height: 28, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: colors.background, borderWidth: active ? 3 : 1.5,
-                      borderColor: active ? colors.warning : colors.primary,
-                    }}>
-                      {renderIcon(location.iconId ?? 'city', 15, colors.primary)}
-                    </View>
-                    <View style={{
-                      position: 'absolute', bottom: -2, width: 0, height: 0,
-                      borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7,
-                      borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: colors.primary,
-                    }} />
-                  </TouchableOpacity>
-                );
-              })}
-              {draft.party.map(marker => {
-                const character = activeCharacters.find(item => item.id === marker.characterId);
-                return (
-                  <TouchableOpacity
-                    key={marker.characterId}
-                    accessibilityLabel={character?.name ?? 'Unknown character'}
-                    onPress={event => {
-                      event.stopPropagation();
-                      setTool('party');
-                      setSelectedCharacterId(marker.characterId);
-                    }}
-                    style={{
-                      position: 'absolute', left: marker.x * artboard.width, top: marker.y * artboard.height,
-                      width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
-                      marginLeft: -16, marginTop: -16, borderRadius: 18, borderWidth: 2,
-                      borderColor: colors.primaryForeground, backgroundColor: colors.primary,
-                    }}
-                  >
-                    <Feather name="user" size={15} color={colors.primaryForeground} />
-                  </TouchableOpacity>
+                    {renderIcon(location.iconId ?? 'city', 15, colors.primary)}
+                  </DraggableMapMarker>
                 );
               })}
             </View>
@@ -630,7 +583,7 @@ export default function CampaignMapEditorModal({
               pointerEvents="none"
             >
               <Feather name="move" size={12} color={colors.primary} />
-              <Text style={{ color: colors.text, fontSize: 9 }}>DRAG TO PAN</Text>
+              <Text style={{ color: colors.text, fontSize: 9 }}>{tool === 'pan' ? 'DRAG TO PAN' : 'Map panning locked'}</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>{Math.round(zoom * 100)}%</Text>
             </View>
           ) : (
@@ -646,6 +599,14 @@ export default function CampaignMapEditorModal({
 
           {hasMapImage && (
             <View
+              onLayout={event => {
+                if (!centerNewMarkerRef.current) return;
+                centerNewMarkerRef.current = false;
+                const height = event.nativeEvent.layout.height;
+                // Center new markers in the usable map area, above the floating tools.
+                const position = mapViewportCenter(artboard, zoom, pan, { x: 0, y: -(height + 12) / 2 });
+                setPendingLocation(current => current ? { ...current, ...position } : current);
+              }}
               style={{
                 position: 'absolute', bottom: 12, left: 10, right: 10, gap: 8,
                 padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 12,
@@ -655,107 +616,59 @@ export default function CampaignMapEditorModal({
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {toolButton('pan', 'DRAG TO PAN', 'move')}
                 {toolButton('location', 'PLACE LOCATION', 'map-pin')}
-                {toolButton('party', 'PLACE PARTY', 'users')}
+                {toolButton('edit', 'EDIT LOCATION', 'edit-2')}
               </View>
 
-              {tool === 'location' && selectedLocation ? (
+              {pendingLocation ? (
                 <View style={{ gap: 7 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <TextInput
-                      value={selectedLocation.name}
+                      value={pendingLocation.name}
                       onChangeText={name => updateLocation({ name })}
                       placeholder="New location name"
                       accessibilityLabel="New location name"
                       style={{ flex: 1, color: colors.text, paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.card }}
                     />
-                    <TouchableOpacity onPress={removeLocation} style={{ padding: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 7 }}>
+                    {selectedLocation && <TouchableOpacity accessibilityLabel="Remove location" onPress={removeLocation} style={{ padding: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 7 }}>
                       <Feather name="trash-2" size={15} color={colors.destructive} />
-                    </TouchableOpacity>
+                    </TouchableOpacity>}
                   </View>
                   <TextInput
-                    value={selectedLocation.description}
+                    value={pendingLocation.description}
                     onChangeText={description => updateLocation({ description })}
-                    placeholder={translateText('Description for {0}').replace('{0}', selectedLocation.name)}
-                    accessibilityLabel={translateText('Description for {0}').replace('{0}', selectedLocation.name)}
+                    placeholder="Location description"
+                    accessibilityLabel="Location description"
                     multiline
                     style={{ minHeight: 42, maxHeight: 80, color: colors.text, paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.card }}
                   />
                   {iconPicker}
-                  <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
-                    {selectedLocation.name}
-                    {selectedLocation.description ? ` · ${selectedLocation.description}` : ''}
-                  </Text>
-                </View>
-              ) : tool === 'location' ? (
-                <View style={{ gap: 7 }}>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TextInput
-                      value={locationName}
-                      onChangeText={setLocationName}
-                      placeholder="New location name"
-                      accessibilityLabel="New location name"
-                      style={{ flex: 1, minWidth: 0, color: colors.text, paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.card }}
-                    />
-                    <TextInput
-                      value={locationDescription}
-                      onChangeText={setLocationDescription}
-                      placeholder="Map notes"
-                      accessibilityLabel="Map notes"
-                      style={{ flex: 1, minWidth: 0, color: colors.text, paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 7, backgroundColor: colors.card }}
-                    />
+                  <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>Drag the marker, then confirm placement.</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      accessibilityLabel="CONFIRM PLACEMENT"
+                      onPress={confirmPlacement}
+                      style={{ flex: 1, alignItems: 'center', padding: 10, borderRadius: 8, backgroundColor: colors.primary }}
+                    >
+                      <Text style={{ color: colors.primaryForeground, fontSize: 11, fontWeight: '700' }}>CONFIRM PLACEMENT</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setPendingLocation(null); setSelectedLocationId(null); setTool('edit'); setNotice(''); }}
+                      style={{ padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ color: colors.text, fontSize: 11 }}>CANCEL</Text>
+                    </TouchableOpacity>
                   </View>
-                  {iconPicker}
-                  <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>Location name, then tap map</Text>
                 </View>
-              ) : tool === 'party' ? (
-                <View style={{ gap: 7 }}>
-                  <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
-                    {selectedCharacterId
-                      ? 'Tap the map to place the selected character.'
-                      : 'Add an active character to place the party.'}
-                  </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                    {activeCharacters.map(character => {
-                      const active = selectedCharacterId === character.id;
-                      const hasMarker = draft.party.some(marker => marker.characterId === character.id);
-                      return (
-                        <View key={character.id} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setSelectedCharacterId(character.id);
-                              setNotice('');
-                            }}
-                            style={{
-                              flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 7,
-                              borderWidth: 1, borderColor: active ? colors.primary : colors.border,
-                              borderRadius: hasMarker ? 0 : 7, borderTopLeftRadius: 7, borderBottomLeftRadius: 7,
-                              backgroundColor: active ? colors.secondary : colors.card,
-                            }}
-                          >
-                            <Feather name={hasMarker ? 'map-pin' : 'user'} size={12} color={active ? colors.primary : colors.mutedForeground} />
-                            <Text style={{ color: active ? colors.primary : colors.text, fontSize: 10 }}>{character.name}</Text>
-                          </TouchableOpacity>
-                          {hasMarker ? (
-                            <TouchableOpacity
-                              accessibilityLabel={translateText('Remove {0} marker').replace('{0}', character.name)}
-                              onPress={() => removePartyMarker(character.id)}
-                              style={{
-                                padding: 7, borderWidth: 1, borderLeftWidth: 0, borderColor: colors.border,
-                                borderTopRightRadius: 7, borderBottomRightRadius: 7, backgroundColor: colors.card,
-                              }}
-                            >
-                              <Feather name="x" size={13} color={colors.destructive} />
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
+              ) : tool === 'edit' ? (
+                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Select a location marker to edit or delete it.</Text>
               ) : (
                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
                   DRAG TO PAN
                 </Text>
+              )}
+              {!pendingLocation && selectedLocation && (
+                <View style={{ gap: 4 }}>
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>{selectedLocation.name}</Text>
+                  <Text style={{ color: colors.text, fontSize: 11 }}>{selectedLocation.description}</Text>
+                </View>
               )}
               {!!notice && <Text style={{ color: colors.warning, fontSize: 11 }}>{notice}</Text>}
             </View>

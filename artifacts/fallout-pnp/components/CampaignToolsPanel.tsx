@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Platform, ScrollView, Share, View } from 'react-native';
+import { Image, Modal, Platform, ScrollView, Share, View } from 'react-native';
 import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Feather } from '@expo/vector-icons';
@@ -531,7 +531,7 @@ export default function CampaignToolsPanel({
     <View style={{ gap: 10 }} testID="campaign-tool-workspace-maps">
       <View style={panelStyle}>
         <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 15 }}>
-          Upload custom maps, place location and party markers, and export each built map as a JSON file. Bonus Move and Team Player are GM reminders for distance and party movement.
+          Upload custom maps, place and edit locations, and export each built map as a JSON file.
         </Text>
       </View>
       <TouchableOpacity accessibilityRole="button" onPress={addMap} style={buttonStyle}>
@@ -542,19 +542,19 @@ export default function CampaignToolsPanel({
         <View key={map.id} style={panelStyle}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <View style={{
-              width: 38, height: 38, borderWidth: 1, borderColor: colors.border, borderRadius: 8,
+              width: 84, height: 64, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 8,
               backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center',
             }}>
-              <Feather name="map" size={18} color={colors.primary} />
+              {map.imageDataUri
+                ? <Image accessibilityLabel={map.name} source={{ uri: map.imageDataUri }} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
+                : <Feather name="map" size={18} color={colors.primary} />}
             </View>
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={{ color: colors.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>
                 {map.name || 'Untitled map'}
               </Text>
               <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 10 }}>
-                {map.description || translateText('{0} locations · {1} party markers')
-                  .replace('{0}', String(map.locations.length))
-                  .replace('{1}', String(map.party.length))}
+                {map.description || translateText('{0} locations').replace('{0}', String(map.locations.length))}
               </Text>
             </View>
           </View>
@@ -586,7 +586,7 @@ export default function CampaignToolsPanel({
         <View style={[panelStyle, { alignItems: 'center', paddingVertical: 24 }]}>
           <Feather name="map" size={24} color={colors.mutedForeground} />
           <Text style={{ color: colors.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 11, textAlign: 'center' }}>
-            No maps yet. Add one to upload a map and mark locations or party positions.
+            No maps yet. Add one to upload a map and mark locations.
           </Text>
         </View>
       ) : null}
@@ -702,7 +702,6 @@ export default function CampaignToolsPanel({
       <CampaignMapEditorModal
         visible
         map={mapBeingEdited}
-        characters={characters}
         onClose={() => {
           setMapEditorId(null);
           if (newMapDraft && !campaignMaps.some(item => item.id === newMapDraft.id)) setNewMapDraft(null);

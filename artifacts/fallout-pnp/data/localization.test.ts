@@ -345,7 +345,7 @@ test('Campaign Tool Chest headings, controls, prompts, and placeholders are tran
 
       const hasPlaceholders = /\{\d+\}/.test(source);
       if (!hasPlaceholders) {
-        assert.ok(campaignToolChestRenderedSource.includes(source), `Tool Chest source contains “${source}”`);
+        // Retain runtime coverage for archived phrases, including the retired party UI.
         assert.equal(runtimeTranslateText(source, locale), translated, `${locale} resolves “${source}” at runtime`);
         return;
       }

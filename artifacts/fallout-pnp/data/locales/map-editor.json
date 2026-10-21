@@ -1,0 +1,124 @@
+{
+  "keys": [
+    "EDIT LOCATION",
+    "CONFIRM PLACEMENT",
+    "Drag the marker, then confirm placement.",
+    "Select a location marker to edit or delete it.",
+    "Confirm or cancel placement before saving.",
+    "Confirm or cancel placement before changing tools.",
+    "Map panning locked",
+    "Location description",
+    "Map background",
+    "New location",
+    "Remove location",
+    "Upload custom maps, place and edit locations, and export each built map as a JSON file.",
+    "No maps yet. Add one to upload a map and mark locations.",
+    "{0} locations", "Party"
+  ],
+  "fr": [
+    "MODIFIER UN LIEU", "CONFIRMER LE PLACEMENT",
+    "Déplacez le marqueur, puis confirmez le placement.",
+    "Sélectionnez un marqueur de lieu pour le modifier ou le supprimer.",
+    "Confirmez ou annulez le placement avant d’enregistrer.",
+    "Confirmez ou annulez le placement avant de changer d’outil.",
+    "Déplacement de la carte verrouillé", "Description du lieu", "Fond de carte", "Nouveau lieu", "Supprimer le lieu",
+    "Importez vos cartes, placez et modifiez des lieux, puis exportez chaque carte au format JSON.",
+    "Aucune carte. Ajoutez-en une pour importer une image et marquer des lieux.", "{0} lieux", "Groupe"
+  ],
+  "it": [
+    "MODIFICA LUOGO", "CONFERMA POSIZIONE",
+    "Trascina il segnaposto, poi conferma la posizione.",
+    "Seleziona un segnaposto per modificarlo o eliminarlo.",
+    "Conferma o annulla la posizione prima di salvare.",
+    "Conferma o annulla la posizione prima di cambiare strumento.",
+    "Spostamento mappa bloccato", "Descrizione del luogo", "Sfondo mappa", "Nuovo luogo", "Rimuovi luogo",
+    "Carica mappe personalizzate, posiziona e modifica luoghi ed esporta ogni mappa come file JSON.",
+    "Nessuna mappa. Aggiungine una per caricare un’immagine e segnare luoghi.", "{0} luoghi", "Gruppo"
+  ],
+  "de": [
+    "ORT BEARBEITEN", "PLATZIERUNG BESTÄTIGEN",
+    "Ziehe die Markierung und bestätige dann die Platzierung.",
+    "Wähle eine Ortsmarkierung zum Bearbeiten oder Löschen.",
+    "Bestätige oder verwirf die Platzierung vor dem Speichern.",
+    "Bestätige oder verwirf die Platzierung vor dem Werkzeugwechsel.",
+    "Kartenverschiebung gesperrt", "Ortsbeschreibung", "Kartenhintergrund", "Neuer Ort", "Ort entfernen",
+    "Lade eigene Karten hoch, platziere und bearbeite Orte und exportiere jede Karte als JSON-Datei.",
+    "Noch keine Karten. Füge eine hinzu, um ein Bild hochzuladen und Orte zu markieren.", "{0} Orte", "Gruppe"
+  ],
+  "es-ES": [
+    "EDITAR UBICACIÓN", "CONFIRMAR POSICIÓN",
+    "Arrastra el marcador y confirma su posición.",
+    "Selecciona un marcador para editarlo o eliminarlo.",
+    "Confirma o cancela la posición antes de guardar.",
+    "Confirma o cancela la posición antes de cambiar de herramienta.",
+    "Desplazamiento del mapa bloqueado", "Descripción del lugar", "Fondo del mapa", "Nueva ubicación", "Eliminar ubicación",
+    "Sube mapas personalizados, coloca y edita ubicaciones y exporta cada mapa como archivo JSON.",
+    "Aún no hay mapas. Añade uno para subir una imagen y marcar ubicaciones.", "{0} ubicaciones", "Grupo"
+  ],
+  "es-MX": [
+    "EDITAR UBICACIÓN", "CONFIRMAR POSICIÓN",
+    "Arrastra el marcador y confirma su posición.",
+    "Selecciona un marcador para editarlo o eliminarlo.",
+    "Confirma o cancela la posición antes de guardar.",
+    "Confirma o cancela la posición antes de cambiar de herramienta.",
+    "Desplazamiento del mapa bloqueado", "Descripción del lugar", "Fondo del mapa", "Nueva ubicación", "Eliminar ubicación",
+    "Carga mapas personalizados, coloca y edita ubicaciones y exporta cada mapa como archivo JSON.",
+    "Todavía no hay mapas. Agrega uno para cargar una imagen y marcar ubicaciones.", "{0} ubicaciones", "Grupo"
+  ],
+  "ja": [
+    "場所を編集", "配置を確定",
+    "マーカーをドラッグして配置を確定してください。",
+    "場所のマーカーを選択して編集または削除します。",
+    "保存する前に配置を確定またはキャンセルしてください。",
+    "ツールを切り替える前に配置を確定またはキャンセルしてください。",
+    "地図の移動はロックされています", "場所の説明", "地図の背景", "新しい場所", "場所を削除",
+    "独自の地図をアップロードして場所を配置・編集し、各地図をJSONファイルに書き出せます。",
+    "地図はまだありません。地図を追加し、画像をアップロードして場所を記録できます。", "場所：{0}", "パーティー"
+  ],
+  "pl": [
+    "EDYTUJ LOKACJĘ", "POTWIERDŹ POŁOŻENIE",
+    "Przeciągnij znacznik, a następnie potwierdź położenie.",
+    "Wybierz znacznik lokacji, aby go edytować lub usunąć.",
+    "Potwierdź lub anuluj położenie przed zapisem.",
+    "Potwierdź lub anuluj położenie przed zmianą narzędzia.",
+    "Przesuwanie mapy zablokowane", "Opis lokacji", "Tło mapy", "Nowa lokacja", "Usuń lokację",
+    "Przesyłaj własne mapy, umieszczaj i edytuj lokacje oraz eksportuj każdą mapę jako plik JSON.",
+    "Brak map. Dodaj mapę, aby przesłać obraz i oznaczyć lokacje.", "Lokacje: {0}", "Drużyna"
+  ],
+  "pt-BR": [
+    "EDITAR LOCAL", "CONFIRMAR POSIÇÃO",
+    "Arraste o marcador e confirme a posição.",
+    "Selecione um marcador para editar ou excluir o local.",
+    "Confirme ou cancele a posição antes de salvar.",
+    "Confirme ou cancele a posição antes de trocar de ferramenta.",
+    "Movimentação do mapa bloqueada", "Descrição do local", "Fundo do mapa", "Novo local", "Remover local",
+    "Envie mapas personalizados, posicione e edite locais e exporte cada mapa como arquivo JSON.",
+    "Nenhum mapa ainda. Adicione um para enviar uma imagem e marcar locais.", "{0} locais", "Grupo"
+  ],
+  "ru": [
+    "ИЗМЕНИТЬ МЕСТО", "ПОДТВЕРДИТЬ РАЗМЕЩЕНИЕ",
+    "Перетащите маркер и подтвердите размещение.",
+    "Выберите маркер места, чтобы изменить или удалить его.",
+    "Подтвердите или отмените размещение перед сохранением.",
+    "Подтвердите или отмените размещение перед сменой инструмента.",
+    "Перемещение карты заблокировано", "Описание места", "Фон карты", "Новое место", "Удалить место",
+    "Загружайте свои карты, размещайте и редактируйте места, экспортируйте каждую карту в файл JSON.",
+    "Карт пока нет. Добавьте карту, чтобы загрузить изображение и отметить места.", "Мест: {0}", "Группа"
+  ],
+  "zh-Hans": [
+    "编辑地点", "确认放置",
+    "拖动标记，然后确认放置。", "选择地点标记以编辑或删除。",
+    "请先确认或取消放置，再保存。", "请先确认或取消放置，再切换工具。",
+    "地图平移已锁定", "地点描述", "地图背景", "新地点", "删除地点",
+    "上传自定义地图，放置和编辑地点，并将每张地图导出为JSON文件。",
+    "暂无地图。添加地图即可上传图片并标记地点。", "{0}个地点", "队伍"
+  ],
+  "zh-Hant": [
+    "編輯地點", "確認放置",
+    "拖曳標記，然後確認放置。", "選取地點標記以編輯或刪除。",
+    "請先確認或取消放置，再儲存。", "請先確認或取消放置，再切換工具。",
+    "地圖平移已鎖定", "地點描述", "地圖背景", "新地點", "刪除地點",
+    "上傳自訂地圖，放置和編輯地點，並將每張地圖匯出為JSON檔案。",
+    "尚無地圖。新增地圖即可上傳圖片並標記地點。", "{0}個地點", "隊伍"
+  ]
+}
