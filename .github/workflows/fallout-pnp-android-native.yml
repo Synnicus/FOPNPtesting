@@ -13,6 +13,7 @@ on:
   push:
     branches:
       - main
+      - agent/ghoul-radiation-native
     paths:
       - "artifacts/fallout-pnp/**"
       - "lib/**"
