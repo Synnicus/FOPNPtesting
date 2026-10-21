@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  hardcore-radiation-restart:
-    name: Hardcore radiation survives native restart
+  radiation-native-regressions:
+    name: Ghoul and Hardcore radiation native regressions
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
@@ -81,7 +81,7 @@ jobs:
           EXPO_PUBLIC_REPL_ID: ci
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Run the native regression on Android
+      - name: Run native radiation regressions on Android
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -99,4 +99,12 @@ jobs:
             curl -Ls "https://get.maestro.mobile.dev" | bash
             export PATH="$HOME/.maestro/bin:$PATH"
             maestro --version
+            pnpm --filter @workspace/fallout-pnp run test:native:radiation
             pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
+            {
+              echo "## Android native radiation regressions"
+              echo
+              echo "- Ghoul radiation character-editor flow: passed"
+              echo "- Hardcore radiation persistence flow: passed"
+              echo "- Both flows ran against the installed release app on an Android emulator."
+            } >> "$GITHUB_STEP_SUMMARY"
