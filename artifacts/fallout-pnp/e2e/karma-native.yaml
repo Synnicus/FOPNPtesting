@@ -116,3 +116,54 @@ appId: ${APP_ID}
     direction: DOWN
 - assertVisible: "+750"
 - assertVisible: "Protected the settlement"
+
+# Deleting an entry recalculates the score and preserves the chronology of the
+# remaining entries.
+- tapOn:
+    text: "Delete Karma log entry: Protected the settlement"
+- assertVisible: "Delete this Karma history entry?"
+- tapOn: "Delete"
+- assertVisible: "KARMA HISTORY (2)"
+- assertNotVisible: "Protected the settlement"
+- scrollUntilVisible:
+    element:
+      id: karma-summary
+    direction: UP
+- assertVisible: "+250"
+- scrollUntilVisible:
+    element: "Helped a settlement"
+    direction: DOWN
+- assertVisible: "+300"
+- assertVisible: "Helped a settlement"
+- scrollUntilVisible:
+    element: "Returned stolen supplies"
+    direction: DOWN
+- assertVisible: "-50"
+- assertVisible: "Returned stolen supplies"
+
+# Save the deletion, force-close, and reopen to verify the score and history
+# are not restored from the previous saved character.
+- tapOn:
+    id: character-save
+- assertVisible: ${TEST_NAME}
+- stopApp
+- launchApp
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: ${TEST_NAME}
+    direction: DOWN
+- tapOn: ${TEST_NAME}
+- tapOn: "KARMA"
+- assertVisible: "+250"
+- assertVisible: "KARMA HISTORY (2)"
+- assertNotVisible: "Protected the settlement"
+- scrollUntilVisible:
+    element: "Helped a settlement"
+    direction: DOWN
+- assertVisible: "+300"
+- assertVisible: "Helped a settlement"
+- scrollUntilVisible:
+    element: "Returned stolen supplies"
+    direction: DOWN
+- assertVisible: "-50"
+- assertVisible: "Returned stolen supplies"

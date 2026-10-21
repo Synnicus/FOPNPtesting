@@ -44,6 +44,9 @@ test('native Karma regression flow covers restart, capped values, and entry orde
   assert.match(nativeFlowSource, /Only \+750 will be applied/);
   assert.match(nativeFlowSource, /KARMA HISTORY \(3\)/);
   assert.match(nativeFlowSource, /Helped a settlement[\s\S]*Returned stolen supplies[\s\S]*Protected the settlement/);
+  assert.match(nativeFlowSource, /Delete Karma log entry: Protected the settlement[\s\S]*Delete this Karma history entry\?[\s\S]*KARMA HISTORY \(2\)/);
+  assert.match(nativeFlowSource, /assertNotVisible: "Protected the settlement"[\s\S]*assertVisible: "\+250"[\s\S]*Helped a settlement[\s\S]*Returned stolen supplies/);
+  assert.match(nativeFlowSource, /character-save[\s\S]*- stopApp[\s\S]*- launchApp[\s\S]*assertVisible: "\+250"[\s\S]*KARMA HISTORY \(2\)/);
   assert.match(nativeFlowSource, /character-level-increase/);
   assert.match(nativeFlowSource, /not-a-number[\s\S]*Zero does not create a Karma history entry/);
 });
