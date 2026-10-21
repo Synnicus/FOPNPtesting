@@ -54,6 +54,37 @@ export interface AmmoType {
   isCustom?: boolean;
 }
 
+export interface WeaponAmmoDamageProfile {
+  weaponDiceCount: number;
+  weaponDie: number;
+  weaponBonus: number;
+  ammoDiceCount: number;
+  ammoDie: number;
+  ammoBonus: number;
+}
+
+/** Resolve the damage contributions used by direct combat rolls.
+ * Component-based custom ammo replaces legacy ammo damage fields. */
+export function getWeaponAmmoDamageProfile(
+  weapon: Pick<Weapon, 'damageDieCount' | 'damageDie' | 'damageBonus'>,
+  ammo?: Pick<AmmoType, 'dmgDieCount' | 'dmgDie' | 'dmgBonus' | 'components'> | null,
+  weaponDiceMultiplier = 1,
+): WeaponAmmoDamageProfile {
+  const hasLegacyAmmoDamage = !!ammo && !ammo.components?.length;
+  const ammoDiceCount = hasLegacyAmmoDamage && ammo.dmgDieCount > 0 && ammo.dmgDie > 0
+    ? ammo.dmgDieCount
+    : 0;
+
+  return {
+    weaponDiceCount: weapon.damageDieCount * weaponDiceMultiplier,
+    weaponDie: weapon.damageDie,
+    weaponBonus: weapon.damageBonus,
+    ammoDiceCount,
+    ammoDie: ammoDiceCount > 0 ? ammo!.dmgDie : 0,
+    ammoBonus: hasLegacyAmmoDamage ? ammo!.dmgBonus : 0,
+  };
+}
+
 export interface AmmoReferenceEffects {
   damage: string;
   acModifier: number;

@@ -31,7 +31,7 @@ import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAttackModes, getWeaponAreaAttack, compactWeaponCombatLabel, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { computeCustomPerkEffects, computeCustomWeaponModEffects } from '@/data/customRules';
-import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, getWeaponAmmoDamageProfile, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
 import { getInventoryItemQuantity } from '@/data/inventory';
 import { BUILT_IN_TOOLS } from '@/data/tools';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
@@ -2106,22 +2106,22 @@ export default function CombatScreen() {
         }
       }
 
-      const dieCount = doubleShotActive ? weapon.damageDieCount * 2 : weapon.damageDieCount;
+      const damageProfile = getWeaponAmmoDamageProfile(weapon, loadedAmmo, doubleShotActive ? 2 : 1);
       const weaponRolls = overrideVal === null
-        ? Array.from({ length: dieCount }, () => rollDie(weapon.damageDie))
+        ? Array.from({ length: damageProfile.weaponDiceCount }, () => rollDie(damageProfile.weaponDie))
         : [];
       // Ammo contributes its own dice (manual: gun damage = weapon dice + ammo).
-      const ammoRolls = overrideVal === null && loadedAmmo && !loadedAmmo.components?.length && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
-        ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie))
+      const ammoRolls = overrideVal === null && damageProfile.ammoDiceCount > 0
+        ? Array.from({ length: damageProfile.ammoDiceCount }, () => rollDie(damageProfile.ammoDie))
         : [];
-      if (loadedAmmo && (ammoRolls.length > 0 || loadedAmmo.dmgBonus)) {
-        notes.push(`Ammo (${loadedAmmo.name})${ammoRolls.length ? ` +[${ammoRolls.join(', ')}]` : ''}${loadedAmmo.dmgBonus ? ` +${loadedAmmo.dmgBonus}` : ''}`);
+      if (loadedAmmo && (ammoRolls.length > 0 || damageProfile.ammoBonus)) {
+        notes.push(`Ammo (${loadedAmmo.name})${ammoRolls.length ? ` +[${ammoRolls.join(', ')}]` : ''}${damageProfile.ammoBonus ? ` +${damageProfile.ammoBonus}` : ''}`);
       }
       const baseRolls = [...weaponRolls, ...ammoRolls];
       // Manual override replaces the summed dice total (mods/melee/perks still add).
       const rolledSum = overrideVal !== null ? overrideVal : baseRolls.reduce((a, b) => a + b, 0);
       if (overrideVal !== null) notes.push(`Manual base damage: ${overrideVal}`);
-      const ammoFlat = loadedAmmo?.components?.length ? 0 : loadedAmmo?.dmgBonus ?? 0;
+      const ammoFlat = damageProfile.ammoBonus;
       const specialDamageBonus = specialUnarmedAttack?.damageBonus ?? 0;
       if (specialUnarmedAttack) {
         notes.push(`${specialUnarmedAttack.name}: +${specialDamageBonus} damage${specialUnarmedAttack.armorClassPiercing ? ', Armor Class ignored for hit roll' : ''}`);
@@ -2142,7 +2142,7 @@ export default function CombatScreen() {
       // Apply DT first, then DR: finalDmg = max(0, (baseDmg − DT) × (1 − DR/100))
       const resolvedDamage = resolveDamagePipeline({
         initialDiceDamage: rolledSum,
-        flatDamageBonus: weapon.damageBonus + ammoFlat + meleeDmgBonus + specialDamageBonus + modBonuses.damage + perkBonuses.damage,
+        flatDamageBonus: damageProfile.weaponBonus + ammoFlat + meleeDmgBonus + specialDamageBonus + modBonuses.damage + perkBonuses.damage,
         criticalMultiplier: critMult,
         damageThreshold: dt,
         damageResistance: dr,
@@ -4326,16 +4326,17 @@ export default function CombatScreen() {
                 const meleeDmgBonus = isMelee
                   ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
                   : 0;
+                const damageProfile = getWeaponAmmoDamageProfile(weapon, loadedAmmo);
                 const poisonResults: PoisonResistanceResult[] = [];
                 const componentBreakdown: string[] = [];
                 let radiationExposure = 0;
                 let damagingHits = 0;
                 const perHit = Array.from({ length: streamlinedHits }, (_, hitIndex) => {
-                  const rolls = Array.from({ length: weapon.damageDieCount }, () => rollDie(weapon.damageDie));
-                  const ammoRolls = loadedAmmo && !loadedAmmo.components?.length && loadedAmmo.dmgDieCount > 0 && loadedAmmo.dmgDie > 0
-                    ? Array.from({ length: loadedAmmo.dmgDieCount }, () => rollDie(loadedAmmo.dmgDie)) : [];
+                  const rolls = Array.from({ length: damageProfile.weaponDiceCount }, () => rollDie(damageProfile.weaponDie));
+                  const ammoRolls = damageProfile.ammoDiceCount > 0
+                    ? Array.from({ length: damageProfile.ammoDiceCount }, () => rollDie(damageProfile.ammoDie)) : [];
                   const raw = rolls.reduce((a, b) => a + b, 0) + ammoRolls.reduce((a, b) => a + b, 0)
-                    + (loadedAmmo?.components?.length ? 0 : loadedAmmo?.dmgBonus ?? 0) + weapon.damageBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
+                    + damageProfile.ammoBonus + damageProfile.weaponBonus + meleeDmgBonus + modBonuses.damage + perkBonuses.damage;
                   let physicalDamage = applyProtection(raw, protection.effectiveDT, protection.effectiveDR);
                   if (loadedAmmo?.components?.length) {
                     const componentResult = resolveAmmoDamageComponents({

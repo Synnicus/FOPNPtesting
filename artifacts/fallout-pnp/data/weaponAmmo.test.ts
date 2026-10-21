@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, getCustomAmmoReferenceUsage, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
+import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, getCustomAmmoReferenceUsage, getWeaponAmmoDamageProfile, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
 import { BUILT_IN_WEAPONS, formatWeaponAP, formatWeaponCapacity, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
@@ -8,6 +8,53 @@ const weaponById = (id: string) => {
   assert.ok(weapon, `missing built-in weapon ${id}`);
   return weapon;
 };
+
+test('variable-damage grenade launchers, mortars, and rocket launchers leave projectile damage to ammo', () => {
+  const variableDamageLauncherIds = [
+    'm_78_grenade_launcher',
+    'm79_grenade_rifle',
+    'mk_19_personal_artillery_device',
+    'm203',
+    'bg_1_grenade_launcher',
+    'ags_17_grenade_launcher',
+    'm2_60mm_portable_mortar',
+    'ps_22_51mm_mortar',
+    'rocket_launcher',
+  ];
+
+  for (const weaponId of variableDamageLauncherIds) {
+    const weapon = weaponById(weaponId);
+    assert.deepEqual(
+      [weapon.damageDieCount, weapon.damageDie, weapon.damageBonus],
+      [0, 0, 0],
+      `${weapon.name} has variable manual damage; projectile damage comes from its selected ammo`,
+    );
+  }
+});
+
+test('launcher and projectile damage profiles match manual weapon and ammunition entries', () => {
+  const expected = [
+    ['m_78_grenade_launcher', '40mm_frag', 0, 0, 0, 1, 12, 22],
+    ['m_78_grenade_launcher', '40mm_plasma', 0, 0, 0, 5, 10, 40],
+    ['m2_60mm_portable_mortar', '60mm_explosive_mortar', 0, 0, 0, 10, 10, 0],
+    ['ps_22_51mm_mortar', '51mm_gas_mortar', 0, 0, 0, 7, 10, 0],
+    ['law_80_rocket_launcher', 'rocket_explosive', 0, 0, 30, 6, 8, 0],
+    ['law_80_rocket_launcher', 'rocket_ap', 0, 0, 30, 6, 6, 0],
+    ['rocket_launcher', 'rocket_emp', 0, 0, 0, 3, 20, 0],
+    ['tow_ii_missile_defense_system', 'tow_ii_rocket', 10, 10, 200, 0, 0, 0],
+  ] as const;
+
+  for (const [weaponId, ammoId, weaponDiceCount, weaponDie, weaponBonus, ammoDiceCount, ammoDie, ammoBonus] of expected) {
+    const weapon = weaponById(weaponId);
+    const ammo = AMMO_TYPES.find(candidate => candidate.id === ammoId);
+    assert.ok(ammo, `missing built-in ammo ${ammoId}`);
+    assert.deepEqual(
+      getWeaponAmmoDamageProfile(weapon, ammo),
+      { weaponDiceCount, weaponDie, weaponBonus, ammoDiceCount, ammoDie, ammoBonus },
+      `${weapon.name} + ${ammo.name}: combine only the damage sources printed for each`,
+    );
+  }
+});
 
 test('custom ammo reference usage counts compatible weapons and saved character selections', () => {
   const usage = getCustomAmmoReferenceUsage('custom-round', [
