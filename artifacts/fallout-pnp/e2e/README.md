@@ -60,7 +60,7 @@ Run against an installed, launchable Android or iOS build using:
 pnpm --filter @workspace/fallout-pnp run test:native:combatant-cards
 ```
 
-This flow opens the attacker and defender pickers from their combat cards. It does not require characters to exist and does not modify saved data.
+This flow creates four uniquely named characters, chooses different attacker and defender characters, replaces each role, and clears each role while asserting the opposite card stays unchanged. It also verifies that selecting a previously used attacker does not restore an old defender after both roles are cleared. The flow removes only the four test characters before exiting. It must run against an installed native build; source checks and a browser preview do not verify native picker interaction.
 
 # Native manual catalog navigation regression
 

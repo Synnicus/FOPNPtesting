@@ -608,6 +608,7 @@ function CharacterPickerModal({ visible, onClose, onSelect, title, characters, a
           </View>
           {onClear && clearRole && (
             <TouchableOpacity
+              testID={`combat-character-picker-clear-${clearRole.toLowerCase()}`}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
               onPress={() => { onClear(); onClose(); }}
             >
@@ -1049,9 +1050,6 @@ export default function CombatScreen() {
 
   // Manual base-damage override ('' = use rolled dice). Recomputes DT/DR/crit.
   const [damageOverride, setDamageOverride] = useState('');
-
-  // Remember the last defender chosen per attacker; restore on re-select.
-  const lastDefenderByAttacker = React.useRef<Record<string, string>>({});
 
   // Non-storage characters — used for pickers and initiative setup
   const activeCharacters = characters.filter(c => !c.inStorage);
@@ -1731,19 +1729,6 @@ export default function CombatScreen() {
       setShowSpecialUnarmedPicker(false);
     }
   }, [canUseSpecialUnarmed]);
-
-  // Persist the last defender per attacker; restore it when the attacker changes.
-  useEffect(() => {
-    if (defenderId && attackerId) lastDefenderByAttacker.current[attackerId] = defenderId;
-  }, [defenderId, attackerId]);
-  useEffect(() => {
-    if (!attackerId) return;
-    const remembered = lastDefenderByAttacker.current[attackerId];
-    if (remembered && remembered !== attackerId && characters.some(c => c.id === remembered && !c.inStorage)) {
-      setDefenderId(remembered);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attackerId]);
 
   // Clear attacker/defender if the selected character was moved to storage
   useEffect(() => {
@@ -3571,7 +3556,7 @@ export default function CombatScreen() {
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     {!attacker.portrait && <CharacterAvatar portrait={null} name={attacker.name} size={36} />}
-                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{attacker.name}</Text>
+                    <Text testID="combat-attacker-name" style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{attacker.name}</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
                     <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.primary }}>{weapon ? weapon.name : 'No weapon'}</Text>
@@ -3700,7 +3685,7 @@ export default function CombatScreen() {
               ) : (
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   <Feather name="plus-circle" size={22} color={colors.mutedForeground} />
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Attacker</Text>
+                  <Text testID="combat-attacker-name" style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Attacker</Text>
                   <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.primary }}>ATK</Text>
                 </View>
               )}
@@ -3715,7 +3700,7 @@ export default function CombatScreen() {
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     {!defender.portrait && <CharacterAvatar portrait={null} name={defender.name} size={36} />}
-                    <Text style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{defender.name}</Text>
+                    <Text testID="combat-defender-name" style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.foreground }} android_hyphenationFrequency="none" textBreakStrategy="simple">{defender.name}</Text>
                   </View>
                   <View style={{ width: '100%', gap: 3 }}>
                     <Text style={{ fontSize: 8, fontFamily: 'Inter_700Bold', color: colors.destructive }}>
@@ -3788,7 +3773,7 @@ export default function CombatScreen() {
               ) : (
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   <Feather name="plus-circle" size={22} color={colors.mutedForeground} />
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Defender</Text>
+                  <Text testID="combat-defender-name" style={{ fontSize: 12, fontFamily: 'Inter_400Regular', color: colors.mutedForeground }}>Defender</Text>
                   <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.5, color: colors.destructive }}>DEF</Text>
                 </View>
               )}

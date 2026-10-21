@@ -13,7 +13,7 @@
     "test:native:karma": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Karma regression $(date +%s)\" e2e/karma-native.yaml",
     "test:native:character-actions": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Character action regression $(date +%s)\" e2e/character-actions-native.yaml",
     "test:native:injury-attribution": "set -e; TEST_RUN_ID=\"$(date +%s)\"; TEST_NAME=\"Injury attribution regression $TEST_RUN_ID\"; TEST_CHARACTER_ID=\"native-injury-$TEST_RUN_ID\"; TEST_IMPORT_JSON=\"$(node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types e2e/create-injury-import-fixture.mjs \"$TEST_CHARACTER_ID\" \"$TEST_NAME\")\"; maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=$TEST_NAME\" -e \"TEST_CHARACTER_ID=$TEST_CHARACTER_ID\" -e \"TEST_IMPORT_JSON=$TEST_IMPORT_JSON\" e2e/injury-attribution-native.yaml",
-    "test:native:combatant-cards": "maestro test -e APP_ID=com.pnpcalculator.app e2e/combatant-cards-native.yaml",
+    "test:native:combatant-cards": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Combat role independence $(date +%s)\" e2e/combatant-cards-native.yaml",
     "test:native:radiation": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Radiation regression $(date +%s)\" e2e/radiation-native.yaml",
     "test:native:hardcore-radiation": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Hardcore radiation regression $(date +%s)\" e2e/hardcore-radiation-native.yaml",
     "test:native:manual-catalog": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Manual catalog regression $(date +%s)\" e2e/manual-catalog-native.yaml",

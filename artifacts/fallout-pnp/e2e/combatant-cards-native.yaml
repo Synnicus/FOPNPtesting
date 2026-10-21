@@ -1,22 +1,167 @@
 # Run against an installed, launchable Android or iOS build (not the web preview).
+# The flow creates and removes four uniquely named characters in the current campaign.
 appId: ${APP_ID}
 ---
 - launchApp
+- tapOn: "Characters"
+
+- tapOn: "NEW"
 - tapOn:
-    id: continue-campaign
+    id: character-name-input
+- inputText: "${TEST_NAME}-A"
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME}-B"
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME}-C"
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+- tapOn: "NEW"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME}-D"
+- hideKeyboard
+- tapOn:
+    id: character-save
+
+- tapOn: "Combat"
 - scrollUntilVisible:
     element:
       id: combat-attacker-card
     direction: DOWN
+
+# Selecting or replacing the attacker must preserve the current defender.
 - tapOn:
     id: combat-attacker-card
 - assertVisible: "SELECT ATTACKER"
-- tapOn:
-    id: combat-character-picker-close
-- scrollUntilVisible:
-    element:
-      id: combat-defender-card
-    direction: DOWN
+- tapOn: "${TEST_NAME}-A"
+- assertVisible:
+    id: combat-attacker-name
+    text: "${TEST_NAME}-A"
+
 - tapOn:
     id: combat-defender-card
 - assertVisible: "SELECT DEFENDER"
+- tapOn: "${TEST_NAME}-B"
+- assertVisible:
+    id: combat-defender-name
+    text: "${TEST_NAME}-B"
+
+- tapOn:
+    id: combat-attacker-card
+- tapOn: "${TEST_NAME}-C"
+- assertVisible:
+    id: combat-attacker-name
+    text: "${TEST_NAME}-C"
+- assertVisible:
+    id: combat-defender-name
+    text: "${TEST_NAME}-B"
+
+# Replacing the defender must preserve the selected attacker.
+- tapOn:
+    id: combat-defender-card
+- tapOn: "${TEST_NAME}-D"
+- assertVisible:
+    id: combat-attacker-name
+    text: "${TEST_NAME}-C"
+- assertVisible:
+    id: combat-defender-name
+    text: "${TEST_NAME}-D"
+
+# Clearing either role leaves the other role intact.
+- tapOn:
+    id: combat-attacker-card
+- tapOn:
+    id: combat-character-picker-clear-attacker
+- assertVisible:
+    id: combat-attacker-name
+    text: "Attacker"
+- assertVisible:
+    id: combat-defender-name
+    text: "${TEST_NAME}-D"
+
+- tapOn:
+    id: combat-defender-card
+- tapOn:
+    id: combat-character-picker-clear-defender
+- assertVisible:
+    id: combat-attacker-name
+    text: "Attacker"
+- assertVisible:
+    id: combat-defender-name
+    text: "Defender"
+
+# Re-selecting a previously used attacker must not resurrect its old defender.
+- tapOn:
+    id: combat-attacker-card
+- tapOn: "${TEST_NAME}-A"
+- assertVisible:
+    id: combat-attacker-name
+    text: "${TEST_NAME}-A"
+- assertVisible:
+    id: combat-defender-name
+    text: "Defender"
+
+- tapOn:
+    id: combat-defender-card
+- tapOn: "${TEST_NAME}-B"
+- assertVisible:
+    id: combat-attacker-name
+    text: "${TEST_NAME}-A"
+- assertVisible:
+    id: combat-defender-name
+    text: "${TEST_NAME}-B"
+- tapOn:
+    id: combat-defender-card
+- tapOn:
+    id: combat-character-picker-clear-defender
+- assertVisible:
+    id: combat-attacker-name
+    text: "${TEST_NAME}-A"
+- assertVisible:
+    id: combat-defender-name
+    text: "Defender"
+
+# Remove only the four uniquely named test characters from the current campaign.
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: "Delete ${TEST_NAME}-D"
+    direction: DOWN
+- tapOn: "Delete ${TEST_NAME}-D"
+- tapOn:
+    id: character-delete-confirmation-confirm
+
+- scrollUntilVisible:
+    element: "Delete ${TEST_NAME}-C"
+    direction: DOWN
+- tapOn: "Delete ${TEST_NAME}-C"
+- tapOn:
+    id: character-delete-confirmation-confirm
+
+- scrollUntilVisible:
+    element: "Delete ${TEST_NAME}-B"
+    direction: DOWN
+- tapOn: "Delete ${TEST_NAME}-B"
+- tapOn:
+    id: character-delete-confirmation-confirm
+
+- scrollUntilVisible:
+    element: "Delete ${TEST_NAME}-A"
+    direction: DOWN
+- tapOn: "Delete ${TEST_NAME}-A"
+- tapOn:
+    id: character-delete-confirmation-confirm
+- assertNotVisible: "${TEST_NAME}-A"
