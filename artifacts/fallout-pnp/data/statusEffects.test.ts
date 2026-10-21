@@ -1,15 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Character } from '../context/types.ts';
+import { DEFAULT_SKILLS, type Character } from '../context/types.ts';
 import {
   clearTemporaryCharacterEffects,
   clearTemporaryEffectsFromActiveCharacters,
 } from './statusEffects.ts';
 import { createCombatInjury, getInjuryCauseText } from './injuries.ts';
+import { createCampaignBundle, parseCampaignFile } from './portableExports.ts';
 
 function makeCharacter(overrides: Record<string, unknown> = {}): Character {
   return {
     id: 'active-character',
+    name: 'Courier',
+    type: 'pc',
+    race: 'human',
+    level: 1,
+    xp: 0,
+    special: { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 },
+    skills: { ...DEFAULT_SKILLS },
+    taggedSkills: [],
+    unspentSkillPoints: 0,
+    armorClass: 5,
+    tempAC: 0,
+    maxAP: 7,
+    currentAP: 7,
+    sequence: 10,
+    radiationResistance: 0,
+    gasResistance: 0,
+    electricityResistance: 0,
+    weaponAmmoStates: [],
     conditions: ['minorWithdrawal', 'drunk'],
     effects: [
       { id: 'poison', kind: 'other', poisonType: 'B', poisonCount: 2, name: 'Poisoned', isActive: true },
@@ -40,7 +59,9 @@ function makeCharacter(overrides: Record<string, unknown> = {}): Character {
       source: 'combat',
     }],
     currentHp: 6,
+    maxHp: 30,
     accumulatedRadiation: 40,
+    position: 'prone',
     equippedBodyArmorId: 'combat-armor',
     perks: [{ perkId: 'toughness', rank: 1 }],
     ...overrides,
@@ -130,4 +151,55 @@ test('healed injuries remain inactive after a campaign save/reload round trip', 
   assert.equal(reloadedActive.injuries[0].source, 'Raider with 10mm Pistol');
   assert.equal(getInjuryCauseText(reloadedActive.injuries[0].source), 'Caused by: Raider with 10mm Pistol');
   assert.deepEqual(reloadedStored, storedBeforeCleanup);
+});
+
+test('cleaned statuses and healed injuries survive switching saved campaigns', () => {
+  const injury = createCombatInjury(
+    'broken-arm',
+    { location: 'leftArm', description: 'Broken left arm' },
+    'Raider',
+    '10mm Pistol',
+  );
+  const active = makeCharacter({ injuries: [injury] });
+  const cleanedState = {
+    campaignName: 'Cleaned campaign',
+    characters: clearTemporaryEffectsFromActiveCharacters([active], true),
+    customWeapons: [],
+    customArmor: [],
+    customBestiaryTemplates: [],
+    initiativeEntries: [],
+    currentRound: 1,
+    combatActive: false,
+    activeEntryId: null,
+    lootTables: [],
+  };
+  const savedRecordJson = JSON.stringify(createCampaignBundle(cleanedState, []));
+
+  // Loading another library entry replaces the active state, but not the
+  // saved record for the cleaned campaign.
+  const otherCampaignJson = JSON.stringify(createCampaignBundle({
+    ...cleanedState,
+    campaignName: 'Other campaign',
+    characters: [makeCharacter({ id: 'other-character', name: 'Other character' })],
+  }, []));
+  const otherCampaign = parseCampaignFile(otherCampaignJson);
+  assert.equal(otherCampaign.ok, true);
+  if (!otherCampaign.ok) return;
+
+  const reloaded = parseCampaignFile(savedRecordJson);
+  assert.equal(reloaded.ok, true);
+  if (!reloaded.ok || reloaded.source !== 'portable') return;
+
+  const [reloadedCharacter] = reloaded.bundle.state.characters;
+  assert.deepEqual(reloadedCharacter.effects, []);
+  assert.deepEqual(reloadedCharacter.conditions, []);
+  assert.equal(reloadedCharacter.isKnockedOut, false);
+  assert.equal(reloadedCharacter.knockOutRoundsLeft, 0);
+  assert.equal(reloadedCharacter.injuries[0].isActive, false);
+  assert.equal(reloadedCharacter.injuries[0].description, 'Broken left arm');
+  assert.equal(reloadedCharacter.injuries[0].source, 'Raider with 10mm Pistol');
+  assert.equal(reloaded.bundle.state.campaignName, 'Cleaned campaign');
+  assert.equal(reloadedCharacter.accumulatedRadiation, 40);
+  assert.equal(reloadedCharacter.currentHp, 6);
+  assert.equal(reloadedCharacter.equippedBodyArmorId, 'combat-armor');
 });

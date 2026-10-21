@@ -2735,13 +2735,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Campaign ────────────────────────────────────────────────────────────────
 
   const exportCampaign = useCallback((): string => {
+    // State updates are applied synchronously to latestState before React
+    // renders them. Campaign-library saves can run in the same event turn as
+    // cleanup, so serialize that latest snapshot rather than a stale closure.
     const { fallout3RadiationDebuffs: _legacy, ...portableState } = {
-      ...state,
-      customAmmo: state.customAmmo ?? [],
-      hardcoreRadiationRules: state.hardcoreRadiationRules,
+      ...latestState.current,
+      customAmmo: latestState.current.customAmmo ?? [],
+      hardcoreRadiationRules: latestState.current.hardcoreRadiationRules,
     };
     return JSON.stringify(portableState, null, 2);
-  }, [state]);
+  }, []);
 
   const saveCampaignTools = useCallback((tools: {
     lootTables: CampaignTable[];
