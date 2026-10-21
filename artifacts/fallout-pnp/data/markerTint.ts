@@ -92,7 +92,7 @@ export function supportsThemeTint(imageDataUri: string): boolean {
   };
   if (!width || !height || width * height > MAX_MARKER_PIXELS
     || !channels || !supportedDepths[colorType]?.includes(bitDepth)
-    || bytes[26] !== 0 || bytes[27] !== 0 || interlace !== 0) return false;
+    || bytes[26] !== 0 || bytes[27] !== 0 || (interlace !== 0 && interlace !== 1)) return false;
 
   let offset = 8;
   const compressedChunks: Uint8Array[] = [];
@@ -119,9 +119,29 @@ export function supportsThemeTint(imageDataUri: string): boolean {
   if (colorType !== 4 && colorType !== 6
     && !(colorType === 3 && transparency?.some(alpha => alpha < 255))
     && !((colorType === 0 || colorType === 2) && transparency)) return false;
+  if ((colorType === 0 && transparency?.length !== 2)
+    || (colorType === 2 && transparency?.length !== 6)
+    || (colorType === 3 && (!palette || palette.length % 3 !== 0
+      || (transparency && transparency.length > palette.length / 3)))) return false;
 
-  const rowBytes = Math.ceil((width * channels * bitDepth) / 8);
-  const expectedLength = (rowBytes + 1) * height;
+  const adam7 = [
+    { x: 0, y: 0, stepX: 8, stepY: 8 },
+    { x: 4, y: 0, stepX: 8, stepY: 8 },
+    { x: 0, y: 4, stepX: 4, stepY: 8 },
+    { x: 2, y: 0, stepX: 4, stepY: 4 },
+    { x: 0, y: 2, stepX: 2, stepY: 4 },
+    { x: 1, y: 0, stepX: 2, stepY: 2 },
+    { x: 0, y: 1, stepX: 1, stepY: 2 },
+  ];
+  const passes = (interlace === 0 ? [{ x: 0, y: 0, stepX: 1, stepY: 1 }] : adam7)
+    .map(pass => ({
+      ...pass,
+      width: pass.x < width ? Math.ceil((width - pass.x) / pass.stepX) : 0,
+      height: pass.y < height ? Math.ceil((height - pass.y) / pass.stepY) : 0,
+    }))
+    .filter(pass => pass.width > 0 && pass.height > 0)
+    .map(pass => ({ ...pass, rowBytes: Math.ceil((pass.width * channels * bitDepth) / 8) }));
+  const expectedLength = passes.reduce((total, pass) => total + ((pass.rowBytes + 1) * pass.height), 0);
   if (expectedLength > MAX_DECODED_BYTES || compressedLength === 0) return false;
   const compressed = new Uint8Array(compressedLength);
   let compressedOffset = 0;
@@ -138,47 +158,49 @@ export function supportsThemeTint(imageDataUri: string): boolean {
   }
   if (decoded.length !== expectedLength) return false;
 
-  const bytesPerPixel = Math.max(1, Math.ceil((channels * bitDepth) / 8));
-  const previousRow = new Uint8Array(rowBytes);
   let inputOffset = 0;
-  for (let y = 0; y < height; y += 1) {
-    const filter = decoded[inputOffset++];
-    if (filter > 4) return false;
-    const row = decoded.slice(inputOffset, inputOffset + rowBytes);
-    inputOffset += rowBytes;
-    for (let index = 0; index < rowBytes; index += 1) {
-      const left = index >= bytesPerPixel ? row[index - bytesPerPixel] : 0;
-      const above = previousRow[index];
-      const upperLeft = index >= bytesPerPixel ? previousRow[index - bytesPerPixel] : 0;
-      const predictor = filter === 1 ? left
-        : filter === 2 ? above
-          : filter === 3 ? Math.floor((left + above) / 2)
-            : filter === 4 ? paeth(left, above, upperLeft)
-              : 0;
-      row[index] = (row[index] + predictor) & 255;
-    }
-
-    for (let x = 0; x < width; x += 1) {
-      if (colorType === 4 || colorType === 6) {
-        const alpha = sampleAt(row, (x * channels) + channels - 1, bitDepth);
-        const maximumAlpha = bitDepth === 16 ? 65535 : (1 << bitDepth) - 1;
-        if (alpha < maximumAlpha) return true;
-      } else if (colorType === 3 && transparency) {
-        const paletteIndex = sampleAt(row, x, bitDepth);
-        if ((transparency[paletteIndex] ?? 255) < 255) return true;
-      } else if (colorType === 0 && transparency) {
-        const key = (transparency[0] << 8) | transparency[1];
-        if (sampleAt(row, x, bitDepth) === key) return true;
-      } else if (colorType === 2 && transparency) {
-        const red = (transparency[0] << 8) | transparency[1];
-        const green = (transparency[2] << 8) | transparency[3];
-        const blue = (transparency[4] << 8) | transparency[5];
-        if (sampleAt(row, x * channels, bitDepth) === red
-          && sampleAt(row, (x * channels) + 1, bitDepth) === green
-          && sampleAt(row, (x * channels) + 2, bitDepth) === blue) return true;
+  for (const pass of passes) {
+    const bytesPerPixel = Math.max(1, Math.ceil((channels * bitDepth) / 8));
+    const previousRow = new Uint8Array(pass.rowBytes);
+    for (let y = 0; y < pass.height; y += 1) {
+      const filter = decoded[inputOffset++];
+      if (filter > 4) return false;
+      const row = decoded.slice(inputOffset, inputOffset + pass.rowBytes);
+      inputOffset += pass.rowBytes;
+      for (let index = 0; index < pass.rowBytes; index += 1) {
+        const left = index >= bytesPerPixel ? row[index - bytesPerPixel] : 0;
+        const above = previousRow[index];
+        const upperLeft = index >= bytesPerPixel ? previousRow[index - bytesPerPixel] : 0;
+        const predictor = filter === 1 ? left
+          : filter === 2 ? above
+            : filter === 3 ? Math.floor((left + above) / 2)
+              : filter === 4 ? paeth(left, above, upperLeft)
+                : 0;
+        row[index] = (row[index] + predictor) & 255;
       }
+
+      for (let x = 0; x < pass.width; x += 1) {
+        if (colorType === 4 || colorType === 6) {
+          const alpha = sampleAt(row, (x * channels) + channels - 1, bitDepth);
+          const maximumAlpha = bitDepth === 16 ? 65535 : (1 << bitDepth) - 1;
+          if (alpha < maximumAlpha) return true;
+        } else if (colorType === 3 && transparency) {
+          const paletteIndex = sampleAt(row, x, bitDepth);
+          if ((transparency[paletteIndex] ?? 255) < 255) return true;
+        } else if (colorType === 0 && transparency) {
+          const key = (transparency[0] << 8) | transparency[1];
+          if (sampleAt(row, x, bitDepth) === key) return true;
+        } else if (colorType === 2 && transparency) {
+          const red = (transparency[0] << 8) | transparency[1];
+          const green = (transparency[2] << 8) | transparency[3];
+          const blue = (transparency[4] << 8) | transparency[5];
+          if (sampleAt(row, x * channels, bitDepth) === red
+            && sampleAt(row, (x * channels) + 1, bitDepth) === green
+            && sampleAt(row, (x * channels) + 2, bitDepth) === blue) return true;
+        }
+      }
+      previousRow.set(row);
     }
-    previousRow.set(row);
   }
   return false;
 }

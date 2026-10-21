@@ -9,6 +9,12 @@ Store campaign-library entries as portable campaign bundles with embedded portra
 
 **How to apply:** Use the portable campaign parser/bundler when saving, exporting, and importing library entries. Restore bundled portraits into app-owned storage when loading a campaign, and preserve map artwork and marker-icon data in both campaign and standalone map JSON.
 
+Map marker tinting is a per-map display preference. Apply the current theme accent only at render time to PNGs with actual transparent pixels; preserve the original embedded image and leave opaque images unchanged.
+
+**Why:** Theme changes should not destructively rewrite user artwork, and transparent pixels are what let a marker shape take on a single accent color while retaining a clear background.
+
+**How to apply:** Preserve the marker source image in saved and exported campaign data. Derive the tint from the active theme when rendering both marker previews and placed icons.
+
 Party-marker placement is intentionally removed from the map editor for now, but retain existing party-position data in saved maps and exports.
 
 **Why:** The user asked to remove the party placement system "for now"; silently deleting older saved positions would make that temporary UI removal destructive.
