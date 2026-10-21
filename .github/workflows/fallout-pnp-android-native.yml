@@ -100,11 +100,16 @@ jobs:
             export PATH="$HOME/.maestro/bin:$PATH"
             maestro --version
             pnpm --filter @workspace/fallout-pnp run test:native:radiation
+            pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-options
+            pnpm --filter @workspace/fallout-pnp run test:native:ghoul-radiation-equipment-combat
             pnpm --filter @workspace/fallout-pnp run test:native:hardcore-radiation
             {
               echo "## Android native radiation regressions"
               echo
-              echo "- Ghoul radiation character-editor flow: passed"
+              echo "- Manual radiation character-editor flow: passed"
+              echo "- Ghoul healing Options 1–4 with separate gains and exact HP/meter values: passed"
+              echo "- Radiation meter cap, Super Mutant/Deathclaw immunity, and unchanged Half-Mutant resistance: passed"
+              echo "- Worn body/helmet resistance and single-resistance combat aura: passed"
               echo "- Hardcore radiation persistence flow: passed"
-              echo "- Both flows ran against the installed release app on an Android emulator."
+              echo "- All flows ran against the installed release app on an Android emulator."
             } >> "$GITHUB_STEP_SUMMARY"

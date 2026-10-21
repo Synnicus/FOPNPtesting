@@ -1,0 +1,176 @@
+# Run against an installed native build with clean app data.
+appId: ${APP_ID}
+---
+- launchApp
+
+# Import only a temporary test helmet; the player equips it through the editor.
+- tapOn: "Campaign"
+- scrollUntilVisible:
+    element: "PASTE JSON INSTEAD"
+    direction: DOWN
+- tapOn: "PASTE JSON INSTEAD"
+- tapOn:
+    id: campaign-import-json-input
+- inputText: ${TEST_HELMET_JSON}
+- hideKeyboard
+- tapOn:
+    id: campaign-import-json-submit
+- waitForAnimationToEnd
+
+# Enable Option 2, which sets a Ghoul's natural resistance to 0%.
+- tapOn:
+    id: campaign-options-button
+- tapOn:
+    id: campaign-gameplay-options-toggle
+- scrollUntilVisible:
+    element:
+      id: mutant-ghoul-radiation-toggle
+    direction: DOWN
+- tapOn:
+    id: mutant-ghoul-radiation-toggle
+- scrollUntilVisible:
+    element:
+      id: ghoul-radiation-option-2
+    direction: DOWN
+- tapOn:
+    id: ghoul-radiation-option-2
+- tapOn: "Close campaign options"
+
+# Worn body armor alone reduces 100 incoming rads to 80.
+- tapOn: "Characters"
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} target"
+- hideKeyboard
+- tapOn: "Ghoul"
+- scrollUntilVisible:
+    element: "Equipment"
+    direction: RIGHT
+- tapOn: "Equipment"
+- scrollUntilVisible:
+    element: "BODY ARMOR"
+    direction: DOWN
+- tapOn: "BODY ARMOR"
+- assertVisible: "SELECT BODY ARMOR"
+- tapOn: "Combat Armor"
+- tapOn: "Basics"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- assertVisible: "Effective radiation resistance is 20%."
+- tapOn: "YES"
+- assertVisible:
+    id: character-radiation-meter
+    text: "80 / 1000"
+
+# The imported helmet adds 30% resistance; body + helmet reduce the same
+# 100-rad exposure to 50. Clear the first exposure before measuring the pair.
+- tapOn:
+    id: character-radiation-amount
+- inputText: "80"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-subtract
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- scrollUntilVisible:
+    element: "Equipment"
+    direction: RIGHT
+- tapOn: "Equipment"
+- scrollUntilVisible:
+    element: "HELMET"
+    direction: DOWN
+- tapOn: "HELMET"
+- assertVisible: "SELECT HELMET"
+- tapOn: ${TEST_HELMET_NAME}
+- tapOn: "Basics"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-amount
+    direction: DOWN
+- tapOn:
+    id: character-radiation-amount
+- inputText: "100"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-add
+- assertVisible: "Apply Radiation Resistance?"
+- assertVisible: "Effective radiation resistance is 50%."
+- tapOn: "YES"
+- assertVisible:
+    id: character-radiation-meter
+    text: "50 / 1000"
+
+# Save the target with both worn items; reset its meter for the combat check.
+- tapOn:
+    id: character-radiation-amount
+- inputText: "50"
+- hideKeyboard
+- tapOn:
+    id: character-radiation-subtract
+- assertVisible:
+    id: character-radiation-meter
+    text: "0 / 1000"
+- tapOn:
+    id: character-save
+- assertVisible: "${TEST_NAME} target"
+
+# Create a Glowing One and choose the target through the native combat screen.
+- tapOn: "NEW CHARACTER"
+- tapOn:
+    id: character-name-input
+- inputText: "${TEST_NAME} source"
+- hideKeyboard
+- tapOn: "Ghoul"
+- scrollUntilVisible:
+    element: "Traits"
+    direction: RIGHT
+- tapOn: "Traits"
+- scrollUntilVisible:
+    element: "Glowing One"
+    direction: DOWN
+- tapOn: "Glowing One"
+- tapOn:
+    id: character-save
+- assertVisible: "${TEST_NAME} source"
+- tapOn: "Combat"
+- tapOn:
+    id: combat-attacker-card
+- assertVisible: "SELECT ATTACKER"
+- tapOn: "${TEST_NAME} source"
+- tapOn:
+    id: combat-defender-card
+- assertVisible: "SELECT DEFENDER"
+- tapOn: "${TEST_NAME} target"
+- scrollUntilVisible:
+    element: "GLOWING ONE — APPLY 1 HOUR OF EXPOSURE"
+    direction: UP
+- tapOn: "GLOWING ONE — APPLY 1 HOUR OF EXPOSURE"
+- assertVisible: "GLOWING ONE — RADIATION AURA"
+- assertVisible: "${TEST_NAME} target"
+- tapOn: "APPLY EXPOSURE"
+
+# A 10-rad aura reduced once by 50% resistance adds exactly 5 rads, not a
+# second resistance-reduced amount.
+- tapOn: "Characters"
+- scrollUntilVisible:
+    element: "${TEST_NAME} target"
+    direction: DOWN
+- tapOn: "${TEST_NAME} target"
+- scrollUntilVisible:
+    element:
+      id: character-radiation-meter
+    direction: DOWN
+- assertVisible:
+    id: character-radiation-meter
+    text: "5 / 1000"

@@ -18,6 +18,8 @@
     "test:native:hardcore-radiation": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Hardcore radiation regression $(date +%s)\" e2e/hardcore-radiation-native.yaml",
     "test:native:manual-catalog": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Manual catalog regression $(date +%s)\" e2e/manual-catalog-native.yaml",
     "test:native:campaign-options": "set -e; TEST_RUN_ID=\"$(date +%s)\"; LEGACY_CAMPAIGN_JSON=\"$(node e2e/create-legacy-campaign-fixture.mjs \"Legacy options compatibility $TEST_RUN_ID\")\"; maestro test -e APP_ID=com.pnpcalculator.app -e \"LEGACY_CAMPAIGN_JSON=$LEGACY_CAMPAIGN_JSON\" e2e/campaign-options-native.yaml",
+    "test:native:ghoul-radiation-options": "maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=Ghoul radiation options $(date +%s)\" e2e/ghoul-radiation-options-native.yaml",
+    "test:native:ghoul-radiation-equipment-combat": "set -e; TEST_RUN_ID=\"$(date +%s)\"; TEST_NAME=\"Ghoul radiation equipment and combat $TEST_RUN_ID\"; TEST_HELMET_NAME=\"Radiation Helmet $TEST_RUN_ID\"; TEST_HELMET_JSON=\"$(node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types e2e/create-radiation-helmet-fixture.mjs \"$TEST_RUN_ID\" \"$TEST_HELMET_NAME\")\"; adb shell pm clear com.pnpcalculator.app >/dev/null; maestro test -e APP_ID=com.pnpcalculator.app -e \"TEST_NAME=$TEST_NAME\" -e \"TEST_HELMET_NAME=$TEST_HELMET_NAME\" -e \"TEST_HELMET_JSON=$TEST_HELMET_JSON\" e2e/ghoul-radiation-equipment-combat-native.yaml",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -37,6 +39,7 @@
     "@ungap/structured-clone": "^1.3.0",
     "@workspace/api-client-react": "workspace:*",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250117",
+    "babel-preset-expo": "54.0.12",
     "expo": "~54.0.37",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.14",
@@ -72,6 +75,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "buffer": "5.7.1",
     "expo-asset": "~12.0.13",
     "expo-audio": "~1.1.1",
     "expo-document-picker": "~14.0.8",
