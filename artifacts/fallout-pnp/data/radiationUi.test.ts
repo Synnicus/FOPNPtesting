@@ -182,7 +182,14 @@ test('Hardcore preview remains scrollable within a compact mobile viewport', () 
 
   const compactViewport = { width: 400, height: 720 };
   assert.ok(compactViewport.width <= 400 && compactViewport.height <= 720);
-  assert.match(previewComponent, /maxHeight: '88%'/);
+  assert.match(previewComponent, /maxHeight: enlargedText[\s\S]*: '88%'/);
+  assert.match(previewComponent, /useWindowDimensions\(\)/);
+  assert.match(previewComponent, /const enlargedText = fontScale >= 1\.3/);
+  assert.match(previewComponent, /flexDirection: stackThresholdRows \? 'column' : 'row'/);
+  assert.match(previewComponent, /lineHeight: Math\.round\(16 \* fontScale\)/);
+  assert.match(previewComponent, /minWidth: 0,[\s\S]*flexShrink: 1/);
+  assert.match(previewComponent, /width: 44,[\s\S]*height: 44/);
+  assert.match(previewComponent, /maxHeight: enlargedText[\s\S]*windowHeight - modalTopPadding - modalBottomPadding - 16/);
   assert.match(previewComponent, /<ScrollView contentContainerStyle=/);
   assert.match(previewComponent, /paddingBottom: Math\.max\(16, insets\.bottom\)/);
   assert.match(previewComponent, /testID="hardcore-radiation-preview-close"/);

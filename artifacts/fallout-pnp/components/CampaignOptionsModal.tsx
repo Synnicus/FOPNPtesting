@@ -8,6 +8,7 @@ import {
   Platform,
   Text as NativeText,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { LocalizedAlert as Alert, LocalizedText as Text, LocalizedTextInput, LocalizedTouchableOpacity as TouchableOpacity, localizedConfirm } from '@/components/LocalizedText';
 import { Feather } from '@expo/vector-icons';
@@ -521,8 +522,14 @@ function HardcoreRadiationPreviewModal({
 }) {
   const palette = useColors();
   const insets = useSafeAreaInsets();
+  const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const headingRef = useRef<View>(null);
   const thresholds = HARDCORE_RADIATION_RULES.filter(rule => rule.threshold > 0).reverse();
+  const enlargedText = fontScale >= 1.3;
+  const stackThresholdRows = enlargedText || windowWidth < 360;
+  const modalPadding = enlargedText ? 12 : 20;
+  const modalTopPadding = Math.max(modalPadding, insets.top);
+  const modalBottomPadding = Math.max(modalPadding, insets.bottom);
 
   useEffect(() => {
     if (!visible || Platform.OS === 'web') return;
@@ -544,10 +551,19 @@ function HardcoreRadiationPreviewModal({
       <View
         accessibilityViewIsModal
         accessibilityLabel="Hardcore radiation rules preview"
-        style={{ flex: 1, backgroundColor: '#000000bb', justifyContent: 'center', padding: 20 }}
+        style={{
+          flex: 1,
+          backgroundColor: '#000000bb',
+          justifyContent: 'center',
+          paddingHorizontal: modalPadding,
+          paddingTop: modalTopPadding,
+          paddingBottom: modalBottomPadding,
+        }}
       >
         <View style={{
-          maxHeight: '88%',
+          maxHeight: enlargedText
+            ? Math.max(180, windowHeight - modalTopPadding - modalBottomPadding - 16)
+            : '88%',
           backgroundColor: palette.card,
           borderRadius: palette.radius,
           borderWidth: 1,
@@ -561,15 +577,15 @@ function HardcoreRadiationPreviewModal({
                 accessible
                 accessibilityRole="header"
                 accessibilityLabel="Hardcore radiation rules preview"
+                style={{ flex: 1, minWidth: 0 }}
               >
                 <Text accessible={false} style={{
-                flex: 1,
-                fontSize: 16,
-                fontFamily: 'Inter_700Bold',
-                color: palette.destructive,
-                letterSpacing: 1,
-              }}>
-                HARDCORE RADIATION
+                  fontSize: 16,
+                  fontFamily: 'Inter_700Bold',
+                  color: palette.destructive,
+                  letterSpacing: enlargedText ? 0 : 1,
+                }}>
+                  HARDCORE RADIATION
                 </Text>
               </View>
               <TouchableOpacity
@@ -578,7 +594,12 @@ function HardcoreRadiationPreviewModal({
                 accessibilityHint="Returns to campaign options without changing the setting"
                 testID="hardcore-radiation-preview-close"
                 onPress={onClose}
-                style={{ padding: 4 }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
                 <Feather name="x" size={20} color={palette.mutedForeground} />
               </TouchableOpacity>
@@ -591,7 +612,11 @@ function HardcoreRadiationPreviewModal({
               Optional campaign-wide SPECIAL penalties · {enabled ? 'Currently enabled' : 'Currently disabled'}
             </Text>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: Math.max(16, insets.bottom), gap: 12 }}>
+          <ScrollView contentContainerStyle={{
+            padding: enlargedText ? 12 : 16,
+            paddingBottom: Math.max(16, insets.bottom),
+            gap: 12,
+          }}>
             <View
               accessible
               accessibilityLabel="Core Fallout PnP 2.0 radiation sickness. Sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation."
@@ -608,7 +633,12 @@ function HardcoreRadiationPreviewModal({
               <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: palette.foreground, letterSpacing: 0.7 }}>
                 SEPARATE FROM CORE SICKNESS
               </Text>
-              <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'Inter_400Regular', color: palette.mutedForeground }}>
+              <Text style={{
+                fontSize: 11,
+                lineHeight: Math.round(16 * fontScale),
+                fontFamily: 'Inter_400Regular',
+                color: palette.mutedForeground,
+              }}>
                 Fallout PnP 2.0 sickness labels remain narrative-only at 200, 400, 600, 800, and 1000 radiation. The optional penalties below use their own thresholds.
               </Text>
             </View>
@@ -620,8 +650,8 @@ function HardcoreRadiationPreviewModal({
                   key={rule.threshold}
                   testID={`hardcore-radiation-threshold-${rule.threshold}`}
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
+                    flexDirection: stackThresholdRows ? 'column' : 'row',
+                    alignItems: stackThresholdRows ? 'stretch' : 'center',
                     padding: 10,
                     borderRadius: palette.radius,
                     backgroundColor: palette.destructive + '0d',
@@ -630,11 +660,23 @@ function HardcoreRadiationPreviewModal({
                     gap: 12,
                   }}
                 >
-                  <View style={{ width: 58 }}>
+                  <View style={{
+                    width: stackThresholdRows ? undefined : 58,
+                    flexDirection: stackThresholdRows ? 'row' : 'column',
+                    alignItems: stackThresholdRows ? 'baseline' : 'flex-start',
+                    gap: stackThresholdRows ? 6 : 0,
+                  }}>
                     <Text style={{ fontSize: 15, fontFamily: 'Inter_700Bold', color: palette.destructive }}>{rule.threshold}</Text>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: palette.mutedForeground, letterSpacing: 0.7 }}>RADS</Text>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: palette.mutedForeground, letterSpacing: enlargedText ? 0 : 0.7 }}>RADS</Text>
                   </View>
-                  <Text style={{ flex: 1, fontSize: 12, fontFamily: 'Inter_700Bold', color: palette.foreground }}>
+                  <Text style={{
+                    flex: stackThresholdRows ? undefined : 1,
+                    minWidth: 0,
+                    flexShrink: 1,
+                    fontSize: 12,
+                    fontFamily: 'Inter_700Bold',
+                    color: palette.foreground,
+                  }}>
                     {formatHardcoreRadiationPenalties(rule.threshold)}{rule.fatal ? ' · FATAL / INSTANT DEATH' : ''}
                   </Text>
                 </View>
