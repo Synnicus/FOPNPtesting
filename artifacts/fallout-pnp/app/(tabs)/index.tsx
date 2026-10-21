@@ -31,7 +31,7 @@ import { AP_COSTS } from '@/data/apCosts';
 import { isMeleeWeapon, isRangedWeapon, getWeaponHands, getWeaponAttackModes, getWeaponAreaAttack, compactWeaponCombatLabel, WEAPON_CATEGORY_LABELS, WEAPON_CATEGORY_ORDER } from '@/data/weapons';
 import { computeModEffects } from '@/data/mods';
 import { computeCustomPerkEffects, computeCustomWeaponModEffects } from '@/data/customRules';
-import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, getWeaponAmmoDamageProfile, resolveEquippedAmmoType, AmmoType } from '@/data/ammo';
+import { AMMO_TYPES, getAmmoById, describeAmmoAccuracyModifier, describeAmmoMods, getWeaponAmmoDamageProfile, resolveEquippedAmmoType, scaleAmmoDamageComponents, AmmoType } from '@/data/ammo';
 import { getInventoryItemQuantity } from '@/data/inventory';
 import { BUILT_IN_TOOLS } from '@/data/tools';
 import { makePoisonedEffect, poisonExposuresForAttack, resolvePoisonResistance, type PoisonResistanceResult } from '@/data/poisonEffects';
@@ -2152,7 +2152,7 @@ export default function CombatScreen() {
       const afterDT = resolvedDamage.afterDamageThreshold;
       const weaponPhysicalDmg = Math.round(resolvedDamage.finalDamage * (traitEffects.damageMultiplier ?? 1));
       const bonusDamageComponents = [
-        ...(loadedAmmo?.components ?? []),
+        ...scaleAmmoDamageComponents(loadedAmmo?.components ?? [], doubleShotActive ? 2 : 1),
         ...customModEffects.damageComponents,
         ...customAttackPerkEffects.damageComponents,
       ];
@@ -4326,7 +4326,7 @@ export default function CombatScreen() {
                 const meleeDmgBonus = isMelee
                   ? Math.max(0, (attackerSheet?.meleeDamage ?? 0) + raceMeleeBonus + hthPerkBonus + traitMeleeBonus)
                   : 0;
-                const damageProfile = getWeaponAmmoDamageProfile(weapon, loadedAmmo);
+                const damageProfile = getWeaponAmmoDamageProfile(weapon, loadedAmmo, doubleShotActive ? 2 : 1);
                 const poisonResults: PoisonResistanceResult[] = [];
                 const componentBreakdown: string[] = [];
                 let radiationExposure = 0;
@@ -4340,7 +4340,7 @@ export default function CombatScreen() {
                   let physicalDamage = applyProtection(raw, protection.effectiveDT, protection.effectiveDR);
                   if (loadedAmmo?.components?.length) {
                     const componentResult = resolveAmmoDamageComponents({
-                      components: loadedAmmo.components,
+                      components: scaleAmmoDamageComponents(loadedAmmo.components, doubleShotActive ? 2 : 1),
                       rollDie,
                       radiationResistance: defenderSheet?.radiationResistance ?? 0,
                       resolveProtection: damageType => {

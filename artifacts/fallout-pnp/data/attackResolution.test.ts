@@ -7,7 +7,7 @@ import {
   resolveDamagePipeline,
   resolveDamageProtection,
 } from './attackResolution.ts';
-import { getAmmoById } from './ammo.ts';
+import { getAmmoById, scaleAmmoDamageComponents } from './ammo.ts';
 import { resolveArmorAwareSheet } from './armorEffects.ts';
 import { UNCONDITIONAL_ARMOR_CLASS_PERKS } from './unconditionalArmorClassPerks.ts';
 
@@ -202,6 +202,26 @@ test('custom ammunition rolls each component independently and resolves protecti
   assert.equal(result.components[2].finalRadiation, 8);
   assert.equal(result.totalHpDamage, 7);
   assert.equal(result.totalRadiation, 8);
+});
+
+test('single-shot and double-shot custom ammunition roll the correct number of shell dice', () => {
+  const component = { id: 'shell', label: 'Shell', type: 'normal' as const, dmgDieCount: 1, dmgDie: 6, dmgBonus: 0 };
+  const rolledDamage = (shotCount: number) => {
+    const rolls = [2, 5];
+    let rollCount = 0;
+    const result = resolveAmmoDamageComponents({
+      components: scaleAmmoDamageComponents([component], shotCount),
+      rollDie: () => {
+        rollCount += 1;
+        return rolls.shift()!;
+      },
+      resolveProtection: () => ({ damageThreshold: 0, damageResistance: 0 }),
+    });
+    return { damage: result.totalHpDamage, rollCount };
+  };
+
+  assert.deepEqual(rolledDamage(1), { damage: 2, rollCount: 1 });
+  assert.deepEqual(rolledDamage(2), { damage: 7, rollCount: 2 });
 });
 
 test('concussion uses explosion DR but ignores DT, while radiation never deals HP damage', () => {

@@ -63,20 +63,31 @@ export interface WeaponAmmoDamageProfile {
   ammoBonus: number;
 }
 
+/** Scale custom ammunition dice without mutating the saved ammunition profile. */
+export function scaleAmmoDamageComponents(
+  components: readonly AmmoDamageComponent[],
+  diceMultiplier = 1,
+): AmmoDamageComponent[] {
+  return components.map(component => ({
+    ...component,
+    dmgDieCount: component.dmgDieCount * diceMultiplier,
+  }));
+}
+
 /** Resolve the damage contributions used by direct combat rolls.
  * Component-based custom ammo replaces legacy ammo damage fields. */
 export function getWeaponAmmoDamageProfile(
   weapon: Pick<Weapon, 'damageDieCount' | 'damageDie' | 'damageBonus'>,
   ammo?: Pick<AmmoType, 'dmgDieCount' | 'dmgDie' | 'dmgBonus' | 'components'> | null,
-  weaponDiceMultiplier = 1,
+  shotCountMultiplier = 1,
 ): WeaponAmmoDamageProfile {
   const hasLegacyAmmoDamage = !!ammo && !ammo.components?.length;
   const ammoDiceCount = hasLegacyAmmoDamage && ammo.dmgDieCount > 0 && ammo.dmgDie > 0
-    ? ammo.dmgDieCount
+    ? ammo.dmgDieCount * shotCountMultiplier
     : 0;
 
   return {
-    weaponDiceCount: weapon.damageDieCount * weaponDiceMultiplier,
+    weaponDiceCount: weapon.damageDieCount * shotCountMultiplier,
     weaponDie: weapon.damageDie,
     weaponBonus: weapon.damageBonus,
     ammoDiceCount,

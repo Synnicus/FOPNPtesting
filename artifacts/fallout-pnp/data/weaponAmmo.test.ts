@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, getCustomAmmoReferenceUsage, getWeaponAmmoDamageProfile, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, validateCustomAmmo, type AmmoType } from './ammo.ts';
+import { AMMO_TYPES, filterCompatibleAmmoIds, getAmmoReferenceEffects, getCustomAmmoReferenceUsage, getWeaponAmmoDamageProfile, resolveEquippedAmmoType, resolveEquippedAmmoTypeId, sanitizeCustomAmmoCatalog, scaleAmmoDamageComponents, validateCustomAmmo, type AmmoType } from './ammo.ts';
 import { BUILT_IN_WEAPONS, formatWeaponAP, formatWeaponCapacity, weaponCategorySupportsAmmo } from './weapons.ts';
 
 const weaponById = (id: string) => {
@@ -54,6 +54,28 @@ test('launcher and projectile damage profiles match manual weapon and ammunition
       `${weapon.name} + ${ammo.name}: combine only the damage sources printed for each`,
     );
   }
+});
+
+test('double-shot profiles multiply weapon and legacy ammunition dice without changing a single shot', () => {
+  const weapon = weaponById('punch_gun');
+  const ammo = AMMO_TYPES.find(candidate => candidate.id === '12ga_buckshot');
+  assert.ok(ammo);
+
+  const singleShot = getWeaponAmmoDamageProfile(weapon, ammo);
+  assert.deepEqual([singleShot.weaponDiceCount, singleShot.ammoDiceCount], [1, 1]);
+
+  const doubleShot = getWeaponAmmoDamageProfile(weapon, ammo, 2);
+  assert.deepEqual([doubleShot.weaponDiceCount, doubleShot.ammoDiceCount], [2, 2]);
+  assert.deepEqual([doubleShot.weaponBonus, doubleShot.ammoBonus], [weapon.damageBonus, ammo.dmgBonus]);
+});
+
+test('custom ammunition components scale dice per shell without mutating their saved definitions', () => {
+  const components = [{ id: 'pellet', label: 'Pellet', type: 'normal' as const, dmgDieCount: 2, dmgDie: 6, dmgBonus: 1 }];
+  assert.deepEqual(scaleAmmoDamageComponents(components, 1), components);
+  assert.deepEqual(scaleAmmoDamageComponents(components, 2), [
+    { ...components[0], dmgDieCount: 4 },
+  ]);
+  assert.equal(components[0].dmgDieCount, 2);
 });
 
 test('custom ammo reference usage counts compatible weapons and saved character selections', () => {
