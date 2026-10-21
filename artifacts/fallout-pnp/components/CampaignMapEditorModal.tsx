@@ -5,6 +5,7 @@ import {
   PanResponder,
   Platform,
   ScrollView,
+  Switch,
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,6 +22,7 @@ import type { CampaignMap, CampaignMapMarker, CampaignMapMarkerIcon } from '@/co
 import DraggableMapMarker from '@/components/DraggableMapMarker';
 import CaveIcon from '@/components/CaveIcon';
 import { mapViewportCenter } from '@/data/mapPlacement';
+import { supportsThemeTint } from '@/data/markerTint';
 import {
   MAX_CAMPAIGN_MAP_IMAGE_URI_LENGTH,
   MAX_CAMPAIGN_MAP_MARKER_ICON_URI_LENGTH,
@@ -112,6 +114,10 @@ export default function CampaignMapEditorModal({
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(map);
   const customIcons = draft.markerIcons ?? [];
+  const tintableCustomIconIds = useMemo(
+    () => new Set(customIcons.filter(icon => supportsThemeTint(icon.imageDataUri)).map(icon => icon.id)),
+    [customIcons],
+  );
   const selectedLocation = draft.locations.find(location => location.id === selectedLocationId) ?? null;
   const hasMapImage = !!draft.imageDataUri;
   const imageAspect = draft.imageWidth && draft.imageHeight
@@ -291,11 +297,21 @@ export default function CampaignMapEditorModal({
   const renderIcon = (iconId: string, size: number, color: string) => {
     const custom = customIcons.find(icon => icon.id === iconId);
     if (custom) {
-      return <Image source={{ uri: custom.imageDataUri }} style={{ width: size, height: size, borderRadius: 4 }} />;
+      const tintColor = draft.tintMarkersToTheme && tintableCustomIconIds.has(custom.id)
+        ? colors.primary
+        : undefined;
+      return (
+        <Image
+          source={{ uri: custom.imageDataUri }}
+          tintColor={tintColor}
+          style={{ width: size, height: size, borderRadius: 4 }}
+        />
+      );
     }
     const icon = BUILT_IN_MARKERS.find(item => item.id === iconId) ?? BUILT_IN_MARKERS[0];
-    if (icon.icon === 'cave') return <CaveIcon size={size} color={color} />;
-    return <Feather name={icon.icon} size={size} color={color} />;
+    const markerColor = draft.tintMarkersToTheme ? colors.primary : color;
+    if (icon.icon === 'cave') return <CaveIcon size={size} color={markerColor} />;
+    return <Feather name={icon.icon} size={size} color={markerColor} />;
   };
 
   const iconPicker = (
@@ -324,6 +340,9 @@ export default function CampaignMapEditorModal({
         })}
         {customIcons.map(icon => {
           const active = selectedIconId === icon.id;
+          const tintColor = draft.tintMarkersToTheme && tintableCustomIconIds.has(icon.id)
+            ? colors.primary
+            : undefined;
           return (
             <TouchableOpacity
               key={icon.id}
@@ -335,7 +354,11 @@ export default function CampaignMapEditorModal({
                 backgroundColor: active ? colors.secondary : colors.card,
               }}
             >
-              <Image source={{ uri: icon.imageDataUri }} style={{ width: 20, height: 20, borderRadius: 4 }} />
+              <Image
+                source={{ uri: icon.imageDataUri }}
+                tintColor={tintColor}
+                style={{ width: 20, height: 20, borderRadius: 4 }}
+              />
               <Text numberOfLines={1} style={{ color: active ? colors.primary : colors.text, fontSize: 9 }}>{icon.name}</Text>
             </TouchableOpacity>
           );
@@ -493,6 +516,27 @@ export default function CampaignMapEditorModal({
               <Feather name="trash-2" size={15} color={colors.destructive} />
             </TouchableOpacity>
           ) : null}
+        </View>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          paddingHorizontal: 12, paddingVertical: 5,
+        }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: colors.text, fontSize: 11, fontWeight: '700' }}>
+              {translateText('Match marker colors to UI theme')}
+            </Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 9, lineHeight: 13 }}>
+              {translateText('PNG icons with transparency and built-in icons use the active theme accent. JPEG, WEBP, and non-transparent PNGs keep their original colors.')}
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel={translateText('Match marker colors to UI theme')}
+            accessibilityRole="switch"
+            value={draft.tintMarkersToTheme === true}
+            onValueChange={tintMarkersToTheme => updateDraft({ tintMarkersToTheme })}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={draft.tintMarkersToTheme ? colors.primaryForeground : colors.text}
+          />
         </View>
 
         <View

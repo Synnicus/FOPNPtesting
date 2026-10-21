@@ -113,7 +113,9 @@ export default function CampaignToolsPanel({
   };
 
   const addMap = () => {
-    const created: CampaignMap = { id: id(), name: 'New Map', description: '', locations: [], party: [] };
+    const created: CampaignMap = {
+      id: id(), name: 'New Map', description: '', tintMarkersToTheme: true, locations: [], party: [],
+    };
     setNewMapDraft(created);
     setMapEditorId(created.id);
     setScreen('maps');

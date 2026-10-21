@@ -145,6 +145,7 @@ export function normalizeCampaignMap(value: unknown): CampaignMap | null {
     id: map.id.slice(0, 128),
     name: map.name.slice(0, 120),
     description: typeof map.description === 'string' ? map.description.slice(0, 2000) : '',
+    tintMarkersToTheme: map.tintMarkersToTheme === true,
     imageDataUri,
     ...(imageWidth ? { imageWidth } : {}),
     ...(imageHeight ? { imageHeight } : {}),
@@ -223,6 +224,7 @@ export function validCampaignMap(value: unknown): value is CampaignMap {
       || !/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=\s]+$/i.test(raw.imageDataUri))) return false;
   if ((raw.imageWidth !== undefined && !validMapImageDimension(raw.imageWidth))
     || (raw.imageHeight !== undefined && !validMapImageDimension(raw.imageHeight))
+    || (raw.tintMarkersToTheme !== undefined && typeof raw.tintMarkersToTheme !== 'boolean')
     || (raw.markerIcons !== undefined && !Array.isArray(raw.markerIcons))
     || (raw.locations !== undefined && !Array.isArray(raw.locations))
     || (raw.locations ?? []).some(location => location?.iconId !== undefined

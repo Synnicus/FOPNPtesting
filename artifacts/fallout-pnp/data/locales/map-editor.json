@@ -13,7 +13,9 @@
     "Remove location",
     "Upload custom maps, place and edit locations, and export each built map as a JSON file.",
     "No maps yet. Add one to upload a map and mark locations.",
-    "{0} locations", "Party"
+    "{0} locations", "Party",
+    "Match marker colors to UI theme",
+    "PNG icons with transparency and built-in icons use the active theme accent. JPEG, WEBP, and non-transparent PNGs keep their original colors."
   ],
   "fr": [
     "MODIFIER UN LIEU", "CONFIRMER LE PLACEMENT",
@@ -23,7 +25,9 @@
     "Confirmez ou annulez le placement avant de changer d’outil.",
     "Déplacement de la carte verrouillé", "Description du lieu", "Fond de carte", "Nouveau lieu", "Supprimer le lieu",
     "Importez vos cartes, placez et modifiez des lieux, puis exportez chaque carte au format JSON.",
-    "Aucune carte. Ajoutez-en une pour importer une image et marquer des lieux.", "{0} lieux", "Groupe"
+    "Aucune carte. Ajoutez-en une pour importer une image et marquer des lieux.", "{0} lieux", "Groupe",
+    "Adapter les couleurs des marqueurs au thème",
+    "Les PNG avec transparence et les icônes intégrées utilisent la couleur du thème actif. Les JPEG, WEBP et PNG opaques gardent leurs couleurs d’origine."
   ],
   "it": [
     "MODIFICA LUOGO", "CONFERMA POSIZIONE",
@@ -33,7 +37,9 @@
     "Conferma o annulla la posizione prima di cambiare strumento.",
     "Spostamento mappa bloccato", "Descrizione del luogo", "Sfondo mappa", "Nuovo luogo", "Rimuovi luogo",
     "Carica mappe personalizzate, posiziona e modifica luoghi ed esporta ogni mappa come file JSON.",
-    "Nessuna mappa. Aggiungine una per caricare un’immagine e segnare luoghi.", "{0} luoghi", "Gruppo"
+    "Nessuna mappa. Aggiungine una per caricare un’immagine e segnare luoghi.", "{0} luoghi", "Gruppo",
+    "Adatta i colori dei segnaposto al tema",
+    "I PNG con trasparenza e le icone integrate usano il colore del tema attivo. JPEG, WEBP e PNG opachi mantengono i colori originali."
   ],
   "de": [
     "ORT BEARBEITEN", "PLATZIERUNG BESTÄTIGEN",
@@ -43,7 +49,9 @@
     "Bestätige oder verwirf die Platzierung vor dem Werkzeugwechsel.",
     "Kartenverschiebung gesperrt", "Ortsbeschreibung", "Kartenhintergrund", "Neuer Ort", "Ort entfernen",
     "Lade eigene Karten hoch, platziere und bearbeite Orte und exportiere jede Karte als JSON-Datei.",
-    "Noch keine Karten. Füge eine hinzu, um ein Bild hochzuladen und Orte zu markieren.", "{0} Orte", "Gruppe"
+    "Noch keine Karten. Füge eine hinzu, um ein Bild hochzuladen und Orte zu markieren.", "{0} Orte", "Gruppe",
+    "Markierungsfarben an das Design anpassen",
+    "Transparente PNGs und integrierte Symbole verwenden die aktuelle Akzentfarbe. JPEG, WEBP und undurchsichtige PNGs behalten ihre Originalfarben."
   ],
   "es-ES": [
     "EDITAR UBICACIÓN", "CONFIRMAR POSICIÓN",
@@ -53,7 +61,9 @@
     "Confirma o cancela la posición antes de cambiar de herramienta.",
     "Desplazamiento del mapa bloqueado", "Descripción del lugar", "Fondo del mapa", "Nueva ubicación", "Eliminar ubicación",
     "Sube mapas personalizados, coloca y edita ubicaciones y exporta cada mapa como archivo JSON.",
-    "Aún no hay mapas. Añade uno para subir una imagen y marcar ubicaciones.", "{0} ubicaciones", "Grupo"
+    "Aún no hay mapas. Añade uno para subir una imagen y marcar ubicaciones.", "{0} ubicaciones", "Grupo",
+    "Adaptar los marcadores al tema de la interfaz",
+    "Los PNG con transparencia y los iconos integrados usan el color del tema activo. Los JPEG, WEBP y los PNG opacos conservan sus colores originales."
   ],
   "es-MX": [
     "EDITAR UBICACIÓN", "CONFIRMAR POSICIÓN",
@@ -63,7 +73,9 @@
     "Confirma o cancela la posición antes de cambiar de herramienta.",
     "Desplazamiento del mapa bloqueado", "Descripción del lugar", "Fondo del mapa", "Nueva ubicación", "Eliminar ubicación",
     "Carga mapas personalizados, coloca y edita ubicaciones y exporta cada mapa como archivo JSON.",
-    "Todavía no hay mapas. Agrega uno para cargar una imagen y marcar ubicaciones.", "{0} ubicaciones", "Grupo"
+    "Todavía no hay mapas. Agrega uno para cargar una imagen y marcar ubicaciones.", "{0} ubicaciones", "Grupo",
+    "Adaptar los marcadores al tema de la interfaz",
+    "Los PNG con transparencia y los iconos integrados usan el color del tema activo. Los JPEG, WEBP y los PNG opacos conservan sus colores originales."
   ],
   "ja": [
     "場所を編集", "配置を確定",
@@ -73,7 +85,9 @@
     "ツールを切り替える前に配置を確定またはキャンセルしてください。",
     "地図の移動はロックされています", "場所の説明", "地図の背景", "新しい場所", "場所を削除",
     "独自の地図をアップロードして場所を配置・編集し、各地図をJSONファイルに書き出せます。",
-    "地図はまだありません。地図を追加し、画像をアップロードして場所を記録できます。", "場所：{0}", "パーティー"
+    "地図はまだありません。地図を追加し、画像をアップロードして場所を記録できます。", "場所：{0}", "パーティー",
+    "マーカーの色をUIテーマに合わせる",
+    "透明PNGと組み込みアイコンは現在のテーマ色になります。JPEG、WEBP、透明でないPNGは元の色を保ちます。"
   ],
   "pl": [
     "EDYTUJ LOKACJĘ", "POTWIERDŹ POŁOŻENIE",
@@ -83,7 +97,9 @@
     "Potwierdź lub anuluj położenie przed zmianą narzędzia.",
     "Przesuwanie mapy zablokowane", "Opis lokacji", "Tło mapy", "Nowa lokacja", "Usuń lokację",
     "Przesyłaj własne mapy, umieszczaj i edytuj lokacje oraz eksportuj każdą mapę jako plik JSON.",
-    "Brak map. Dodaj mapę, aby przesłać obraz i oznaczyć lokacje.", "Lokacje: {0}", "Drużyna"
+    "Brak map. Dodaj mapę, aby przesłać obraz i oznaczyć lokacje.", "Lokacje: {0}", "Drużyna",
+    "Dopasuj kolory znaczników do motywu",
+    "Przezroczyste pliki PNG i wbudowane ikony używają aktywnego koloru motywu. JPEG, WEBP i nieprzezroczyste PNG zachowują oryginalne kolory."
   ],
   "pt-BR": [
     "EDITAR LOCAL", "CONFIRMAR POSIÇÃO",
@@ -93,7 +109,9 @@
     "Confirme ou cancele a posição antes de trocar de ferramenta.",
     "Movimentação do mapa bloqueada", "Descrição do local", "Fundo do mapa", "Novo local", "Remover local",
     "Envie mapas personalizados, posicione e edite locais e exporte cada mapa como arquivo JSON.",
-    "Nenhum mapa ainda. Adicione um para enviar uma imagem e marcar locais.", "{0} locais", "Grupo"
+    "Nenhum mapa ainda. Adicione um para enviar uma imagem e marcar locais.", "{0} locais", "Grupo",
+    "Combinar as cores dos marcadores com o tema",
+    "PNGs com transparência e ícones integrados usam a cor de destaque do tema ativo. JPEGs, WEBP e PNGs opacos mantêm as cores originais."
   ],
   "ru": [
     "ИЗМЕНИТЬ МЕСТО", "ПОДТВЕРДИТЬ РАЗМЕЩЕНИЕ",
@@ -103,7 +121,9 @@
     "Подтвердите или отмените размещение перед сменой инструмента.",
     "Перемещение карты заблокировано", "Описание места", "Фон карты", "Новое место", "Удалить место",
     "Загружайте свои карты, размещайте и редактируйте места, экспортируйте каждую карту в файл JSON.",
-    "Карт пока нет. Добавьте карту, чтобы загрузить изображение и отметить места.", "Мест: {0}", "Группа"
+    "Карт пока нет. Добавьте карту, чтобы загрузить изображение и отметить места.", "Мест: {0}", "Группа",
+    "Подстроить цвет маркеров под тему",
+    "PNG с прозрачностью и встроенные значки используют цвет активной темы. JPEG, WEBP и непрозрачные PNG сохраняют исходные цвета."
   ],
   "zh-Hans": [
     "编辑地点", "确认放置",
@@ -111,7 +131,9 @@
     "请先确认或取消放置，再保存。", "请先确认或取消放置，再切换工具。",
     "地图平移已锁定", "地点描述", "地图背景", "新地点", "删除地点",
     "上传自定义地图，放置和编辑地点，并将每张地图导出为JSON文件。",
-    "暂无地图。添加地图即可上传图片并标记地点。", "{0}个地点", "队伍"
+    "暂无地图。添加地图即可上传图片并标记地点。", "{0}个地点", "队伍",
+    "让标记颜色匹配界面主题",
+    "带透明背景的PNG和内置图标使用当前主题强调色。JPEG、WEBP及不透明PNG保留原有颜色。"
   ],
   "zh-Hant": [
     "編輯地點", "確認放置",
@@ -119,6 +141,8 @@
     "請先確認或取消放置，再儲存。", "請先確認或取消放置，再切換工具。",
     "地圖平移已鎖定", "地點描述", "地圖背景", "新地點", "刪除地點",
     "上傳自訂地圖，放置和編輯地點，並將每張地圖匯出為JSON檔案。",
-    "尚無地圖。新增地圖即可上傳圖片並標記地點。", "{0}個地點", "隊伍"
+    "尚無地圖。新增地圖即可上傳圖片並標記地點。", "{0}個地點", "隊伍",
+    "讓標記顏色符合介面主題",
+    "帶透明背景的PNG和內建圖示使用目前主題強調色。JPEG、WEBP及不透明PNG保留原有顏色。"
   ]
 }

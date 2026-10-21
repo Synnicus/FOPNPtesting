@@ -58,7 +58,7 @@ export default function DraggableMapMarker({
       >
         <View style={{
           width: 28, height: 28, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: colors.background, borderWidth: editable ? 3 : 1.5,
+          backgroundColor: 'transparent', borderWidth: editable ? 3 : 1.5,
           borderColor: editable ? colors.warning : colors.primary,
         }}>
           {children}

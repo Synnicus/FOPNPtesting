@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
+import { deflateSync } from 'fflate';
 import { mapViewportCenter, moveMapMarker } from './mapPlacement.ts';
-import { normalizeCampaignMap } from './campaignTools.ts';
+import { normalizeCampaignMap, validCampaignMap } from './campaignTools.ts';
+import { supportsThemeTint } from './markerTint.ts';
 
 test('Party is a normal location icon and cave icons use a cave silhouette in picker and map', () => {
   const editor = readFileSync(new URL('../components/CampaignMapEditorModal.tsx', import.meta.url), 'utf8');
@@ -19,6 +21,74 @@ test('Party is a normal location icon and cave icons use a cave silhouette in pi
     assert.equal(saved?.locations[0].iconId, iconId);
     assert.deepEqual(saved?.party, []);
   }
+});
+
+function testPng(colorType: number, pixels: number[], transparency?: number[]) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const channels = ({ 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 } as Record<number, number>)[colorType];
+  const width = pixels.length / channels;
+  const chunk = (type: string, data: number[]) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    return Buffer.concat([length, Buffer.from(type), Buffer.from(data), Buffer.alloc(4)]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(1, 4);
+  header[8] = 8;
+  header[9] = colorType;
+  return `data:image/png;base64,${Buffer.concat([
+    signature,
+    chunk('IHDR', [...header]),
+    ...(transparency ? [chunk('tRNS', transparency)] : []),
+    chunk('IDAT', [...deflateSync(new Uint8Array([0, ...pixels]))]),
+    chunk('IEND', []),
+  ]).toString('base64')}`;
+}
+
+test('theme tint is limited to PNGs containing actual transparent pixels', () => {
+  assert.equal(supportsThemeTint(testPng(6, [255, 255, 255, 100])), true, 'RGBA transparency is honored');
+  assert.equal(supportsThemeTint(testPng(6, [255, 255, 255, 255])), false, 'opaque RGBA PNGs are unchanged');
+  assert.equal(supportsThemeTint(testPng(4, [150, 254])), true, 'grayscale-alpha transparency is honored');
+  assert.equal(supportsThemeTint(testPng(4, [150, 255])), false, 'opaque grayscale-alpha PNGs are unchanged');
+  assert.equal(supportsThemeTint(testPng(2, [0, 0, 0])), false, 'opaque truecolor PNGs are unchanged');
+  assert.equal(supportsThemeTint(testPng(3, [1], [255, 0])), false, 'unused palette transparency is unchanged');
+  assert.equal(supportsThemeTint(testPng(3, [1], [255, 0, 0])), true, 'visible palette transparency is honored');
+  assert.equal(supportsThemeTint(testPng(3, [0], [255, 255])), false, 'opaque palettes are unchanged');
+  assert.equal(supportsThemeTint(testPng(2, [0, 0, 0], [0, 0, 0, 0, 0, 0])), true, 'transparent color keys are honored');
+  assert.equal(supportsThemeTint(testPng(2, [1, 0, 0], [0, 0, 0, 0, 0, 0])), false, 'unused color keys are unchanged');
+  assert.equal(supportsThemeTint('data:image/jpeg;base64,/9j/2Q=='), false);
+  assert.equal(supportsThemeTint('data:image/png;base64,not-a-png'), false);
+});
+
+test('marker tint setting and original PNG assets stay portable in map data', () => {
+  const originalPng = testPng(6, [255, 255, 255, 100]);
+  const map = normalizeCampaignMap({
+    id: 'map',
+    name: 'Test',
+    description: '',
+    tintMarkersToTheme: true,
+    imageDataUri: 'data:image/png;base64,aGVsbG8=',
+    locations: [{ id: 'place', name: 'Place', description: '', iconId: 'marker-1', x: 0.2, y: 0.7 }],
+    markerIcons: [{ id: 'marker-1', name: 'Marker', imageDataUri: originalPng }],
+    party: [],
+  });
+  assert.equal(map?.tintMarkersToTheme, true);
+  assert.equal(map?.markerIcons?.[0].imageDataUri, originalPng);
+  assert.equal(normalizeCampaignMap({
+    id: 'legacy', name: 'Legacy', description: '', locations: [], party: [],
+  })?.tintMarkersToTheme, false);
+  assert.equal(validCampaignMap({
+    id: 'invalid', name: 'Invalid', description: '', tintMarkersToTheme: 'yes', locations: [], party: [],
+  }), false);
+  const tools = readFileSync(new URL('../components/DraggableMapMarker.tsx', import.meta.url), 'utf8');
+  assert.match(tools, /backgroundColor: 'transparent'/);
+  const editor = readFileSync(new URL('../components/CampaignMapEditorModal.tsx', import.meta.url), 'utf8');
+  const mapList = readFileSync(new URL('../components/CampaignToolsPanel.tsx', import.meta.url), 'utf8');
+  assert.match(editor, /tintColor=\{tintColor\}/);
+  assert.match(editor, /tintMarkersToTheme && tintableCustomIconIds\.has\(icon\.id\)/);
+  assert.match(editor, /Match marker colors to UI theme/);
+  assert.match(mapList, /tintMarkersToTheme: true/);
 });
 
 test('new map markers center in the visible map region at any zoom or pan', () => {

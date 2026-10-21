@@ -435,6 +435,8 @@ export interface CampaignMap {
   id: string;
   name: string;
   description: string;
+  /** Whether map marker artwork follows the active interface theme accent. */
+  tintMarkersToTheme?: boolean;
   /** Embedded image data makes a campaign map portable in JSON exports. */
   imageDataUri?: string;
   /** Source image dimensions keep marker coordinates aligned with the map's aspect ratio. */
