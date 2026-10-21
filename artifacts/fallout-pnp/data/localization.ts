@@ -29,6 +29,7 @@ import inventoryLibraryUi from './locales/inventory-library-ui.json';
 import mapEditorUi from './locales/map-editor.json';
 import combatVisualizerUi from './locales/combat-visualizer.json';
 import combatVisualizerExtraUi from './locales/combat-visualizer-extra.json';
+import combatVisualizer3dUi from './locales/combat-visualizer-3d.json';
 import patternsFr from './locales/patterns-fr.json';
 import patternsIt from './locales/patterns-it.json';
 import patternsDe from './locales/patterns-de.json';
@@ -62,6 +63,19 @@ export type AppLocale = typeof APP_LANGUAGES[number]['locale'];
 const translations: Partial<Record<AppLocale, Record<string, string>>> = {
   fr, it, de, 'es-ES': esES, 'es-MX': esMX, ja, pl, 'pt-BR': ptBR, ru,
   'zh-Hans': zhHans, 'zh-Hant': zhHant,
+};
+const tacticalBoardBudgetTranslations: Partial<Record<AppLocale, Record<string, string>>> = {
+  fr: { 'Board asset budget {0} / {1} MB': 'Ressources du plateau : {0} / {1} Mo' },
+  it: { 'Board asset budget {0} / {1} MB': 'Risorse della plancia: {0} / {1} MB' },
+  de: { 'Board asset budget {0} / {1} MB': 'Spielfeldressourcen: {0} / {1} MB' },
+  'es-ES': { 'Board asset budget {0} / {1} MB': 'Recursos del tablero: {0} / {1} MB' },
+  'es-MX': { 'Board asset budget {0} / {1} MB': 'Recursos del tablero: {0} / {1} MB' },
+  ja: { 'Board asset budget {0} / {1} MB': 'ボード素材：{0} / {1} MB' },
+  pl: { 'Board asset budget {0} / {1} MB': 'Zasoby planszy: {0} / {1} MB' },
+  'pt-BR': { 'Board asset budget {0} / {1} MB': 'Recursos do tabuleiro: {0} / {1} MB' },
+  ru: { 'Board asset budget {0} / {1} MB': 'Ресурсы поля: {0} / {1} МБ' },
+  'zh-Hans': { 'Board asset budget {0} / {1} MB': '棋盘资源：{0} / {1} MB' },
+  'zh-Hant': { 'Board asset budget {0} / {1} MB': '棋盤資源：{0} / {1} MB' },
 };
 const supplementalTranslations: Partial<Record<AppLocale, Record<string, string>>> = {
   fr: {
@@ -591,10 +605,14 @@ const uiSupplementalTranslations = Object.fromEntries(
       ...(gasMaskUiTranslations[locale] ?? {}),
       ...(automaticInventoryUiTranslations[locale] ?? {}),
       ...(inventoryLibraryUiTranslations[locale] ?? {}),
+      ...(tacticalBoardBudgetTranslations[locale] ?? {}),
       ...(mapEditorUiTranslations[locale] ?? {}),
       ...(combatVisualizerUiTranslations[locale] ?? {}),
       ...Object.fromEntries(combatVisualizerExtraUi.keys.map((key, index) => [
         key, (combatVisualizerExtraUi as { keys: string[] } & Record<string, string[]>)[locale]?.[index] ?? key,
+      ])),
+      ...Object.fromEntries(combatVisualizer3dUi.keys.map((key, index) => [
+        key, (combatVisualizer3dUi as { keys: string[] } & Record<string, string[]>)[locale]?.[index] ?? key,
       ])),
       ...(ammoDeleteUiTranslations[locale] ?? {}),
     }]),

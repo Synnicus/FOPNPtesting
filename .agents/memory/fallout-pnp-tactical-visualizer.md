@@ -9,6 +9,12 @@ Build playable 2D combat and vehicle movement first. Obstacles are visual only; 
 
 **How to apply:** Keep later 3D/standee rendering and automatic obstruction separate from the present rules engine.
 
+The optional 3D board is a second renderer of the same tactical state, available on phones and web. Keep orbit, pan and zoom controls, support transparent image standees plus GLB/STL models, and retain a 2D fallback. Board-only assets must not overwrite character portraits.
+
+**Why:** The user approved 3D on mobile and web with free camera controls, those asset formats, and fallback when needed.
+
+**How to apply:** Do not fork combat or movement state for 3D. Keep model uploads bounded and portable with campaign data, and leave the 2D board available.
+
 Vehicle paths are declared on the driver's own initiative turn, with no driving AP cost. After Pilot checks, all vehicles move together at round end; vehicles do not gain extra initiative turns.
 
 **Why:** The user confirmed round-end timing from the original manual.

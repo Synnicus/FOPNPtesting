@@ -8,6 +8,9 @@ import { Btn, Label, Note, Row, Section, Stepper } from './ui';
 import { tr } from './i18n';
 import { translateText } from '@/data/localization';
 import { pickBoardImage } from './boardAssets';
+import { boardAssetTotal } from './boardAssets';
+import { pickBoardModel } from './modelAssetPicker';
+import { MAX_BOARD_TOTAL_ASSETS } from '@/data/tacticalBoard';
 
 const HEX_DIRS: BoardCell[] = [{ q: 1, r: 0 }, { q: -1, r: 0 }, { q: 0, r: 1 }, { q: 0, r: -1 }, { q: 1, r: -1 }, { q: -1, r: 1 }];
 const SQ_DIRS: BoardCell[] = [{ q: 1, r: 0 }, { q: -1, r: 0 }, { q: 0, r: 1 }, { q: 0, r: -1 }];
@@ -45,6 +48,22 @@ export default function TokenPanel(props: {
     const r = await pickBoardImage(board, token.imageDataUri?.length ?? 0);
     if (!r) return;
     if ('error' in r) setMsg(r.error); else { setMsg(''); props.patch(token.characterId, { imageDataUri: r.uri }); }
+  };
+  const pickModel = async () => {
+    const result = await pickBoardModel();
+    if (!result) return;
+    if ('error' in result) { setMsg(result.error); return; }
+    if (boardAssetTotal(board) - (token.modelDataUri?.length ?? 0) + result.model.uri.length > MAX_BOARD_TOTAL_ASSETS) {
+      setMsg(tr('The board asset budget ({0} MB total) would be exceeded. Remove an asset first.', (MAX_BOARD_TOTAL_ASSETS / 1e6).toFixed(0)));
+      return;
+    }
+    setMsg('');
+    props.patch(token.characterId, {
+      modelDataUri: result.model.uri,
+      modelFormat: result.model.format,
+      modelName: result.model.name,
+      modelScale: token.modelScale ?? 1,
+    });
   };
   return (
     <View style={{ gap: 8 }}>
@@ -92,7 +111,19 @@ export default function TokenPanel(props: {
           <Btn icon="image" label={veh ? 'UPLOAD SKIN (PNG/GIF)' : 'BOARD PORTRAIT'} onPress={() => void pickSkin()} />
           {token.imageDataUri ? <Btn icon="trash-2" danger label="CLEAR" onPress={() => props.patch(token.characterId, { imageDataUri: undefined })} /> : null}
         </Row>
-        <Note>{veh ? 'Skins live only on the board. Transparent PNG and GIF are supported.' : 'Board framing never changes the character-sheet portrait.'}</Note>
+        <Row>
+          <Btn icon="box" label={tr(token.modelName ? 'REPLACE 3D MODEL' : 'UPLOAD 3D MODEL (GLB / STL)')} onPress={() => void pickModel()} />
+          {token.modelDataUri ? <Btn icon="trash-2" danger label={tr('REMOVE MODEL')} onPress={() => props.patch(token.characterId, { modelDataUri: undefined, modelFormat: undefined, modelName: undefined, modelScale: 1 })} /> : null}
+        </Row>
+        {token.modelDataUri ? <Row>
+          <Stepper label={tr('MODEL SCALE')} value={token.modelScale ?? 1} min={0.2} max={3} step={0.1} onChange={n => props.patch(token.characterId, { modelScale: n })} />
+        </Row> : null}
+        <Note>{token.modelDataUri
+          ? tr('{0} is a board-only model. It is included in campaign JSON; the 2D fallback displays the image standee.', token.modelName ?? token.modelFormat?.toUpperCase() ?? '3D model')
+          : veh
+            ? 'Skins live only on the board. Transparent PNG and GIF are supported.'
+            : 'Board framing never changes the character-sheet portrait.'}</Note>
+        {token.modelDataUri ? <Note>{tr('GLB material colors are kept; embedded textures are omitted. Limit: 1.5 MB and 25,000 triangles.')}</Note> : null}
         {msg ? <Note tone="error">{msg}</Note> : null}
       </Section>
       </>}

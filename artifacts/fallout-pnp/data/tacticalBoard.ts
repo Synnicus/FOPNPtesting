@@ -24,6 +24,11 @@ export interface BoardToken extends BoardCell {
   imageScale?: number;
   imageOffsetX?: number;
   imageOffsetY?: number;
+  /** Board-only 3D replacement; embedded in campaign JSON for portability. */
+  modelDataUri?: string;
+  modelFormat?: 'glb' | 'stl';
+  modelName?: string;
+  modelScale?: number;
   speedKph: number;
   path?: BoardPath;
   lastMovedRound?: number;
@@ -53,6 +58,10 @@ export interface TacticalBoard {
 }
 export const MAX_BOARD_ASSET_LENGTH = 6_000_000;
 export const MAX_BOARD_TOTAL_ASSETS = 18_000_000;
+/** 1.5 MB file limit before base64 encoding; keeps mobile scene memory bounded. */
+export const MAX_BOARD_MODEL_BYTES = 1_500_000;
+export const MAX_BOARD_MODEL_LENGTH = 2_100_000;
+export const MAX_BOARD_MODEL_TRIANGLES = 25_000;
 export const createTacticalBoard = (): TacticalBoard => ({
   version: 1, grid: 'hex', metersPerCell: 1, columns: 80, rows: 60,
   backgroundScale: 1, tokens: [], obstacles: [], movementTerrain: 1,
@@ -67,6 +76,13 @@ export function isBoardImage(value: unknown): value is string {
     : match[1].toLowerCase() === 'jpeg' ? header.startsWith('/9j/')
       : match[1].toLowerCase() === 'gif' ? /^R0lGOD[dl]h/.test(header)
         : header.startsWith('UklGR');
+}
+export function isBoardModel(value: unknown, format: unknown): value is string {
+  if (typeof value !== 'string' || value.length > MAX_BOARD_MODEL_LENGTH) return false;
+  if (format !== 'glb' && format !== 'stl') return false;
+  const mime = format === 'glb' ? 'model/gltf-binary' : 'model/stl';
+  const match = value.match(new RegExp(`^data:${mime};base64,([a-z0-9+/]+={0,2})$`, 'i'));
+  return !!match && match[1].length % 4 === 0;
 }
 const finite = (n: unknown, min: number, max: number) => typeof n === 'number' && Number.isFinite(n) && n >= min && n <= max;
 const cellValid = (v: BoardCell) => v && Number.isInteger(v.q) && Number.isInteger(v.r) && finite(v.q, -4096, 4096) && finite(v.r, -4096, 4096);
@@ -85,6 +101,10 @@ export function isTacticalBoard(value: unknown): value is TacticalBoard {
     && Number.isInteger(t.width) && Number.isInteger(t.length) && finite(t.facing, -3600, 3600)
     && (t.imageDataUri === undefined || isBoardImage(t.imageDataUri));
   if (!b.tokens.every(t => t && shape(t) && typeof t.characterId === 'string' && t.characterId.length > 0
+    && (t.modelDataUri === undefined || isBoardModel(t.modelDataUri, t.modelFormat))
+    && (t.modelFormat === undefined || t.modelFormat === 'glb' || t.modelFormat === 'stl')
+    && (t.modelName === undefined || (typeof t.modelName === 'string' && t.modelName.length <= 60))
+    && (t.modelScale === undefined || finite(t.modelScale, 0.2, 3))
     && finite(t.speedKph, 0, 2000) && (t.lastMovedRound === undefined || (Number.isInteger(t.lastMovedRound) && t.lastMovedRound >= 0))
     && (t.movementTurn === undefined || typeof t.movementTurn === 'string')
     && (t.movedMeters === undefined || finite(t.movedMeters, 0, 100000))
@@ -101,7 +121,8 @@ export function isTacticalBoard(value: unknown): value is TacticalBoard {
       && Array.isArray(t.path.cells) && t.path.cells.length > 0 && t.path.cells.length <= 1024 && t.path.cells.every(cellValid))))) return false;
   if (!b.obstacles.every(o => o && shape(o) && isBoardImage(o.imageDataUri) && typeof o.id === 'string' && typeof o.name === 'string')) return false;
   if (new Set(b.tokens.map(t => t.characterId)).size !== b.tokens.length || new Set(b.obstacles.map(o => o.id)).size !== b.obstacles.length) return false;
-  return (b.backgroundDataUri?.length ?? 0) + [...b.tokens, ...b.obstacles].reduce((n, t) => n + (t.imageDataUri?.length ?? 0), 0) <= MAX_BOARD_TOTAL_ASSETS;
+  return (b.backgroundDataUri?.length ?? 0) + [...b.tokens, ...b.obstacles].reduce((n, t) =>
+    n + (t.imageDataUri?.length ?? 0) + ('modelDataUri' in t ? t.modelDataUri?.length ?? 0 : 0), 0) <= MAX_BOARD_TOTAL_ASSETS;
 }
 export function makeBoardToken(characterId: string, cell: BoardCell, vehicle = false): BoardToken {
   return { characterId, q: cell.q, r: cell.r, width: vehicle ? 2 : 1, length: vehicle ? 3 : 1, facing: 0, speedKph: 0 };

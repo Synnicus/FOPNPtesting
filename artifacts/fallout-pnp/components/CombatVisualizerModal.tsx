@@ -11,6 +11,7 @@ import {
   type BoardCell, type BoardToken, type TacticalBoard,
 } from '@/data/tacticalBoard';
 import BoardCanvas, { type BoardCanvasHandle, type BoardHit } from './tactical/BoardCanvas';
+import Board3DCanvas from './tactical/Board3DCanvas';
 import BlastPanel, { ZONE_COLORS, blastZones } from './tactical/BlastPanel';
 import DrivingPanel from './tactical/DrivingPanel';
 import TokenPanel from './tactical/TokenPanel';
@@ -62,6 +63,8 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
   const [editVehicleId, setEditVehicleId] = useState<string | null>(null);
   const [impact, setImpact] = useState<BoardCell | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [threeD, setThreeD] = useState(false);
+  const [cameraPan, setCameraPan] = useState(false);
 
   const topPad = Math.max(insets.top, Platform.OS === 'web' ? 12 : 8);
   const sideL = insets.left, sideR = insets.right;
@@ -172,12 +175,29 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
         </ScrollView>
 
         <View style={{ flex: 1 }}>
-          <BoardCanvas ref={canvas} board={board} characters={chars} selectedId={selectedId} attackerId={p.attackerId} defenderId={p.defenderId}
-            activeId={activeId} pathCells={tab === 'drive' ? pathCells : null} impact={tab === 'blast' ? impact : null} rings={tab === 'blast' ? rings : []}
-            burstCells={burst?.cells} burstTargetIds={burst?.inside.map(t => t.characterId)} selectedObstacleId={obstacleId}
-            dragEnabled={tab !== 'blast' && !pick} centerRef={centerRef} onTap={onTap}
-            onDrop={(id, cell) => { setSelectedId(id); move(id, cell); }} />
+          {threeD ? (
+            <Board3DCanvas ref={canvas} board={board} characters={chars} selectedId={selectedId} attackerId={p.attackerId} defenderId={p.defenderId}
+              activeId={activeId} pathCells={tab === 'drive' ? pathCells : null} impact={tab === 'blast' ? impact : null} rings={tab === 'blast' ? rings : []}
+              burstCells={burst?.cells} burstTargetIds={burst?.inside.map(t => t.characterId)} selectedObstacleId={obstacleId}
+              centerRef={centerRef} panMode={cameraPan} dragEnabled={tab !== 'blast' && !pick} onTap={onTap}
+              onDrop={(id, cell) => { setSelectedId(id); move(id, cell); }}
+              onFallback={message => { setNotice(message); setThreeD(false); setCameraPan(false); }} />
+          ) : (
+            <BoardCanvas ref={canvas} board={board} characters={chars} selectedId={selectedId} attackerId={p.attackerId} defenderId={p.defenderId}
+              activeId={activeId} pathCells={tab === 'drive' ? pathCells : null} impact={tab === 'blast' ? impact : null} rings={tab === 'blast' ? rings : []}
+              burstCells={burst?.cells} burstTargetIds={burst?.inside.map(t => t.characterId)} selectedObstacleId={obstacleId}
+              dragEnabled={tab !== 'blast' && !pick} centerRef={centerRef} onTap={onTap}
+              onDrop={(id, cell) => { setSelectedId(id); move(id, cell); }} />
+          )}
           <View style={{ position: 'absolute', right: 8, top: 8, gap: 6 }}>
+            <Btn compact icon={threeD ? 'map' : 'box'} active={threeD}
+              a11y={tr(threeD ? 'Switch to 2D board' : 'Switch to 3D board')}
+              label={narrow ? '' : tr(threeD ? '2D' : '3D')}
+              onPress={() => { setThreeD(!threeD); setCameraPan(false); }} />
+            {threeD ? <Btn compact icon={cameraPan ? 'move' : 'rotate-cw'} active={cameraPan}
+              a11y={tr(cameraPan ? 'Orbit camera' : 'Pan camera')}
+              label={narrow ? '' : tr(cameraPan ? 'PAN' : 'ORBIT')}
+              onPress={() => setCameraPan(!cameraPan)} /> : null}
             {tools.map(x => <Btn key={x.t} compact icon={x.icon} active={tab === x.t} onPress={() => openTab(x.t)} label="" />)}
             <Btn compact icon="plus" onPress={() => canvas.current?.zoomBy(1.25)} label="" />
             <Btn compact icon="minus" onPress={() => canvas.current?.zoomBy(0.8)} label="" />
@@ -185,6 +205,7 @@ export default function CombatVisualizerModal(p: CombatVisualizerModalProps) {
             <Btn compact icon="unlock" active={gm} onPress={() => setGm(!gm)} label="" />
           </View>
           <View pointerEvents="none" style={{ position: 'absolute', left: 8, top: 8, gap: 4, maxWidth: '70%' }}>
+            {threeD ? <Note>{tr('Drag to orbit; use PAN for single-drag movement. Use two fingers or the mouse wheel to zoom.')}</Note> : null}
             {pick ? <Note tone="warn">{pick === 'attacker' ? 'Tap a token to set the attacker.' : 'Tap a token to set the target.'}</Note> : null}
             {gm ? <Note tone="warn">GM free placement is on: drags ignore AP and rules.</Note> : null}
             {burst ? <Note tone={nearest && nearest.characterId !== dTok?.characterId ? 'warn' : 'info'}>

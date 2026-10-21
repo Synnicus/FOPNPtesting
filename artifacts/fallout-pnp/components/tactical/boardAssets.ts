@@ -8,7 +8,8 @@ export type PickResult = { uri: string; name: string } | { error: string } | nul
 
 export function boardAssetTotal(board: TacticalBoard): number {
   return (board.backgroundDataUri?.length ?? 0)
-    + [...board.tokens, ...board.obstacles].reduce((n, t) => n + (t.imageDataUri?.length ?? 0), 0);
+    + board.tokens.reduce((n, t) => n + (t.imageDataUri?.length ?? 0) + (t.modelDataUri?.length ?? 0), 0)
+    + board.obstacles.reduce((n, t) => n + (t.imageDataUri?.length ?? 0), 0);
 }
 
 /** Picks PNG/JPEG/WEBP/GIF, returns a validated data URI or an actionable error. */

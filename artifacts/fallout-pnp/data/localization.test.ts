@@ -16,6 +16,16 @@ const localizationSource = readFileSync(new URL('./localization.ts', import.meta
 const appTourTranslationData = JSON.parse(
   readFileSync(new URL('app-tour.json', localeDirectory), 'utf8'),
 ) as { keys: string[] } & Record<string, string[]>;
+const combatVisualizer3dTranslationData = JSON.parse(
+  readFileSync(new URL('combat-visualizer-3d.json', localeDirectory), 'utf8'),
+) as { keys: string[] } & Record<string, string[]>;
+const combatVisualizer3dRenderedSource = [
+  readFileSync(new URL('../components/CombatVisualizerModal.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('../components/tactical/Board3DCanvas.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('../components/tactical/TokenPanel.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('../components/tactical/modelAssetPicker.ts', import.meta.url), 'utf8'),
+  readFileSync(new URL('../components/tactical/SettingsPanel.tsx', import.meta.url), 'utf8'),
+].join('\n');
 const appTourSourceFiles = [
   '../data/appTour.ts',
   '../components/AboutThisAppModal.tsx',
@@ -524,6 +534,25 @@ test('About and guided-tour copy is translated and wired for every supported loc
         assert.equal(runtimeValue, translated.replace('{0}', '2').replace('{1}', '5'));
       }
     });
+  }
+});
+
+test('3D combat-board controls and upload messages are translated for every supported locale', () => {
+  assert.equal(new Set(combatVisualizer3dTranslationData.keys).size, combatVisualizer3dTranslationData.keys.length);
+  for (const locale of localeIds) {
+    const values = combatVisualizer3dTranslationData[locale];
+    assert.ok(values, `${locale} has 3D-board translations`);
+    assert.equal(values.length, combatVisualizer3dTranslationData.keys.length, `${locale} has one translation per 3D-board string`);
+    combatVisualizer3dTranslationData.keys.forEach((source, index) => {
+      assert.ok(combatVisualizer3dRenderedSource.includes(source), `3D-board UI uses “${source}”`);
+      assert.ok(values[index]?.trim(), `${locale} translates “${source}”`);
+      assert.notEqual(values[index], source, `${locale} does not show English for “${source}”`);
+      const sample = source.replace('{0}', 'pan camera');
+      const runtimeValue = runtimeTranslateText(sample, locale);
+      assert.notEqual(runtimeValue, sample, `${locale} resolves “${source}” at runtime`);
+      if (source.includes('{0}')) assert.equal(runtimeValue, values[index].replace('{0}', 'pan camera'));
+    });
+    assert.notEqual(runtimeTranslateText('Board asset budget 1 / 18 MB', locale), 'Board asset budget 1 / 18 MB');
   }
 });
 
